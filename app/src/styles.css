@@ -1,0 +1,225 @@
+:root {
+  color: #1c2926;
+  background: #f4f5f2;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-optical-sizing: auto;
+  font-weight: 400;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-width: 360px;
+  min-height: 100vh;
+  margin: 0;
+}
+
+.shell {
+  width: min(100% - 64px, 1040px);
+  min-height: 100vh;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.topbar,
+.brand,
+.card-heading,
+.footer {
+  display: flex;
+  align-items: center;
+}
+
+.topbar {
+  min-height: 88px;
+  justify-content: space-between;
+  border-bottom: 1px solid #dfe4df;
+}
+
+.brand {
+  gap: 11px;
+  color: inherit;
+  font-size: 14px;
+  letter-spacing: -0.025em;
+  text-decoration: none;
+}
+
+.brand strong {
+  font-weight: 650;
+}
+
+.brand-mark {
+  width: 33px;
+  height: 33px;
+  display: grid;
+  place-items: center;
+  border-radius: 11px;
+  color: #effcf5;
+  background: #176c52;
+  font-family: Georgia, serif;
+  font-size: 21px;
+  font-weight: 700;
+}
+
+.environment-label,
+.eyebrow,
+.response-label {
+  color: #66736e;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.environment-label {
+  padding: 7px 9px;
+  border: 1px solid #d9e1db;
+  border-radius: 5px;
+  color: #426a59;
+  letter-spacing: 0.09em;
+}
+
+.welcome {
+  padding: 104px 0 54px;
+}
+
+.eyebrow {
+  margin: 0 0 15px;
+}
+
+h1,
+h2,
+p {
+  margin-top: 0;
+}
+
+h1 {
+  max-width: 700px;
+  margin-bottom: 17px;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(42px, 6vw, 68px);
+  font-weight: 400;
+  letter-spacing: -0.055em;
+  line-height: 1.02;
+}
+
+.intro {
+  max-width: 540px;
+  margin-bottom: 0;
+  color: #63716b;
+  font-size: 16px;
+  line-height: 1.7;
+}
+
+.status-card {
+  max-width: 700px;
+  padding: 25px;
+  border: 1px solid #dfe4df;
+  border-radius: 9px;
+  background: #fbfcfa;
+  box-shadow: 0 12px 32px rgb(30 55 43 / 4%);
+}
+
+.card-heading {
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.card-heading .eyebrow {
+  margin-bottom: 7px;
+}
+
+h2 {
+  margin-bottom: 0;
+  font-size: 17px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.status-indicator {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #d6a44a;
+  box-shadow: 0 0 0 4px #f7edd9;
+}
+
+.status-indicator.is-connected {
+  background: #21845f;
+  box-shadow: 0 0 0 4px #dff1e8;
+}
+
+.status-indicator.has-error {
+  background: #b64e42;
+  box-shadow: 0 0 0 4px #f6e2df;
+}
+
+.connection-status {
+  margin-bottom: 22px;
+  color: #426a59;
+  font-size: 14px;
+}
+
+.response-panel {
+  padding: 16px 17px;
+  border-radius: 6px;
+  background: #f1f4f0;
+}
+
+.response-label {
+  margin-bottom: 8px;
+  font-size: 9px;
+}
+
+.command-result {
+  margin-bottom: 0;
+  overflow-wrap: anywhere;
+  color: #34433d;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.footer {
+  min-height: 72px;
+  justify-content: space-between;
+  margin-top: auto;
+  color: #77827d;
+  font-size: 11px;
+}
+
+@media (max-width: 600px) {
+  .shell {
+    width: min(100% - 36px, 1040px);
+  }
+
+  .topbar {
+    min-height: 72px;
+  }
+
+  .brand {
+    font-size: 12px;
+  }
+
+  .environment-label {
+    padding: 6px;
+    font-size: 8px;
+  }
+
+  .welcome {
+    padding: 80px 0 40px;
+  }
+
+  .status-card {
+    padding: 19px;
+  }
+}

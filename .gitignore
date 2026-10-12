@@ -1,0 +1,7 @@
+# Generated build output and installed dependencies
+**/target/
+**/node_modules/
+**/dist/
+
+# Local code-analysis indexes
+**/.codesitter/

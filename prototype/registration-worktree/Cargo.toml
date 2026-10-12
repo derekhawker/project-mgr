@@ -1,0 +1,10 @@
+[package]
+name = "registration-worktree-prototype"
+version = "0.1.0"
+description = "Disposable Rust experiment for the OpenCode registration boundary"
+authors = ["OpenCode project-mgr"]
+edition = "2021"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

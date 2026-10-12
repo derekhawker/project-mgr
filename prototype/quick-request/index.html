@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#111827" />
+    <title>Quick Request Prototype</title>
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div class="brand-lockup">
+          <div class="brand-mark" aria-hidden="true">O</div>
+          <div>
+            <p class="eyebrow">INTEGRATION PROTOTYPE</p>
+            <h1>Quick Requests</h1>
+          </div>
+        </div>
+        <div class="topbar-meta">
+          <span class="prototype-badge">THROWAWAY</span>
+          <span id="version-label" class="version-label">OpenCode not checked</span>
+        </div>
+      </header>
+
+      <section class="request-panel" aria-labelledby="request-heading">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">ONE-OFF WORK</p>
+            <h2 id="request-heading">What do you need?</h2>
+          </div>
+          <p class="helper-copy">Submitting opens the live OpenCode session below.</p>
+        </div>
+        <form id="request-form" class="request-form">
+          <label class="visually-hidden" for="request-prompt">Quick Request prompt</label>
+          <textarea
+            id="request-prompt"
+            rows="3"
+            placeholder="Ask OpenCode for something…"
+            required
+          ></textarea>
+          <div class="model-picker">
+            <label for="request-model">Model</label>
+            <select id="request-model" required disabled>
+              <option value="">Loading available models…</option>
+            </select>
+            <p id="model-default-hint" class="model-default-hint">Configured default: openai/gpt-6-luna</p>
+          </div>
+          <div class="composer-footer">
+            <span id="directory-label" class="directory-label">Shared Quick Requests directory</span>
+            <div class="composer-actions">
+              <button id="restore-request" class="secondary-button" type="button" disabled>Reopen latest</button>
+              <button id="submit-request" class="primary-button" type="submit" disabled>
+                <span class="button-icon" aria-hidden="true">↗</span>
+                <span>Start Quick Request</span>
+              </button>
+            </div>
+          </div>
+        </form>
+        <p id="app-status" class="app-status" role="status" aria-live="polite">
+          Your existing OpenCode install will be used.
+        </p>
+      </section>
+
+      <section class="session-panel" aria-labelledby="session-heading">
+        <div class="session-heading-row">
+          <div>
+            <p class="eyebrow">INTERACTIVE SESSION</p>
+            <h2 id="session-heading">OpenCode terminal</h2>
+          </div>
+          <div class="session-controls">
+            <span id="session-state" class="session-state idle"><span></span>Waiting for a request</span>
+            <button id="hide-terminal" class="view-button" type="button" hidden>Hide view</button>
+          </div>
+        </div>
+
+        <div id="session-tabs" class="session-tabs" role="tablist" aria-label="Quick Request sessions"></div>
+        <div id="terminal-empty" class="terminal-empty">
+          <div class="empty-glyph" aria-hidden="true">⌘</div>
+          <h3>Your session opens here</h3>
+          <p>Send a Quick Request to open its OpenCode TUI. Watch the response stream, then type a follow-up in the terminal.</p>
+        </div>
+        <div id="terminal-views" class="terminal-views" aria-live="off"></div>
+      </section>
+
+      <footer class="prototype-footer">
+        <span>Prototype only · Quick Requests share one working directory</span>
+        <span>Follow up in the OpenCode terminal</span>
+      </footer>
+    </main>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

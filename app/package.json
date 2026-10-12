@@ -1,0 +1,20 @@
+{
+  "name": "opencode-project-manager-app",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 1420 --strictPort",
+    "build": "vite build",
+    "test": "node --test",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "2.12.3"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.12.2",
+    "vite": "6.4.4"
+  }
+}

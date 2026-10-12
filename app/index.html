@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f4f5f2" />
+    <title>OpenCode Project Manager</title>
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <a class="brand" href="#" aria-label="OpenCode Project Manager home">
+          <span class="brand-mark" aria-hidden="true">O</span>
+          <span>OpenCode <strong>Project Manager</strong></span>
+        </a>
+        <span class="environment-label">PRODUCTION SHELL</span>
+      </header>
+
+      <section class="welcome" aria-labelledby="welcome-title">
+        <p class="eyebrow">A clear place to begin</p>
+        <h1 id="welcome-title">Your work, in one place.</h1>
+        <p class="intro">
+          The application shell is ready. Workspace and task management will be
+          added here in later implementation steps.
+        </p>
+      </section>
+
+      <section class="status-card" aria-labelledby="connection-title">
+        <div class="card-heading">
+          <div>
+            <p class="eyebrow">Application status</p>
+            <h2 id="connection-title">Rust core connection</h2>
+          </div>
+          <span id="connection-indicator" class="status-indicator" aria-hidden="true"></span>
+        </div>
+
+        <p id="connection-status" class="connection-status" role="status" aria-live="polite">
+          Contacting the Rust core…
+        </p>
+        <div class="response-panel">
+          <p class="response-label">Startup command response</p>
+          <p id="command-result" class="command-result">Waiting for app_shell_info…</p>
+        </div>
+      </section>
+
+      <footer class="footer">
+        <span>Local application</span>
+        <span id="app-version">Version —</span>
+      </footer>
+    </main>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
