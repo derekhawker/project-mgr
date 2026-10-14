@@ -4,7 +4,19 @@ Throwaway Tauri/Rust/raw-HTML example of the shared terminal flow in [`../../doc
 
 ## Run it
 
-Requirements: Node.js/npm, Rust/Cargo, the Linux Tauri/WebKitGTK development packages, and the user's existing `opencode` CLI on `PATH` with at least one provider configured and authenticated.
+Requirements: Node.js/npm, Rust/Cargo, the Linux Tauri/WebKitGTK development packages, and the user's existing `opencode` CLI with at least one provider configured and authenticated.
+
+When launched from a desktop menu, Tauri may receive a different (often
+shorter) `PATH` than an interactive shell. Quick Request looks for `opencode`
+on `PATH`, then in `~/.opencode/bin/opencode` and `~/.local/bin/opencode`.
+To choose a specific installation, set `OPENCODE_BIN` to its full executable
+path before starting the app, for example:
+
+```sh
+OPENCODE_BIN="$HOME/.opencode/bin/opencode" npm run tauri -- dev
+```
+
+The same override can be set in the desktop launcher's environment.
 
 From this directory:
 
@@ -50,3 +62,7 @@ prototype's default.
 The prototype has no separate management database. OpenCode stores conversation history as usual. The shared working directory is temporary and its path appears below the request field. It may contain files created during a request.
 
 The checked-in integration is now adapted to the installed OpenCode v2.0.27 CLI/API contract, but it remains a disposable, unvalidated prototype: no live model-backed or GUI v2 acceptance is claimed. The saved Quick Request GUI result (2+3 → 5) remains historical OpenCode 1.18.35/v1 evidence, not v2 validation. Historical v1 rationale remains in [`../decisions/opencode-terminal.md`](../decisions/opencode-terminal.md) and the handoff documents. The v2 contract is recorded in [`../../docs/opencode-v2-contract.md`](../../docs/opencode-v2-contract.md).
+
+## Deterministic P-00 slice
+
+`src-tauri/src/session_state.rs` contains pure Rust evidence classification, event-loss reconciliation, and exact owner/session/directory routing contracts. Tests cover status distinctions, hidden pending input, cursor recovery, shared-directory isolation, and restore records without an initial prompt marker. This proves only deterministic application logic; live v2 events, model-backed streaming, PTY/TUI behavior, and Wayland GUI acceptance remain live/manual validation work.

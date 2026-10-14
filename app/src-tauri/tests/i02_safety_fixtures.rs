@@ -3,9 +3,9 @@ use std::path::Path;
 use std::process::{Command, Output};
 
 use opencode_project_manager_lib::management::{
-    CheckoutMode, CleanupPlan, ManagementStore, NewSession, NewTask, NewWorkspace,
-    RepositorySetupStatus, SessionOwner, TaskRepositoryBinding, TaskSetupStatus,
-    VerificationStatus, WorkspaceKind, WorkspaceRepositoryBinding,
+    CheckoutMode, CleanupJobState, CleanupPlan, ManagementStore, NewCleanupJob, NewSession,
+    NewTask, NewWorkspace, RepositorySetupStatus, SessionOwner, TaskRepositoryBinding,
+    TaskSetupStatus, VerificationStatus, WorkspaceKind, WorkspaceRepositoryBinding,
 };
 use opencode_project_manager_lib::safety::{inspect_branch, inspect_repository};
 use tempfile::tempdir;
@@ -491,6 +491,38 @@ fn i02_git_path_fixture_reports_canonical_ownership_and_non_destructive_cleanup(
     store.complete_task(&dirty_task.id, CREATED + 20).unwrap();
     store.complete_task(&in_use_task.id, CREATED + 20).unwrap();
 
+    // Simulate a worker crash after claiming the clean job. Startup recovery
+    // requeues the claim and leaves the worktree untouched until the worker
+    // runs the guarded removal path.
+    let clean_job = store
+        .create_cleanup_job(&NewCleanupJob {
+            id: "cleanup-clean".into(),
+            task_id: clean_task.id.clone(),
+            repository_id: "repo-a".into(),
+            worktree_path: clean_worktree.to_string_lossy().into_owned(),
+            state: CleanupJobState::Queued,
+            created_at: CREATED + 20,
+        })
+        .unwrap();
+    let mut claimed = clean_job.clone();
+    claimed.state = CleanupJobState::Running;
+    claimed.attempts = 1;
+    claimed.last_attempt_at = Some(CREATED + 21);
+    claimed.updated_at = CREATED + 21;
+    store.update_cleanup_job(&claimed).unwrap();
+    assert_eq!(
+        store.recover_stale_cleanup_jobs(CREATED + 30_000).unwrap(),
+        1
+    );
+    let recovered = store.get_cleanup_job(&clean_job.id).unwrap().unwrap();
+    assert_eq!(recovered.state, CleanupJobState::Queued);
+    assert_eq!(recovered.attempts, 2);
+    assert!(recovered
+        .deferral_reason
+        .as_deref()
+        .unwrap()
+        .contains("worker restart"));
+
     // The second catalog repository is attached to the same task, proving the
     // model supports multiple repositories in one task.
     let multi_a = Path::new(&multi_task.home_path).join("worktrees/repository-a");
@@ -609,6 +641,62 @@ fn i02_git_path_fixture_reports_canonical_ownership_and_non_destructive_cleanup(
     let in_use_plan = store
         .plan_completed_task_cleanup(&in_use_task.id, "repo-a", &[])
         .unwrap();
+    let removed = store
+        .execute_cleanup_job(&clean_job.id, &[], CREATED + 40_000)
+        .unwrap();
+    assert_eq!(removed.state, CleanupJobState::Removed);
+    assert!(!clean_worktree.exists());
+    assert!(git(
+        &repo_a,
+        &["show-ref", "--verify", "--quiet", "refs/heads/task/clean"]
+    )
+    .status
+    .success());
+    assert_eq!(
+        store
+            .execute_cleanup_job(&clean_job.id, &[], CREATED + 40_001)
+            .unwrap()
+            .state,
+        CleanupJobState::Removed
+    );
+    let dirty_job = store
+        .create_cleanup_job(&NewCleanupJob {
+            id: "cleanup-dirty".into(),
+            task_id: dirty_task.id.clone(),
+            repository_id: "repo-a".into(),
+            worktree_path: dirty_worktree.to_string_lossy().into_owned(),
+            state: CleanupJobState::Queued,
+            created_at: CREATED + 20,
+        })
+        .unwrap();
+    assert_eq!(
+        store
+            .execute_cleanup_job(&dirty_job.id, &[], CREATED + 40_002)
+            .unwrap()
+            .state,
+        CleanupJobState::Retained
+    );
+    let in_use_job = store
+        .create_cleanup_job(&NewCleanupJob {
+            id: "cleanup-in-use".into(),
+            task_id: in_use_task.id.clone(),
+            repository_id: "repo-a".into(),
+            worktree_path: in_use_worktree.to_string_lossy().into_owned(),
+            state: CleanupJobState::Queued,
+            created_at: CREATED + 20,
+        })
+        .unwrap();
+    assert_eq!(
+        store
+            .execute_cleanup_job(
+                &in_use_job.id,
+                std::slice::from_ref(&in_use_worktree),
+                CREATED + 40_003
+            )
+            .unwrap()
+            .state,
+        CleanupJobState::Deferred
+    );
     let task_home_runtime = Path::new(&multi_task.home_path).to_path_buf();
     let task_home_plan_a = store
         .plan_completed_task_cleanup(&multi_task.id, "repo-a", &[task_home_runtime.clone()])
@@ -635,12 +723,6 @@ fn i02_git_path_fixture_reports_canonical_ownership_and_non_destructive_cleanup(
         exact_worktree_plan_b,
         CleanupPlan::Removable { .. }
     ));
-    assert_eq!(
-        clean_plan,
-        store
-            .plan_completed_task_cleanup(&clean_task.id, "repo-a", &[])
-            .unwrap()
-    );
     assert_eq!(
         dirty_plan,
         store

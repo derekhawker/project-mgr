@@ -38,6 +38,52 @@ body {
   align-items: center;
 }
 
+.terminal-card { margin-top: 1.5rem; background: #111816; border-radius: 12px; padding: 1rem; min-height: 22rem; }
+.terminal-surface { min-height: 20rem; }
+.terminal-views { min-height: 20rem; }
+.terminal-surface[hidden] { display: none; }
+.workspace-layout { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 2rem; padding: 48px 0; }
+.navigation { border-right: 1px solid #dfe4df; padding-right: 1.5rem; }
+.navigation h2 { margin: 0 0 .75rem; }
+.navigation-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: .75rem; }
+.navigation-heading h2 { margin: 0; }
+.navigation li button.selected { font-weight: 700; color: #103f31; }
+.nested-task { padding: .25rem 0 .25rem 1rem; color: #63716b; font-size: 13px; }
+.nested-task.completed, .history-item { color: #77827d; }
+.nested-task button { width: 100%; text-align: left; color: inherit; background: transparent; border: 0; padding: .3rem .5rem .3rem 1rem; }
+.history-section h3, .catalog-section h3 { margin: 1.25rem 0 .5rem; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: #66736e; }
+.catalog-section ul { max-height: 10rem; overflow: auto; }
+.catalog-section li button, .history-item { width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.compact-input { width: 100%; border: 1px solid #cfd9d2; border-radius: 5px; padding: .45rem; font: inherit; font-size: 12px; }
+.workspace-actions { display: flex; gap: .5rem; margin-top: 1rem; }
+.success-message { min-height: 1.2em; color: #176c52; font-size: 13px; }
+.placeholder { color: #77827d; font-size: 13px; line-height: 1.5; }
+.quick-heading { margin-top: 2rem !important; }
+.navigation ul { list-style: none; padding: 0; margin: 0 0 1rem; }
+.navigation li button { border: 0; background: transparent; padding: .45rem 0; color: #176c52; text-align: left; cursor: pointer; }
+.navigation button:focus-visible, .request-form button:focus-visible, .request-form textarea:focus-visible,
+.request-form select:focus-visible, .compact-input:focus-visible, .session-tabs button:focus-visible,
+.terminal-surface:focus-visible {
+  outline: 3px solid #d28b32;
+  outline-offset: 2px;
+}
+.navigation button[disabled], .request-form button[disabled] { cursor: not-allowed; }
+.quiet-button { border: 1px solid #d9e1db; background: transparent; border-radius: 5px; padding: .45rem .6rem; }
+.quiet-button:disabled { opacity: .5; cursor: not-allowed; }
+.session-tabs { display: flex; gap: .4rem; flex-wrap: wrap; margin-bottom: .6rem; }
+.session-tabs button { color: #d9f5e7; border: 1px solid #486258; background: #1b2925; border-radius: 5px; padding: .4rem .6rem; cursor: pointer; }
+.session-tabs button.selected { background: #2d6652; border-color: #9ee0c2; }
+.session-status { min-height: 1.2em; color: #c7e6d7; font-size: 13px; }
+.pending-inputs { min-height: 1.2em; margin: 0; padding-left: 1rem; color: #f0d39f; font-size: 13px; }
+.quick-view h1 { margin: 0 0 1rem; font-size: clamp(36px, 5vw, 58px); }
+.request-form { margin-top: 1.5rem; display: grid; gap: .55rem; }
+.request-form label { color: #426a59; font-size: 12px; font-weight: 650; }
+.request-form textarea, .request-form input { border: 1px solid #cfd9d2; border-radius: 6px; padding: .7rem; font: inherit; background: #fbfcfa; }
+.model-row { display: grid; gap: .4rem; }
+.request-form button[type="submit"] { justify-self: start; border: 0; border-radius: 6px; padding: .7rem 1rem; color: #effcf5; background: #176c52; cursor: pointer; }
+.request-form button:disabled { opacity: .55; cursor: wait; }
+.error-message { min-height: 1.2em; color: #b64e42; font-size: 13px; }
+
 .topbar {
   min-height: 88px;
   justify-content: space-between;
@@ -222,4 +268,14 @@ h2 {
   .status-card {
     padding: 19px;
   }
+  .workspace-layout { grid-template-columns: 1fr; gap: 1rem; padding: 28px 0; }
+  .navigation { border-right: 0; border-bottom: 1px solid #dfe4df; padding: 0 0 1.2rem; }
+  .workspace-actions { flex-wrap: wrap; }
+  .workspace-actions button { flex: 1 1 10rem; }
+  .terminal-card { padding: .65rem; min-height: 16rem; }
+  .terminal-surface, .terminal-views { min-height: 14rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; }
 }

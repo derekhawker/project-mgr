@@ -14,8 +14,21 @@ use crate::safety::{self, GitInspection, ManagedHomeGuard, SafetyError};
 pub const DEFAULT_PROJECT_HOME_ROOT: &str = "~/OpenCode Projects/";
 pub const DEFAULT_MODEL: &str = "openai/gpt-6-luna";
 const QUICK_REQUEST_LIFETIME_MS: i64 = 24 * 60 * 60 * 1_000;
+const CLEANUP_RUNNING_STALE_AFTER_MS: i64 = 10_000;
 const MIGRATION_1: &str = include_str!("migrations/0001_management.sql");
 const MIGRATION_2: &str = include_str!("migrations/0002_home_paths.sql");
+const MIGRATION_3: &str = include_str!("migrations/0003_setup_operations.sql");
+const MIGRATION_4: &str = include_str!("migrations/0004_setup_cancellation.sql");
+const MIGRATION_5: &str = include_str!("migrations/0005_setup_operation_state.sql");
+const MIGRATION_6: &str = include_str!("migrations/0006_session_reconciliation.sql");
+const MIGRATION_7: &str = include_str!("migrations/0007_session_model.sql");
+
+fn now_millis_for_cleanup() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64
+}
 
 #[derive(Debug)]
 pub enum ManagementStoreError {
@@ -202,6 +215,7 @@ sqlite_enum!(CleanupJobState {
 });
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Workspace {
     pub id: String,
     pub name: String,
@@ -215,6 +229,7 @@ pub struct Workspace {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct NewWorkspace {
     pub id: String,
     pub name: String,
@@ -225,6 +240,7 @@ pub struct NewWorkspace {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct QuickRequestLifecycle {
     pub created_at: i64,
     pub dismissed_at: Option<i64>,
@@ -234,6 +250,7 @@ pub struct QuickRequestLifecycle {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Task {
     pub id: String,
     pub workspace_id: String,
@@ -246,9 +263,14 @@ pub struct Task {
     pub created_at: i64,
     pub completed_at: Option<i64>,
     pub quick_request: Option<QuickRequestLifecycle>,
+    pub setup_operation_id: Option<String>,
+    pub setup_session_id: Option<String>,
+    pub setup_cancelled_at: Option<i64>,
+    pub setup_cancellation_detail: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct NewTask {
     pub id: String,
     pub workspace_id: String,
@@ -260,6 +282,7 @@ pub struct NewTask {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Repository {
     pub id: String,
     pub name: String,
@@ -272,6 +295,7 @@ pub struct Repository {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct NewRepository {
     pub id: String,
     pub name: String,
@@ -283,6 +307,18 @@ pub struct NewRepository {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RepositoryDiscovery {
+    pub path: String,
+    pub repository_identity: String,
+    pub name: String,
+    pub purpose: Option<String>,
+    pub purpose_status: PurposeStatus,
+    pub repository: Repository,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct WorkspaceRepositoryBinding {
     pub workspace_id: String,
     pub repository_id: String,
@@ -293,7 +329,42 @@ pub struct WorkspaceRepositoryBinding {
     pub created_at: i64,
 }
 
+/// Stable paths available to a workspace planning session. Failed or
+/// unverified attachment attempts are never session context.
+pub fn resolve_workspace_context(
+    workspace_home: &Path,
+    bindings: &[WorkspaceRepositoryBinding],
+) -> Vec<PathBuf> {
+    let mut paths = vec![workspace_home.to_path_buf()];
+    for binding in bindings {
+        if binding.verification_status == VerificationStatus::Verified {
+            let path = PathBuf::from(&binding.checkout_path);
+            if !paths.contains(&path) {
+                paths.push(path);
+            }
+        }
+    }
+    paths
+}
+
+/// The terminal has one OpenCode directory, but a task conversation must be
+/// aware of every verified worktree belonging to that task. Keep this resolver
+/// in management rather than reconstructing paths in a UI command.
+pub fn resolve_task_context(task_home: &Path, bindings: &[TaskRepositoryBinding]) -> Vec<PathBuf> {
+    let mut paths = vec![task_home.to_path_buf()];
+    for binding in bindings {
+        if binding.setup_status == RepositorySetupStatus::Ready {
+            let path = PathBuf::from(&binding.worktree_path);
+            if !paths.contains(&path) {
+                paths.push(path);
+            }
+        }
+    }
+    paths
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TaskRepositoryBinding {
     pub task_id: String,
     pub repository_id: String,
@@ -307,6 +378,49 @@ pub struct TaskRepositoryBinding {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RegistrationItemResult {
+    Ready,
+    Failed,
+    NotAttempted,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegistrationItem {
+    pub item_id: String,
+    pub repository_id: String,
+    pub repository_path: String,
+    pub git_identity: String,
+    pub branch: Option<String>,
+    pub worktree_path: Option<String>,
+    pub result: RegistrationItemResult,
+    pub error_code: Option<String>,
+    pub detail: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegistrationReport {
+    pub operation_id: String,
+    pub workspace_id: String,
+    pub task_id: String,
+    pub session_id: String,
+    pub items: Vec<RegistrationItem>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegistrationResult {
+    pub operation_id: String,
+    pub workspace_id: String,
+    pub task_id: String,
+    pub session_id: String,
+    pub replayed: bool,
+    pub items: Vec<RegistrationItem>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case", tag = "owner_type", content = "owner_id")]
 pub enum SessionOwner {
     Workspace(String),
@@ -314,6 +428,14 @@ pub enum SessionOwner {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuickRequestRecord {
+    pub task: Task,
+    pub session: Option<SessionRecord>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SessionRecord {
     pub open_code_session_id: String,
     pub owner: SessionOwner,
@@ -321,9 +443,15 @@ pub struct SessionRecord {
     pub last_known_status: String,
     pub created_at: i64,
     pub updated_at: i64,
+    pub event_cursor: Option<String>,
+    pub reconciliation_status: String,
+    pub reconciliation_uncertain: bool,
+    pub pending_input_json: Option<String>,
+    pub selected_model: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct NewSession {
     pub open_code_session_id: String,
     pub owner: SessionOwner,
@@ -333,6 +461,7 @@ pub struct NewSession {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CleanupJob {
     pub id: String,
     pub task_id: String,
@@ -349,6 +478,7 @@ pub struct CleanupJob {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct NewCleanupJob {
     pub id: String,
     pub task_id: String,
@@ -381,6 +511,7 @@ pub enum CleanupPlan {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Setting {
     pub key: String,
     pub value: String,
@@ -492,7 +623,7 @@ impl ManagementStore {
             [],
             |row| row.get(0),
         )?;
-        if current_version > 2 {
+        if current_version > 7 {
             return Err(ManagementStoreError::UnsupportedSchemaVersion(
                 current_version,
             ));
@@ -508,6 +639,41 @@ impl ManagementStore {
             transaction.execute_batch(MIGRATION_2)?;
             transaction.execute(
                 "INSERT INTO schema_migrations(version, applied_at) VALUES (2, 0)",
+                [],
+            )?;
+        }
+        if current_version < 3 {
+            transaction.execute_batch(MIGRATION_3)?;
+            transaction.execute(
+                "INSERT INTO schema_migrations(version, applied_at) VALUES (3, 0)",
+                [],
+            )?;
+        }
+        if current_version < 4 {
+            transaction.execute_batch(MIGRATION_4)?;
+            transaction.execute(
+                "INSERT INTO schema_migrations(version, applied_at) VALUES (4, 0)",
+                [],
+            )?;
+        }
+        if current_version < 5 {
+            transaction.execute_batch(MIGRATION_5)?;
+            transaction.execute(
+                "INSERT INTO schema_migrations(version, applied_at) VALUES (5, 0)",
+                [],
+            )?;
+        }
+        if current_version < 6 {
+            transaction.execute_batch(MIGRATION_6)?;
+            transaction.execute(
+                "INSERT INTO schema_migrations(version, applied_at) VALUES (6, 0)",
+                [],
+            )?;
+        }
+        if current_version < 7 {
+            transaction.execute_batch(MIGRATION_7)?;
+            transaction.execute(
+                "INSERT INTO schema_migrations(version, applied_at) VALUES (7, 0)",
                 [],
             )?;
         }
@@ -613,6 +779,49 @@ impl ManagementStore {
         Self::get_workspace_from(&connection, &workspace.id)?.ok_or_else(|| {
             ManagementStoreError::NotFound(format!("workspace {} after insert", workspace.id))
         })
+    }
+
+    /// Compensate for a workspace created solely by a failed promotion.  The
+    /// caller supplies no path: the record and configured project root remain
+    /// the authority, and the filesystem helper refuses to remove any content.
+    pub fn rollback_new_workspace(&self, id: &str) -> StoreResult<()> {
+        let mut connection = self.lock()?;
+        let workspace = Self::get_workspace_from(&connection, id)?
+            .ok_or_else(|| ManagementStoreError::NotFound(format!("workspace {id}")))?;
+        if workspace.kind != WorkspaceKind::Regular {
+            return Err(ManagementStoreError::InvalidTransition(
+                "only regular promotion workspaces can be rolled back".into(),
+            ));
+        }
+        let task_count: i64 = connection.query_row(
+            "SELECT COUNT(*) FROM tasks WHERE workspace_id = ?1",
+            [id],
+            |row| row.get(0),
+        )?;
+        let binding_count: i64 = connection.query_row(
+            "SELECT COUNT(*) FROM workspace_repositories WHERE workspace_id = ?1",
+            [id],
+            |row| row.get(0),
+        )?;
+        if task_count != 0 || binding_count != 0 {
+            return Err(ManagementStoreError::InvalidTransition(
+                "promotion workspace is no longer empty".into(),
+            ));
+        }
+        let configured_root = Self::project_home_root_from(&connection)?;
+        let project_root = safety::resolve_project_home_root(&configured_root, &self.user_home)?;
+        let home = PathBuf::from(&workspace.home_path);
+        safety::remove_empty_managed_home(
+            &project_root,
+            &home,
+            "workspace",
+            &workspace.id,
+            &["notes", "repos", "tasks"],
+        )?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        transaction.execute("DELETE FROM workspaces WHERE id = ?1", [id])?;
+        transaction.commit()?;
+        Ok(())
     }
 
     pub fn get_workspace(&self, id: &str) -> StoreResult<Option<Workspace>> {
@@ -728,14 +937,16 @@ impl ManagementStore {
                 "the Quick Requests workspace cannot be completed".into(),
             ));
         }
-        let active_tasks: i64 = transaction.query_row(
-            "SELECT COUNT(*) FROM tasks WHERE workspace_id = ?1 AND status = 'active'",
-            [id],
-            |row| row.get(0),
-        )?;
-        if active_tasks > 0 {
+        let active_task_ids = transaction
+            .prepare(
+                "SELECT id FROM tasks WHERE workspace_id = ?1 AND status = 'active' ORDER BY id",
+            )?
+            .query_map([id], |row| row.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        if !active_task_ids.is_empty() {
             return Err(ManagementStoreError::InvalidTransition(format!(
-                "workspace {id} still has {active_tasks} active task(s)"
+                "workspace {id} still has active task(s): {}",
+                active_task_ids.join(", ")
             )));
         }
         transaction.execute(
@@ -792,6 +1003,60 @@ impl ManagementStore {
             .ok_or_else(|| ManagementStoreError::NotFound(format!("task {} after insert", task.id)))
     }
 
+    /// Remove a task that was created by an initialization attempt before any
+    /// user-owned setup has been recorded. This is deliberately stricter than
+    /// normal task deletion: sessions, repository reports, and cleanup jobs
+    /// make the task durable work and therefore refuse this rollback.
+    pub fn rollback_new_task(&self, id: &str) -> StoreResult<()> {
+        let mut connection = self.lock()?;
+        let task = Self::get_task_from(&connection, id)?
+            .ok_or_else(|| ManagementStoreError::NotFound(format!("task {id}")))?;
+        if task.status != TaskStatus::Active {
+            return Err(ManagementStoreError::InvalidTransition(
+                "only an active initialization task can be rolled back".into(),
+            ));
+        }
+        let session_count: i64 = connection.query_row(
+            "SELECT COUNT(*) FROM sessions WHERE owner_task_id = ?1",
+            [id],
+            |row| row.get(0),
+        )?;
+        let binding_count: i64 = connection.query_row(
+            "SELECT COUNT(*) FROM task_repositories WHERE task_id = ?1",
+            [id],
+            |row| row.get(0),
+        )?;
+        let cleanup_count: i64 = connection.query_row(
+            "SELECT COUNT(*) FROM cleanup_jobs WHERE task_id = ?1",
+            [id],
+            |row| row.get(0),
+        )?;
+        if binding_count != 0 || cleanup_count != 0 {
+            return Err(ManagementStoreError::InvalidTransition(
+                "task initialization has durable repository state".into(),
+            ));
+        }
+
+        let configured_root = Self::project_home_root_from(&connection)?;
+        let project_root = safety::resolve_project_home_root(&configured_root, &self.user_home)?;
+        let home = PathBuf::from(&task.home_path);
+        safety::remove_empty_managed_home(
+            &project_root,
+            &home,
+            "task",
+            &task.id,
+            &["notes", "worktrees"],
+        )?;
+
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        if session_count != 0 {
+            transaction.execute("DELETE FROM sessions WHERE owner_task_id = ?1", [id])?;
+        }
+        transaction.execute("DELETE FROM tasks WHERE id = ?1", [id])?;
+        transaction.commit()?;
+        Ok(())
+    }
+
     /// Creates the task and its first exact OpenCode association in one transaction.
     pub fn create_task_with_session(
         &self,
@@ -844,6 +1109,129 @@ impl ManagementStore {
         Self::get_task_from(&connection, &task.id)?.ok_or_else(|| {
             ManagementStoreError::NotFound(format!("Quick Request task {} after insert", task.id))
         })
+    }
+
+    /// Creates the special workspace on demand. Its home is always the one
+    /// shared system-temporary directory; it never becomes a request home.
+    pub fn ensure_quick_requests_workspace(&self, created_at: i64) -> StoreResult<Workspace> {
+        if let Some(existing) = self
+            .list_workspaces()?
+            .into_iter()
+            .find(|workspace| workspace.kind == WorkspaceKind::QuickRequests)
+        {
+            return Ok(existing);
+        }
+        self.create_workspace(&NewWorkspace {
+            id: "quick-requests-workspace".into(),
+            name: "Quick Requests".into(),
+            slug: "quick-requests".into(),
+            description: Some("One-off requests in the shared temporary directory".into()),
+            kind: WorkspaceKind::QuickRequests,
+            created_at,
+        })
+    }
+
+    /// The task and exact OpenCode session association are one durable write.
+    pub fn create_quick_request_with_session(
+        &self,
+        task: &NewTask,
+        session: &NewSession,
+    ) -> StoreResult<QuickRequestRecord> {
+        self.create_quick_request_with_session_and_model(task, session, "")
+    }
+
+    pub fn create_quick_request_with_session_and_model(
+        &self,
+        task: &NewTask,
+        session: &NewSession,
+        selected_model: &str,
+    ) -> StoreResult<QuickRequestRecord> {
+        if session.owner != SessionOwner::Task(task.id.clone()) {
+            return Err(ManagementStoreError::InvalidTransition(
+                "Quick Request session owner must be its task".into(),
+            ));
+        }
+        let workspace = self.get_workspace(&task.workspace_id)?.ok_or_else(|| {
+            ManagementStoreError::NotFound(format!("workspace {}", task.workspace_id))
+        })?;
+        if workspace.kind != WorkspaceKind::QuickRequests {
+            return Err(ManagementStoreError::InvalidTransition(
+                "task is not owned by the Quick Requests workspace".into(),
+            ));
+        }
+        let expected = quick_requests_directory(&self.system_temp_dir);
+        let actual = safety::canonicalize_or_resolve_missing(Path::new(&session.directory))?;
+        let expected = safety::canonicalize_or_resolve_missing(&expected)?;
+        if actual != expected {
+            return Err(ManagementStoreError::Safety(SafetyError::InvalidPath(
+                "Quick Request sessions must use the shared temporary directory".into(),
+            )));
+        }
+        let expires_at = task
+            .created_at
+            .checked_add(QUICK_REQUEST_LIFETIME_MS)
+            .ok_or_else(|| {
+                ManagementStoreError::InvalidTransition("Quick Request expiry overflow".into())
+            })?;
+        let lifecycle = QuickRequestLifecycle {
+            created_at: task.created_at,
+            dismissed_at: None,
+            expires_at: Some(expires_at),
+            expired_at: None,
+            promoted_at: None,
+        };
+        safety::validate_name(&task.name)?;
+        safety::validate_slug(&task.slug)?;
+        let mut connection = self.lock()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let guard = self.insert_task(&transaction, task, Some(&lifecycle))?;
+        Self::insert_session_with_model(&transaction, session, Some(selected_model))?;
+        transaction.commit()?;
+        if let Some(guard) = guard {
+            guard.commit();
+        }
+        let task = Self::get_task_from(&connection, &task.id)?.ok_or_else(|| {
+            ManagementStoreError::NotFound(format!("Quick Request task {}", task.id))
+        })?;
+        let session = Self::get_session_from(&connection, &session.open_code_session_id)?;
+        Ok(QuickRequestRecord { task, session })
+    }
+
+    pub fn list_quick_requests(&self, history: bool) -> StoreResult<Vec<QuickRequestRecord>> {
+        let workspace = self
+            .list_workspaces()?
+            .into_iter()
+            .find(|workspace| workspace.kind == WorkspaceKind::QuickRequests);
+        let Some(workspace) = workspace else {
+            return Ok(Vec::new());
+        };
+        let tasks = self.list_tasks(&workspace.id)?;
+        let mut result = Vec::new();
+        for task in tasks
+            .into_iter()
+            .filter(|task| task.quick_request.is_some())
+        {
+            let session = self
+                .list_sessions(&SessionOwner::Task(task.id.clone()))?
+                .into_iter()
+                .next();
+            let session_active = session.as_ref().is_some_and(|session| {
+                matches!(
+                    session.last_known_status.as_str(),
+                    "starting" | "running" | "waiting_for_input" | "input_waiting"
+                )
+            });
+            let visible = task.quick_request.as_ref().is_some_and(|request| {
+                history
+                    || (request.promoted_at.is_none()
+                        && (session_active
+                            || (request.dismissed_at.is_none() && request.expired_at.is_none())))
+            });
+            if visible {
+                result.push(QuickRequestRecord { task, session });
+            }
+        }
+        Ok(result)
     }
 
     fn insert_task(
@@ -900,7 +1288,8 @@ impl ManagementStore {
             .query_row(
                 "SELECT id, workspace_id, name, slug, description, home_path, status, setup_status,
                         created_at, completed_at, quick_request_created_at, quick_request_dismissed_at,
-                        quick_request_expires_at, quick_request_expired_at, quick_request_promoted_at
+                        quick_request_expires_at, quick_request_expired_at, quick_request_promoted_at,
+                        setup_operation_id, setup_session_id, setup_cancelled_at, setup_cancellation_detail
                  FROM tasks WHERE id = ?1",
                 [id],
                 task_from_row,
@@ -914,7 +1303,8 @@ impl ManagementStore {
         let mut statement = connection.prepare(
             "SELECT id, workspace_id, name, slug, description, home_path, status, setup_status,
                     created_at, completed_at, quick_request_created_at, quick_request_dismissed_at,
-                    quick_request_expires_at, quick_request_expired_at, quick_request_promoted_at
+                    quick_request_expires_at, quick_request_expired_at, quick_request_promoted_at,
+                    setup_operation_id, setup_session_id, setup_cancelled_at, setup_cancellation_detail
              FROM tasks WHERE workspace_id = ?1 ORDER BY created_at, id",
         )?;
         let rows = statement.query_map([workspace_id], task_from_row)?;
@@ -989,6 +1379,165 @@ impl ManagementStore {
             .ok_or_else(|| ManagementStoreError::NotFound(format!("task {id}")))
     }
 
+    /// Binds the durable setup operation to the exact OpenCode conversation.
+    /// This identity is immutable for the lifetime of the task setup.
+    pub fn bind_task_setup_operation(
+        &self,
+        task_id: &str,
+        operation_id: &str,
+        session_id: &str,
+    ) -> StoreResult<Task> {
+        if operation_id.trim().is_empty() || session_id.trim().is_empty() {
+            return Err(ManagementStoreError::InvalidTransition(
+                "setup operation and session IDs are required".into(),
+            ));
+        }
+        let connection = self.lock()?;
+        let task = Self::get_task_from(&connection, task_id)?
+            .ok_or_else(|| ManagementStoreError::NotFound(format!("task {task_id}")))?;
+        if let Some(existing) = task.setup_operation_id.as_deref() {
+            if existing != operation_id || task.setup_session_id.as_deref() != Some(session_id) {
+                return Err(ManagementStoreError::InvalidTransition(
+                    "task setup operation identity cannot be changed".into(),
+                ));
+            }
+            connection.execute(
+                "INSERT OR IGNORE INTO setup_operation_state(
+                     operation_id, workspace_id, task_id, session_id, status, canceled_at
+                 ) VALUES (?1, ?2, ?3, ?4, 'active', NULL)",
+                params![operation_id, task.workspace_id, task_id, session_id],
+            )?;
+            return Ok(task);
+        }
+        connection.execute(
+            "UPDATE tasks SET setup_operation_id = ?2, setup_session_id = ?3 WHERE id = ?1",
+            params![task_id, operation_id, session_id],
+        )?;
+        connection.execute(
+            "INSERT OR IGNORE INTO setup_operation_state(
+                 operation_id, workspace_id, task_id, session_id, status, canceled_at
+             ) VALUES (?1, ?2, ?3, ?4, 'active', NULL)",
+            params![operation_id, task.workspace_id, task_id, session_id],
+        )?;
+        Self::get_task_from(&connection, task_id)?
+            .ok_or_else(|| ManagementStoreError::NotFound(format!("task {task_id}")))
+    }
+
+    pub fn cancel_task_setup(&self, id: &str) -> StoreResult<Task> {
+        let mut connection = self.lock()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let task = Self::get_task_from(&transaction, id)?
+            .ok_or_else(|| ManagementStoreError::NotFound(format!("task {id}")))?;
+        if task.status != TaskStatus::Active {
+            return Err(ManagementStoreError::InvalidTransition(
+                "completed tasks cannot resume setup".into(),
+            ));
+        }
+        let operation_id = task.setup_operation_id.ok_or_else(|| {
+            ManagementStoreError::InvalidTransition("task setup has no operation identity".into())
+        })?;
+        let session_id = task.setup_session_id.ok_or_else(|| {
+            ManagementStoreError::InvalidTransition("task setup has no session identity".into())
+        })?;
+        let now = management_now_millis();
+        if task.setup_cancelled_at.is_some() {
+            return Err(ManagementStoreError::InvalidTransition(
+                "task setup is already canceled".into(),
+            ));
+        }
+        let detail = "setup canceled by user";
+        transaction.execute(
+            "UPDATE setup_operation_state SET status = 'canceled', canceled_at = ?2
+             WHERE operation_id = ?1 AND task_id = ?3 AND session_id = ?4",
+            params![operation_id, now, id, session_id],
+        )?;
+        transaction.execute(
+            "UPDATE tasks SET setup_status = 'incomplete', setup_cancelled_at = ?2,
+                    setup_cancellation_detail = ?3 WHERE id = ?1",
+            params![id, now, detail],
+        )?;
+        transaction.execute(
+            "UPDATE sessions SET last_known_status = 'canceled', updated_at = ?2 WHERE open_code_session_id = ?1",
+            params![session_id, now],
+        )?;
+        transaction.execute(
+            "INSERT OR IGNORE INTO setup_events(event_id, task_id, operation_id, session_id, event_type, detail, created_at)
+             VALUES (?1, ?2, ?3, ?4, 'canceled', ?5, ?6)",
+            params![format!("cancel-{id}-{now}"), id, operation_id, session_id, detail, now],
+        )?;
+        let task = Self::get_task_from(&transaction, id)?
+            .ok_or_else(|| ManagementStoreError::NotFound(id.into()))?;
+        transaction.commit()?;
+        Ok(task)
+    }
+
+    pub fn resume_task_setup(
+        &self,
+        id: &str,
+        operation_id: Option<&str>,
+        session_id: Option<&str>,
+    ) -> StoreResult<Task> {
+        let connection = self.lock()?;
+        let task = Self::get_task_from(&connection, id)?
+            .ok_or_else(|| ManagementStoreError::NotFound(format!("task {id}")))?;
+        if task.status != TaskStatus::Active {
+            return Err(ManagementStoreError::InvalidTransition(
+                "completed tasks cannot resume setup".into(),
+            ));
+        }
+        if task.setup_operation_id.is_none() || task.setup_session_id.is_none() {
+            return Err(ManagementStoreError::InvalidTransition(
+                "task setup has no operation identity".into(),
+            ));
+        }
+        if operation_id != task.setup_operation_id.as_deref()
+            || session_id != task.setup_session_id.as_deref()
+        {
+            return Err(ManagementStoreError::InvalidTransition(
+                "resume must use the task's existing setup operation and session".into(),
+            ));
+        }
+        if task.setup_status != TaskSetupStatus::Incomplete || task.setup_cancelled_at.is_none() {
+            return Err(ManagementStoreError::InvalidTransition(
+                "only canceled, incomplete task setup can be resumed".into(),
+            ));
+        }
+        let now = management_now_millis();
+        let canceled: bool = connection.query_row(
+            "SELECT status = 'canceled' FROM setup_operation_state
+             WHERE operation_id = ?1 AND task_id = ?2 AND session_id = ?3",
+            params![task.setup_operation_id, id, task.setup_session_id],
+            |row| row.get(0),
+        )?;
+        if !canceled {
+            return Err(ManagementStoreError::InvalidTransition(
+                "setup operation is not canceled".into(),
+            ));
+        }
+        connection.execute(
+            "UPDATE setup_operation_state SET status = 'active', canceled_at = NULL
+             WHERE operation_id = ?1 AND task_id = ?2 AND session_id = ?3",
+            params![task.setup_operation_id, id, task.setup_session_id],
+        )?;
+        connection.execute(
+            "UPDATE tasks SET setup_status = 'in_progress', setup_cancelled_at = NULL,
+                    setup_cancellation_detail = NULL WHERE id = ?1",
+            [id],
+        )?;
+        let task = Self::get_task_from(&connection, id)?
+            .ok_or_else(|| ManagementStoreError::NotFound(id.into()))?;
+        connection.execute(
+            "UPDATE sessions SET last_known_status = 'starting', updated_at = ?2 WHERE open_code_session_id = ?1",
+            params![task.setup_session_id.clone(), now],
+        )?;
+        connection.execute(
+            "INSERT OR IGNORE INTO setup_events(event_id, task_id, operation_id, session_id, event_type, detail, created_at)
+             VALUES (?1, ?2, ?3, ?4, 'resumed', NULL, ?5)",
+            params![format!("resume-{id}-{now}"), id, task.setup_operation_id.clone(), task.setup_session_id.clone(), now],
+        )?;
+        Ok(task)
+    }
+
     pub fn complete_task(&self, id: &str, completed_at: i64) -> StoreResult<Task> {
         let connection = self.lock()?;
         let task = Self::get_task_from(&connection, id)?
@@ -1002,6 +1551,47 @@ impl ManagementStore {
             "UPDATE tasks SET status = 'completed', completed_at = ?2 WHERE id = ?1",
             params![id, completed_at],
         )?;
+        Self::get_task_from(&connection, id)?
+            .ok_or_else(|| ManagementStoreError::NotFound(format!("task {id}")))
+    }
+
+    /// Complete and enqueue all existing worktrees in one transaction.  No Git
+    /// command is involved in this operation; cleanup is deliberately a later
+    /// worker action.
+    pub fn complete_task_and_queue_cleanup(
+        &self,
+        id: &str,
+        completed_at: i64,
+    ) -> StoreResult<Task> {
+        let mut connection = self.lock()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let task = Self::get_task_from(&transaction, id)?
+            .ok_or_else(|| ManagementStoreError::NotFound(format!("task {id}")))?;
+        if task.status != TaskStatus::Active {
+            return Err(ManagementStoreError::InvalidTransition(format!(
+                "completed task {id} cannot be completed or reopened"
+            )));
+        }
+        transaction.execute(
+            "UPDATE tasks SET status = 'completed', completed_at = ?2 WHERE id = ?1",
+            params![id, completed_at],
+        )?;
+        let mut bindings = transaction.prepare("SELECT task_id, repository_id, worktree_path FROM task_repositories WHERE task_id = ?1")?;
+        let rows = bindings
+            .query_map([id], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        drop(bindings);
+        for (task_id, repository_id, worktree_path) in rows {
+            let job_id = format!("cleanup-{task_id}-{repository_id}");
+            transaction.execute("INSERT INTO cleanup_jobs(id, task_id, repository_id, worktree_path, state, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, 'queued', ?5, ?5) ON CONFLICT(task_id, repository_id, worktree_path) DO NOTHING", params![job_id, task_id, repository_id, worktree_path, completed_at])?;
+        }
+        transaction.commit()?;
         Self::get_task_from(&connection, id)?
             .ok_or_else(|| ManagementStoreError::NotFound(format!("task {id}")))
     }
@@ -1221,6 +1811,57 @@ impl ManagementStore {
         )?;
         let rows = statement.query_map([], repository_from_row)?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Add a verified discovery result, updating an existing catalog record by
+    /// either its canonical path or Git identity. Git facts always win over
+    /// proposal text supplied by the caller.
+    pub fn catalog_discovered_repository(
+        &self,
+        id: &str,
+        path: &Path,
+        purpose: Option<&str>,
+        created_at: i64,
+    ) -> StoreResult<Repository> {
+        let inspection = safety::inspect_repository(path)?;
+        let canonical_path = path_to_string(&inspection.repository.canonical_root)?;
+        let name = inspection
+            .repository
+            .canonical_root
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("Repository");
+        let connection = self.lock()?;
+        let existing = connection.query_row(
+            "SELECT id FROM repository_catalog WHERE repository_path = ?1 OR repository_identity = ?2 LIMIT 1",
+            params![canonical_path, inspection.repository.identity], |row| row.get::<_, String>(0)).optional()?;
+        if let Some(existing_id) = existing {
+            drop(connection);
+            let repository = self
+                .get_repository(&existing_id)?
+                .ok_or_else(|| ManagementStoreError::NotFound(existing_id.clone()))?;
+            if purpose.is_none() {
+                return Ok(repository);
+            }
+            let connection = self.lock()?;
+            connection.execute("UPDATE repository_catalog SET purpose = ?2, purpose_status = 'available', updated_at = ?3 WHERE id = ?1", params![existing_id, purpose, created_at])?;
+            return Self::get_repository_from(&connection, &existing_id)?
+                .ok_or_else(|| ManagementStoreError::NotFound(existing_id));
+        }
+        drop(connection);
+        self.create_repository(&NewRepository {
+            id: id.to_owned(),
+            name: name.to_owned(),
+            repository_path: canonical_path,
+            repository_identity: inspection.repository.identity,
+            purpose: purpose.map(str::to_owned),
+            purpose_status: if purpose.is_some() {
+                PurposeStatus::Available
+            } else {
+                PurposeStatus::Unavailable
+            },
+            created_at,
+        })
     }
 
     /// Catalogs a repository explicitly selected by the user. This is the only
@@ -1462,11 +2103,49 @@ impl ManagementStore {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
+    /// Preserve an attempted attachment when setup is incomplete. This is
+    /// intentionally separate from the verified binding path: failed paths
+    /// are visible for correction but are never used as session context.
+    pub fn record_workspace_repository_failure(
+        &self,
+        binding: &WorkspaceRepositoryBinding,
+    ) -> StoreResult<()> {
+        let connection = self.lock()?;
+        let workspace =
+            Self::get_workspace_from(&connection, &binding.workspace_id)?.ok_or_else(|| {
+                ManagementStoreError::NotFound(format!("workspace {}", binding.workspace_id))
+            })?;
+        if workspace.kind != WorkspaceKind::Regular || workspace.status != WorkspaceStatus::Active {
+            return Err(ManagementStoreError::InvalidTransition(
+                "workspace repository bindings require an active regular workspace".into(),
+            ));
+        }
+        let _: String = connection.query_row(
+            "SELECT id FROM repository_catalog WHERE id = ?1",
+            [&binding.repository_id],
+            |row| row.get(0),
+        )?;
+        connection.execute(
+            "INSERT INTO workspace_repositories(workspace_id, repository_id, checkout_path, checkout_mode, branch, verification_status, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, 'failed', ?6)
+             ON CONFLICT(workspace_id, repository_id) DO UPDATE SET checkout_path=excluded.checkout_path, checkout_mode=excluded.checkout_mode, branch=excluded.branch, verification_status='failed'",
+            params![binding.workspace_id, binding.repository_id, binding.checkout_path, binding.checkout_mode.as_str(), binding.branch, binding.created_at],
+        )?;
+        Ok(())
+    }
+
     pub(crate) fn save_task_repository_binding(
         &self,
         binding: &TaskRepositoryBinding,
     ) -> StoreResult<()> {
         let connection = self.lock()?;
+        Self::save_task_repository_binding_from(&connection, binding)
+    }
+
+    fn save_task_repository_binding_from(
+        connection: &Connection,
+        binding: &TaskRepositoryBinding,
+    ) -> StoreResult<()> {
         connection.execute(
             "INSERT INTO task_repositories(
                 task_id, repository_id, branch, worktree_path, setup_status, error_code,
@@ -1497,12 +2176,20 @@ impl ManagementStore {
         &self,
         binding: &TaskRepositoryBinding,
     ) -> StoreResult<()> {
+        let connection = self.lock()?;
+        self.validate_and_save_task_repository_binding_from(&connection, binding)
+    }
+
+    fn validate_and_save_task_repository_binding_from(
+        &self,
+        connection: &Connection,
+        binding: &TaskRepositoryBinding,
+    ) -> StoreResult<()> {
         if binding.setup_status != RepositorySetupStatus::Ready {
             return Err(ManagementStoreError::InvalidTransition(
                 "only a ready, independently verified worktree can be bound".into(),
             ));
         }
-        let connection = self.lock()?;
         let task = Self::get_task_from(&connection, &binding.task_id)?
             .ok_or_else(|| ManagementStoreError::NotFound(format!("task {}", binding.task_id)))?;
         if task.status != TaskStatus::Active
@@ -1619,12 +2306,11 @@ impl ManagementStore {
                 "branch is already associated with another active task".into(),
             )));
         }
-        drop(connection);
         let canonical_binding = TaskRepositoryBinding {
             worktree_path: path_to_string(&canonical_worktree)?,
             ..binding.clone()
         };
-        self.save_task_repository_binding(&canonical_binding)
+        Self::save_task_repository_binding_from(connection, &canonical_binding)
     }
 
     pub fn list_task_repository_bindings(
@@ -1653,6 +2339,215 @@ impl ManagementStore {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
+    /// Applies one idempotent report from the task setup tool.  Validation is
+    /// deliberately item-scoped: one bad worktree never rolls back a valid
+    /// worktree reported in the same OpenCode turn.
+    pub fn apply_registration_report(
+        &self,
+        report: &RegistrationReport,
+    ) -> StoreResult<RegistrationResult> {
+        if report.operation_id.trim().is_empty()
+            || report.workspace_id.trim().is_empty()
+            || report.task_id.trim().is_empty()
+            || report.session_id.trim().is_empty()
+        {
+            return Err(ManagementStoreError::InvalidTransition(
+                "operation, workspace, task, and session IDs are required".into(),
+            ));
+        }
+        let report_json = serde_json::to_string(report).map_err(|e| {
+            ManagementStoreError::InvalidTransition(format!(
+                "could not serialize setup report: {e}"
+            ))
+        })?;
+        let mut connection = self.lock()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        {
+            let canceled: bool = transaction.query_row(
+                "SELECT EXISTS(SELECT 1 FROM setup_operation_state
+                 WHERE operation_id = ?1 AND task_id = ?2 AND session_id = ?3
+                   AND status = 'canceled')",
+                params![report.operation_id, report.task_id, report.session_id],
+                |row| row.get(0),
+            )?;
+            if canceled {
+                return Err(ManagementStoreError::InvalidTransition(
+                    "setup operation is canceled; resume it explicitly before reporting".into(),
+                ));
+            }
+            if let Some((stored_report, stored_result)) = transaction
+                .query_row(
+                    "SELECT report_json, result_json FROM setup_operations WHERE operation_id = ?1",
+                    [&report.operation_id],
+                    |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+                )
+                .optional()?
+            {
+                if stored_report != report_json {
+                    return Err(ManagementStoreError::InvalidTransition(
+                        "operation ID was already applied with different content".into(),
+                    ));
+                }
+                let mut result: RegistrationResult = serde_json::from_str(&stored_result)
+                    .map_err(|e| ManagementStoreError::InvalidTransition(e.to_string()))?;
+                result.replayed = true;
+                transaction.commit()?;
+                return Ok(result);
+            }
+        }
+
+        let task = Self::get_task_from(&transaction, &report.task_id)?
+            .ok_or_else(|| ManagementStoreError::NotFound(format!("task {}", report.task_id)))?;
+        let workspace =
+            Self::get_workspace_from(&transaction, &report.workspace_id)?.ok_or_else(|| {
+                ManagementStoreError::NotFound(format!("workspace {}", report.workspace_id))
+            })?;
+        if workspace.status != WorkspaceStatus::Active
+            || workspace.kind != WorkspaceKind::Regular
+            || task.status != TaskStatus::Active
+            || task.workspace_id != workspace.id
+        {
+            return Err(ManagementStoreError::InvalidTransition(
+                "setup owner workspace/task is not active or does not match".into(),
+            ));
+        }
+        let session =
+            Self::get_session_from(&transaction, &report.session_id)?.ok_or_else(|| {
+                ManagementStoreError::NotFound(format!("session {}", report.session_id))
+            })?;
+        if session.owner != SessionOwner::Task(task.id.clone())
+            || session.directory != task.home_path
+        {
+            return Err(ManagementStoreError::InvalidTransition(
+                "caller session does not belong to this task or task home".into(),
+            ));
+        }
+        if task.setup_operation_id.as_deref() != Some(report.operation_id.as_str())
+            || task.setup_session_id.as_deref() != Some(report.session_id.as_str())
+        {
+            return Err(ManagementStoreError::InvalidTransition(
+                "registration report does not match the task setup operation".into(),
+            ));
+        }
+        let mut seen = std::collections::HashSet::new();
+        if report.items.is_empty() {
+            return Err(ManagementStoreError::InvalidTransition(
+                "setup report contains no items".into(),
+            ));
+        }
+        let mut output = Vec::with_capacity(report.items.len());
+        for item in &report.items {
+            if !seen.insert(item.item_id.clone()) {
+                return Err(ManagementStoreError::InvalidTransition(format!(
+                    "duplicate setup item {}",
+                    item.item_id
+                )));
+            }
+            let mut accepted = item.clone();
+            let binding = TaskRepositoryBinding {
+                task_id: task.id.clone(),
+                repository_id: item.repository_id.clone(),
+                branch: item.branch.clone().unwrap_or_default(),
+                worktree_path: item.worktree_path.clone().unwrap_or_default(),
+                setup_status: match item.result {
+                    RegistrationItemResult::Ready => RepositorySetupStatus::Ready,
+                    RegistrationItemResult::Failed => RepositorySetupStatus::Failed,
+                    RegistrationItemResult::NotAttempted => RepositorySetupStatus::NotAttempted,
+                },
+                error_code: item.error_code.clone(),
+                error_detail: item.detail.clone(),
+                created_at: task.created_at,
+                updated_at: management_now_millis(),
+            };
+            if matches!(item.result, RegistrationItemResult::Ready) {
+                let metadata_error = (|| -> StoreResult<()> {
+                    let catalog = Self::get_repository_from(&transaction, &item.repository_id)?
+                        .ok_or_else(|| {
+                            ManagementStoreError::NotFound(format!(
+                                "repository {}",
+                                item.repository_id
+                            ))
+                        })?;
+                    let reported =
+                        safety::canonicalize_or_resolve_missing(Path::new(&item.repository_path))?;
+                    let expected = safety::canonicalize_or_resolve_missing(Path::new(
+                        &catalog.repository_path,
+                    ))?;
+                    if reported != expected {
+                        return Err(ManagementStoreError::Safety(SafetyError::IdentityMismatch(
+                            "reported repository path does not match the catalog".into(),
+                        )));
+                    }
+                    let inspection = safety::inspect_repository(Path::new(&item.repository_path))?;
+                    if inspection.repository.identity != item.git_identity
+                        || inspection.repository.identity != catalog.repository_identity
+                    {
+                        return Err(ManagementStoreError::Safety(SafetyError::IdentityMismatch(
+                            "reported Git identity does not match the catalog".into(),
+                        )));
+                    }
+                    Ok(())
+                })();
+                if let Err(error) = metadata_error.and_then(|_| {
+                    self.validate_and_save_task_repository_binding_from(&transaction, &binding)
+                }) {
+                    accepted.result = RegistrationItemResult::Failed;
+                    accepted.error_code = Some("validation_failed".into());
+                    accepted.detail = Some(error.to_string());
+                    let failed = TaskRepositoryBinding {
+                        setup_status: RepositorySetupStatus::Failed,
+                        error_code: accepted.error_code.clone(),
+                        error_detail: accepted.detail.clone(),
+                        ..binding
+                    };
+                    Self::save_task_repository_binding_from(&transaction, &failed)?;
+                }
+            } else {
+                Self::save_task_repository_binding_from(&transaction, &binding)?;
+            }
+            output.push(accepted);
+        }
+        let setup_status = if output
+            .iter()
+            .all(|item| matches!(item.result, RegistrationItemResult::Ready))
+        {
+            TaskSetupStatus::Ready
+        } else {
+            TaskSetupStatus::Incomplete
+        };
+        transaction.execute(
+            "UPDATE tasks SET setup_status = ?2 WHERE id = ?1",
+            params![task.id, setup_status.as_str()],
+        )?;
+        let result = RegistrationResult {
+            operation_id: report.operation_id.clone(),
+            workspace_id: report.workspace_id.clone(),
+            task_id: report.task_id.clone(),
+            session_id: report.session_id.clone(),
+            replayed: false,
+            items: output,
+        };
+        let result_json = serde_json::to_string(&result).map_err(|e| {
+            ManagementStoreError::InvalidTransition(format!(
+                "could not serialize setup result: {e}"
+            ))
+        })?;
+        transaction.execute(
+            "INSERT INTO setup_operations(operation_id, workspace_id, task_id, session_id, report_json, result_json, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![report.operation_id, report.workspace_id, report.task_id, report.session_id, report_json, result_json, management_now_millis()],
+        )?;
+        transaction.commit()?;
+        Ok(result)
+    }
+
+    pub fn list_registration_results(
+        &self,
+        task_id: &str,
+    ) -> StoreResult<Vec<TaskRepositoryBinding>> {
+        self.list_task_repository_bindings(task_id)
+    }
+
     pub fn create_session(&self, session: &NewSession) -> StoreResult<SessionRecord> {
         let connection = self.lock()?;
         Self::insert_session(&connection, session)?;
@@ -1664,7 +2559,30 @@ impl ManagementStore {
         })
     }
 
+    pub fn create_session_with_model(
+        &self,
+        session: &NewSession,
+        selected_model: &str,
+    ) -> StoreResult<SessionRecord> {
+        let connection = self.lock()?;
+        Self::insert_session_with_model(&connection, session, Some(selected_model))?;
+        Self::get_session_from(&connection, &session.open_code_session_id)?.ok_or_else(|| {
+            ManagementStoreError::NotFound(format!(
+                "session {} after insert",
+                session.open_code_session_id
+            ))
+        })
+    }
+
     fn insert_session(connection: &Connection, session: &NewSession) -> StoreResult<()> {
+        Self::insert_session_with_model(connection, session, None)
+    }
+
+    fn insert_session_with_model(
+        connection: &Connection,
+        session: &NewSession,
+        selected_model: Option<&str>,
+    ) -> StoreResult<()> {
         let (workspace_id, task_id) = match &session.owner {
             SessionOwner::Workspace(id) => (Some(id.as_str()), None),
             SessionOwner::Task(id) => (None, Some(id.as_str())),
@@ -1672,15 +2590,16 @@ impl ManagementStore {
         connection.execute(
             "INSERT INTO sessions(
                 open_code_session_id, owner_workspace_id, owner_task_id, directory,
-                last_known_status, created_at, updated_at
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)",
+                last_known_status, created_at, updated_at, selected_model
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, ?7)",
             params![
                 session.open_code_session_id,
                 workspace_id,
                 task_id,
                 session.directory,
                 session.last_known_status,
-                session.created_at
+                session.created_at,
+                selected_model
             ],
         )?;
         Ok(())
@@ -1691,6 +2610,178 @@ impl ManagementStore {
         Self::get_session_from(&connection, open_code_session_id).map_err(Into::into)
     }
 
+    /// Validate the routing tuple supplied by the renderer against the durable
+    /// owner record.  A session id alone is not enough: two Quick Requests can
+    /// deliberately share a directory, while regular sessions must always be
+    /// started in their recorded owner directory.
+    pub fn validate_session_context(
+        &self,
+        session_id: &str,
+        directory: &Path,
+    ) -> StoreResult<SessionRecord> {
+        let session = self
+            .get_session(session_id)?
+            .ok_or_else(|| ManagementStoreError::NotFound(format!("session {session_id}")))?;
+        let actual = safety::canonicalize_or_resolve_missing(directory)?;
+        let persisted = safety::canonicalize_or_resolve_missing(Path::new(&session.directory))?;
+        if actual != persisted {
+            return Err(ManagementStoreError::Safety(SafetyError::InvalidPath(
+                format!("session {session_id} directory does not match its persisted owner"),
+            )));
+        }
+        let owner_expected = match &session.owner {
+            SessionOwner::Workspace(id) => {
+                self.get_workspace(id)?
+                    .ok_or_else(|| ManagementStoreError::NotFound(format!("workspace {id}")))?
+                    .home_path
+            }
+            SessionOwner::Task(id) => {
+                let task = self
+                    .get_task(id)?
+                    .ok_or_else(|| ManagementStoreError::NotFound(format!("task {id}")))?;
+                let quick_shared = task
+                    .quick_request
+                    .as_ref()
+                    .is_some_and(|request| request.promoted_at.is_none());
+                if quick_shared {
+                    self.get_workspace(&task.workspace_id)?
+                        .ok_or_else(|| {
+                            ManagementStoreError::NotFound(format!(
+                                "workspace {}",
+                                task.workspace_id
+                            ))
+                        })?
+                        .home_path
+                } else {
+                    task.home_path
+                }
+            }
+        };
+        let owner_expected = safety::canonicalize_or_resolve_missing(Path::new(&owner_expected))?;
+        // A promoted Quick Request keeps its historical shared-directory
+        // sessions. Future sessions use the dedicated task home.
+        let historical_quick = if let SessionOwner::Task(id) = &session.owner {
+            let task = self
+                .get_task(id)?
+                .ok_or_else(|| ManagementStoreError::NotFound(format!("task {id}")))?;
+            if task
+                .quick_request
+                .as_ref()
+                .is_some_and(|request| request.promoted_at.is_some())
+            {
+                let quick_workspace = self.get_workspace(&task.workspace_id)?.ok_or_else(|| {
+                    ManagementStoreError::NotFound(format!("workspace {}", task.workspace_id))
+                })?;
+                persisted
+                    == safety::canonicalize_or_resolve_missing(Path::new(
+                        &quick_workspace.home_path,
+                    ))?
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+        if actual != owner_expected && !historical_quick {
+            return Err(ManagementStoreError::Safety(SafetyError::InvalidPath(
+                format!("session {session_id} directory does not match its owner context"),
+            )));
+        }
+        Ok(session)
+    }
+
+    /// Atomically claim the initial prompt.  Frontend disabled buttons are only
+    /// presentation; this compare-and-set prevents duplicate generation when
+    /// two invocations cross at the Tauri boundary.
+    pub fn claim_initial_prompt(&self, session_id: &str) -> StoreResult<SessionRecord> {
+        let connection = self.lock()?;
+        let changed = connection.execute(
+            "UPDATE sessions SET last_known_status = 'prompting', updated_at = ?2
+             WHERE open_code_session_id = ?1 AND last_known_status = 'starting'",
+            params![session_id, management_now_millis()],
+        )?;
+        if changed == 0 {
+            return Err(ManagementStoreError::InvalidTransition(format!(
+                "session {session_id} has already started or cannot be prompted"
+            )));
+        }
+        Self::get_session_from(&connection, session_id)?
+            .ok_or_else(|| ManagementStoreError::NotFound(format!("session {session_id}")))
+    }
+
+    /// A claimed prompt is never left in the non-recoverable `prompting` state.
+    /// Persist failure and uncertainty together so restart recovery can surface
+    /// the record and an explicit retry can reconcile it first.
+    pub fn mark_initial_prompt_failed(
+        &self,
+        session_id: &str,
+        updated_at: i64,
+    ) -> StoreResult<SessionRecord> {
+        let connection = self.lock()?;
+        let changed = connection.execute(
+            "UPDATE sessions SET last_known_status='failed', reconciliation_status='failed',
+             reconciliation_uncertain=1, updated_at=?2
+             WHERE open_code_session_id=?1 AND last_known_status IN ('prompting', 'starting')",
+            params![session_id, updated_at],
+        )?;
+        if changed == 0 {
+            return Err(ManagementStoreError::InvalidTransition(format!(
+                "session {session_id} cannot be marked failed"
+            )));
+        }
+        Self::get_session_from(&connection, session_id)?
+            .ok_or_else(|| ManagementStoreError::NotFound(session_id.into()))
+    }
+
+    /// Explicit retry/reconciliation is the only way to move a failed initial
+    /// prompt back to startup; no automatic resend is attempted.
+    pub fn retry_initial_prompt(
+        &self,
+        session_id: &str,
+        updated_at: i64,
+    ) -> StoreResult<SessionRecord> {
+        let connection = self.lock()?;
+        let changed = connection.execute(
+            "UPDATE sessions SET last_known_status='starting', reconciliation_status='unknown',
+             reconciliation_uncertain=1, updated_at=?2
+             WHERE open_code_session_id=?1 AND last_known_status='failed'",
+            params![session_id, updated_at],
+        )?;
+        if changed == 0 {
+            return Err(ManagementStoreError::InvalidTransition(format!(
+                "session {session_id} is not retryable"
+            )));
+        }
+        Self::get_session_from(&connection, session_id)?
+            .ok_or_else(|| ManagementStoreError::NotFound(session_id.into()))
+    }
+
+    /// Atomically claims a failed/uncertain initial prompt for an explicit
+    /// retry. Readiness is checked by the command before this compare-and-set;
+    /// doing the claim here prevents two renderer invocations from prompting.
+    pub fn claim_retry_initial_prompt(
+        &self,
+        session_id: &str,
+        updated_at: i64,
+    ) -> StoreResult<SessionRecord> {
+        let connection = self.lock()?;
+        let changed = connection.execute(
+            "UPDATE sessions SET last_known_status='prompting', reconciliation_status='unknown',
+             reconciliation_uncertain=1, updated_at=?2
+             WHERE open_code_session_id=?1 AND
+               last_known_status IN ('failed', 'unknown', 'reconnecting') AND
+               (last_known_status='failed' OR reconciliation_uncertain=1)",
+            params![session_id, updated_at],
+        )?;
+        if changed == 0 {
+            return Err(ManagementStoreError::InvalidTransition(format!(
+                "session {session_id} is not retryable"
+            )));
+        }
+        Self::get_session_from(&connection, session_id)?
+            .ok_or_else(|| ManagementStoreError::NotFound(format!("session {session_id}")))
+    }
+
     fn get_session_from(
         connection: &Connection,
         id: &str,
@@ -1698,7 +2789,8 @@ impl ManagementStore {
         connection
             .query_row(
                 "SELECT open_code_session_id, owner_workspace_id, owner_task_id, directory,
-                        last_known_status, created_at, updated_at FROM sessions
+                        last_known_status, created_at, updated_at, event_cursor,
+                        reconciliation_status, reconciliation_uncertain, pending_input_json, selected_model FROM sessions
                  WHERE open_code_session_id = ?1",
                 [id],
                 |row| {
@@ -1716,6 +2808,11 @@ impl ManagementStore {
                         last_known_status: row.get(4)?,
                         created_at: row.get(5)?,
                         updated_at: row.get(6)?,
+                        event_cursor: row.get(7)?,
+                        reconciliation_status: row.get(8)?,
+                        reconciliation_uncertain: row.get::<_, i64>(9)? != 0,
+                        pending_input_json: row.get(10)?,
+                        selected_model: row.get(11)?,
                     })
                 },
             )
@@ -1730,7 +2827,8 @@ impl ManagementStore {
         };
         let sql = format!(
             "SELECT open_code_session_id, owner_workspace_id, owner_task_id, directory,
-                    last_known_status, created_at, updated_at FROM sessions
+                    last_known_status, created_at, updated_at, event_cursor,
+                    reconciliation_status, reconciliation_uncertain, pending_input_json, selected_model FROM sessions
              WHERE {column} = ?1 ORDER BY created_at, open_code_session_id"
         );
         let mut statement = connection.prepare(&sql)?;
@@ -1749,6 +2847,11 @@ impl ManagementStore {
                 last_known_status: row.get(4)?,
                 created_at: row.get(5)?,
                 updated_at: row.get(6)?,
+                event_cursor: row.get(7)?,
+                reconciliation_status: row.get(8)?,
+                reconciliation_uncertain: row.get::<_, i64>(9)? != 0,
+                pending_input_json: row.get(10)?,
+                selected_model: row.get(11)?,
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -1773,6 +2876,77 @@ impl ManagementStore {
         Self::get_session_from(&connection, open_code_session_id)?.ok_or_else(|| {
             ManagementStoreError::NotFound(format!("session {open_code_session_id}"))
         })
+    }
+
+    pub fn list_all_sessions(&self) -> StoreResult<Vec<SessionRecord>> {
+        let connection = self.lock()?;
+        let mut statement = connection.prepare(
+            "SELECT open_code_session_id, owner_workspace_id, owner_task_id, directory,
+             last_known_status, created_at, updated_at, event_cursor, reconciliation_status,
+             reconciliation_uncertain, pending_input_json, selected_model FROM sessions ORDER BY created_at",
+        )?;
+        let rows = statement.query_map([], |row| Self::session_from_row(row))?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Mark durable sessions as needing an API/PTY reconciliation after an
+    /// application restart.  We do not claim that an inactive session is
+    /// complete, and we retain its exact id, directory, cursor, and pending
+    /// input for the reconnect command.
+    pub fn mark_sessions_for_startup_reconciliation(&self, now: i64) -> StoreResult<usize> {
+        let connection = self.lock()?;
+        Ok(connection.execute(
+            "UPDATE sessions
+             SET last_known_status = 'reconnecting',
+                 reconciliation_status = 'reconnecting',
+                 reconciliation_uncertain = 1,
+                 updated_at = ?1
+             WHERE reconciliation_status != 'failed'",
+            [now],
+        )?)
+    }
+
+    fn session_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SessionRecord> {
+        let workspace_id: Option<String> = row.get(1)?;
+        let task_id: Option<String> = row.get(2)?;
+        let owner = match (workspace_id, task_id) {
+            (Some(id), None) => SessionOwner::Workspace(id),
+            (None, Some(id)) => SessionOwner::Task(id),
+            _ => return Err(rusqlite::Error::InvalidQuery),
+        };
+        Ok(SessionRecord {
+            open_code_session_id: row.get(0)?,
+            owner,
+            directory: row.get(3)?,
+            last_known_status: row.get(4)?,
+            created_at: row.get(5)?,
+            updated_at: row.get(6)?,
+            event_cursor: row.get(7)?,
+            reconciliation_status: row.get(8)?,
+            reconciliation_uncertain: row.get::<_, i64>(9)? != 0,
+            pending_input_json: row.get(10)?,
+            selected_model: row.get(11)?,
+        })
+    }
+
+    pub fn update_session_reconciliation(
+        &self,
+        id: &str,
+        status: &str,
+        cursor: Option<&str>,
+        uncertain: bool,
+        pending_input_json: Option<&str>,
+        updated_at: i64,
+    ) -> StoreResult<SessionRecord> {
+        let mut connection = self.lock()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let changed = transaction.execute("UPDATE sessions SET last_known_status=?2, reconciliation_status=?2, event_cursor=?3, reconciliation_uncertain=?4, pending_input_json=?5, updated_at=?6 WHERE open_code_session_id=?1", params![id, status, cursor, uncertain as i64, pending_input_json, updated_at])?;
+        if changed == 0 {
+            return Err(ManagementStoreError::NotFound(format!("session {id}")));
+        }
+        transaction.commit()?;
+        Self::get_session_from(&connection, id)?
+            .ok_or_else(|| ManagementStoreError::NotFound(format!("session {id}")))
     }
 
     /// Inserts a cleanup job once per task/repository/worktree, making retries idempotent.
@@ -1866,6 +3040,7 @@ impl ManagementStore {
     }
 
     pub fn list_cleanup_jobs(&self, task_id: &str) -> StoreResult<Vec<CleanupJob>> {
+        self.recover_stale_cleanup_jobs(now_millis_for_cleanup())?;
         let connection = self.lock()?;
         let mut statement = connection.prepare(
             "SELECT id, task_id, repository_id, worktree_path, state, attempts, last_attempt_at,
@@ -1874,6 +3049,127 @@ impl ManagementStore {
         )?;
         let rows = statement.query_map([task_id], cleanup_job_from_row)?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    pub fn list_pending_cleanup_jobs(&self, now: i64) -> StoreResult<Vec<CleanupJob>> {
+        let connection = self.lock()?;
+        let mut statement = connection.prepare("SELECT id, task_id, repository_id, worktree_path, state, attempts, last_attempt_at, next_attempt_at, deferral_reason, failure_detail, created_at, updated_at FROM cleanup_jobs WHERE state IN ('queued','deferred','failed') AND (next_attempt_at IS NULL OR next_attempt_at <= ?1) ORDER BY created_at, id")?;
+        let rows = statement.query_map([now], cleanup_job_from_row)?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// A process can die after claiming a job and before recording its result.
+    /// Recovery only makes the job retryable; it never removes the worktree.
+    pub fn recover_stale_cleanup_jobs(&self, now: i64) -> StoreResult<usize> {
+        let connection = self.lock()?;
+        let changed = connection.execute(
+            "UPDATE cleanup_jobs
+             SET state = 'queued', attempts = attempts + 1, next_attempt_at = NULL,
+                 deferral_reason = 'recovered after cleanup worker restart; retrying',
+                 failure_detail = NULL, updated_at = ?1
+             WHERE state = 'running' AND
+                   (last_attempt_at IS NULL OR last_attempt_at <= ?2)",
+            params![now, now - CLEANUP_RUNNING_STALE_AFTER_MS],
+        )?;
+        Ok(changed)
+    }
+
+    /// Startup owns the recovery boundary, so even a claim made moments
+    /// before a crash is safe to requeue. Listing uses the stale-only variant
+    /// to avoid stealing a claim from a live worker between its two writes.
+    pub fn recover_running_cleanup_jobs(&self, now: i64) -> StoreResult<usize> {
+        let connection = self.lock()?;
+        let changed = connection.execute(
+            "UPDATE cleanup_jobs
+             SET state = 'queued', attempts = attempts + 1, next_attempt_at = NULL,
+                 deferral_reason = 'recovered after cleanup worker restart; retrying',
+                 failure_detail = NULL, updated_at = ?1
+             WHERE state = 'running'",
+            [now],
+        )?;
+        Ok(changed)
+    }
+
+    /// Executes the same guarded removal path used by the background worker.
+    /// The running claim is persisted before any Git operation, so an
+    /// interrupted process is recoverable on the next startup.
+    pub fn execute_cleanup_job(
+        &self,
+        job_id: &str,
+        runtime_active_directories: &[PathBuf],
+        now: i64,
+    ) -> StoreResult<CleanupJob> {
+        let mut job = self
+            .get_cleanup_job(job_id)?
+            .ok_or_else(|| ManagementStoreError::NotFound(format!("cleanup job {job_id}")))?;
+        if job.state == CleanupJobState::Removed {
+            return Ok(job);
+        }
+        job.state = CleanupJobState::Running;
+        job.attempts += 1;
+        job.last_attempt_at = Some(now);
+        job.next_attempt_at = None;
+        job.deferral_reason = None;
+        job.failure_detail = None;
+        job.updated_at = now;
+        self.update_cleanup_job(&job)?;
+
+        let plan = self.plan_completed_task_cleanup(
+            &job.task_id,
+            &job.repository_id,
+            runtime_active_directories,
+        );
+        let (state, reason, failure) = match plan {
+            Ok(CleanupPlan::Removable {
+                canonical_path,
+                branch_retained,
+            }) => {
+                let result = self
+                    .get_repository(&job.repository_id)
+                    .map_err(|e| e.to_string())
+                    .and_then(|repo| {
+                        repo.ok_or_else(|| "repository catalog entry is missing".to_owned())
+                    })
+                    .and_then(|repo| {
+                        safety::remove_clean_worktree(
+                            Path::new(&repo.repository_path),
+                            Path::new(&canonical_path),
+                            &branch_retained,
+                        )
+                        .map_err(|e| e.to_string())
+                    });
+                match result {
+                    Ok(()) => (CleanupJobState::Removed, None, None),
+                    Err(error) => (CleanupJobState::Failed, None, Some(error)),
+                }
+            }
+            Ok(CleanupPlan::Deferred { reason, .. }) => {
+                (CleanupJobState::Deferred, Some(reason), None)
+            }
+            Ok(CleanupPlan::Retained { reason, .. }) => {
+                (CleanupJobState::Retained, Some(reason), None)
+            }
+            Ok(CleanupPlan::Failed { reason }) => (CleanupJobState::Failed, None, Some(reason)),
+            Err(error) => (CleanupJobState::Failed, None, Some(error.to_string())),
+        };
+        job.state = state;
+        job.deferral_reason = reason;
+        job.failure_detail = failure;
+        job.next_attempt_at =
+            if matches!(state, CleanupJobState::Deferred | CleanupJobState::Failed) {
+                Some(now + 5_000)
+            } else {
+                None
+            };
+        job.updated_at = now;
+        self.update_cleanup_job(&job)
+    }
+
+    pub fn retry_cleanup_jobs(&self, task_id: &str, now: i64) -> StoreResult<Vec<CleanupJob>> {
+        let connection = self.lock()?;
+        connection.execute("UPDATE cleanup_jobs SET state='queued', next_attempt_at=NULL, deferral_reason=NULL, failure_detail=NULL, updated_at=?2 WHERE task_id=?1 AND state <> 'removed'", params![task_id, now])?;
+        drop(connection);
+        self.list_cleanup_jobs(task_id)
     }
 
     /// Plans one completed task binding. Runtime-observed session directories
@@ -2436,6 +3732,10 @@ fn task_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
         created_at: row.get(8)?,
         completed_at: row.get(9)?,
         quick_request,
+        setup_operation_id: row.get(15)?,
+        setup_session_id: row.get(16)?,
+        setup_cancelled_at: row.get(17)?,
+        setup_cancellation_detail: row.get(18)?,
     })
 }
 
@@ -2467,6 +3767,14 @@ fn cleanup_job_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<CleanupJob>
         created_at: row.get(10)?,
         updated_at: row.get(11)?,
     })
+}
+
+fn management_now_millis() -> i64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64
 }
 
 fn path_to_string(path: &Path) -> StoreResult<String> {
@@ -2598,6 +3906,52 @@ mod tests {
             created_at: CREATED,
             updated_at: CREATED + 1,
         }
+    }
+
+    #[test]
+    fn workspace_context_keeps_home_and_verified_main_checkouts_only() {
+        let home = PathBuf::from("/projects/alpha");
+        let verified = WorkspaceRepositoryBinding {
+            workspace_id: "w".into(),
+            repository_id: "r1".into(),
+            checkout_path: "/src/one".into(),
+            checkout_mode: CheckoutMode::Existing,
+            branch: "main".into(),
+            verification_status: VerificationStatus::Verified,
+            created_at: CREATED,
+        };
+        let failed = WorkspaceRepositoryBinding {
+            repository_id: "r2".into(),
+            checkout_path: "/tmp/task-worktree".into(),
+            verification_status: VerificationStatus::Failed,
+            ..verified.clone()
+        };
+        assert_eq!(
+            resolve_workspace_context(&home, &[verified, failed]),
+            vec![home, PathBuf::from("/src/one")]
+        );
+    }
+
+    #[test]
+    fn task_context_keeps_home_and_all_verified_worktrees_isolated() {
+        let home = PathBuf::from("/projects/alpha/tasks/one");
+        let first = task_binding("t", "r1");
+        let second = TaskRepositoryBinding {
+            worktree_path: "/fixtures/worktrees/t-two".into(),
+            ..task_binding("t", "r2")
+        };
+        let failed = TaskRepositoryBinding {
+            setup_status: RepositorySetupStatus::Failed,
+            ..first.clone()
+        };
+        assert_eq!(
+            resolve_task_context(&home, &[first, second, failed]),
+            vec![
+                home,
+                PathBuf::from("/fixtures/worktrees/t"),
+                PathBuf::from("/fixtures/worktrees/t-two")
+            ]
+        );
     }
 
     struct CleanupFixture {
@@ -2733,7 +4087,10 @@ mod tests {
             let store =
                 ManagementStore::open_with_paths(&path, user_home.clone(), system_temp.clone())
                     .unwrap();
-            assert_eq!(store.migration_versions().unwrap(), vec![1, 2]);
+            assert_eq!(
+                store.migration_versions().unwrap(),
+                vec![1, 2, 3, 4, 5, 6, 7]
+            );
             assert_eq!(
                 store.project_home_root().unwrap(),
                 DEFAULT_PROJECT_HOME_ROOT
@@ -2757,7 +4114,10 @@ mod tests {
         }
 
         let reopened = ManagementStore::open_with_paths(&path, user_home, system_temp).unwrap();
-        assert_eq!(reopened.migration_versions().unwrap(), vec![1, 2]);
+        assert_eq!(
+            reopened.migration_versions().unwrap(),
+            vec![1, 2, 3, 4, 5, 6, 7]
+        );
         assert_eq!(
             reopened.get_workspace("w-1").unwrap().unwrap().slug,
             "first"
@@ -2775,12 +4135,51 @@ mod tests {
                 last_known_status: "ready_for_review".into(),
                 created_at: CREATED + 2,
                 updated_at: CREATED + 2,
+                event_cursor: None,
+                reconciliation_status: "unknown".into(),
+                reconciliation_uncertain: true,
+                pending_input_json: None,
+                selected_model: None,
             }
         );
         assert_eq!(
             reopened.project_home_root().unwrap(),
             configured_project_root_text
         );
+    }
+
+    #[test]
+    fn reconciliation_cursor_status_and_pending_input_are_persisted_atomically() {
+        let store = ManagementStore::in_memory().unwrap();
+        store
+            .create_workspace(&workspace("w-reconcile", "reconcile"))
+            .unwrap();
+        store
+            .create_task(&task("t-reconcile", "w-reconcile", "task"))
+            .unwrap();
+        store
+            .create_session(&NewSession {
+                open_code_session_id: "ses-reconcile".into(),
+                owner: SessionOwner::Task("t-reconcile".into()),
+                directory: "/tmp/reconcile".into(),
+                last_known_status: "starting".into(),
+                created_at: 1,
+            })
+            .unwrap();
+        let updated = store
+            .update_session_reconciliation(
+                "ses-reconcile",
+                "waiting_for_input",
+                Some("cursor-7"),
+                false,
+                Some(r#"{"forms":[{"id":"form-1"}]}"#),
+                2,
+            )
+            .unwrap();
+        assert_eq!(updated.event_cursor.as_deref(), Some("cursor-7"));
+        assert_eq!(updated.reconciliation_status, "waiting_for_input");
+        assert!(!updated.reconciliation_uncertain);
+        assert!(updated.pending_input_json.unwrap().contains("form-1"));
     }
 
     #[test]
@@ -3079,6 +4478,102 @@ mod tests {
     }
 
     #[test]
+    fn failed_new_workspace_promotion_rolls_back_workspace_home_and_source_request() {
+        let fixture = tempdir().unwrap();
+        let system_temp = fixture.path().join("system-temp");
+        let quick_directory = quick_requests_directory(&system_temp)
+            .to_string_lossy()
+            .into_owned();
+        let store = ManagementStore::in_memory_with_paths(fixture.path().join("home"), system_temp)
+            .unwrap();
+        store.create_workspace(&quick_workspace()).unwrap();
+        store
+            .create_quick_request(&task("qr-failed-promotion", "w-quick", "request"))
+            .unwrap();
+        store
+            .create_session(&NewSession {
+                open_code_session_id: "ses-failed-promotion".into(),
+                owner: SessionOwner::Task("qr-failed-promotion".into()),
+                directory: quick_directory,
+                last_known_status: "ready_for_review".into(),
+                created_at: CREATED,
+            })
+            .unwrap();
+
+        let workspace = NewWorkspace {
+            id: "w-created-by-promotion".into(),
+            name: "Created by promotion".into(),
+            slug: "created-by-promotion".into(),
+            description: None,
+            kind: WorkspaceKind::Regular,
+            created_at: CREATED,
+        };
+        store.create_workspace(&workspace).unwrap();
+        let home = PathBuf::from(
+            store
+                .get_workspace(&workspace.id)
+                .unwrap()
+                .unwrap()
+                .home_path,
+        );
+        let before = store.get_task("qr-failed-promotion").unwrap().unwrap();
+        let session_before = store.get_session("ses-failed-promotion").unwrap().unwrap();
+
+        // The unsafe slug injects a failure after the new workspace has been
+        // created, before any task or Quick Request fields can be changed.
+        let result = store.promote_quick_request(
+            "qr-failed-promotion",
+            &workspace.id,
+            "../invalid",
+            CREATED + 1,
+        );
+        assert!(result.is_err());
+        store.rollback_new_workspace(&workspace.id).unwrap();
+
+        assert!(store.get_workspace(&workspace.id).unwrap().is_none());
+        assert!(!home.exists());
+        assert_eq!(
+            store.get_task("qr-failed-promotion").unwrap().unwrap(),
+            before
+        );
+        assert_eq!(
+            store.get_session("ses-failed-promotion").unwrap().unwrap(),
+            session_before
+        );
+    }
+
+    #[test]
+    fn failed_task_initialization_rolls_back_task_session_and_managed_home() {
+        let fixture = tempdir().unwrap();
+        let store = ManagementStore::in_memory_with_paths(
+            fixture.path().join("home"),
+            fixture.path().join("system-temp"),
+        )
+        .unwrap();
+        store
+            .create_workspace(&workspace("w-rollback", "rollback-workspace"))
+            .unwrap();
+        let created = store
+            .create_task(&task("t-rollback", "w-rollback", "failed-setup"))
+            .unwrap();
+        store
+            .create_session(&NewSession {
+                open_code_session_id: "ses-rollback".into(),
+                owner: SessionOwner::Task(created.id.clone()),
+                directory: created.home_path.clone(),
+                last_known_status: "starting".into(),
+                created_at: CREATED,
+            })
+            .unwrap();
+
+        store.rollback_new_task(&created.id).unwrap();
+
+        assert!(store.get_task(&created.id).unwrap().is_none());
+        assert!(store.get_session("ses-rollback").unwrap().is_none());
+        assert!(!std::path::Path::new(&created.home_path).exists());
+    }
+
+    #[test]
     fn foreign_key_and_uniqueness_failures_do_not_create_partial_records() {
         let store = ManagementStore::in_memory().unwrap();
         store
@@ -3363,9 +4858,11 @@ mod tests {
         store
             .create_task(&task("t-lifecycle", "w-lifecycle", "task"))
             .unwrap();
-        assert!(store
+        let blocked = store
             .complete_workspace("w-lifecycle", CREATED + 10)
-            .is_err());
+            .unwrap_err()
+            .to_string();
+        assert!(blocked.contains("t-lifecycle"), "{blocked}");
         assert_eq!(
             store.get_workspace("w-lifecycle").unwrap().unwrap().status,
             WorkspaceStatus::Active
@@ -3423,12 +4920,128 @@ mod tests {
             .unwrap()
             .is_none());
 
+        assert_eq!(
+            store.reactivate_workspace("w-lifecycle").unwrap().status,
+            WorkspaceStatus::Active
+        );
+        assert_eq!(
+            store
+                .create_task(&task("t-after-reactivation", "w-lifecycle", "new-work"))
+                .unwrap()
+                .status,
+            TaskStatus::Active
+        );
+
         let connection = store.lock().unwrap();
         assert!(connection
             .execute(
                 "UPDATE tasks SET status = 'active', completed_at = NULL WHERE id = 't-lifecycle'",
                 []
             )
+            .is_err());
+    }
+
+    #[test]
+    fn initial_prompt_claim_is_single_use_and_context_is_exact() {
+        let store = ManagementStore::in_memory().unwrap();
+        store
+            .create_workspace(&workspace("w-route", "route"))
+            .unwrap();
+        let task = store
+            .create_task(&task("t-route", "w-route", "route-task"))
+            .unwrap();
+        let session = store
+            .create_session(&NewSession {
+                open_code_session_id: "ses-route".into(),
+                owner: SessionOwner::Task(task.id.clone()),
+                directory: task.home_path.clone(),
+                last_known_status: "starting".into(),
+                created_at: CREATED,
+            })
+            .unwrap();
+        assert_eq!(
+            store
+                .validate_session_context("ses-route", Path::new(&session.directory))
+                .unwrap(),
+            session
+        );
+        assert!(store
+            .validate_session_context("ses-route", Path::new("/wrong/directory"))
+            .is_err());
+        assert_eq!(
+            store
+                .claim_initial_prompt("ses-route")
+                .unwrap()
+                .last_known_status,
+            "prompting"
+        );
+        assert!(store.claim_initial_prompt("ses-route").is_err());
+    }
+
+    #[test]
+    fn claimed_prompt_failure_is_uncertain_and_explicitly_retryable() {
+        let store = ManagementStore::in_memory().unwrap();
+        store
+            .create_workspace(&workspace("w-prompt-recovery", "recovery"))
+            .unwrap();
+        store
+            .create_task(&task("t-prompt-recovery", "w-prompt-recovery", "request"))
+            .unwrap();
+        let session = NewSession {
+            open_code_session_id: "ses-prompt-recovery".into(),
+            owner: SessionOwner::Task("t-prompt-recovery".into()),
+            directory: "/fixtures/recovery".into(),
+            last_known_status: "starting".into(),
+            created_at: CREATED,
+        };
+        store
+            .create_session_with_model(&session, "openai/gpt-6-luna")
+            .unwrap();
+        store.claim_initial_prompt("ses-prompt-recovery").unwrap();
+        let failed = store
+            .mark_initial_prompt_failed("ses-prompt-recovery", CREATED + 1)
+            .unwrap();
+        assert_eq!(failed.last_known_status, "failed");
+        assert!(failed.reconciliation_uncertain);
+        assert_eq!(
+            store
+                .retry_initial_prompt("ses-prompt-recovery", CREATED + 2)
+                .unwrap()
+                .last_known_status,
+            "starting"
+        );
+    }
+
+    #[test]
+    fn retry_prompt_claim_is_atomic_and_cannot_duplicate_generation() {
+        let store = ManagementStore::in_memory().unwrap();
+        store
+            .create_workspace(&workspace("w-retry-claim", "retry-claim"))
+            .unwrap();
+        store
+            .create_task(&task("t-retry-claim", "w-retry-claim", "request"))
+            .unwrap();
+        store
+            .create_session_with_model(
+                &NewSession {
+                    open_code_session_id: "ses-retry-claim".into(),
+                    owner: SessionOwner::Task("t-retry-claim".into()),
+                    directory: "/fixtures/retry-claim".into(),
+                    last_known_status: "failed".into(),
+                    created_at: CREATED,
+                },
+                "openai/gpt-6-luna",
+            )
+            .unwrap();
+        assert_eq!(
+            store
+                .claim_retry_initial_prompt("ses-retry-claim", CREATED + 1)
+                .unwrap()
+                .last_known_status,
+            "prompting"
+        );
+        assert!(store
+            .claim_retry_initial_prompt("ses-retry-claim", CREATED + 2)
             .is_err());
     }
 

@@ -3,6 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -52,8 +53,55 @@ pub struct BoundaryError {
     pub detail: String,
 }
 
+/// Run an OpenCode/tool boundary command. The command receives one JSON request
+/// on stdin and must write exactly one `RegistrationReport` JSON value to
+/// stdout. Parsing happens before `apply_report`, so malformed child output
+/// cannot mutate the boundary.
+pub fn exchange_registration_report(
+    boundary: &mut RegistrationBoundary,
+    command: &[String],
+    request: &serde_json::Value,
+) -> Result<String, BoundaryError> {
+    let (program, args) = command.split_first().ok_or_else(|| {
+        BoundaryError::new("child_command_required", "A child command is required.")
+    })?;
+    let input = serde_json::to_vec(request)
+        .map_err(|error| BoundaryError::new("request_serialization_failed", error.to_string()))?;
+    let mut child = Command::new(program)
+        .args(args)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|error| BoundaryError::new("child_spawn_failed", error.to_string()))?;
+    child
+        .stdin
+        .take()
+        .expect("child stdin was configured")
+        .write_all(&input)
+        .map_err(|error| BoundaryError::new("child_stdin_failed", error.to_string()))?;
+    let output = child
+        .wait_with_output()
+        .map_err(|error| BoundaryError::new("child_wait_failed", error.to_string()))?;
+    if !output.status.success() {
+        return Err(BoundaryError::new(
+            "child_command_failed",
+            String::from_utf8_lossy(&output.stderr).trim().to_owned(),
+        ));
+    }
+    let report: RegistrationReport = serde_json::from_slice(&output.stdout).map_err(|error| {
+        BoundaryError::new(
+            "child_report_malformed",
+            format!("Child stdout was not a registration report: {error}"),
+        )
+    })?;
+    let result = boundary.apply_report(report)?;
+    serde_json::to_string(&result)
+        .map_err(|error| BoundaryError::new("result_serialization_failed", error.to_string()))
+}
+
 impl BoundaryError {
-    fn new(code: impl Into<String>, detail: impl Into<String>) -> Self {
+    pub fn new(code: impl Into<String>, detail: impl Into<String>) -> Self {
         Self {
             code: code.into(),
             detail: detail.into(),

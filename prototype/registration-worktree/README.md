@@ -16,6 +16,79 @@ temporary fixture directories at the end.
 cargo test --manifest-path prototype/registration-worktree/Cargo.toml
 ```
 
+The MCP protocol test covers `initialize`, `tools/list`, and `tools/call`,
+including malformed arguments, an unknown caller session, and a valid mixed
+report. Run the isolated OpenCode discovery/protocol smoke with:
+
+```sh
+prototype/registration-worktree/mcp-smoke.sh
+```
+
+The script creates a temporary Git project and `opencode.json`, starts an
+app-owned `opencode serve` child, optionally asks the installed CLI to discover
+the local MCP server with `opencode mcp list`, and then performs the protocol
+exchange. It uses no user config or conversation history. The protocol exchange
+is deterministic and does not invoke a model; `opencode mcp list` is discovery,
+not tool invocation.
+
+To run the opt-in live OpenCode v2.0.27 path (with the explicit default model
+shown below), use:
+
+```sh
+LIVE_MODEL=1 MODEL=openai/gpt-6-luna sh prototype/registration-worktree/mcp-smoke.sh
+```
+
+This runs `opencode run --server ... --session ... --model ...` in the temporary
+project, with the local MCP server configured, and prompts the model to invoke
+`register_task_setup` with the prepared report. The script captures OpenCode
+stdout/stderr and MCP server evidence, and only claims success when the server
+records that tool call and a non-error returned result containing
+`setup-op-live`. The fixture uses the exact session ID passed to `opencode run`,
+so Rust ownership validation is unchanged. `MODEL=provider/model` and
+`LIVE_TIMEOUT=seconds` may be overridden. This mode requires an authenticated,
+available provider and model; provider/auth failures, unavailable models,
+timeouts, and nondeterministic model tool selection fail the command rather than
+producing a success claim.
+
+The local server can also be run directly after preparing a context JSON (see
+`mcp_protocol.rs`):
+
+```sh
+cargo run --manifest-path prototype/registration-worktree/Cargo.toml \
+  --bin registration-mcp -- --context /absolute/path/context.json
+```
+
+Its stdio transport is newline-delimited JSON-RPC, the stable local MCP path
+documented by the installed OpenCode v2.0.27 CLI (`opencode mcp --help`).
+`--context` is a disposable prototype fixture that preloads the existing
+`RegistrationBoundary`; it is not persistence and does not replace the
+application's future SQLite command boundary.
+
+To run the executable child-process demonstration (the installed OpenCode
+v2.0.27 CLI does not expose arbitrary registration tools as a stable local
+command), run:
+
+```sh
+cargo run --manifest-path prototype/registration-worktree/Cargo.toml --bin registration-bridge -- cargo run --quiet --manifest-path prototype/registration-worktree/Cargo.toml --bin registration-fixture
+```
+
+`registration-fixture` is a deterministic OpenCode-tool stand-in; this is not
+live model-backed OpenCode evidence. The bridge creates Git fixtures, sends one
+JSON request on the child stdin, reads exactly one `RegistrationReport` JSON
+value from child stdout, deserializes it, passes it to `RegistrationBoundary`,
+and prints the serialized `RegistrationResult` on its stdout. The child command
+contract is therefore:
+
+```text
+stdin:  one JSON request (implementation-defined setup context)
+stdout: one JSON RegistrationReport, with no logging or other stdout
+```
+
+The report fields and item result/error rules are the JSON shape below. A child
+exit failure or malformed stdout is rejected before the in-memory boundary is
+mutated. A real OpenCode/tool command can replace the fixture command when it
+supports this stdin/stdout contract.
+
 ## Report payload
 
 The input and returned item shape is:

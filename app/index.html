@@ -16,14 +16,61 @@
         <span class="environment-label">PRODUCTION SHELL</span>
       </header>
 
-      <section class="welcome" aria-labelledby="welcome-title">
-        <p class="eyebrow">A clear place to begin</p>
-        <h1 id="welcome-title">Your work, in one place.</h1>
-        <p class="intro">
-          The application shell is ready. Workspace and task management will be
-          added here in later implementation steps.
-        </p>
-      </section>
+      <div class="workspace-layout">
+        <aside class="navigation" aria-label="Workspace navigation">
+          <p class="eyebrow">Navigation</p>
+           <div class="navigation-heading"><h2>Workspaces</h2><button id="new-workspace" type="button" class="quiet-button">New</button></div>
+           <ul id="workspace-list" aria-busy="true"><li class="placeholder">Loading…</li></ul>
+           <section class="history-section"><h3>Completed tasks</h3><ul id="task-history-list"><li class="placeholder">None yet</li></ul></section>
+           <section class="history-section"><h3>History</h3><ul id="workspace-history-list"><li class="placeholder">None yet</li></ul></section>
+           <section class="catalog-section" aria-labelledby="catalog-title">
+             <div class="navigation-heading"><h3 id="catalog-title">Repositories</h3><button id="scan-repositories" type="button" class="quiet-button">Scan</button></div>
+             <input id="scan-path" class="compact-input" placeholder="Folder to scan" aria-label="Folder to scan" />
+             <ul id="repository-list"><li class="placeholder">No catalog entries</li></ul>
+           </section>
+          <h2 class="quick-heading">Quick Requests</h2>
+          <ul id="quick-request-list"><li>None yet</li></ul>
+          <button id="show-history" type="button" class="quiet-button">Show history</button>
+        </aside>
+         <section class="quick-view" aria-labelledby="quick-title">
+           <p class="eyebrow">Selected workspace</p>
+            <h1 id="quick-title">Select a workspace</h1>
+            <p id="workspace-description" class="intro">Choose a workspace to continue. New tasks will be scoped to the selected workspace.</p>
+             <div class="workspace-actions">
+               <button id="new-task" type="button" class="quiet-button">New task</button>
+               <button id="attach-repository" type="button" class="quiet-button">Attach selected repository</button>
+               <button id="task-setup-cancel" type="button" class="quiet-button" disabled>Cancel setup</button>
+               <button id="task-setup-resume" type="button" class="quiet-button" disabled>Resume setup</button>
+                <button id="task-setup-refresh" type="button" class="quiet-button" disabled>Refresh setup</button>
+                <button id="new-task-session" type="button" class="quiet-button" disabled>New task session</button>
+                <button id="complete-task" type="button" class="quiet-button" disabled>Complete task</button>
+                 <button id="retry-cleanup" type="button" class="quiet-button" disabled>Retry cleanup</button>
+                 <button id="complete-workspace" type="button" class="quiet-button" disabled>Complete workspace</button>
+                 <button id="reactivate-workspace" type="button" class="quiet-button" disabled>Reactivate workspace</button>
+             </div>
+            <form id="workspace-session-form" class="request-form">
+              <label for="workspace-prompt">Workspace planning prompt</label>
+              <textarea id="workspace-prompt" rows="2" placeholder="Inspect the workspace and plan the next step"></textarea>
+              <button id="workspace-session-submit" type="submit">Start workspace session</button>
+               <p id="workspace-status" class="success-message" role="status" aria-live="polite"></p>
+               <ul id="cleanup-history" aria-label="Task cleanup history"></ul>
+            </form>
+          <p class="intro">Ask OpenCode something without creating a regular workspace. Requests share a temporary directory and expire after 24 hours.</p>
+          <form id="quick-request-form" class="request-form">
+            <label for="quick-prompt">Prompt</label>
+             <textarea id="quick-prompt" required rows="4" aria-describedby="quick-error" placeholder="What should OpenCode help with?"></textarea>
+             <div class="model-row"><label for="quick-model">Model</label><select id="quick-model" required aria-describedby="quick-error" aria-busy="true"><option>Loading models…</option></select></div>
+            <button id="quick-submit" type="submit">Start Quick Request</button>
+            <p id="quick-error" class="error-message" role="alert"></p>
+          </form>
+           <section class="terminal-card" aria-label="OpenCode terminal">
+              <nav id="session-tabs" class="session-tabs" role="tablist" aria-label="OpenCode sessions"></nav>
+              <p id="session-status" class="session-status" role="status" aria-live="polite">No session selected</p>
+             <ul id="pending-inputs" class="pending-inputs" aria-label="Pending input"></ul>
+              <div id="terminal-views" class="terminal-views"></div>
+           </section>
+        </section>
+      </div>
 
       <section class="status-card" aria-labelledby="connection-title">
         <div class="card-heading">

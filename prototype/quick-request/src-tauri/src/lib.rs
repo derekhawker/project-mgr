@@ -5,6 +5,7 @@ use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION};
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::collections::HashMap;
+use std::ffi::OsStr;
 use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
 use std::net::TcpListener;
@@ -17,6 +18,8 @@ use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
+
+pub mod session_state;
 
 const DEFAULT_MODEL: &str = "openai/gpt-6-luna";
 const SETTINGS_FILE: &str = "quick-request-settings.json";
@@ -461,6 +464,102 @@ fn has_user_message(messages: &[Value]) -> bool {
     })
 }
 
+fn opencode_is_executable(path: &Path) -> bool {
+    let Ok(metadata) = fs::metadata(path) else {
+        return false;
+    };
+    if !metadata.is_file() {
+        return false;
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        metadata.permissions().mode() & 0o111 != 0
+    }
+    #[cfg(not(unix))]
+    {
+        true
+    }
+}
+
+fn opencode_home_directory() -> Option<PathBuf> {
+    #[cfg(windows)]
+    {
+        std::env::var_os("USERPROFILE").map(PathBuf::from)
+    }
+    #[cfg(not(windows))]
+    {
+        std::env::var_os("HOME").map(PathBuf::from)
+    }
+}
+
+/// Resolve the exact executable used by every OpenCode child process.
+///
+/// This takes its environment as arguments so tests can exercise PATH-free
+/// launches without changing process-global environment variables.
+fn resolve_opencode_from(
+    override_path: Option<&OsStr>,
+    path: Option<&OsStr>,
+    home: Option<&Path>,
+) -> Result<PathBuf, String> {
+    let mut attempted = Vec::new();
+    let mut candidates = Vec::new();
+    let mut add_candidate = |candidate: PathBuf| {
+        if !candidates.contains(&candidate) {
+            candidates.push(candidate);
+        }
+    };
+
+    if let Some(override_path) = override_path {
+        add_candidate(PathBuf::from(override_path));
+    }
+    if let Some(path) = path {
+        for directory in std::env::split_paths(path) {
+            // Empty PATH components mean the current directory. Do not
+            // silently run an unrelated executable from the launch cwd.
+            if !directory.as_os_str().is_empty() {
+                add_candidate(directory.join("opencode"));
+                #[cfg(windows)]
+                add_candidate(directory.join("opencode.exe"));
+            }
+        }
+    }
+    if let Some(home) = home {
+        add_candidate(home.join(".opencode").join("bin").join("opencode"));
+        add_candidate(home.join(".local").join("bin").join("opencode"));
+        #[cfg(windows)]
+        {
+            add_candidate(home.join(".opencode").join("bin").join("opencode.exe"));
+            add_candidate(home.join(".local").join("bin").join("opencode.exe"));
+        }
+    }
+
+    for candidate in candidates {
+        attempted.push(candidate.display().to_string());
+        if opencode_is_executable(&candidate) {
+            return Ok(candidate);
+        }
+    }
+
+    let attempted = if attempted.is_empty() {
+        "(no candidate paths were available)".to_owned()
+    } else {
+        attempted.join(", ")
+    };
+    Err(format!(
+        "Could not find an executable OpenCode binary. Attempted: {attempted}. Set OPENCODE_BIN to the full path of the executable (for example, OPENCODE_BIN=/path/to/opencode) and restart the app."
+    ))
+}
+
+fn resolve_opencode() -> Result<PathBuf, String> {
+    resolve_opencode_from(
+        std::env::var_os("OPENCODE_BIN").as_deref(),
+        std::env::var_os("PATH").as_deref(),
+        opencode_home_directory().as_deref(),
+    )
+}
+
 fn open_session_terminal(
     app: AppHandle,
     state: &AppState,
@@ -468,6 +567,7 @@ fn open_session_terminal(
     session_id: &str,
     password: &str,
 ) -> Result<(), String> {
+    let opencode = resolve_opencode()?;
     let pty_system = native_pty_system();
     let pair = pty_system
         .openpty(PtySize {
@@ -478,7 +578,7 @@ fn open_session_terminal(
         })
         .map_err(|error| format!("Could not open a terminal for OpenCode: {error}"))?;
 
-    let mut command = CommandBuilder::new("opencode");
+    let mut command = CommandBuilder::new(opencode);
     command.arg("--server");
     command.arg(base_url);
     command.arg("--session");
@@ -655,8 +755,8 @@ fn resize_terminal(
     resize_result.map_err(|error| format!("Could not resize the OpenCode terminal: {error}"))
 }
 
-fn opencode_version() -> Result<String, String> {
-    let output = Command::new("opencode")
+fn opencode_version(opencode: &Path) -> Result<String, String> {
+    let output = Command::new(opencode)
         .arg("--version")
         .output()
         .map_err(|error| format!("Could not run the installed OpenCode command: {error}"))?;
@@ -666,9 +766,9 @@ fn opencode_version() -> Result<String, String> {
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
 }
 
-fn opencode_cli_compatibility() -> Result<String, String> {
-    let version = opencode_version()?;
-    let root_help = Command::new("opencode")
+fn opencode_cli_compatibility(opencode: &Path) -> Result<String, String> {
+    let version = opencode_version(opencode)?;
+    let root_help = Command::new(opencode)
         .arg("--help")
         .output()
         .map_err(|error| format!("Could not check the OpenCode root command: {error}"))?;
@@ -836,7 +936,8 @@ fn ensure_server(state: &AppState) -> Result<(String, String), String> {
         *server_guard = None;
     }
 
-    let cli_version = opencode_cli_compatibility()?;
+    let opencode = resolve_opencode()?;
+    let cli_version = opencode_cli_compatibility(&opencode)?;
     let password = generate_server_password()?;
 
     let listener = TcpListener::bind(("127.0.0.1", 0))
@@ -847,7 +948,7 @@ fn ensure_server(state: &AppState) -> Result<(String, String), String> {
         .port();
     drop(listener);
 
-    let child = Command::new("opencode")
+    let child = Command::new(&opencode)
         .arg("serve")
         .arg("--hostname")
         .arg("127.0.0.1")
@@ -1080,9 +1181,10 @@ mod tests {
     use super::{
         create_session_payload, default_model, has_user_message, initial_prompt_payload,
         latest_populated_session, load_model_settings, model_reference_payload,
-        parse_model_options, register_terminal, require_available_model, unwrap_data_array,
-        unwrap_data_value, validate_root_help, AppState, ChildGuard, ModelOption, PrototypeInfo,
-        QuickRequestInfo, ServerProcess, SessionTerminal, DEFAULT_MODEL, SETTINGS_FILE,
+        parse_model_options, register_terminal, require_available_model, resolve_opencode_from,
+        unwrap_data_array, unwrap_data_value, validate_root_help, AppState, ChildGuard,
+        ModelOption, PrototypeInfo, QuickRequestInfo, ServerProcess, SessionTerminal,
+        DEFAULT_MODEL, SETTINGS_FILE,
     };
     use portable_pty::{native_pty_system, CommandBuilder, PtySize};
     use serde_json::json;
@@ -1100,6 +1202,69 @@ mod tests {
             std::process::id(),
             NEXT_ID.fetch_add(1, Ordering::Relaxed)
         ))
+    }
+
+    fn unique_resolver_dir() -> PathBuf {
+        static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
+        std::env::temp_dir().join(format!(
+            "quick-request-opencode-resolver-test-{}-{}",
+            std::process::id(),
+            NEXT_ID.fetch_add(1, Ordering::Relaxed)
+        ))
+    }
+
+    fn executable_fixture(directory: &PathBuf) -> PathBuf {
+        fs::create_dir_all(directory).expect("create resolver fixture directory");
+        let executable = directory.join("opencode");
+        fs::write(&executable, b"#!/bin/sh\nexit 0\n").expect("write resolver fixture");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&executable, fs::Permissions::from_mode(0o755))
+                .expect("make resolver fixture executable");
+        }
+        executable
+    }
+
+    #[test]
+    fn resolves_a_temporary_executable_without_mutating_process_path() {
+        let directory = unique_resolver_dir();
+        let executable = executable_fixture(&directory);
+
+        let resolved = resolve_opencode_from(None, Some(directory.as_os_str()), None)
+            .expect("resolve fixture from supplied PATH");
+        assert_eq!(resolved, executable);
+        fs::remove_dir_all(directory).expect("remove resolver fixture");
+    }
+
+    #[test]
+    fn resolves_user_local_binary_when_path_is_unavailable() {
+        let home = unique_resolver_dir();
+        let executable = executable_fixture(&home.join(".opencode").join("bin"));
+
+        let resolved = resolve_opencode_from(None, None, Some(&home))
+            .expect("resolve fixture from user-local candidate");
+        assert_eq!(resolved, executable);
+        let _ = fs::remove_dir_all(home);
+    }
+
+    #[test]
+    fn resolver_failure_lists_attempts_and_override_instructions() {
+        let home = unique_resolver_dir();
+        let override_path = home.join("configured-opencode");
+        let path_directory = home.join("path");
+        let error = resolve_opencode_from(
+            Some(override_path.as_os_str()),
+            Some(path_directory.as_os_str()),
+            Some(&home),
+        )
+        .expect_err("missing resolver candidates must fail");
+
+        assert!(error.contains(&override_path.display().to_string()));
+        assert!(error.contains(&path_directory.join("opencode").display().to_string()));
+        assert!(error.contains(&home.join(".opencode/bin/opencode").display().to_string()));
+        assert!(error.contains("OPENCODE_BIN"));
+        let _ = fs::remove_dir_all(home);
     }
 
     #[test]

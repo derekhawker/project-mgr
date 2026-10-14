@@ -744,6 +744,57 @@ pub fn inspect_branch(repository_path: &Path, branch: &str) -> SafetyResult<GitB
     })
 }
 
+/// Remove one already-verified, clean worktree.  This is intentionally the
+/// only Git mutation used by cleanup: it never passes `--force`, and never
+/// touches the branch reference.
+pub fn remove_clean_worktree(
+    repository_path: &Path,
+    worktree_path: &Path,
+    branch: &str,
+) -> SafetyResult<()> {
+    let inspection = inspect_repository(worktree_path)?;
+    let Some(worktree) = inspection.worktrees.iter().find(|item| {
+        item.canonical_path
+            == fs::canonicalize(worktree_path).unwrap_or_else(|_| worktree_path.to_path_buf())
+    }) else {
+        return Err(SafetyError::Git("worktree is not registered by Git".into()));
+    };
+    if worktree.branch.as_deref() != Some(branch)
+        || worktree.clean != Some(true)
+        || worktree.prunable
+        || worktree.locked
+    {
+        return Err(SafetyError::Git(
+            "worktree changed or is not clean/removable".into(),
+        ));
+    }
+    let branch_info = inspect_branch(repository_path, branch)?;
+    if !branch_info.valid
+        || !branch_info.exists
+        || branch_info.owning_worktrees != [worktree.canonical_path.clone()]
+    {
+        return Err(SafetyError::Git(
+            "branch ownership changed while cleaning".into(),
+        ));
+    }
+    let path = worktree_path.as_os_str();
+    let output = git_output(
+        repository_path,
+        &[
+            OsStr::new("worktree"),
+            OsStr::new("remove"),
+            OsStr::new("--"),
+            path,
+        ],
+    )?;
+    if !output.status.success() {
+        return Err(SafetyError::Git(
+            "Git refused clean worktree removal".into(),
+        ));
+    }
+    Ok(())
+}
+
 pub(crate) fn ensure_regular_workspace_home(
     user_home: &Path,
     project_root: &Path,
@@ -783,6 +834,48 @@ pub(crate) fn ensure_regular_task_home(
         id,
         &["notes", "worktrees"],
     )
+}
+
+/// Remove a regular home created by a failed operation, but only when it still
+/// has the exact shape Rust created.  In particular, never remove user files
+/// that may have been added after the operation started.
+pub(crate) fn remove_empty_managed_home(
+    project_root: &Path,
+    target: &Path,
+    owner_kind: &str,
+    owner_id: &str,
+    children: &[&str],
+) -> SafetyResult<()> {
+    let root = fs::canonicalize(project_root)?;
+    let canonical_target = fs::canonicalize(target)?;
+    if !canonical_target.starts_with(&root) || canonical_target != target {
+        return Err(SafetyError::InvalidPath(
+            "managed home changed or escaped its root".into(),
+        ));
+    }
+    let marker = canonical_target.join(".opencode-project-manager-owner");
+    let expected = format!("{owner_kind}\n{owner_id}\n");
+    if fs::read_to_string(&marker)? != expected {
+        return Err(SafetyError::InvalidPath(
+            "managed home ownership marker mismatch".into(),
+        ));
+    }
+    for child in children {
+        let path = canonical_target.join(child);
+        if !fs::canonicalize(&path)?.starts_with(&canonical_target)
+            || fs::read_dir(&path)?.next().is_some()
+        {
+            return Err(SafetyError::InvalidPath(
+                "managed home contains user content".into(),
+            ));
+        }
+    }
+    for child in children {
+        fs::remove_dir(canonical_target.join(child))?;
+    }
+    fs::remove_file(marker)?;
+    fs::remove_dir(canonical_target)?;
+    Ok(())
 }
 
 #[cfg(test)]

@@ -3,5 +3,5 @@
   "identifier": "main-capability",
   "description": "The main window uses only the app command boundary; no plugin permissions are needed by the shell.",
   "windows": ["main"],
-  "permissions": []
+  "permissions": ["core:event:allow-listen", "core:event:allow-unlisten"]
 }

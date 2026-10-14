@@ -1,6 +1,6 @@
 use registration_worktree_prototype::{
-    CleanupClassification, ItemResult, RegistrationBoundary, RegistrationItem, RegistrationReport,
-    RepositoryRecord,
+    exchange_registration_report, CleanupClassification, ItemResult, RegistrationBoundary,
+    RegistrationItem, RegistrationReport, RepositoryRecord,
 };
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -679,4 +679,87 @@ fn registration_does_not_duplicate_history_or_start_a_second_service() {
         existing_opencode_state["session-1"].len(),
         history_before["session-1"].len() + 1
     );
+}
+
+#[test]
+fn child_process_report_is_itemized_and_malformed_output_does_not_mutate() {
+    let fixture = Fixture::new();
+    let mut boundary = fixture.boundary();
+    let alpha = repo_record(&boundary, "repo-alpha");
+    let beta = repo_record(&boundary, "repo-beta");
+    let alpha_worktree = fixture.add_worktree(&fixture.alpha, "child-alpha", "child-alpha");
+    let beta_worktree = fixture.add_worktree(&fixture.beta, "child-beta", "child-beta");
+    let report = report(
+        "child-operation",
+        vec![
+            ready_item("alpha", &alpha, "child-alpha", &alpha_worktree),
+            ready_item("invalid", &beta, "missing-branch", &beta_worktree),
+            outcome_item(
+                "failed",
+                &beta,
+                ItemResult::Failed,
+                "setup_failed",
+                "setup failed",
+            ),
+            outcome_item(
+                "skipped",
+                &beta,
+                ItemResult::NotAttempted,
+                "not_attempted",
+                "skipped",
+            ),
+        ],
+    );
+    let temp = &fixture.temp.path;
+    let report_path = temp.join("child-report.json");
+    let marker_path = temp.join("child-invoked");
+    fs::write(&report_path, serde_json::to_vec(&report).unwrap()).unwrap();
+    let script_path = temp.join("child.sh");
+    fs::write(
+        &script_path,
+        "#!/bin/sh\necho invoked > \"$2\"\ncat \"$1\"\n",
+    )
+    .unwrap();
+    // The fixture is a temporary executable child, not an in-process callback.
+    Command::new("chmod")
+        .arg("+x")
+        .arg(&script_path)
+        .status()
+        .unwrap();
+    let request = serde_json::json!({"kind":"registration_report"});
+    let result_json = exchange_registration_report(
+        &mut boundary,
+        &[
+            script_path.to_string_lossy().into_owned(),
+            report_path.to_string_lossy().into_owned(),
+            marker_path.to_string_lossy().into_owned(),
+        ],
+        &request,
+    )
+    .expect("child report exchange");
+    let result: Value = serde_json::from_str(&result_json).unwrap();
+    assert!(marker_path.exists(), "temporary child was not invoked");
+    assert_eq!(result["items"].as_array().unwrap().len(), 4);
+    assert_eq!(result["items"][0]["result"], "ready");
+    assert_eq!(result["items"][1]["result"], "failed");
+    assert_eq!(result["items"][1]["error_code"], "branch_not_found");
+    assert_eq!(result["items"][2]["result"], "failed");
+    assert_eq!(result["items"][3]["result"], "not_attempted");
+    assert_eq!(boundary.association_count(), 1);
+    assert_eq!(boundary.operation_count(), 1);
+
+    let before = boundary.snapshot();
+    fs::write(&report_path, "not json").unwrap();
+    let error = exchange_registration_report(
+        &mut boundary,
+        &[
+            script_path.to_string_lossy().into_owned(),
+            report_path.to_string_lossy().into_owned(),
+            marker_path.to_string_lossy().into_owned(),
+        ],
+        &request,
+    )
+    .expect_err("malformed child output must fail");
+    assert_eq!(error.code, "child_report_malformed");
+    assert_eq!(boundary.snapshot(), before);
 }

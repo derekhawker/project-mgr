@@ -154,6 +154,22 @@ persistent-PTY API as the default: it advertises `persistentPty` and uses an
     helper-daemon lifecycle is out of bounds unless the no-extra-daemon decision
     is explicitly reopened.
 
+## Production integration coverage
+
+The production boundary tests execute real child processes and the installed
+CLI; they do not substitute a parser-only or mock-server check:
+
+```sh
+cargo test --manifest-path app/src-tauri/Cargo.toml --test opencode_cli_contract -- --nocapture
+```
+
+The installed-CLI tests require OpenCode **v2**. They resolve the configured
+executable, verify `opencode --version` and root `--help` (including
+`--server` and `--session`), start the app-owned `opencode serve` child, and
+authenticate `/api/info` and `/api/model`. The runtime smoke never sends a
+model prompt and kills/waits for the child on cleanup. A fixture test separately
+executes the exact `opencode v2.0.27` version output that exposed the parser bug.
+
 ## Primary sources and local evidence
 
 * [v2 CLI source](https://github.com/anomalyco/opencode/blob/v2.0.27/packages/cli/src/commands/commands.ts)

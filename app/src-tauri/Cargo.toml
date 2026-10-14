@@ -4,6 +4,24 @@ version = "0.1.0"
 description = "OpenCode Project Manager desktop application"
 authors = ["OpenCode project-mgr"]
 edition = "2021"
+default-run = "opencode-project-manager"
+
+[features]
+integration-test-harnesses = []
+
+[[bin]]
+name = "opencode-project-manager"
+path = "src/main.rs"
+
+[[bin]]
+name = "model-loader-harness"
+path = "src/bin/model-loader-harness.rs"
+required-features = ["integration-test-harnesses"]
+
+[[bin]]
+name = "wire-contract-harness"
+path = "src/bin/wire-contract-harness.rs"
+required-features = ["integration-test-harnesses"]
 
 [lib]
 name = "opencode_project_manager_lib"
@@ -16,9 +34,12 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 rusqlite = { version = "0.32.1", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-single-instance = "2"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+base64 = "0.22"
+portable-pty = "0.9"
 
 [dev-dependencies]
-serde_json = "1"
 tempfile = "3"

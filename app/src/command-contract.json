@@ -1,0 +1,4655 @@
+{
+  "app_shell_info": {
+    "payload": "none",
+    "result": {
+      "type": "object",
+      "properties": {
+        "appName": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "appName",
+        "version",
+        "status",
+        "message"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "opencode_runtime_info": {
+    "payload": "none",
+    "result": {
+      "type": "object",
+      "properties": {
+        "executable": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "baseUrl": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "executable",
+        "version",
+        "baseUrl"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "opencode_models": {
+    "payload": "none",
+    "result": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "providerID": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string",
+            "nullable": true
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "providerID",
+          "id",
+          "name",
+          "enabled",
+          "status"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "opencode_model_default": {
+    "payload": "none",
+    "result": {
+      "type": "object",
+      "properties": {
+        "providerId": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "providerId",
+        "id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "opencode_session_create": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "request": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string"
+            },
+            "directory": {
+              "type": "string"
+            },
+            "model": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "providerId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "providerId",
+                "id"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "title",
+            "directory",
+            "model"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "request"
+      ],
+      "additionalProperties": false
+    },
+    "result": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "location": {
+                  "type": "object",
+                  "properties": {
+                    "directory": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "directory"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "id",
+                "location"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "data"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "location": {
+              "type": "object",
+              "properties": {
+                "directory": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "directory"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "id",
+            "location"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    }
+  },
+  "opencode_session_model": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "request": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string"
+            },
+            "model": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "providerId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "providerId",
+                "id"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "sessionId",
+            "model"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "request"
+      ],
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "null"
+    }
+  },
+  "opencode_session_prompt": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "request": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string"
+            },
+            "prompt": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "sessionId",
+            "prompt"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "request"
+      ],
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "null"
+    }
+  },
+  "opencode_permission_reply": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "request": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string"
+            },
+            "requestId": {
+              "type": "string"
+            },
+            "decision": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          "required": [
+            "sessionId",
+            "requestId",
+            "decision"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "request"
+      ],
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "null"
+    }
+  },
+  "opencode_form_reply": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "request": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string"
+            },
+            "requestId": {
+              "type": "string"
+            },
+            "answer": {
+              "type": "json"
+            }
+          },
+          "required": [
+            "sessionId",
+            "requestId",
+            "answer"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "request"
+      ],
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "null"
+    }
+  },
+  "opencode_form_cancel": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "request": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string"
+            },
+            "requestId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "sessionId",
+            "requestId"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "request"
+      ],
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "null"
+    }
+  },
+  "opencode_session_history": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "request": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string"
+            },
+            "order": {
+              "type": "string"
+            },
+            "limit": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "sessionId",
+            "order",
+            "limit"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "request"
+      ],
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "data": {
+          "type": "array",
+          "items": {
+            "type": "json"
+          }
+        },
+        "cursor": {
+          "type": "object",
+          "properties": {
+            "previous": {
+              "type": "string",
+              "nullable": true
+            },
+            "next": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          "required": [
+            "previous",
+            "next"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "sessionId",
+        "data",
+        "cursor"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "opencode_session_status": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "request": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "sessionId"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "request"
+      ],
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "active": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false,
+          "nullable": true
+        },
+        "outcome": {
+          "type": "string",
+          "nullable": true
+        },
+        "applicationStatus": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "active",
+        "outcome",
+        "applicationStatus"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "opencode_session_reconcile": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "request": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string"
+            },
+            "cursor": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          "required": [
+            "sessionId"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "request"
+      ],
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "cursor": {
+          "type": "string",
+          "nullable": true
+        },
+        "history": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string"
+            },
+            "data": {
+              "type": "array",
+              "items": {
+                "type": "json"
+              }
+            },
+            "cursor": {
+              "type": "object",
+              "properties": {
+                "previous": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "next": {
+                  "type": "string",
+                  "nullable": true
+                }
+              },
+              "required": [
+                "previous",
+                "next"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "sessionId",
+            "data",
+            "cursor"
+          ],
+          "additionalProperties": false
+        },
+        "active": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false,
+          "nullable": true
+        },
+        "permissions": {
+          "type": "array",
+          "items": {
+            "type": "json"
+          }
+        },
+        "forms": {
+          "type": "array",
+          "items": {
+            "type": "json"
+          }
+        },
+        "durableEvents": {
+          "type": "array",
+          "items": {
+            "type": "json"
+          }
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "cursor",
+        "history",
+        "active",
+        "permissions",
+        "forms",
+        "durableEvents",
+        "status"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "opencode_pending_inputs": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "request": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "sessionId"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "request"
+      ],
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "permissions": {
+          "type": "array",
+          "items": {
+            "type": "json"
+          }
+        },
+        "forms": {
+          "type": "array",
+          "items": {
+            "type": "json"
+          }
+        }
+      },
+      "required": [
+        "sessionId",
+        "permissions",
+        "forms"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "opencode_pending_inputs_all": {
+    "payload": "none",
+    "result": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string"
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "json"
+            }
+          },
+          "forms": {
+            "type": "array",
+            "items": {
+              "type": "json"
+            }
+          }
+        },
+        "required": [
+          "sessionId",
+          "permissions",
+          "forms"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "opencode_session_pending_inputs": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "request": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "sessionId"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "request"
+      ],
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "permissions": {
+          "type": "array",
+          "items": {
+            "type": "json"
+          }
+        },
+        "forms": {
+          "type": "array",
+          "items": {
+            "type": "json"
+          }
+        }
+      },
+      "required": [
+        "sessionId",
+        "permissions",
+        "forms"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "opencode_session_restore": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId"
+      ],
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "object",
+      "properties": {
+        "openCodeSessionId": {
+          "type": "string"
+        },
+        "owner": {
+          "type": "object",
+          "properties": {
+            "owner_type": {
+              "type": "string"
+            },
+            "owner_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "owner_type",
+            "owner_id"
+          ],
+          "additionalProperties": false
+        },
+        "directory": {
+          "type": "string"
+        },
+        "lastKnownStatus": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "eventCursor": {
+          "type": "string",
+          "nullable": true
+        },
+        "reconciliationStatus": {
+          "type": "string"
+        },
+        "reconciliationUncertain": {
+          "type": "boolean"
+        },
+        "pendingInputJson": {
+          "type": "string",
+          "nullable": true
+        },
+        "selectedModel": {
+          "type": "string",
+          "nullable": true
+        }
+      },
+      "required": [
+        "openCodeSessionId",
+        "owner",
+        "directory",
+        "lastKnownStatus",
+        "createdAt",
+        "updatedAt",
+        "eventCursor",
+        "reconciliationStatus",
+        "reconciliationUncertain",
+        "pendingInputJson",
+        "selectedModel"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "opencode_terminal_attach": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "directory": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "directory"
+      ],
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "object",
+      "properties": {
+        "replay": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "sessionId": {
+                "type": "string"
+              },
+              "dataBase64": {
+                "type": "string",
+                "nullable": true
+              },
+              "operation": {
+                "type": "string",
+                "nullable": true
+              },
+              "message": {
+                "type": "string",
+                "nullable": true
+              }
+            },
+            "required": [
+              "kind",
+              "sessionId",
+              "dataBase64",
+              "operation",
+              "message"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "replay"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "opencode_terminal_replay": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId"
+      ],
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "object",
+      "properties": {
+        "replay": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "sessionId": {
+                "type": "string"
+              },
+              "dataBase64": {
+                "type": "string",
+                "nullable": true
+              },
+              "operation": {
+                "type": "string",
+                "nullable": true
+              },
+              "message": {
+                "type": "string",
+                "nullable": true
+              }
+            },
+            "required": [
+              "kind",
+              "sessionId",
+              "dataBase64",
+              "operation",
+              "message"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "replay"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "opencode_terminal_start": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "directory": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "directory"
+      ],
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "object",
+      "properties": {
+        "replay": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "sessionId": {
+                "type": "string"
+              },
+              "dataBase64": {
+                "type": "string",
+                "nullable": true
+              },
+              "operation": {
+                "type": "string",
+                "nullable": true
+              },
+              "message": {
+                "type": "string",
+                "nullable": true
+              }
+            },
+            "required": [
+              "kind",
+              "sessionId",
+              "dataBase64",
+              "operation",
+              "message"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "replay"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "opencode_terminal_write": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "data": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "null"
+    }
+  },
+  "opencode_terminal_resize": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "cols": {
+          "type": "number"
+        },
+        "rows": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "sessionId",
+        "cols",
+        "rows"
+      ],
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "null"
+    }
+  },
+  "opencode_terminal_detach": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId"
+      ],
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "null"
+    }
+  },
+  "opencode_terminal_cleanup": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId"
+      ],
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "null"
+    }
+  },
+  "quick_request_create": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "request": {
+          "type": "object",
+          "properties": {
+            "prompt": {
+              "type": "string"
+            },
+            "model": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "providerId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "providerId",
+                "id"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "prompt",
+            "model"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "request"
+      ],
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "object",
+      "properties": {
+        "task": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "workspaceId": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "slug": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string",
+              "nullable": true
+            },
+            "homePath": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "setupStatus": {
+              "type": "string"
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "completedAt": {
+              "type": "number",
+              "nullable": true
+            },
+            "quickRequest": {
+              "type": "object",
+              "properties": {
+                "createdAt": {
+                  "type": "number"
+                },
+                "dismissedAt": {
+                  "type": "number",
+                  "nullable": true
+                },
+                "expiresAt": {
+                  "type": "number",
+                  "nullable": true
+                },
+                "expiredAt": {
+                  "type": "number",
+                  "nullable": true
+                },
+                "promotedAt": {
+                  "type": "number",
+                  "nullable": true
+                }
+              },
+              "required": [
+                "createdAt",
+                "dismissedAt",
+                "expiresAt",
+                "expiredAt",
+                "promotedAt"
+              ],
+              "additionalProperties": false,
+              "nullable": true
+            },
+            "setupOperationId": {
+              "type": "string",
+              "nullable": true
+            },
+            "setupSessionId": {
+              "type": "string",
+              "nullable": true
+            },
+            "setupCancelledAt": {
+              "type": "number",
+              "nullable": true
+            },
+            "setupCancellationDetail": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          "required": [
+            "id",
+            "workspaceId",
+            "name",
+            "slug",
+            "description",
+            "homePath",
+            "status",
+            "setupStatus",
+            "createdAt",
+            "completedAt",
+            "quickRequest",
+            "setupOperationId",
+            "setupSessionId",
+            "setupCancelledAt",
+            "setupCancellationDetail"
+          ],
+          "additionalProperties": false
+        },
+        "session": {
+          "type": "object",
+          "nullable": true,
+          "properties": {
+            "openCodeSessionId": {
+              "type": "string"
+            },
+            "owner": {
+              "type": "object",
+              "properties": {
+                "owner_type": {
+                  "type": "string"
+                },
+                "owner_id": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "owner_type",
+                "owner_id"
+              ],
+              "additionalProperties": false
+            },
+            "directory": {
+              "type": "string"
+            },
+            "lastKnownStatus": {
+              "type": "string"
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "updatedAt": {
+              "type": "number"
+            },
+            "eventCursor": {
+              "type": "string",
+              "nullable": true
+            },
+            "reconciliationStatus": {
+              "type": "string"
+            },
+            "reconciliationUncertain": {
+              "type": "boolean"
+            },
+            "pendingInputJson": {
+              "type": "string",
+              "nullable": true
+            },
+            "selectedModel": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          "required": [
+            "openCodeSessionId",
+            "owner",
+            "directory",
+            "lastKnownStatus",
+            "createdAt",
+            "updatedAt",
+            "eventCursor",
+            "reconciliationStatus",
+            "reconciliationUncertain",
+            "pendingInputJson",
+            "selectedModel"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "task",
+        "session"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "quick_request_start_prompt": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "request": {
+          "type": "object",
+          "properties": {
+            "requestId": {
+              "type": "string"
+            },
+            "model": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "providerId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "providerId",
+                "id"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "requestId",
+            "model"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "request"
+      ],
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "null"
+    }
+  },
+  "quick_request_retry_prompt": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "request": {
+          "type": "object",
+          "properties": {
+            "requestId": {
+              "type": "string"
+            },
+            "model": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "providerId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "providerId",
+                "id"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "requestId",
+            "model"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "request"
+      ],
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "object",
+      "properties": {
+        "openCodeSessionId": {
+          "type": "string"
+        },
+        "owner": {
+          "type": "object",
+          "properties": {
+            "owner_type": {
+              "type": "string"
+            },
+            "owner_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "owner_type",
+            "owner_id"
+          ],
+          "additionalProperties": false
+        },
+        "directory": {
+          "type": "string"
+        },
+        "lastKnownStatus": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "eventCursor": {
+          "type": "string",
+          "nullable": true
+        },
+        "reconciliationStatus": {
+          "type": "string"
+        },
+        "reconciliationUncertain": {
+          "type": "boolean"
+        },
+        "pendingInputJson": {
+          "type": "string",
+          "nullable": true
+        },
+        "selectedModel": {
+          "type": "string",
+          "nullable": true
+        }
+      },
+      "required": [
+        "openCodeSessionId",
+        "owner",
+        "directory",
+        "lastKnownStatus",
+        "createdAt",
+        "updatedAt",
+        "eventCursor",
+        "reconciliationStatus",
+        "reconciliationUncertain",
+        "pendingInputJson",
+        "selectedModel"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "quick_request_follow_up": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "request": {
+          "type": "object",
+          "properties": {
+            "requestId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "requestId"
+          ],
+          "additionalProperties": false
+        },
+        "data": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "request",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "null"
+    }
+  },
+  "quick_request_restore": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "request": {
+          "type": "object",
+          "properties": {
+            "requestId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "requestId"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "request"
+      ],
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "object",
+      "properties": {
+        "task": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "workspaceId": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "slug": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string",
+              "nullable": true
+            },
+            "homePath": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "setupStatus": {
+              "type": "string"
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "completedAt": {
+              "type": "number",
+              "nullable": true
+            },
+            "quickRequest": {
+              "type": "object",
+              "properties": {
+                "createdAt": {
+                  "type": "number"
+                },
+                "dismissedAt": {
+                  "type": "number",
+                  "nullable": true
+                },
+                "expiresAt": {
+                  "type": "number",
+                  "nullable": true
+                },
+                "expiredAt": {
+                  "type": "number",
+                  "nullable": true
+                },
+                "promotedAt": {
+                  "type": "number",
+                  "nullable": true
+                }
+              },
+              "required": [
+                "createdAt",
+                "dismissedAt",
+                "expiresAt",
+                "expiredAt",
+                "promotedAt"
+              ],
+              "additionalProperties": false,
+              "nullable": true
+            },
+            "setupOperationId": {
+              "type": "string",
+              "nullable": true
+            },
+            "setupSessionId": {
+              "type": "string",
+              "nullable": true
+            },
+            "setupCancelledAt": {
+              "type": "number",
+              "nullable": true
+            },
+            "setupCancellationDetail": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          "required": [
+            "id",
+            "workspaceId",
+            "name",
+            "slug",
+            "description",
+            "homePath",
+            "status",
+            "setupStatus",
+            "createdAt",
+            "completedAt",
+            "quickRequest",
+            "setupOperationId",
+            "setupSessionId",
+            "setupCancelledAt",
+            "setupCancellationDetail"
+          ],
+          "additionalProperties": false
+        },
+        "session": {
+          "type": "object",
+          "nullable": true,
+          "properties": {
+            "openCodeSessionId": {
+              "type": "string"
+            },
+            "owner": {
+              "type": "object",
+              "properties": {
+                "owner_type": {
+                  "type": "string"
+                },
+                "owner_id": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "owner_type",
+                "owner_id"
+              ],
+              "additionalProperties": false
+            },
+            "directory": {
+              "type": "string"
+            },
+            "lastKnownStatus": {
+              "type": "string"
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "updatedAt": {
+              "type": "number"
+            },
+            "eventCursor": {
+              "type": "string",
+              "nullable": true
+            },
+            "reconciliationStatus": {
+              "type": "string"
+            },
+            "reconciliationUncertain": {
+              "type": "boolean"
+            },
+            "pendingInputJson": {
+              "type": "string",
+              "nullable": true
+            },
+            "selectedModel": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          "required": [
+            "openCodeSessionId",
+            "owner",
+            "directory",
+            "lastKnownStatus",
+            "createdAt",
+            "updatedAt",
+            "eventCursor",
+            "reconciliationStatus",
+            "reconciliationUncertain",
+            "pendingInputJson",
+            "selectedModel"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "task",
+        "session"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "quick_request_list": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "request": {
+          "type": "object",
+          "properties": {
+            "history": {
+              "type": "boolean"
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "request"
+      ],
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "task": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "workspaceId": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "slug": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string",
+                "nullable": true
+              },
+              "homePath": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "setupStatus": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "completedAt": {
+                "type": "number",
+                "nullable": true
+              },
+              "quickRequest": {
+                "type": "object",
+                "properties": {
+                  "createdAt": {
+                    "type": "number"
+                  },
+                  "dismissedAt": {
+                    "type": "number",
+                    "nullable": true
+                  },
+                  "expiresAt": {
+                    "type": "number",
+                    "nullable": true
+                  },
+                  "expiredAt": {
+                    "type": "number",
+                    "nullable": true
+                  },
+                  "promotedAt": {
+                    "type": "number",
+                    "nullable": true
+                  }
+                },
+                "required": [
+                  "createdAt",
+                  "dismissedAt",
+                  "expiresAt",
+                  "expiredAt",
+                  "promotedAt"
+                ],
+                "additionalProperties": false,
+                "nullable": true
+              },
+              "setupOperationId": {
+                "type": "string",
+                "nullable": true
+              },
+              "setupSessionId": {
+                "type": "string",
+                "nullable": true
+              },
+              "setupCancelledAt": {
+                "type": "number",
+                "nullable": true
+              },
+              "setupCancellationDetail": {
+                "type": "string",
+                "nullable": true
+              }
+            },
+            "required": [
+              "id",
+              "workspaceId",
+              "name",
+              "slug",
+              "description",
+              "homePath",
+              "status",
+              "setupStatus",
+              "createdAt",
+              "completedAt",
+              "quickRequest",
+              "setupOperationId",
+              "setupSessionId",
+              "setupCancelledAt",
+              "setupCancellationDetail"
+            ],
+            "additionalProperties": false
+          },
+          "session": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "openCodeSessionId": {
+                "type": "string"
+              },
+              "owner": {
+                "type": "object",
+                "properties": {
+                  "owner_type": {
+                    "type": "string"
+                  },
+                  "owner_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "owner_type",
+                  "owner_id"
+                ],
+                "additionalProperties": false
+              },
+              "directory": {
+                "type": "string"
+              },
+              "lastKnownStatus": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "updatedAt": {
+                "type": "number"
+              },
+              "eventCursor": {
+                "type": "string",
+                "nullable": true
+              },
+              "reconciliationStatus": {
+                "type": "string"
+              },
+              "reconciliationUncertain": {
+                "type": "boolean"
+              },
+              "pendingInputJson": {
+                "type": "string",
+                "nullable": true
+              },
+              "selectedModel": {
+                "type": "string",
+                "nullable": true
+              }
+            },
+            "required": [
+              "openCodeSessionId",
+              "owner",
+              "directory",
+              "lastKnownStatus",
+              "createdAt",
+              "updatedAt",
+              "eventCursor",
+              "reconciliationStatus",
+              "reconciliationUncertain",
+              "pendingInputJson",
+              "selectedModel"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "task",
+          "session"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "quick_request_dismiss": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "request": {
+          "type": "object",
+          "properties": {
+            "requestId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "requestId"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "request"
+      ],
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string",
+          "nullable": true
+        },
+        "homePath": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "setupStatus": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "completedAt": {
+          "type": "number",
+          "nullable": true
+        },
+        "quickRequest": {
+          "type": "object",
+          "nullable": true,
+          "properties": {
+            "createdAt": {
+              "type": "number"
+            },
+            "dismissedAt": {
+              "type": "number",
+              "nullable": true
+            },
+            "expiresAt": {
+              "type": "number",
+              "nullable": true
+            },
+            "expiredAt": {
+              "type": "number",
+              "nullable": true
+            },
+            "promotedAt": {
+              "type": "number",
+              "nullable": true
+            }
+          },
+          "required": [
+            "createdAt",
+            "dismissedAt",
+            "expiresAt",
+            "expiredAt",
+            "promotedAt"
+          ],
+          "additionalProperties": false
+        },
+        "setupOperationId": {
+          "type": "string",
+          "nullable": true
+        },
+        "setupSessionId": {
+          "type": "string",
+          "nullable": true
+        },
+        "setupCancelledAt": {
+          "type": "number",
+          "nullable": true
+        },
+        "setupCancellationDetail": {
+          "type": "string",
+          "nullable": true
+        }
+      },
+      "required": [
+        "id",
+        "workspaceId",
+        "name",
+        "slug",
+        "description",
+        "homePath",
+        "status",
+        "setupStatus",
+        "createdAt",
+        "completedAt",
+        "quickRequest",
+        "setupOperationId",
+        "setupSessionId",
+        "setupCancelledAt",
+        "setupCancellationDetail"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "quick_request_expire": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "request": {
+          "type": "object",
+          "properties": {
+            "requestId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "requestId"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "request"
+      ],
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string",
+          "nullable": true
+        },
+        "homePath": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "setupStatus": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "completedAt": {
+          "type": "number",
+          "nullable": true
+        },
+        "quickRequest": {
+          "type": "object",
+          "properties": {
+            "createdAt": {
+              "type": "number"
+            },
+            "dismissedAt": {
+              "type": "number",
+              "nullable": true
+            },
+            "expiresAt": {
+              "type": "number",
+              "nullable": true
+            },
+            "expiredAt": {
+              "type": "number",
+              "nullable": true
+            },
+            "promotedAt": {
+              "type": "number",
+              "nullable": true
+            }
+          },
+          "required": [
+            "createdAt",
+            "dismissedAt",
+            "expiresAt",
+            "expiredAt",
+            "promotedAt"
+          ],
+          "additionalProperties": false,
+          "nullable": true
+        },
+        "setupOperationId": {
+          "type": "string",
+          "nullable": true
+        },
+        "setupSessionId": {
+          "type": "string",
+          "nullable": true
+        },
+        "setupCancelledAt": {
+          "type": "number",
+          "nullable": true
+        },
+        "setupCancellationDetail": {
+          "type": "string",
+          "nullable": true
+        }
+      },
+      "required": [
+        "id",
+        "workspaceId",
+        "name",
+        "slug",
+        "description",
+        "homePath",
+        "status",
+        "setupStatus",
+        "createdAt",
+        "completedAt",
+        "quickRequest",
+        "setupOperationId",
+        "setupSessionId",
+        "setupCancelledAt",
+        "setupCancellationDetail"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "quick_request_promote": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "request": {
+          "type": "object",
+          "properties": {
+            "requestId": {
+              "type": "string"
+            },
+            "targetWorkspaceId": {
+              "type": "string",
+              "nullable": true
+            },
+            "newWorkspaceName": {
+              "type": "string",
+              "nullable": true
+            },
+            "targetSlug": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          "required": [
+            "requestId"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "request"
+      ],
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string",
+          "nullable": true
+        },
+        "homePath": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "setupStatus": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "completedAt": {
+          "type": "number",
+          "nullable": true
+        },
+        "quickRequest": {
+          "type": "object",
+          "properties": {
+            "createdAt": {
+              "type": "number"
+            },
+            "dismissedAt": {
+              "type": "number",
+              "nullable": true
+            },
+            "expiresAt": {
+              "type": "number",
+              "nullable": true
+            },
+            "expiredAt": {
+              "type": "number",
+              "nullable": true
+            },
+            "promotedAt": {
+              "type": "number",
+              "nullable": true
+            }
+          },
+          "required": [
+            "createdAt",
+            "dismissedAt",
+            "expiresAt",
+            "expiredAt",
+            "promotedAt"
+          ],
+          "additionalProperties": false,
+          "nullable": true
+        },
+        "setupOperationId": {
+          "type": "string",
+          "nullable": true
+        },
+        "setupSessionId": {
+          "type": "string",
+          "nullable": true
+        },
+        "setupCancelledAt": {
+          "type": "number",
+          "nullable": true
+        },
+        "setupCancellationDetail": {
+          "type": "string",
+          "nullable": true
+        }
+      },
+      "required": [
+        "id",
+        "workspaceId",
+        "name",
+        "slug",
+        "description",
+        "homePath",
+        "status",
+        "setupStatus",
+        "createdAt",
+        "completedAt",
+        "quickRequest",
+        "setupOperationId",
+        "setupSessionId",
+        "setupCancelledAt",
+        "setupCancellationDetail"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "workspace_navigation": {
+    "payload": "none",
+    "result": {
+      "type": "object",
+      "properties": {
+        "workspaces": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "slug": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string",
+                "nullable": true
+              },
+              "homePath": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "completedAt": {
+                "type": "number",
+                "nullable": true
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "slug",
+              "description",
+              "homePath",
+              "kind",
+              "status",
+              "createdAt",
+              "completedAt"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "tasks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "workspaceId": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "slug": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string",
+                "nullable": true
+              },
+              "homePath": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "setupStatus": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "completedAt": {
+                "type": "number",
+                "nullable": true
+              },
+              "quickRequest": {
+                "type": "object",
+                "properties": {
+                  "createdAt": {
+                    "type": "number"
+                  },
+                  "dismissedAt": {
+                    "type": "number",
+                    "nullable": true
+                  },
+                  "expiresAt": {
+                    "type": "number",
+                    "nullable": true
+                  },
+                  "expiredAt": {
+                    "type": "number",
+                    "nullable": true
+                  },
+                  "promotedAt": {
+                    "type": "number",
+                    "nullable": true
+                  }
+                },
+                "required": [
+                  "createdAt",
+                  "dismissedAt",
+                  "expiresAt",
+                  "expiredAt",
+                  "promotedAt"
+                ],
+                "additionalProperties": false,
+                "nullable": true
+              },
+              "setupOperationId": {
+                "type": "string",
+                "nullable": true
+              },
+              "setupSessionId": {
+                "type": "string",
+                "nullable": true
+              },
+              "setupCancelledAt": {
+                "type": "number",
+                "nullable": true
+              },
+              "setupCancellationDetail": {
+                "type": "string",
+                "nullable": true
+              }
+            },
+            "required": [
+              "id",
+              "workspaceId",
+              "name",
+              "slug",
+              "description",
+              "homePath",
+              "status",
+              "setupStatus",
+              "createdAt",
+              "completedAt",
+              "quickRequest",
+              "setupOperationId",
+              "setupSessionId",
+              "setupCancelledAt",
+              "setupCancellationDetail"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "quickRequests": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "task": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "workspaceId": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "slug": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "homePath": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string"
+                  },
+                  "setupStatus": {
+                    "type": "string"
+                  },
+                  "createdAt": {
+                    "type": "number"
+                  },
+                  "completedAt": {
+                    "type": "number",
+                    "nullable": true
+                  },
+                  "quickRequest": {
+                    "type": "object",
+                    "properties": {
+                      "createdAt": {
+                        "type": "number"
+                      },
+                      "dismissedAt": {
+                        "type": "number",
+                        "nullable": true
+                      },
+                      "expiresAt": {
+                        "type": "number",
+                        "nullable": true
+                      },
+                      "expiredAt": {
+                        "type": "number",
+                        "nullable": true
+                      },
+                      "promotedAt": {
+                        "type": "number",
+                        "nullable": true
+                      }
+                    },
+                    "required": [
+                      "createdAt",
+                      "dismissedAt",
+                      "expiresAt",
+                      "expiredAt",
+                      "promotedAt"
+                    ],
+                    "additionalProperties": false,
+                    "nullable": true
+                  },
+                  "setupOperationId": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "setupSessionId": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "setupCancelledAt": {
+                    "type": "number",
+                    "nullable": true
+                  },
+                  "setupCancellationDetail": {
+                    "type": "string",
+                    "nullable": true
+                  }
+                },
+                "required": [
+                  "id",
+                  "workspaceId",
+                  "name",
+                  "slug",
+                  "description",
+                  "homePath",
+                  "status",
+                  "setupStatus",
+                  "createdAt",
+                  "completedAt",
+                  "quickRequest",
+                  "setupOperationId",
+                  "setupSessionId",
+                  "setupCancelledAt",
+                  "setupCancellationDetail"
+                ],
+                "additionalProperties": false
+              },
+              "session": {
+                "type": "object",
+                "nullable": true,
+                "properties": {
+                  "openCodeSessionId": {
+                    "type": "string"
+                  },
+                  "owner": {
+                    "type": "object",
+                    "properties": {
+                      "owner_type": {
+                        "type": "string"
+                      },
+                      "owner_id": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "owner_type",
+                      "owner_id"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "directory": {
+                    "type": "string"
+                  },
+                  "lastKnownStatus": {
+                    "type": "string"
+                  },
+                  "createdAt": {
+                    "type": "number"
+                  },
+                  "updatedAt": {
+                    "type": "number"
+                  },
+                  "eventCursor": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "reconciliationStatus": {
+                    "type": "string"
+                  },
+                  "reconciliationUncertain": {
+                    "type": "boolean"
+                  },
+                  "pendingInputJson": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "selectedModel": {
+                    "type": "string",
+                    "nullable": true
+                  }
+                },
+                "required": [
+                  "openCodeSessionId",
+                  "owner",
+                  "directory",
+                  "lastKnownStatus",
+                  "createdAt",
+                  "updatedAt",
+                  "eventCursor",
+                  "reconciliationStatus",
+                  "reconciliationUncertain",
+                  "pendingInputJson",
+                  "selectedModel"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "task",
+              "session"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "workspaces",
+        "tasks",
+        "quickRequests"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "workspace_create": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "request": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "request"
+      ],
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string",
+          "nullable": true
+        },
+        "homePath": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "completedAt": {
+          "type": "number",
+          "nullable": true
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "slug",
+        "description",
+        "homePath",
+        "kind",
+        "status",
+        "createdAt",
+        "completedAt"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "workspace_complete": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "request": {
+          "type": "object",
+          "properties": {
+            "workspaceId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "workspaceId"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "request"
+      ],
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string",
+          "nullable": true
+        },
+        "homePath": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "completedAt": {
+          "type": "number",
+          "nullable": true
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "slug",
+        "description",
+        "homePath",
+        "kind",
+        "status",
+        "createdAt",
+        "completedAt"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "workspace_reactivate": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "request": {
+          "type": "object",
+          "properties": {
+            "workspaceId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "workspaceId"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "request"
+      ],
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string",
+          "nullable": true
+        },
+        "homePath": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "completedAt": {
+          "type": "number",
+          "nullable": true
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "slug",
+        "description",
+        "homePath",
+        "kind",
+        "status",
+        "createdAt",
+        "completedAt"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "task_create": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "request": {
+          "type": "object",
+          "properties": {
+            "workspaceId": {
+              "type": "string"
+            },
+            "prompt": {
+              "type": "string"
+            },
+            "model": {
+              "type": "object",
+              "nullable": true,
+              "properties": {
+                "providerId": {
+                  "type": "string"
+                },
+                "id": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "providerId",
+                "id"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "workspaceId",
+            "prompt"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "request"
+      ],
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string",
+          "nullable": true
+        },
+        "homePath": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "setupStatus": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "completedAt": {
+          "type": "number",
+          "nullable": true
+        },
+        "quickRequest": {
+          "type": "object",
+          "properties": {
+            "createdAt": {
+              "type": "number"
+            },
+            "dismissedAt": {
+              "type": "number",
+              "nullable": true
+            },
+            "expiresAt": {
+              "type": "number",
+              "nullable": true
+            },
+            "expiredAt": {
+              "type": "number",
+              "nullable": true
+            },
+            "promotedAt": {
+              "type": "number",
+              "nullable": true
+            }
+          },
+          "required": [
+            "createdAt",
+            "dismissedAt",
+            "expiresAt",
+            "expiredAt",
+            "promotedAt"
+          ],
+          "additionalProperties": false,
+          "nullable": true
+        },
+        "setupOperationId": {
+          "type": "string",
+          "nullable": true
+        },
+        "setupSessionId": {
+          "type": "string",
+          "nullable": true
+        },
+        "setupCancelledAt": {
+          "type": "number",
+          "nullable": true
+        },
+        "setupCancellationDetail": {
+          "type": "string",
+          "nullable": true
+        }
+      },
+      "required": [
+        "id",
+        "workspaceId",
+        "name",
+        "slug",
+        "description",
+        "homePath",
+        "status",
+        "setupStatus",
+        "createdAt",
+        "completedAt",
+        "quickRequest",
+        "setupOperationId",
+        "setupSessionId",
+        "setupCancelledAt",
+        "setupCancellationDetail"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "task_complete": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "request": {
+          "type": "object",
+          "properties": {
+            "taskId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "taskId"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "request"
+      ],
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "object",
+      "properties": {
+        "task": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "workspaceId": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "slug": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string",
+              "nullable": true
+            },
+            "homePath": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "setupStatus": {
+              "type": "string"
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "completedAt": {
+              "type": "number",
+              "nullable": true
+            },
+            "quickRequest": {
+              "type": "object",
+              "properties": {
+                "createdAt": {
+                  "type": "number"
+                },
+                "dismissedAt": {
+                  "type": "number",
+                  "nullable": true
+                },
+                "expiresAt": {
+                  "type": "number",
+                  "nullable": true
+                },
+                "expiredAt": {
+                  "type": "number",
+                  "nullable": true
+                },
+                "promotedAt": {
+                  "type": "number",
+                  "nullable": true
+                }
+              },
+              "required": [
+                "createdAt",
+                "dismissedAt",
+                "expiresAt",
+                "expiredAt",
+                "promotedAt"
+              ],
+              "additionalProperties": false,
+              "nullable": true
+            },
+            "setupOperationId": {
+              "type": "string",
+              "nullable": true
+            },
+            "setupSessionId": {
+              "type": "string",
+              "nullable": true
+            },
+            "setupCancelledAt": {
+              "type": "number",
+              "nullable": true
+            },
+            "setupCancellationDetail": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          "required": [
+            "id",
+            "workspaceId",
+            "name",
+            "slug",
+            "description",
+            "homePath",
+            "status",
+            "setupStatus",
+            "createdAt",
+            "completedAt",
+            "quickRequest",
+            "setupOperationId",
+            "setupSessionId",
+            "setupCancelledAt",
+            "setupCancellationDetail"
+          ],
+          "additionalProperties": false
+        },
+        "cleanupJobs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "taskId": {
+                "type": "string"
+              },
+              "repositoryId": {
+                "type": "string"
+              },
+              "worktreePath": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string"
+              },
+              "attempts": {
+                "type": "number"
+              },
+              "lastAttemptAt": {
+                "type": "number",
+                "nullable": true
+              },
+              "nextAttemptAt": {
+                "type": "number",
+                "nullable": true
+              },
+              "deferralReason": {
+                "type": "string",
+                "nullable": true
+              },
+              "failureDetail": {
+                "type": "string",
+                "nullable": true
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "updatedAt": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "id",
+              "taskId",
+              "repositoryId",
+              "worktreePath",
+              "state",
+              "attempts",
+              "lastAttemptAt",
+              "nextAttemptAt",
+              "deferralReason",
+              "failureDetail",
+              "createdAt",
+              "updatedAt"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "task",
+        "cleanupJobs"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "task_cleanup_jobs": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "request": {
+          "type": "object",
+          "properties": {
+            "taskId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "taskId"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "request"
+      ],
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "taskId": {
+            "type": "string"
+          },
+          "repositoryId": {
+            "type": "string"
+          },
+          "worktreePath": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "attempts": {
+            "type": "number"
+          },
+          "lastAttemptAt": {
+            "type": "number",
+            "nullable": true
+          },
+          "nextAttemptAt": {
+            "type": "number",
+            "nullable": true
+          },
+          "deferralReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "failureDetail": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "taskId",
+          "repositoryId",
+          "worktreePath",
+          "state",
+          "attempts",
+          "lastAttemptAt",
+          "nextAttemptAt",
+          "deferralReason",
+          "failureDetail",
+          "createdAt",
+          "updatedAt"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "task_cleanup_retry": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "request": {
+          "type": "object",
+          "properties": {
+            "taskId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "taskId"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "request"
+      ],
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "taskId": {
+            "type": "string"
+          },
+          "repositoryId": {
+            "type": "string"
+          },
+          "worktreePath": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "attempts": {
+            "type": "number"
+          },
+          "lastAttemptAt": {
+            "type": "number",
+            "nullable": true
+          },
+          "nextAttemptAt": {
+            "type": "number",
+            "nullable": true
+          },
+          "deferralReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "failureDetail": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "taskId",
+          "repositoryId",
+          "worktreePath",
+          "state",
+          "attempts",
+          "lastAttemptAt",
+          "nextAttemptAt",
+          "deferralReason",
+          "failureDetail",
+          "createdAt",
+          "updatedAt"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "task_setup_start_prompt": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "request": {
+          "type": "object",
+          "properties": {
+            "taskId": {
+              "type": "string"
+            },
+            "operationId": {
+              "type": "string"
+            },
+            "sessionId": {
+              "type": "string"
+            },
+            "model": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "providerId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "providerId",
+                "id"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "taskId",
+            "operationId",
+            "sessionId",
+            "model"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "request"
+      ],
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "null"
+    }
+  },
+  "task_setup_status": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "request": {
+          "type": "object",
+          "properties": {
+            "taskId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "taskId"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "request"
+      ],
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "object",
+      "properties": {
+        "task": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "workspaceId": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "slug": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string",
+              "nullable": true
+            },
+            "homePath": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "setupStatus": {
+              "type": "string"
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "completedAt": {
+              "type": "number",
+              "nullable": true
+            },
+            "quickRequest": {
+              "type": "object",
+              "properties": {
+                "createdAt": {
+                  "type": "number"
+                },
+                "dismissedAt": {
+                  "type": "number",
+                  "nullable": true
+                },
+                "expiresAt": {
+                  "type": "number",
+                  "nullable": true
+                },
+                "expiredAt": {
+                  "type": "number",
+                  "nullable": true
+                },
+                "promotedAt": {
+                  "type": "number",
+                  "nullable": true
+                }
+              },
+              "required": [
+                "createdAt",
+                "dismissedAt",
+                "expiresAt",
+                "expiredAt",
+                "promotedAt"
+              ],
+              "additionalProperties": false,
+              "nullable": true
+            },
+            "setupOperationId": {
+              "type": "string",
+              "nullable": true
+            },
+            "setupSessionId": {
+              "type": "string",
+              "nullable": true
+            },
+            "setupCancelledAt": {
+              "type": "number",
+              "nullable": true
+            },
+            "setupCancellationDetail": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          "required": [
+            "id",
+            "workspaceId",
+            "name",
+            "slug",
+            "description",
+            "homePath",
+            "status",
+            "setupStatus",
+            "createdAt",
+            "completedAt",
+            "quickRequest",
+            "setupOperationId",
+            "setupSessionId",
+            "setupCancelledAt",
+            "setupCancellationDetail"
+          ],
+          "additionalProperties": false
+        },
+        "session": {
+          "type": "object",
+          "nullable": true,
+          "properties": {
+            "openCodeSessionId": {
+              "type": "string"
+            },
+            "owner": {
+              "type": "object",
+              "properties": {
+                "owner_type": {
+                  "type": "string"
+                },
+                "owner_id": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "owner_type",
+                "owner_id"
+              ],
+              "additionalProperties": false
+            },
+            "directory": {
+              "type": "string"
+            },
+            "lastKnownStatus": {
+              "type": "string"
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "updatedAt": {
+              "type": "number"
+            },
+            "eventCursor": {
+              "type": "string",
+              "nullable": true
+            },
+            "reconciliationStatus": {
+              "type": "string"
+            },
+            "reconciliationUncertain": {
+              "type": "boolean"
+            },
+            "pendingInputJson": {
+              "type": "string",
+              "nullable": true
+            },
+            "selectedModel": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          "required": [
+            "openCodeSessionId",
+            "owner",
+            "directory",
+            "lastKnownStatus",
+            "createdAt",
+            "updatedAt",
+            "eventCursor",
+            "reconciliationStatus",
+            "reconciliationUncertain",
+            "pendingInputJson",
+            "selectedModel"
+          ],
+          "additionalProperties": false
+        },
+        "repositories": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "taskId": {
+                "type": "string"
+              },
+              "repositoryId": {
+                "type": "string"
+              },
+              "branch": {
+                "type": "string"
+              },
+              "worktreePath": {
+                "type": "string"
+              },
+              "setupStatus": {
+                "type": "string"
+              },
+              "errorCode": {
+                "type": "string",
+                "nullable": true
+              },
+              "errorDetail": {
+                "type": "string",
+                "nullable": true
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "updatedAt": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "taskId",
+              "repositoryId",
+              "branch",
+              "worktreePath",
+              "setupStatus",
+              "errorCode",
+              "errorDetail",
+              "createdAt",
+              "updatedAt"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "task",
+        "session",
+        "repositories"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "task_setup_cancel": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "request": {
+          "type": "object",
+          "properties": {
+            "taskId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "taskId"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "request"
+      ],
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string",
+          "nullable": true
+        },
+        "homePath": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "setupStatus": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "completedAt": {
+          "type": "number",
+          "nullable": true
+        },
+        "quickRequest": {
+          "type": "object",
+          "properties": {
+            "createdAt": {
+              "type": "number"
+            },
+            "dismissedAt": {
+              "type": "number",
+              "nullable": true
+            },
+            "expiresAt": {
+              "type": "number",
+              "nullable": true
+            },
+            "expiredAt": {
+              "type": "number",
+              "nullable": true
+            },
+            "promotedAt": {
+              "type": "number",
+              "nullable": true
+            }
+          },
+          "required": [
+            "createdAt",
+            "dismissedAt",
+            "expiresAt",
+            "expiredAt",
+            "promotedAt"
+          ],
+          "additionalProperties": false,
+          "nullable": true
+        },
+        "setupOperationId": {
+          "type": "string",
+          "nullable": true
+        },
+        "setupSessionId": {
+          "type": "string",
+          "nullable": true
+        },
+        "setupCancelledAt": {
+          "type": "number",
+          "nullable": true
+        },
+        "setupCancellationDetail": {
+          "type": "string",
+          "nullable": true
+        }
+      },
+      "required": [
+        "id",
+        "workspaceId",
+        "name",
+        "slug",
+        "description",
+        "homePath",
+        "status",
+        "setupStatus",
+        "createdAt",
+        "completedAt",
+        "quickRequest",
+        "setupOperationId",
+        "setupSessionId",
+        "setupCancelledAt",
+        "setupCancellationDetail"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "task_setup_resume": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "request": {
+          "type": "object",
+          "properties": {
+            "taskId": {
+              "type": "string"
+            },
+            "operationId": {
+              "type": "string"
+            },
+            "sessionId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "taskId",
+            "operationId",
+            "sessionId"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "request"
+      ],
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string",
+          "nullable": true
+        },
+        "homePath": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "setupStatus": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "completedAt": {
+          "type": "number",
+          "nullable": true
+        },
+        "quickRequest": {
+          "type": "object",
+          "properties": {
+            "createdAt": {
+              "type": "number"
+            },
+            "dismissedAt": {
+              "type": "number",
+              "nullable": true
+            },
+            "expiresAt": {
+              "type": "number",
+              "nullable": true
+            },
+            "expiredAt": {
+              "type": "number",
+              "nullable": true
+            },
+            "promotedAt": {
+              "type": "number",
+              "nullable": true
+            }
+          },
+          "required": [
+            "createdAt",
+            "dismissedAt",
+            "expiresAt",
+            "expiredAt",
+            "promotedAt"
+          ],
+          "additionalProperties": false,
+          "nullable": true
+        },
+        "setupOperationId": {
+          "type": "string",
+          "nullable": true
+        },
+        "setupSessionId": {
+          "type": "string",
+          "nullable": true
+        },
+        "setupCancelledAt": {
+          "type": "number",
+          "nullable": true
+        },
+        "setupCancellationDetail": {
+          "type": "string",
+          "nullable": true
+        }
+      },
+      "required": [
+        "id",
+        "workspaceId",
+        "name",
+        "slug",
+        "description",
+        "homePath",
+        "status",
+        "setupStatus",
+        "createdAt",
+        "completedAt",
+        "quickRequest",
+        "setupOperationId",
+        "setupSessionId",
+        "setupCancelledAt",
+        "setupCancellationDetail"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "task_registration_report": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "report": {
+          "type": "object",
+          "properties": {
+            "operationId": {
+              "type": "string"
+            },
+            "workspaceId": {
+              "type": "string"
+            },
+            "taskId": {
+              "type": "string"
+            },
+            "sessionId": {
+              "type": "string"
+            },
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "itemId": {
+                    "type": "string"
+                  },
+                  "repositoryId": {
+                    "type": "string"
+                  },
+                  "repositoryPath": {
+                    "type": "string"
+                  },
+                  "gitIdentity": {
+                    "type": "string"
+                  },
+                  "branch": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "worktreePath": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "result": {
+                    "type": "string"
+                  },
+                  "errorCode": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "detail": {
+                    "type": "string",
+                    "nullable": true
+                  }
+                },
+                "required": [
+                  "itemId",
+                  "repositoryId",
+                  "repositoryPath",
+                  "gitIdentity",
+                  "branch",
+                  "worktreePath",
+                  "result",
+                  "errorCode",
+                  "detail"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "operationId",
+            "workspaceId",
+            "taskId",
+            "sessionId",
+            "items"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "report"
+      ],
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "object",
+      "properties": {
+        "operationId": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "type": "string"
+        },
+        "taskId": {
+          "type": "string"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "replayed": {
+          "type": "boolean"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "itemId": {
+                "type": "string"
+              },
+              "repositoryId": {
+                "type": "string"
+              },
+              "repositoryPath": {
+                "type": "string"
+              },
+              "gitIdentity": {
+                "type": "string"
+              },
+              "branch": {
+                "type": "string",
+                "nullable": true
+              },
+              "worktreePath": {
+                "type": "string",
+                "nullable": true
+              },
+              "result": {
+                "type": "string"
+              },
+              "errorCode": {
+                "type": "string",
+                "nullable": true
+              },
+              "detail": {
+                "type": "string",
+                "nullable": true
+              }
+            },
+            "required": [
+              "itemId",
+              "repositoryId",
+              "repositoryPath",
+              "gitIdentity",
+              "branch",
+              "worktreePath",
+              "result",
+              "errorCode",
+              "detail"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "operationId",
+        "workspaceId",
+        "taskId",
+        "sessionId",
+        "replayed",
+        "items"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "task_registration_results": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "request": {
+          "type": "object",
+          "properties": {
+            "taskId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "taskId"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "request"
+      ],
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "taskId": {
+            "type": "string"
+          },
+          "repositoryId": {
+            "type": "string"
+          },
+          "branch": {
+            "type": "string"
+          },
+          "worktreePath": {
+            "type": "string"
+          },
+          "setupStatus": {
+            "type": "string"
+          },
+          "errorCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "errorDetail": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "taskId",
+          "repositoryId",
+          "branch",
+          "worktreePath",
+          "setupStatus",
+          "errorCode",
+          "errorDetail",
+          "createdAt",
+          "updatedAt"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "repository_scan": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "request": {
+          "type": "object",
+          "properties": {
+            "paths": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "purposeProposals": {
+              "type": "object",
+              "nullable": true,
+              "properties": {},
+              "required": [],
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "paths"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "request"
+      ],
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "object",
+      "properties": {
+        "repositories": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "repositoryPath": {
+                "type": "string"
+              },
+              "repositoryIdentity": {
+                "type": "string"
+              },
+              "purpose": {
+                "type": "string",
+                "nullable": true
+              },
+              "purposeStatus": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "updatedAt": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "repositoryPath",
+              "repositoryIdentity",
+              "purpose",
+              "purposeStatus",
+              "createdAt",
+              "updatedAt"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "errors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "repositories",
+        "errors"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "repository_catalog": {
+    "payload": "none",
+    "result": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "repositoryPath": {
+            "type": "string"
+          },
+          "repositoryIdentity": {
+            "type": "string"
+          },
+          "purpose": {
+            "type": "string",
+            "nullable": true
+          },
+          "purposeStatus": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "repositoryPath",
+          "repositoryIdentity",
+          "purpose",
+          "purposeStatus",
+          "createdAt",
+          "updatedAt"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "repository_attach": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "request": {
+          "type": "object",
+          "properties": {
+            "workspaceId": {
+              "type": "string"
+            },
+            "repositoryId": {
+              "type": "string"
+            },
+            "checkoutPath": {
+              "type": "string"
+            },
+            "branch": {
+              "type": "string"
+            },
+            "checkoutMode": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "workspaceId",
+            "repositoryId",
+            "checkoutPath",
+            "branch",
+            "checkoutMode"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "request"
+      ],
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string"
+        },
+        "repositoryId": {
+          "type": "string"
+        },
+        "checkoutPath": {
+          "type": "string"
+        },
+        "checkoutMode": {
+          "type": "string"
+        },
+        "branch": {
+          "type": "string"
+        },
+        "verificationStatus": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "repositoryId",
+        "checkoutPath",
+        "checkoutMode",
+        "branch",
+        "verificationStatus",
+        "createdAt"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "workspace_session_create": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "request": {
+          "type": "object",
+          "properties": {
+            "workspaceId": {
+              "type": "string"
+            },
+            "prompt": {
+              "type": "string",
+              "nullable": true
+            },
+            "model": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "providerId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "providerId",
+                "id"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "workspaceId",
+            "model"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "request"
+      ],
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "object",
+      "properties": {
+        "openCodeSessionId": {
+          "type": "string"
+        },
+        "owner": {
+          "type": "object",
+          "properties": {
+            "owner_type": {
+              "type": "string"
+            },
+            "owner_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "owner_type",
+            "owner_id"
+          ],
+          "additionalProperties": false
+        },
+        "directory": {
+          "type": "string"
+        },
+        "lastKnownStatus": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "eventCursor": {
+          "type": "string",
+          "nullable": true
+        },
+        "reconciliationStatus": {
+          "type": "string"
+        },
+        "reconciliationUncertain": {
+          "type": "boolean"
+        },
+        "pendingInputJson": {
+          "type": "string",
+          "nullable": true
+        },
+        "selectedModel": {
+          "type": "string",
+          "nullable": true
+        }
+      },
+      "required": [
+        "openCodeSessionId",
+        "owner",
+        "directory",
+        "lastKnownStatus",
+        "createdAt",
+        "updatedAt",
+        "eventCursor",
+        "reconciliationStatus",
+        "reconciliationUncertain",
+        "pendingInputJson",
+        "selectedModel"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "task_session_create": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "request": {
+          "type": "object",
+          "properties": {
+            "taskId": {
+              "type": "string"
+            },
+            "prompt": {
+              "type": "string",
+              "nullable": true
+            },
+            "model": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "providerId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "providerId",
+                "id"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "taskId",
+            "model"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "request"
+      ],
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "object",
+      "properties": {
+        "openCodeSessionId": {
+          "type": "string"
+        },
+        "owner": {
+          "type": "object",
+          "properties": {
+            "owner_type": {
+              "type": "string"
+            },
+            "owner_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "owner_type",
+            "owner_id"
+          ],
+          "additionalProperties": false
+        },
+        "directory": {
+          "type": "string"
+        },
+        "lastKnownStatus": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "eventCursor": {
+          "type": "string",
+          "nullable": true
+        },
+        "reconciliationStatus": {
+          "type": "string"
+        },
+        "reconciliationUncertain": {
+          "type": "boolean"
+        },
+        "pendingInputJson": {
+          "type": "string",
+          "nullable": true
+        },
+        "selectedModel": {
+          "type": "string",
+          "nullable": true
+        }
+      },
+      "required": [
+        "openCodeSessionId",
+        "owner",
+        "directory",
+        "lastKnownStatus",
+        "createdAt",
+        "updatedAt",
+        "eventCursor",
+        "reconciliationStatus",
+        "reconciliationUncertain",
+        "pendingInputJson",
+        "selectedModel"
+      ],
+      "additionalProperties": false
+    }
+  }
+}
