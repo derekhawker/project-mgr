@@ -21,7 +21,9 @@ import {
   cleanupTerminal,
   restoreSession,
   createQuickRequest,
+  resolveQuickRequestDirectory,
   submitQuickRequestFlow,
+  submitResolvedQuickRequestFlow,
   startQuickRequestPrompt,
   listAvailableModels,
   getDefaultModel,
@@ -29,6 +31,7 @@ import {
   restoreQuickRequest,
   listQuickRequests,
   dismissQuickRequest,
+  deleteQuickRequest,
   expireQuickRequest,
   loadWorkspaceNavigation,
   startNewWorkProposal,
@@ -371,12 +374,12 @@ test('New-work proposal adapters preserve exact session and prompt boundary', as
   const invoke = (...args) => { calls.push(args); return Promise.resolve(resultForCommand(args[0])); };
   const model = { providerId: 'openai', id: 'gpt-6-luna' };
   await startNewWorkProposal(invoke, model);
-  await runNewWorkProposal(invoke, 'proposal-session-1', 'Original prompt', 'workspace-1');
+  await runNewWorkProposal(invoke, 'proposal-session-1', 'Original prompt', 'workspace-1', 'task');
   await readNewWorkProposal(invoke, 'proposal-session-1', 'workspace-1');
   await closeNewWorkProposal(invoke, 'proposal-session-1');
   assert.deepEqual(calls, [
     ['new_work_proposal_start', { model }],
-    ['new_work_proposal_run', { sessionId: 'proposal-session-1', originalPrompt: 'Original prompt', preferredWorkspaceId: 'workspace-1' }],
+    ['new_work_proposal_run', { sessionId: 'proposal-session-1', originalPrompt: 'Original prompt', preferredWorkspaceId: 'workspace-1', workType: 'task' }],
     ['new_work_proposal_read', { sessionId: 'proposal-session-1', preferredWorkspaceId: 'workspace-1' }],
     ['new_work_proposal_close', { sessionId: 'proposal-session-1' }],
   ]);
@@ -446,7 +449,7 @@ test('New-work starting prompt submits only through the matching owner command',
   assert.deepEqual(calls, [
     ['opencode_session_prompt', { sessionId: 'ses-w', prompt: 'Plan the project', model }],
     ['task_setup_start_prompt', { taskId: 'task-1', operationId: 'setup-1', sessionId: 'ses-t', model, startingPrompt: 'Implement the feature', repositoryIds: ['repo-1'] }],
-    ['quick_request_start_prompt', { requestId: 'quick-1', model, prompt: 'Summarize the logs' }],
+    ['quick_request_start_prompt', { requestId: 'quick-1', model }],
   ]);
   await assert.rejects(
     submitNewWorkStartingPrompt(async () => { throw new Error('prompt failed'); }, {
@@ -569,22 +572,28 @@ test('Quick Request adapters preserve command names, explicit payloads, results,
   const calls = [];
   const invoke = (...args) => { calls.push(args); return Promise.resolve(resultForCommand(args[0])); };
   const model = { providerId: 'openai', id: 'gpt-6-luna' };
-  await createQuickRequest(invoke, 'check this', model);
+  await createQuickRequest(invoke, 'check this', model, 'repo-1');
+  await resolveQuickRequestDirectory(invoke, 'repo-1');
   await followUpQuickRequest(invoke, 'quick-1', 'hello\r');
   await restoreQuickRequest(invoke, 'quick-1');
   await listQuickRequests(invoke, true);
-  await dismissQuickRequest(invoke, 'quick-1');
+  await deleteQuickRequest(invoke, 'quick-1');
   await expireQuickRequest(invoke, 'quick-1');
   assert.deepEqual(calls, [
-    ['quick_request_create', { prompt: 'check this', model }],
+    ['quick_request_create', { prompt: 'check this', model, repositoryId: 'repo-1' }],
+    ['quick_request_resolve_directory', { repositoryId: 'repo-1' }],
     ['quick_request_follow_up', { requestId: 'quick-1', data: 'hello\r' }],
     ['quick_request_restore', { requestId: 'quick-1' }],
     ['quick_request_list', { request: { history: true } }],
-    ['quick_request_dismiss', { requestId: 'quick-1' }],
+    ['quick_request_delete', { requestId: 'quick-1' }],
     ['quick_request_expire', { requestId: 'quick-1' }],
   ]);
   const error = new Error('request failed');
   await assert.rejects(() => createQuickRequest(() => Promise.reject(error), 'x', model), (received) => received === error);
+  await assert.rejects(
+    () => resolveQuickRequestDirectory(() => Promise.reject(new Error('repository disappeared')), 'repo-1'),
+    /repository disappeared/,
+  );
 });
 
 test('Quick Request list adapter sends the nested Tauri request payload', async () => {
@@ -622,6 +631,7 @@ test('Quick Request submit preserves surrounding UI state and clears only the pr
       quickRequest: { createdAt: 1, dismissedAt: null, expiresAt: 2, expiredAt: null, promotedAt: null },
     },
     session: { ...session, openCodeSessionId: 'ses-quick-1' },
+    prompt: 'Explain this change',
   };
   const invoke = async (name, payload) => {
     events.push([name, payload]);
@@ -664,6 +674,7 @@ test('Quick Request submit failure preserves entered prompt for recovery', async
           quickRequest: { createdAt: 1, dismissedAt: null, expiresAt: 2, expiredAt: null, promotedAt: null },
         },
         session: { ...session, openCodeSessionId: 'ses-quick-1' },
+        prompt: 'Keep this if startup fails',
       };
       throw new Error('prompt submission failed');
     },
@@ -676,6 +687,71 @@ test('Quick Request submit failure preserves entered prompt for recovery', async
   }), /prompt submission failed/);
   assert.equal(promptInput.value, 'Keep this if startup fails');
   assert.ok(!events.includes('refresh'));
+});
+
+test('confirmed Quick Request flow preserves the original prompt and opens the terminal page before sending it', async () => {
+  const events = [];
+  const model = { providerId: 'openai', id: 'gpt-6-luna' };
+  const originalPrompt = '  Keep this exact prompt\n';
+  const record = {
+    task: { ...task, id: 'quick-confirmed', workspaceId: 'quick-workspace' },
+    session: { ...session, openCodeSessionId: 'ses-quick-confirmed' },
+    prompt: originalPrompt,
+  };
+  const result = await submitResolvedQuickRequestFlow({
+    invoke: async (name, payload) => {
+      events.push([name, payload]);
+      if (name === 'quick_request_create') return record;
+      return null;
+    },
+    originalPrompt,
+    model,
+    repositoryId: 'repo-1',
+    waitForTerminal: async () => events.push(['terminal-ready']),
+    onCreated: (created) => events.push(['created', created.task.id]),
+    showSession: async (id) => events.push(['show-session', id]),
+    refreshRequests: async () => events.push(['refresh']),
+  });
+
+  assert.equal(result, record);
+  assert.deepEqual(events.map(([name]) => name), [
+    'terminal-ready', 'quick_request_create', 'created', 'show-session',
+    'quick_request_start_prompt', 'refresh',
+  ]);
+  assert.deepEqual(events[1], ['quick_request_create', {
+    prompt: originalPrompt,
+    model,
+    repositoryId: 'repo-1',
+  }]);
+  assert.deepEqual(events[4], ['quick_request_start_prompt', {
+    requestId: 'quick-confirmed', model,
+  }]);
+});
+
+test('confirmed Quick Request startup failure happens after durable creation and terminal-page opening', async () => {
+  const events = [];
+  await assert.rejects(() => submitResolvedQuickRequestFlow({
+    invoke: async (name) => {
+      events.push(name);
+      if (name === 'quick_request_create') return {
+        task: { ...task, id: 'quick-recoverable', workspaceId: 'quick-workspace' },
+        session: { ...session, openCodeSessionId: 'ses-recoverable' },
+        prompt: 'Retry me',
+      };
+      throw new Error('initial prompt delivery failed');
+    },
+    originalPrompt: 'Retry me',
+    model: { providerId: 'openai', id: 'gpt-test' },
+    repositoryId: null,
+    waitForTerminal: async () => {},
+    onCreated: () => events.push('durable-record'),
+    showSession: async () => events.push('terminal-mounted'),
+    refreshRequests: async () => events.push('refresh'),
+  }), /initial prompt delivery failed/);
+  assert.deepEqual(events, [
+    'quick_request_create', 'durable-record', 'terminal-mounted',
+    'quick_request_start_prompt',
+  ]);
 });
 
 test('Quick Request retry and terminal accessibility helpers preserve explicit contracts', async () => {

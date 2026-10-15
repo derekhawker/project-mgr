@@ -5,3 +5,4 @@
 
 # Local code-analysis indexes
 **/.codesitter/
+**/.idea/

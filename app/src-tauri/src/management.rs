@@ -1,4 +1,5 @@
-//! SQLite-backed management records. Conversation content remains owned by OpenCode.
+//! SQLite-backed management records. Conversation history remains in OpenCode;
+//! Quick Requests separately retain only their original prompt for the list.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -25,6 +26,18 @@ const MIGRATION_7: &str = include_str!("migrations/0007_session_model.sql");
 const MIGRATION_8: &str = include_str!("migrations/0008_setup_repository_selection.sql");
 const MIGRATION_9: &str = include_str!("migrations/0009_workspace_starting_prompt.sql");
 const MIGRATION_10: &str = include_str!("migrations/0010_remove_starting_prompt_storage.sql");
+const MIGRATION_11: &str = include_str!("migrations/0011_quick_request_prompts.sql");
+const MIGRATION_12: &str = include_str!("migrations/0012_quick_request_repository_directories.sql");
+const MIGRATION_13: &str = include_str!("migrations/0013_quick_requests_project_directory.sql");
+
+fn validate_quick_request_prompt(prompt: &str) -> StoreResult<()> {
+    if prompt.trim().is_empty() {
+        return Err(ManagementStoreError::InvalidTransition(
+            "Quick Request prompt must not be empty".into(),
+        ));
+    }
+    Ok(())
+}
 
 fn now_millis_for_cleanup() -> i64 {
     std::time::SystemTime::now()
@@ -435,6 +448,7 @@ pub enum SessionOwner {
 pub struct QuickRequestRecord {
     pub task: Task,
     pub session: Option<SessionRecord>,
+    pub prompt: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -526,7 +540,6 @@ pub struct ManagementStore {
     connection: Mutex<Connection>,
     database_path: Option<PathBuf>,
     user_home: PathBuf,
-    system_temp_dir: PathBuf,
 }
 
 impl ManagementStore {
@@ -591,7 +604,7 @@ impl ManagementStore {
         mut connection: Connection,
         database_path: Option<PathBuf>,
         user_home: PathBuf,
-        system_temp_dir: PathBuf,
+        _system_temp_dir: PathBuf,
     ) -> StoreResult<Self> {
         connection.busy_timeout(Duration::from_secs(5))?;
         connection.pragma_update(None, "foreign_keys", "ON")?;
@@ -605,11 +618,11 @@ impl ManagementStore {
             connection.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
         }
         Self::ensure_default_settings(&connection)?;
+        Self::sync_quick_requests_home(&connection, &user_home)?;
         Ok(Self {
             connection: Mutex::new(connection),
             database_path,
             user_home,
-            system_temp_dir,
         })
     }
 
@@ -630,7 +643,7 @@ impl ManagementStore {
             [],
             |row| row.get(0),
         )?;
-        if current_version > 10 {
+        if current_version > 13 {
             return Err(ManagementStoreError::UnsupportedSchemaVersion(
                 current_version,
             ));
@@ -705,6 +718,27 @@ impl ManagementStore {
                 [],
             )?;
         }
+        if current_version < 11 {
+            transaction.execute_batch(MIGRATION_11)?;
+            transaction.execute(
+                "INSERT INTO schema_migrations(version, applied_at) VALUES (11, 0)",
+                [],
+            )?;
+        }
+        if current_version < 12 {
+            transaction.execute_batch(MIGRATION_12)?;
+            transaction.execute(
+                "INSERT INTO schema_migrations(version, applied_at) VALUES (12, 0)",
+                [],
+            )?;
+        }
+        if current_version < 13 {
+            transaction.execute_batch(MIGRATION_13)?;
+            transaction.execute(
+                "INSERT INTO schema_migrations(version, applied_at) VALUES (13, 0)",
+                [],
+            )?;
+        }
         transaction.commit()?;
         Ok(())
     }
@@ -718,6 +752,41 @@ impl ManagementStore {
             "INSERT OR IGNORE INTO settings(key, value, updated_at) VALUES (?1, ?2, 0)",
             params!["default_model", DEFAULT_MODEL],
         )?;
+        Ok(())
+    }
+
+    fn quick_requests_directory_from(
+        connection: &Connection,
+        user_home: &Path,
+    ) -> StoreResult<PathBuf> {
+        let configured_root = Self::project_home_root_from(connection)?;
+        let project_root = safety::resolve_project_home_root(&configured_root, user_home)?;
+        safety::canonical_descendant(&project_root, &quick_requests_directory(&project_root))
+            .map_err(Into::into)
+    }
+
+    fn sync_quick_requests_home(connection: &Connection, user_home: &Path) -> StoreResult<()> {
+        let Some(path) = connection
+            .query_row(
+                "SELECT id FROM workspaces WHERE kind = 'quick_requests' LIMIT 1",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?
+        else {
+            return Ok(());
+        };
+        let home = path_to_string(&Self::quick_requests_directory_from(connection, user_home)?)?;
+        let transaction = connection.unchecked_transaction()?;
+        transaction.execute(
+            "UPDATE workspaces SET home_path = ?1 WHERE id = ?2",
+            params![home, path],
+        )?;
+        transaction.execute(
+            "UPDATE tasks SET home_path = (SELECT home_path FROM workspaces WHERE id = ?1) WHERE workspace_id = ?1 AND quick_request_created_at IS NOT NULL AND quick_request_promoted_at IS NULL",
+            [&path],
+        )?;
+        transaction.commit()?;
         Ok(())
     }
 
@@ -781,7 +850,7 @@ impl ManagementStore {
                 (home, Some(guard))
             }
             WorkspaceKind::QuickRequests => {
-                let shared = quick_requests_directory(&self.system_temp_dir);
+                let shared = Self::quick_requests_directory_from(&connection, &self.user_home)?;
                 (safety::canonicalize_or_resolve_missing(&shared)?, None)
             }
         };
@@ -955,7 +1024,9 @@ impl ManagementStore {
                 safety::resolve_project_home_root(&configured_root, &self.user_home)?
                     .join(&existing.slug)
             }
-            WorkspaceKind::QuickRequests => quick_requests_directory(&self.system_temp_dir),
+            WorkspaceKind::QuickRequests => {
+                Self::quick_requests_directory_from(&connection, &self.user_home)?
+            }
         };
         let expected_lexical = expected.clone();
         let expected = safety::canonicalize_or_resolve_missing(&expected)?;
@@ -1140,7 +1211,8 @@ impl ManagementStore {
             .ok_or_else(|| ManagementStoreError::NotFound(format!("task {} after insert", task.id)))
     }
 
-    pub fn create_quick_request(&self, task: &NewTask) -> StoreResult<Task> {
+    pub fn create_quick_request(&self, task: &NewTask, original_prompt: &str) -> StoreResult<Task> {
+        validate_quick_request_prompt(original_prompt)?;
         let expires_at = task
             .created_at
             .checked_add(QUICK_REQUEST_LIFETIME_MS)
@@ -1158,7 +1230,10 @@ impl ManagementStore {
         safety::validate_slug(&task.slug)?;
         let mut connection = self.lock()?;
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let guard = self.insert_task(&transaction, task, Some(&lifecycle))?;
+        let mut quick_request_task = task.clone();
+        quick_request_task.description = None;
+        let guard = self.insert_task(&transaction, &quick_request_task, Some(&lifecycle))?;
+        Self::insert_quick_request_prompt(&transaction, &task.id, original_prompt)?;
         transaction.commit()?;
         if let Some(guard) = guard {
             guard.commit();
@@ -1168,8 +1243,7 @@ impl ManagementStore {
         })
     }
 
-    /// Creates the special workspace on demand. Its home is always the one
-    /// shared system-temporary directory; it never becomes a request home.
+    /// Creates the special workspace on demand under the configured projects root.
     pub fn ensure_quick_requests_workspace(&self, created_at: i64) -> StoreResult<Workspace> {
         if let Some(existing) = self
             .list_workspaces()?
@@ -1182,10 +1256,34 @@ impl ManagementStore {
             id: "quick-requests-workspace".into(),
             name: "Quick Requests".into(),
             slug: "quick-requests".into(),
-            description: Some("One-off requests in the shared temporary directory".into()),
+            description: Some(
+                "One-off requests in the shared Quick Requests project folder".into(),
+            ),
             kind: WorkspaceKind::QuickRequests,
             created_at,
         })
+    }
+
+    pub fn quick_request_directory(&self, repository_id: Option<&str>) -> StoreResult<PathBuf> {
+        let Some(repository_id) = repository_id else {
+            let connection = self.lock()?;
+            return Self::quick_requests_directory_from(&connection, &self.user_home);
+        };
+        let repository = self
+            .list_repositories()?
+            .into_iter()
+            .find(|repository| repository.id == repository_id)
+            .ok_or_else(|| {
+                ManagementStoreError::NotFound(format!("registered repository {repository_id}"))
+            })?;
+        let path = PathBuf::from(repository.repository_path);
+        let canonical = std::fs::canonicalize(&path)?;
+        if !canonical.is_dir() {
+            return Err(ManagementStoreError::Safety(SafetyError::InvalidPath(
+                "registered repository is not a directory".into(),
+            )));
+        }
+        Ok(canonical)
     }
 
     /// The task and exact OpenCode session association are one durable write.
@@ -1193,8 +1291,9 @@ impl ManagementStore {
         &self,
         task: &NewTask,
         session: &NewSession,
+        original_prompt: &str,
     ) -> StoreResult<QuickRequestRecord> {
-        self.create_quick_request_with_session_and_model(task, session, "")
+        self.create_quick_request_with_session_and_model(task, session, "", original_prompt)
     }
 
     pub fn create_quick_request_with_session_and_model(
@@ -1202,7 +1301,9 @@ impl ManagementStore {
         task: &NewTask,
         session: &NewSession,
         selected_model: &str,
+        original_prompt: &str,
     ) -> StoreResult<QuickRequestRecord> {
+        validate_quick_request_prompt(original_prompt)?;
         if session.owner != SessionOwner::Task(task.id.clone()) {
             return Err(ManagementStoreError::InvalidTransition(
                 "Quick Request session owner must be its task".into(),
@@ -1216,12 +1317,20 @@ impl ManagementStore {
                 "task is not owned by the Quick Requests workspace".into(),
             ));
         }
-        let expected = quick_requests_directory(&self.system_temp_dir);
         let actual = safety::canonicalize_or_resolve_missing(Path::new(&session.directory))?;
-        let expected = safety::canonicalize_or_resolve_missing(&expected)?;
-        if actual != expected {
+        let connection = self.lock()?;
+        let default_directory = safety::canonicalize_or_resolve_missing(
+            &Self::quick_requests_directory_from(&connection, &self.user_home)?,
+        )?;
+        drop(connection);
+        let is_registered_repository = self.list_repositories()?.iter().any(|repository| {
+            std::fs::canonicalize(&repository.repository_path)
+                .is_ok_and(|repository_path| repository_path == actual && actual.is_dir())
+        });
+        if actual != default_directory && !is_registered_repository {
             return Err(ManagementStoreError::Safety(SafetyError::InvalidPath(
-                "Quick Request sessions must use the shared temporary directory".into(),
+                "Quick Request sessions must use the shared directory or a registered repository"
+                    .into(),
             )));
         }
         let expires_at = task
@@ -1241,7 +1350,10 @@ impl ManagementStore {
         safety::validate_slug(&task.slug)?;
         let mut connection = self.lock()?;
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let guard = self.insert_task(&transaction, task, Some(&lifecycle))?;
+        let mut quick_request_task = task.clone();
+        quick_request_task.description = None;
+        let guard = self.insert_task(&transaction, &quick_request_task, Some(&lifecycle))?;
+        Self::insert_quick_request_prompt(&transaction, &task.id, original_prompt)?;
         Self::insert_session_with_model(&transaction, session, Some(selected_model))?;
         transaction.commit()?;
         if let Some(guard) = guard {
@@ -1251,10 +1363,15 @@ impl ManagementStore {
             ManagementStoreError::NotFound(format!("Quick Request task {}", task.id))
         })?;
         let session = Self::get_session_from(&connection, &session.open_code_session_id)?;
-        Ok(QuickRequestRecord { task, session })
+        Ok(QuickRequestRecord {
+            task,
+            session,
+            prompt: Some(original_prompt.to_owned()),
+        })
     }
 
     pub fn list_quick_requests(&self, history: bool) -> StoreResult<Vec<QuickRequestRecord>> {
+        let recent_cutoff = now_millis_for_cleanup().saturating_sub(QUICK_REQUEST_LIFETIME_MS);
         let workspace = self
             .list_workspaces()?
             .into_iter()
@@ -1272,23 +1389,57 @@ impl ManagementStore {
                 .list_sessions(&SessionOwner::Task(task.id.clone()))?
                 .into_iter()
                 .next();
-            let session_active = session.as_ref().is_some_and(|session| {
-                matches!(
-                    session.last_known_status.as_str(),
-                    "starting" | "running" | "waiting_for_input" | "input_waiting"
-                )
-            });
             let visible = task.quick_request.as_ref().is_some_and(|request| {
                 history
-                    || (request.promoted_at.is_none()
-                        && (session_active
-                            || (request.dismissed_at.is_none() && request.expired_at.is_none())))
+                    || (request.created_at >= recent_cutoff
+                        && request.promoted_at.is_none()
+                        && request.dismissed_at.is_none())
             });
             if visible {
-                result.push(QuickRequestRecord { task, session });
+                let prompt = self.quick_request_prompt(&task.id)?;
+                result.push(QuickRequestRecord {
+                    task,
+                    session,
+                    prompt,
+                });
             }
         }
         Ok(result)
+    }
+
+    pub fn quick_request_prompt(&self, task_id: &str) -> StoreResult<Option<String>> {
+        let connection = self.lock()?;
+        Self::quick_request_prompt_from(&connection, task_id)
+    }
+
+    fn quick_request_prompt_from(
+        connection: &Connection,
+        task_id: &str,
+    ) -> StoreResult<Option<String>> {
+        connection
+            .query_row(
+                "SELECT prompt.original_prompt
+                 FROM quick_request_prompts AS prompt
+                 JOIN tasks ON tasks.id = prompt.task_id
+                 WHERE prompt.task_id = ?1 AND tasks.quick_request_created_at IS NOT NULL",
+                [task_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(Into::into)
+    }
+
+    fn insert_quick_request_prompt(
+        connection: &Connection,
+        task_id: &str,
+        original_prompt: &str,
+    ) -> StoreResult<()> {
+        validate_quick_request_prompt(original_prompt)?;
+        connection.execute(
+            "INSERT INTO quick_request_prompts(task_id, original_prompt) VALUES (?1, ?2)",
+            params![task_id, original_prompt],
+        )?;
+        Ok(())
     }
 
     fn insert_task(
@@ -1758,6 +1909,44 @@ impl ManagementStore {
         }
         Self::get_task_from(&connection, id)?
             .ok_or_else(|| ManagementStoreError::NotFound(format!("task {id}")))
+    }
+
+    /// Permanently removes an application-owned Quick Request and its local
+    /// prompt/session associations. OpenCode's server-side conversation is not
+    /// deleted; callers stop any attached terminal before invoking this.
+    pub fn delete_quick_request(&self, id: &str) -> StoreResult<()> {
+        let mut connection = self.lock()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let task = Self::get_task_from(&transaction, id)?
+            .ok_or_else(|| ManagementStoreError::NotFound(format!("Quick Request {id}")))?;
+        if task.quick_request.is_none() {
+            return Err(ManagementStoreError::InvalidTransition(format!(
+                "task {id} is not a Quick Request"
+            )));
+        }
+        let repository_count: i64 = transaction.query_row(
+            "SELECT COUNT(*) FROM task_repositories WHERE task_id = ?1",
+            [id],
+            |row| row.get(0),
+        )?;
+        let cleanup_count: i64 = transaction.query_row(
+            "SELECT COUNT(*) FROM cleanup_jobs WHERE task_id = ?1",
+            [id],
+            |row| row.get(0),
+        )?;
+        if repository_count != 0 || cleanup_count != 0 {
+            return Err(ManagementStoreError::InvalidTransition(format!(
+                "Quick Request {id} has regular task repository state and cannot be deleted"
+            )));
+        }
+        transaction.execute("DELETE FROM setup_events WHERE task_id = ?1", [id])?;
+        transaction.execute("DELETE FROM setup_operations WHERE task_id = ?1", [id])?;
+        transaction.execute("DELETE FROM setup_operation_state WHERE task_id = ?1", [id])?;
+        transaction.execute("DELETE FROM quick_request_prompts WHERE task_id = ?1", [id])?;
+        transaction.execute("DELETE FROM sessions WHERE owner_task_id = ?1", [id])?;
+        transaction.execute("DELETE FROM tasks WHERE id = ?1", [id])?;
+        transaction.commit()?;
+        Ok(())
     }
 
     /// Marks an eligible, inactive Quick Request as expired. The caller must reconcile session
@@ -2794,6 +2983,12 @@ impl ManagementStore {
             }
         };
         let owner_expected = safety::canonicalize_or_resolve_missing(Path::new(&owner_expected))?;
+        let historical_quick_request_session = if let SessionOwner::Task(id) = &session.owner {
+            self.get_task(id)?
+                .is_some_and(|task| task.quick_request.is_some())
+        } else {
+            false
+        };
         // A promoted Quick Request keeps its historical shared-directory
         // sessions. Future sessions use the dedicated task home.
         let historical_quick = if let SessionOwner::Task(id) = &session.owner {
@@ -2818,7 +3013,7 @@ impl ManagementStore {
         } else {
             false
         };
-        if actual != owner_expected && !historical_quick {
+        if actual != owner_expected && !historical_quick && !historical_quick_request_session {
             return Err(ManagementStoreError::Safety(SafetyError::InvalidPath(
                 format!("session {session_id} directory does not match its owner context"),
             )));
@@ -3655,6 +3850,10 @@ impl ManagementStore {
             params![key, value, updated_at],
         )?;
         drop(connection);
+        if key == "project_home_root" {
+            let connection = self.lock()?;
+            Self::sync_quick_requests_home(&connection, &self.user_home)?;
+        }
         self.get_setting(key)?
             .ok_or_else(|| ManagementStoreError::NotFound(format!("setting {key} after update")))
     }
@@ -3701,14 +3900,14 @@ impl ManagementStore {
                     "Quick Requests workspace only accepts Quick Request tasks".into(),
                 ));
             }
-            let shared = safety::canonicalize_or_resolve_missing(&quick_requests_directory(
-                &self.system_temp_dir,
-            ))?;
+            let shared = safety::canonicalize_or_resolve_missing(
+                &Self::quick_requests_directory_from(connection, &self.user_home)?,
+            )?;
             let persisted =
                 safety::canonicalize_or_resolve_missing(Path::new(&workspace.home_path))?;
             if shared != persisted {
                 return Err(ManagementStoreError::Safety(SafetyError::InvalidPath(
-                    "Quick Requests workspace path is not the shared system-temp directory".into(),
+                    "Quick Requests workspace path is not the shared project directory".into(),
                 )));
             }
             Ok(shared)
@@ -3836,11 +4035,9 @@ pub fn regular_task_home(workspace_home: &Path, task_slug: &str) -> StoreResult<
     .map_err(Into::into)
 }
 
-/// Returns the one app-owned Quick Requests directory under the system temp root.
-pub fn quick_requests_directory(system_temp_dir: &Path) -> PathBuf {
-    system_temp_dir
-        .join("opencode-project-manager")
-        .join("quick-requests")
+/// Returns the special shared folder under the configured OpenCode Projects root.
+pub fn quick_requests_directory(project_home_root: &Path) -> PathBuf {
+    project_home_root.join("Quick Requests")
 }
 
 fn task_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
@@ -4086,15 +4283,16 @@ mod tests {
                          session_id TEXT PRIMARY KEY NOT NULL,
                          prompt TEXT NOT NULL
                      );
-                     INSERT INTO workspace_starting_prompts(session_id, prompt)
-                         VALUES ('legacy-session', 'legacy prompt to remove');
-                     DELETE FROM schema_migrations WHERE version = 10;",
+                      INSERT INTO workspace_starting_prompts(session_id, prompt)
+                          VALUES ('legacy-session', 'legacy prompt to remove');
+                      DROP TABLE quick_request_prompts;
+                      DELETE FROM schema_migrations WHERE version >= 10;",
                 )
                 .unwrap();
         }
         let migrated =
             ManagementStore::open_with_paths(&database, &user_home, &system_temp).unwrap();
-        assert_eq!(migrated.migration_versions().unwrap().last(), Some(&10));
+        assert_eq!(migrated.migration_versions().unwrap().last(), Some(&13));
         let connection = migrated.lock().unwrap();
         let legacy_table_count: i64 = connection
             .query_row(
@@ -4112,6 +4310,229 @@ mod tests {
             .collect::<Result<Vec<_>, _>>()
             .unwrap();
         assert!(!columns.iter().any(|name| name == "starting_prompt"));
+    }
+
+    #[test]
+    fn quick_request_prompt_is_saved_separately_and_returned_with_list_records() {
+        let fixture = tempdir().unwrap();
+        let system_temp = fixture.path().join("system-temp");
+        let store =
+            ManagementStore::in_memory_with_paths(fixture.path().join("home"), system_temp.clone())
+                .unwrap();
+        store.create_workspace(&quick_workspace()).unwrap();
+        store
+            .create_workspace(&workspace("w-regular", "regular"))
+            .unwrap();
+
+        let original_prompt = "  What's 2 + 2?\n ";
+        let mut new_task = task("qr-prompt", "w-quick", "quick-prompt");
+        new_task.description = Some("must not remain in task description".into());
+        let session = NewSession {
+            open_code_session_id: "ses-quick-prompt".into(),
+            owner: SessionOwner::Task(new_task.id.clone()),
+            directory: quick_requests_directory(&fixture.path().join("home/OpenCode Projects"))
+                .to_string_lossy()
+                .into_owned(),
+            last_known_status: "starting".into(),
+            created_at: CREATED + 2,
+        };
+        let created = store
+            .create_quick_request_with_session_and_model(
+                &new_task,
+                &session,
+                "openai/gpt-6-luna",
+                original_prompt,
+            )
+            .unwrap();
+
+        assert_eq!(created.prompt.as_deref(), Some(original_prompt));
+        assert_eq!(created.task.description, None);
+        assert_eq!(
+            store.quick_request_prompt("qr-prompt").unwrap().as_deref(),
+            Some(original_prompt)
+        );
+        let listed = store.list_quick_requests(true).unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].prompt.as_deref(), Some(original_prompt));
+
+        let regular_task = store
+            .create_task(&task("regular-task", "w-regular", "regular-task"))
+            .unwrap();
+        let connection = store.lock().unwrap();
+        assert!(connection
+            .execute(
+                "INSERT INTO quick_request_prompts(task_id, original_prompt) VALUES (?1, ?2)",
+                params![regular_task.id, "not a Quick Request"],
+            )
+            .is_err());
+    }
+
+    #[test]
+    fn recent_quick_requests_use_creation_age_while_history_keeps_all_lifecycles() {
+        let fixture = tempdir().unwrap();
+        let store = ManagementStore::in_memory_with_paths(
+            fixture.path().join("home"),
+            fixture.path().join("tmp"),
+        )
+        .unwrap();
+        store.create_workspace(&quick_workspace()).unwrap();
+        let now = now_millis_for_cleanup();
+        let mut recent = task("qr-recent", "w-quick", "recent");
+        recent.created_at = now;
+        let mut old = task("qr-old", "w-quick", "old");
+        old.created_at = now - QUICK_REQUEST_LIFETIME_MS - 1;
+        store
+            .create_quick_request(&recent, "recent prompt")
+            .unwrap();
+        store.create_quick_request(&old, "old prompt").unwrap();
+        assert_eq!(store.list_quick_requests(false).unwrap().len(), 1);
+        store.dismiss_quick_request("qr-recent", now + 1).unwrap();
+
+        let recent_list = store.list_quick_requests(false).unwrap();
+        assert!(
+            recent_list.is_empty(),
+            "dismissal removes the item from recent navigation"
+        );
+        let history = store.list_quick_requests(true).unwrap();
+        assert_eq!(history.len(), 2);
+        assert!(history.iter().any(|record| record.task.id == "qr-recent"));
+        assert!(history.iter().any(|record| record.task.id == "qr-old"));
+    }
+
+    #[test]
+    fn quick_request_delete_removes_only_its_local_record_and_prompt() {
+        let fixture = tempdir().unwrap();
+        let store = ManagementStore::in_memory_with_paths(
+            fixture.path().join("home"),
+            fixture.path().join("tmp"),
+        )
+        .unwrap();
+        store.create_workspace(&quick_workspace()).unwrap();
+        store
+            .create_quick_request(&task("qr-delete", "w-quick", "delete-me"), "original")
+            .unwrap();
+        store
+            .create_workspace(&workspace("w-regular", "regular"))
+            .unwrap();
+        store
+            .create_task(&task("regular-task", "w-regular", "keep-me"))
+            .unwrap();
+
+        store.delete_quick_request("qr-delete").unwrap();
+        assert!(store.get_task("qr-delete").unwrap().is_none());
+        assert!(store.quick_request_prompt("qr-delete").unwrap().is_none());
+        assert!(store.list_quick_requests(true).unwrap().is_empty());
+        assert_eq!(
+            store.get_task("regular-task").unwrap().unwrap().id,
+            "regular-task"
+        );
+        assert!(store.delete_quick_request("regular-task").is_err());
+        assert_eq!(
+            store.get_task("regular-task").unwrap().unwrap().id,
+            "regular-task"
+        );
+    }
+
+    #[test]
+    fn quick_request_directory_resolves_only_registered_repositories_or_shared_default() {
+        let fixture = tempdir().unwrap();
+        let repository_path = fixture.path().join("registered-repo");
+        fs::create_dir_all(&repository_path).unwrap();
+        let system_temp = fixture.path().join("system-temp");
+        let store =
+            ManagementStore::in_memory_with_paths(fixture.path().join("home"), system_temp.clone())
+                .unwrap();
+        store
+            .create_repository(&NewRepository {
+                id: "repo-1".into(),
+                name: "Registered repository".into(),
+                repository_path: repository_path.to_string_lossy().into_owned(),
+                repository_identity: "git-identity-1".into(),
+                purpose: None,
+                purpose_status: PurposeStatus::Available,
+                created_at: 1,
+            })
+            .unwrap();
+
+        assert_eq!(
+            store.quick_request_directory(Some("repo-1")).unwrap(),
+            std::fs::canonicalize(repository_path).unwrap()
+        );
+        assert_eq!(
+            store.quick_request_directory(None).unwrap(),
+            quick_requests_directory(&fixture.path().join("home/OpenCode Projects"))
+        );
+        assert!(store.quick_request_directory(Some("unregistered")).is_err());
+    }
+
+    #[test]
+    fn quick_request_prompt_migration_moves_legacy_task_descriptions() {
+        let fixture = tempdir().unwrap();
+        let user_home = fixture.path().join("home");
+        let system_temp = fixture.path().join("system-temp");
+        fs::create_dir_all(&user_home).unwrap();
+        fs::create_dir_all(&system_temp).unwrap();
+        let database = fixture.path().join("management.sqlite");
+        let store = ManagementStore::open_with_paths(&database, &user_home, &system_temp).unwrap();
+        store.create_workspace(&quick_workspace()).unwrap();
+        store
+            .create_workspace(&workspace("w-regular", "regular"))
+            .unwrap();
+        store
+            .create_quick_request(&task("qr-legacy-prompt", "w-quick", "legacy"), "temporary")
+            .unwrap();
+        store
+            .create_task(&task(
+                "regular-with-description",
+                "w-regular",
+                "regular-task",
+            ))
+            .unwrap();
+        drop(store);
+
+        {
+            let legacy = Connection::open(&database).unwrap();
+            legacy
+                .execute_batch(
+                    "UPDATE tasks SET description = 'legacy Quick Request prompt', name = 'Quick Request: legacy Quick Request prompt' WHERE id = 'qr-legacy-prompt';
+                     DELETE FROM quick_request_prompts WHERE task_id = 'qr-legacy-prompt';
+                     DROP TABLE quick_request_prompts;
+                     DELETE FROM schema_migrations WHERE version IN (11, 12, 13);",
+                )
+                .unwrap();
+        }
+
+        let migrated =
+            ManagementStore::open_with_paths(&database, &user_home, &system_temp).unwrap();
+        assert_eq!(migrated.migration_versions().unwrap().last(), Some(&13));
+        assert_eq!(
+            migrated
+                .quick_request_prompt("qr-legacy-prompt")
+                .unwrap()
+                .as_deref(),
+            Some("legacy Quick Request prompt")
+        );
+        assert_eq!(
+            migrated
+                .get_task("qr-legacy-prompt")
+                .unwrap()
+                .unwrap()
+                .description,
+            None
+        );
+        assert_eq!(
+            migrated.get_task("qr-legacy-prompt").unwrap().unwrap().name,
+            "Quick Request"
+        );
+        assert_eq!(
+            migrated
+                .get_task("regular-with-description")
+                .unwrap()
+                .unwrap()
+                .description
+                .as_deref(),
+            Some("A test task")
+        );
     }
 
     fn repository(id: &str) -> NewRepository {
@@ -4321,7 +4742,7 @@ mod tests {
                     .unwrap();
             assert_eq!(
                 store.migration_versions().unwrap(),
-                vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+                vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
             );
             assert_eq!(
                 store.project_home_root().unwrap(),
@@ -4348,7 +4769,7 @@ mod tests {
         let reopened = ManagementStore::open_with_paths(&path, user_home, system_temp).unwrap();
         assert_eq!(
             reopened.migration_versions().unwrap(),
-            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
         );
         assert_eq!(
             reopened.get_workspace("w-1").unwrap().unwrap().slug,
@@ -4558,7 +4979,7 @@ mod tests {
         assert_eq!(updated_session.updated_at, CREATED + 10);
 
         let quick = store
-            .create_quick_request(&task("qr-1", "w-quick", "quick-one"))
+            .create_quick_request(&task("qr-1", "w-quick", "quick-one"), "quick prompt")
             .unwrap();
         let initial_quick_lifecycle = quick.quick_request.unwrap();
         assert_eq!(initial_quick_lifecycle.created_at, CREATED + 1);
@@ -4665,13 +5086,13 @@ mod tests {
             .create_workspace(&workspace("w-regular", "regular"))
             .unwrap();
         store
-            .create_quick_request(&task("qr-promote", "w-quick", "request"))
+            .create_quick_request(&task("qr-promote", "w-quick", "request"), "promote me")
             .unwrap();
         store
             .create_session(&NewSession {
                 open_code_session_id: "ses-before-promotion".into(),
                 owner: SessionOwner::Task("qr-promote".into()),
-                directory: quick_requests_directory(&system_temp)
+                directory: quick_requests_directory(&fixture.path().join("home/OpenCode Projects"))
                     .to_string_lossy()
                     .into_owned(),
                 last_known_status: "ready_for_review".into(),
@@ -4703,7 +5124,7 @@ mod tests {
         );
         assert_eq!(
             historical_session.directory,
-            quick_requests_directory(&system_temp)
+            quick_requests_directory(&fixture.path().join("home/OpenCode Projects"))
                 .to_string_lossy()
                 .as_ref()
         );
@@ -4713,14 +5134,18 @@ mod tests {
     fn failed_new_workspace_promotion_rolls_back_workspace_home_and_source_request() {
         let fixture = tempdir().unwrap();
         let system_temp = fixture.path().join("system-temp");
-        let quick_directory = quick_requests_directory(&system_temp)
-            .to_string_lossy()
-            .into_owned();
+        let quick_directory =
+            quick_requests_directory(&fixture.path().join("home/OpenCode Projects"))
+                .to_string_lossy()
+                .into_owned();
         let store = ManagementStore::in_memory_with_paths(fixture.path().join("home"), system_temp)
             .unwrap();
         store.create_workspace(&quick_workspace()).unwrap();
         store
-            .create_quick_request(&task("qr-failed-promotion", "w-quick", "request"))
+            .create_quick_request(
+                &task("qr-failed-promotion", "w-quick", "request"),
+                "failed promotion prompt",
+            )
             .unwrap();
         store
             .create_session(&NewSession {
@@ -4875,11 +5300,10 @@ mod tests {
             ))
             .is_err());
         assert!(store
-            .create_quick_request(&task(
-                "quick-request-in-regular-space",
-                "w-1",
-                "quick-request"
-            ))
+            .create_quick_request(
+                &task("quick-request-in-regular-space", "w-1", "quick-request"),
+                "not a quick request"
+            )
             .is_err());
         assert!(store
             .get_task("regular-task-in-quick-space")
@@ -5049,7 +5473,7 @@ mod tests {
     }
 
     #[test]
-    fn quick_request_tasks_and_sessions_are_bound_to_the_one_shared_temp_directory() {
+    fn quick_request_task_homes_and_session_directories_are_validated() {
         let fixture = tempdir().unwrap();
         let system_temp = fixture.path().join("system-temp");
         let store = ManagementStore::in_memory_with_paths(
@@ -5058,13 +5482,17 @@ mod tests {
         )
         .unwrap();
         let quick_workspace = store.create_workspace(&quick_workspace()).unwrap();
-        let shared_directory = quick_requests_directory(&system_temp)
-            .to_string_lossy()
-            .into_owned();
+        let shared_directory =
+            quick_requests_directory(&fixture.path().join("user-home/OpenCode Projects"))
+                .to_string_lossy()
+                .into_owned();
         assert_eq!(quick_workspace.home_path, shared_directory);
 
         let request = store
-            .create_quick_request(&task("qr-shared", &quick_workspace.id, "request-one"))
+            .create_quick_request(
+                &task("qr-shared", &quick_workspace.id, "request-one"),
+                "shared prompt",
+            )
             .unwrap();
         assert_eq!(request.home_path, shared_directory);
         assert!(!Path::new(&request.home_path).exists());
@@ -5098,16 +5526,75 @@ mod tests {
         assert_eq!(session.directory, shared_directory);
         assert_eq!(session.owner, SessionOwner::Task(request.id));
 
+        let repository_path = fixture.path().join("registered-repository");
+        fs::create_dir_all(&repository_path).unwrap();
+        store
+            .create_repository(&NewRepository {
+                id: "repo-quick-request".into(),
+                name: "Registered repository".into(),
+                repository_path: repository_path.to_string_lossy().into_owned(),
+                repository_identity: "quick-request-repository-identity".into(),
+                purpose: None,
+                purpose_status: PurposeStatus::Available,
+                created_at: CREATED,
+            })
+            .unwrap();
+        let repository_directory = store
+            .quick_request_directory(Some("repo-quick-request"))
+            .unwrap();
+        let repository_task = task("qr-repository", &quick_workspace.id, "request-repository");
+        let repository_session = NewSession {
+            open_code_session_id: "ses-quick-repository-directory".into(),
+            owner: SessionOwner::Task(repository_task.id.clone()),
+            directory: repository_directory.to_string_lossy().into_owned(),
+            last_known_status: "starting".into(),
+            created_at: CREATED + 1,
+        };
+        let repository_request = store
+            .create_quick_request_with_session_and_model(
+                &repository_task,
+                &repository_session,
+                "openai/gpt-6-luna",
+                "repository-bound prompt",
+            )
+            .unwrap();
+        assert_eq!(
+            repository_request.session.unwrap().directory,
+            repository_directory.to_string_lossy()
+        );
+
+        let configured_root = fixture.path().join("user-home/custom-projects");
+        store
+            .set_project_home_root(&configured_root.to_string_lossy(), CREATED + 2)
+            .unwrap();
+        let configured_quick_directory = quick_requests_directory(&configured_root);
+        assert_eq!(
+            store
+                .get_workspace(&quick_workspace.id)
+                .unwrap()
+                .unwrap()
+                .home_path,
+            configured_quick_directory.to_string_lossy()
+        );
+        assert_eq!(
+            store.get_task("qr-shared").unwrap().unwrap().home_path,
+            configured_quick_directory.to_string_lossy()
+        );
+        assert_eq!(
+            store
+                .validate_session_context(
+                    "ses-quick-shared-directory",
+                    Path::new(&shared_directory)
+                )
+                .unwrap()
+                .directory,
+            shared_directory
+        );
+
         let connection = store.lock().unwrap();
         assert!(connection
             .execute(
                 "UPDATE tasks SET home_path = '/arbitrary/request/home' WHERE id = 'qr-shared'",
-                [],
-            )
-            .is_err());
-        assert!(connection
-            .execute(
-                "UPDATE workspaces SET home_path = '/arbitrary/request/home' WHERE id = 'w-quick'",
                 [],
             )
             .is_err());

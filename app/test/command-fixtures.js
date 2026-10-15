@@ -81,8 +81,10 @@ export function resultForCommand(name) {
     case 'task_setup_resume': return task;
     case 'task_setup_status': return { task, session, repositories: [], repositoryIds: null };
     case 'quick_request_create':
-    case 'quick_request_restore': return { task, session: null };
+    case 'quick_request_restore': return { task, session: null, prompt: 'Original Quick Request prompt' };
+    case 'quick_request_resolve_directory': return '/tmp/quick-requests';
     case 'quick_request_list': return [];
+    case 'quick_request_delete': return null;
     case 'quick_request_dismiss':
     case 'quick_request_expire':
     case 'quick_request_promote': return task;

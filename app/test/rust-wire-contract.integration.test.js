@@ -24,6 +24,7 @@ test('actual Rust management and session DTOs satisfy frontend command result co
       request: {
         prompt: 'Wire prompt',
         model: { providerId: 'openai', id: 'gpt-6-luna' },
+        repositoryId: null,
       },
     }, wire.quickRequest],
     ['quick_request_list', { request: { history: false } }, wire.quickRequestList],

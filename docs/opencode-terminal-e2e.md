@@ -41,7 +41,7 @@ follow-up also remain unvalidated.
 
 Use the installed OpenCode CLI and verify its version and command contract at startup. For the installed v2.0.27 contract, use an app-owned `opencode serve`, authenticated `/api/...` routes, and the root TUI invocation `opencode --server <url> --session <id> <directory>`. The v1 `attach`, unprefixed `/session`, and `prompt_async` forms are historical prototype evidence and must not be mixed with v2. See [`opencode-v2-contract.md`](opencode-v2-contract.md).
 
-Every terminal attachment requires an exact session ID and its correct working directory. The application layer resolves those values: workspace sessions use workspace/main-branch context, task sessions use their task/worktree context, and Quick Requests use their shared directory. Store regular session IDs in the owning workspace/task record. Keep this routing outside the terminal renderer. Each session gets its own PTY and xterm instance; never infer a regular session from whichever conversation is foreground or newest in a directory.
+Every terminal attachment requires an exact session ID and its correct working directory. The application layer resolves those values: workspace sessions use workspace/main-branch context, task sessions use their task/worktree context, and Quick Requests use the confirmed registered-repository directory or the shared `<configured OpenCode Projects root>/Quick Requests/` directory. Store exact session IDs and working directories with their owners. Keep this routing outside the terminal renderer. Each session gets its own PTY and xterm instance; never infer a session from whichever conversation is foreground or newest in a directory.
 
 ## Startup gates
 
@@ -55,7 +55,7 @@ Every terminal attachment requires an exact session ID and its correct working d
 
 The order is significant; do not send an initial prompt before the terminal can receive and parse TUI output. The terminal runtime receives a resolved session ID and directory; it does not branch on workspace, task, or Quick Request type.
 
-1. Resolve the session's owner/context, working directory, and repository/worktree environment. Validate and trim the initial prompt; create the working directory if needed.
+1. Resolve the session's owner/context, working directory, and repository/worktree environment. Validate the initial prompt without rewriting it; Quick Requests send the captured original prompt unchanged. Create the working directory if needed.
 2. Ensure the app-managed server for that context is ready, then create a session with the version-matched API. For v2.0.27, call `POST /api/session` with `location.directory`; keep the returned session ID and display title in the owning workspace/task/Quick Request record.
 3. Allocate a PTY and launch the version-matched root TUI with `--server`, `--session`, and the resolved directory. Set `TERM=xterm-256color` and `COLORTERM=truecolor`; use the resolved directory as the process working directory.
 4. Start reading the PTY master immediately. Emit each byte chunk as a `terminal-output` event containing `sessionId` and base64-encoded `dataBase64`. Emit a matching `terminal-exit` event when the child exits. Base64 preserves terminal control bytes and UTF-8 across the JSON event boundary.
@@ -83,7 +83,7 @@ Register this handler before replaying any buffered PTY output. Surface PTY-writ
 ## Reopening saved work
 
 1. Resolve the session using the owning context. Workspace/task sessions use the exact session ID stored in the workspace/task association and its recorded working directory. Never choose the newest session in a regular workspace or task directory.
-2. Quick Requests currently share one directory and lack a durable per-request association in the prototype. Its v2 fallback lists sessions from the app-owned server, filters by exact `location.directory`, examines newest-to-oldest, and skips records with no user message. Rust unit tests cover the exact-directory and populated-session selection rules. This fallback is Quick Request-specific and must not be used for regular sessions.
+2. The historical Quick Request prototype shared one directory and lacked durable per-request associations. Its v2 fallback lists sessions from the app-owned server, filters by exact `location.directory`, examines newest-to-oldest, and skips records with no user message. This is prototype-only behavior, not the production resolution rule: production Quick Requests resolve a directory before creation and restore by their exact stored session ID and directory. The fallback must not be used for regular sessions.
 3. Launch the root TUI with `--server`, the resolved exact `--session` ID, and its directory; start the same PTY-to-xterm event pipeline for every session type.
 4. Render the existing TUI history. Restore does not send an initial prompt.
 

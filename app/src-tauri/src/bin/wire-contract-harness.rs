@@ -46,6 +46,10 @@ fn run() -> Result<Value, String> {
 }
 
 fn build_output(root: &std::path::Path) -> Result<Value, String> {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|error| error.to_string())?
+        .as_millis() as i64;
     let temp_root = root.join("tmp");
     let store =
         ManagementStore::open_with_paths(root.join("state.sqlite"), root.join("home"), &temp_root)
@@ -82,20 +86,25 @@ fn build_output(root: &std::path::Path) -> Result<Value, String> {
         slug: "wire-quick-request".into(),
         description: Some("contract sample".into()),
         setup_status: TaskSetupStatus::Ready,
-        created_at: 12,
+        created_at: now,
     };
     let session_id = "ses_wire_contract";
     let session = NewSession {
         open_code_session_id: session_id.into(),
         owner: SessionOwner::Task(task.id.clone()),
-        directory: quick_requests_directory(&temp_root)
+        directory: quick_requests_directory(&root.join("home/OpenCode Projects"))
             .to_string_lossy()
             .into_owned(),
         last_known_status: "running".into(),
-        created_at: 13,
+        created_at: now + 1,
     };
     store
-        .create_quick_request_with_session_and_model(&task, &session, "openai/gpt-6-luna")
+        .create_quick_request_with_session_and_model(
+            &task,
+            &session,
+            "openai/gpt-6-luna",
+            "What's 2 + 2?",
+        )
         .map_err(|error| error.to_string())?;
 
     let quick_requests = store

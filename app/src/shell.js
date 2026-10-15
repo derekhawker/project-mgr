@@ -149,14 +149,16 @@ export function cleanupTerminal(invoke, sessionId) {
   return invokeCommand(invoke, 'opencode_terminal_cleanup', { sessionId });
 }
 
-export function createQuickRequest(invoke, prompt, model) {
-  return invokeCommand(invoke, 'quick_request_create', { prompt, model });
+export function createQuickRequest(invoke, prompt, model, repositoryId = null) {
+  return invokeCommand(invoke, 'quick_request_create', { prompt, model, repositoryId });
 }
 
-export function startQuickRequestPrompt(invoke, requestId, model, prompt = undefined) {
-  const payload = { requestId, model };
-  if (prompt !== undefined) payload.prompt = prompt;
-  return invokeCommand(invoke, 'quick_request_start_prompt', payload);
+export function resolveQuickRequestDirectory(invoke, repositoryId = null) {
+  return invokeCommand(invoke, 'quick_request_resolve_directory', { repositoryId });
+}
+
+export function startQuickRequestPrompt(invoke, requestId, model) {
+  return invokeCommand(invoke, 'quick_request_start_prompt', { requestId, model });
 }
 
 // Keep the submit lifecycle in one testable place. In particular, preserve the
@@ -179,6 +181,28 @@ export async function submitQuickRequestFlow({
   await showSession(sessionId);
   await startQuickRequestPrompt(invoke, record.task.id, model);
   promptInput.value = '';
+  await refreshRequests();
+  return record;
+}
+
+export async function submitResolvedQuickRequestFlow({
+  invoke,
+  originalPrompt,
+  model,
+  repositoryId,
+  waitForTerminal,
+  onCreated,
+  showSession,
+  refreshRequests,
+}) {
+  if (!originalPrompt?.trim()) throw new Error('Enter an original prompt first.');
+  await waitForTerminal();
+  const record = await createQuickRequest(invoke, originalPrompt, model, repositoryId);
+  onCreated(record);
+  const sessionId = record.session?.openCodeSessionId;
+  if (!sessionId) throw new Error('Quick Request creation returned no session ID.');
+  await showSession(sessionId);
+  await startQuickRequestPrompt(invoke, record.task.id, model);
   await refreshRequests();
   return record;
 }
@@ -248,6 +272,10 @@ export function dismissQuickRequest(invoke, requestId) {
   return invokeCommand(invoke, 'quick_request_dismiss', { requestId });
 }
 
+export function deleteQuickRequest(invoke, requestId) {
+  return invokeCommand(invoke, 'quick_request_delete', { requestId });
+}
+
 export function expireQuickRequest(invoke, requestId) {
   return invokeCommand(invoke, 'quick_request_expire', { requestId });
 }
@@ -260,9 +288,10 @@ export function startNewWorkProposal(invoke, model) {
   return invokeCommand(invoke, 'new_work_proposal_start', { model });
 }
 
-export function runNewWorkProposal(invoke, sessionId, originalPrompt, preferredWorkspaceId = undefined) {
+export function runNewWorkProposal(invoke, sessionId, originalPrompt, preferredWorkspaceId = undefined, workType = undefined) {
   const payload = { sessionId, originalPrompt };
   if (preferredWorkspaceId !== undefined) payload.preferredWorkspaceId = preferredWorkspaceId;
+  if (workType !== undefined) payload.workType = workType;
   return invokeCommand(invoke, 'new_work_proposal_run', payload);
 }
 
@@ -379,7 +408,7 @@ export function submitNewWorkStartingPrompt(invoke, action, prompt) {
     );
   }
   if (action?.type === 'quick_request') {
-    return startQuickRequestPrompt(invoke, action.id, action.model, prompt);
+    return startQuickRequestPrompt(invoke, action.id, action.model);
   }
   throw new Error('The pending starting prompt has no valid owner.');
 }

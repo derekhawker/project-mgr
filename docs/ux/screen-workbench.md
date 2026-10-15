@@ -14,7 +14,7 @@ only the selected main pane scrolls. Keep the task/session bar compact above a
 full-size terminal:
 
 ```text
-┌ agentic-frontend ▾ │ Project │ Upgrade tonic-one │ + Task │ Change Review ┐
+┌ agentic-frontend ▾ │ Project │ Upgrade tonic-one │ Change Review ┐
 │ test · terminal ▾ │ + Session │ Shell │ READMEs │ Tools │ ⛶ Fullscreen   │
 ├───────────────────────────────────────────────────────────────────────────┤
 │                                                                           │
@@ -25,6 +25,8 @@ full-size terminal:
 - The first row identifies the selected workspace and switches among its tasks.
   The workspace remains visible even when it has tasks. Keep task navigation
   available while a terminal is active.
+- Create a workspace or contextual task from the **New work** dropdown in the
+  persistent left navigation. Do not add a standalone **+ Task** toolbar button.
 - The second row shows the selected owner's terminal tabs, session actions, and
   available destinations. Keep it compact; do not let wrapping toolbars consume
   the terminal's area.

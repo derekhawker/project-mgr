@@ -132,6 +132,10 @@
                 "id"
               ],
               "additionalProperties": false
+            },
+            "repositoryId": {
+              "type": "string",
+              "nullable": true
             }
           },
           "required": [
@@ -236,6 +240,10 @@
                 "id"
               ],
               "additionalProperties": false
+            },
+            "repositoryId": {
+              "type": "string",
+              "nullable": true
             }
           },
           "required": [
@@ -1138,11 +1146,16 @@
                 "id"
               ],
               "additionalProperties": false
+            },
+            "repositoryId": {
+              "type": "string",
+              "nullable": true
             }
           },
           "required": [
             "prompt",
-            "model"
+            "model",
+            "repositoryId"
           ],
           "additionalProperties": false
         }
@@ -1327,14 +1340,35 @@
             "selectedModel"
           ],
           "additionalProperties": false
+        },
+        "prompt": {
+          "type": "string",
+          "nullable": true
         }
       },
       "required": [
         "task",
-        "session"
+        "session",
+        "prompt"
       ],
       "additionalProperties": false
     }
+  },
+  "quick_request_resolve_directory": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "request": {
+          "type": "object",
+          "properties": { "repositoryId": { "type": "string", "nullable": true } },
+          "required": ["repositoryId"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["request"],
+      "additionalProperties": false
+    },
+    "result": { "type": "string" }
   },
   "quick_request_start_prompt": {
     "payload": {
@@ -1361,8 +1395,7 @@
                 "id"
               ],
               "additionalProperties": false
-            },
-            "prompt": { "type": "string" }
+            }
           },
           "required": [
             "requestId",
@@ -1715,11 +1748,16 @@
             "selectedModel"
           ],
           "additionalProperties": false
+        },
+        "prompt": {
+          "type": "string",
+          "nullable": true
         }
       },
       "required": [
         "task",
-        "session"
+        "session",
+        "prompt"
       ],
       "additionalProperties": false
     }
@@ -1921,11 +1959,16 @@
               "selectedModel"
             ],
             "additionalProperties": false
+          },
+          "prompt": {
+            "type": "string",
+            "nullable": true
           }
         },
         "required": [
           "task",
-          "session"
+          "session",
+          "prompt"
         ],
         "additionalProperties": false
       }
@@ -2057,6 +2100,22 @@
       ],
       "additionalProperties": false
     }
+  },
+  "quick_request_delete": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "request": {
+          "type": "object",
+          "properties": { "requestId": { "type": "string" } },
+          "required": ["requestId"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["request"],
+      "additionalProperties": false
+    },
+    "result": { "type": "null" }
   },
   "quick_request_expire": {
     "payload": {
@@ -2333,7 +2392,7 @@
     "result": { "type": "object", "properties": { "sessionId": { "type": "string" } }, "required": ["sessionId"], "additionalProperties": false }
   },
   "new_work_proposal_run": {
-    "payload": { "type": "object", "properties": { "request": { "type": "object", "properties": { "sessionId": { "type": "string" }, "originalPrompt": { "type": "string" }, "preferredWorkspaceId": { "type": "string" } }, "required": ["sessionId", "originalPrompt"], "additionalProperties": false } }, "required": ["request"], "additionalProperties": false },
+    "payload": { "type": "object", "properties": { "request": { "type": "object", "properties": { "sessionId": { "type": "string" }, "originalPrompt": { "type": "string" }, "preferredWorkspaceId": { "type": "string" }, "workType": { "type": "string", "enum": ["workspace", "task", "quick_request"] } }, "required": ["sessionId", "originalPrompt"], "additionalProperties": false } }, "required": ["request"], "additionalProperties": false },
     "result": {
       "type": "object",
       "properties": {
@@ -2750,11 +2809,16 @@
                   "selectedModel"
                 ],
                 "additionalProperties": false
+              },
+              "prompt": {
+                "type": "string",
+                "nullable": true
               }
             },
             "required": [
               "task",
-              "session"
+              "session",
+              "prompt"
             ],
             "additionalProperties": false
           }

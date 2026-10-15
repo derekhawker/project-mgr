@@ -31,6 +31,7 @@ test('rendered Quick Request form submits through the production command boundar
   const request = {
     task: { ...task, id: 'quick-dom-1', quickRequest: null },
     session: { ...session, openCodeSessionId: 'session-dom-1' },
+    prompt: 'Keep my request context',
   };
   const invoke = async (name, payload) => {
     calls.push([name, payload]);
@@ -55,6 +56,7 @@ test('rendered Quick Request form submits through the production command boundar
     ['quick_request_create', {
       prompt: 'Keep my request context',
       model: { providerId: 'openai', id: 'gpt-test' },
+      repositoryId: null,
     }],
     ['quick_request_start_prompt', {
       requestId: 'quick-dom-1',
@@ -80,6 +82,7 @@ test('rendered Quick Request form retains the prompt and shows the boundary erro
       if (name === 'quick_request_create') return {
         task: { ...task, id: 'quick-dom-2', quickRequest: null },
         session: { ...session, openCodeSessionId: 'session-dom-2' },
+        prompt: 'Do not lose this on failure',
       };
       throw new Error('OpenCode rejected the initial prompt');
     },

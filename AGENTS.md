@@ -19,6 +19,7 @@
 - Work on one user-visible vertical feature at a time. If blocked, resolve the blocker or explicitly rescope the feature before switching; do not accumulate partially implemented features.
 - Before implementation, understand how the intended behavior could work end to end within the current architecture. Identify whether the feature extends an existing feature or calls for a different organization of code. Refine this understanding as implementation reveals more.
 - Use this end-to-end understanding to shape the design and decide what belongs in unit tests versus integration tests.
+- Do not test CSS in unit tests: avoid reading stylesheets or asserting CSS declarations, classes, or computed layout. Test application behavior and data contracts; keep visual and layout acceptance manual on Wayland.
 - Test both sides of every Tauri command. Rust tests cover behavior and serialized results; frontend tests cover command names, payloads, and result/error handling. Where practical, pass Rust-produced values through the production frontend contract rather than relying only on hand-authored fixtures.
 - Test integration with real external components where applicable: isolated SQLite databases, temporary filesystem/Git fixtures, and the installed OpenCode CLI/server. Mocks support unit tests but do not replace these integration checks. Keep provider-dependent and Wayland-only behavior manual when it cannot be validated automatically.
 

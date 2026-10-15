@@ -25,7 +25,7 @@ the application command boundary or duplicate OpenCode conversation history.
 | GUI | Renders navigation, forms, status, terminal views, history, and lifecycle controls. Sends explicit commands to Rust. | OpenCode history, authoritative associations, or filesystem validation. |
 | Tauri/Rust core | Owns application commands, validation, SQLite writes, OpenCode child processes, PTYs, event forwarding, recovery, and cleanup scheduling. | Conversation content or model decisions. |
 | SQLite management store | Persists workspaces, tasks, repositories, associations, sessions, settings, lifecycle state, and cleanup state. | Notes, resources, Git history, or duplicate conversation transcripts. |
-| Filesystem | Stores workspace/task home folders, notes, resources, and the Quick Request directory. | Lifecycle truth for records; SQLite remains authoritative for management state. |
+| Filesystem | Stores workspace/task home folders, notes, resources, and the default Quick Request directory. | Lifecycle truth for records; SQLite remains authoritative for management state. |
 | Git | Identifies repositories and branches and reports worktree cleanliness and usage. | Workspace/task lifecycle or OpenCode conversation history. |
 | OpenCode server | Creates sessions, accepts prompts, owns conversation history, exposes history/status/events, and performs model-backed work. | GUI management state and the application's authoritative repository associations. |
 | OpenCode TUI | Provides the interactive terminal experience, including follow-ups, approvals, and user-input requests. | Application navigation, lifecycle records, and cleanup decisions. |
@@ -53,11 +53,17 @@ SQLite records include:
 - Task repository bindings, branches, and worktree paths.
 - OpenCode session IDs, session owners, working directories, and last-known
   status.
-- Quick Request creation, dismissal, expiry, and promotion state.
+- Quick Request creation time and original prompt; deletion removes the app-owned
+  request/prompt/session association while preserving OpenCode conversation data.
+- Original Quick Request prompts in a dedicated task-linked table; regular
+  workspace/task prompts remain transient inputs.
 - Cleanup jobs, attempts, deferrals, and failure details.
 - User preferences, including the project-home root.
 
-SQLite does not store a second copy of conversation messages.
+SQLite does not store a second copy of conversation messages. The sole prompt
+exception is a Quick Request's original prompt, stored in a dedicated table
+linked to its request so the full list can display it without reading OpenCode
+history. Workspace/task original and starting prompts remain transient.
 
 ### 3.2 User project home
 
@@ -91,24 +97,35 @@ checkout path; the product does not silently move repositories.
 
 ### 3.3 Quick Requests
 
-Quick Requests are a special workspace and use one shared directory under the
-system temporary directory. They do not get individual home folders. Their
-management records and exact session IDs belong in SQLite. In the GUI, show
-requests created in the last 24 hours in the top Quick Requests section of the
-persistent left navigation. Quick Requests are prominent navigation, but the
-main work area remains the selected workspace, task, or Quick Request terminal.
+Quick Requests are tasks under a special workspace and do not get individual
+home folders. Each request uses the working directory resolved from a registered
+repository; when none is identified, it uses the shared `Quick Requests/` folder
+under the configured OpenCode Projects root (normally `~/OpenCode Projects/`).
+This shared folder is a deliberate exception to regular workspace/task home
+placement, not a temporary directory. Changing the configured root updates the
+shared Quick Requests workspace/task paths; existing session working directories
+remain exact and are still restorable. Their management records and session IDs
+belong in SQLite. In the GUI, show requests created
+in the last 24 hours in the top Quick Requests section of persistent navigation.
+The separate full-list destination shows all retained Quick Requests, including
+older items. Each row has an **Open** button beside non-clickable prompt text and
+one **Delete** action with confirmation. Opening one
+shows its dedicated page: the terminal fills the available main work area, the
+app shell/navigation remain visible, and there are no session tabs or
+workspace/task controls. **Back to Quick Requests** returns to the list without
+closing the terminal or stopping its process.
 
 ## 3.4 Navigation and workspace focus
 
 Keep the Workspace → Task tree prominent in persistent left navigation. Show
 all open workspaces, including idle ones, with tasks nested directly under their
 workspace. Do not require a separate all-workspaces summary screen: selecting a
-workspace renders its working area in the main pane. Provide one visible **New**
-action in navigation. It opens the prompt/proposal flow and creates a workspace
-only after confirmation; do not provide a separate name-first workspace path.
-Keep **+ Task** scoped to the selected workspace and route it through the same
-prompt/proposal pattern. In a selected workspace, keep these controls compact
-and give the interactive OpenCode terminal almost all of the main/right pane.
+workspace renders its working area in the main pane. Provide a **New work**
+dropdown in navigation. Its choices start workspace, contextual task, or Quick
+Request flows; do not put a work-type selector inside the prompt form. Do not
+provide a separate name-first workspace path or a standalone **+ Task** button.
+In a selected workspace, keep available controls compact and give the
+interactive OpenCode terminal almost all of the main/right pane.
 The selected workspace and its tasks show the verified workspace repository
 bindings, including checkout path, branch, and verification state; the catalog
 and attachment controls are available at workspace scope.
@@ -128,7 +145,9 @@ Requests** above the recent requests list.
 8. OpenCode owns conversation history; SQLite stores associations only.
 9. Regular workspace/task original and starting prompts are transient command
    inputs. The application does not persist them in SQLite or files; OpenCode
-   owns any submitted conversation history.
+   owns any submitted conversation history. A Quick Request's original prompt is
+   the explicit exception: SQLite stores it in `quick_request_prompts`, linked
+   to its task, while OpenCode continues to own the conversation history.
 10. A new session means a new OpenCode conversation in the same owner context;
    it does not create a child task.
 11. Completed tasks cannot be reopened. Further work starts as a new task.
@@ -312,7 +331,7 @@ confirmation. Navigating to a workspace later restores its exact tracked
 session rather than selecting the newest session in a directory.
 
 Task creation uses the same two-prompt shape from a selected workspace: the
-user opens **+ Task** and supplies an original prompt; the internal proposal
+user selects **Task** in the navigation's **New work** dropdown and supplies an original prompt; the internal proposal
 interprets it in that workspace's repository context and returns a task and
 starting prompt; after confirmation Rust creates the task, records the exact
 repository selection, and starts its tracked interactive OpenCode session.
@@ -368,7 +387,7 @@ before a new task or workspace session can be created.
 
 | Step | Actor | Action | Result |
 |---:|---|---|---|
-| 1 | User | Chooses **+ Task** from a workspace and enters the original task prompt. | The workspace context is passed separately; the prompt is preserved exactly. |
+| 1 | User | Chooses **Task** from the navigation's **New work** dropdown while a workspace is selected and enters the original task prompt. | The workspace context is passed separately; the prompt is preserved exactly. |
 | 2 | Rust/OpenCode | Interprets the prompt in a transient proposal step using the workspace's repository context. | A task proposal and starting prompt are returned without creating a task or terminal. |
 | 3 | User | Reviews the proposed task, repository selection, expected effects, and editable starting prompt. | The user can go back and submit a different original prompt. |
 | 4 | User | Confirms the proposal. | Rust receives the exact confirmed task context. |
@@ -454,15 +473,20 @@ recreates a missing worktree automatically.
 
 | Step | Actor | Action | Result |
 |---:|---|---|---|
-| 1 | User | Enters a one-off prompt in the Quick Request area. | The GUI identifies the special Quick Requests workspace. |
-| 2 | GUI | Sends the prompt to Rust. | Rust validates and trims the prompt. |
-| 3 | Rust | Ensures the shared Quick Request directory and app-owned OpenCode server are ready. | All Quick Requests use the same directory. |
-| 4 | Rust | Creates a session through the OpenCode API and records its ID, creation time, and owner. | The request has durable association despite the shared directory. |
-| 5 | Rust/GUI | Attaches the exact session in a PTY, opens xterm, and waits for the TUI pipeline. | The interactive TUI is visible before generation. |
-| 6 | Rust | Sends the initial prompt through the API. | The first response appears in the matching TUI. |
-| 7 | OpenCode/TUI | Streams output, handles tools, and asks for approval/input when needed. | The user can interact in the same terminal. |
-| 8 | Rust/GUI | Stores status and emits output without copying transcript content into SQLite. | The request remains associated and recoverable. |
-| 9 | Scheduler | Sets expiry at 24 hours after creation. Follow-ups do not reset it. | Expiry is based on creation time, not last activity. |
+| 1 | User | Chooses **Quick Request** from the New work dropdown and enters an original prompt. | The shared New-work modal preserves the current destination. |
+| 2 | GUI/Rust/OpenCode | Runs the internal proposal whose sole purpose is to resolve a working directory from the registered repository catalog. | Rust validates the repository and exact path; no record or terminal is created. |
+| 3 | User | Reviews or corrects the resolved directory using a registered repository, then confirms. If no repository is identified, the proposed directory is `<configured OpenCode Projects root>/Quick Requests/`. | The original prompt remains unchanged; no workspace choice or starting-prompt rewrite is involved. |
+| 4 | Rust | Ensures the special Quick Requests workspace, resolved directory, and app-owned OpenCode server are ready. | The working directory is the identified repository or shared default. |
+| 5 | Rust | Creates the Quick Request task, stores its original prompt in `quick_request_prompts`, and records the OpenCode session ID, working directory, and creation time in one transaction. | The request and its exact prompt/session association are durable; the task's generic description remains unused. |
+| 6 | Rust/GUI | Attaches the exact session in a PTY and opens its dedicated Quick Request page. | The terminal fills the available main work area; app navigation remains visible and no session tabs or workspace/task controls are shown. |
+| 7 | Rust | Sends the original prompt unchanged through the session. | Generation starts in the matching TUI. |
+| 8 | OpenCode/TUI | Streams output, handles tools, and asks for approval/input when needed. | The user can interact in the same terminal. |
+| 9 | Rust/GUI | Stores status and emits output without copying transcript content into SQLite. | The request remains associated and recoverable. |
+| 10 | Rust/GUI | Applies the 24-hour creation-time cutoff to recent navigation; follow-ups do not reset it. | Older requests remain in the full Quick Requests list. |
+
+The proposal is transient: cancellation or proposal failure creates no Quick
+Request. Confirmation follows the common session startup flow and must not claim
+success if creation, attachment, or initial prompt delivery fails.
 
 ### 10.2 Follow up on a Quick Request
 
@@ -470,49 +494,26 @@ The user enters the follow-up directly in the already attached TUI. The common
 follow-up flow sends the input to the same session ID. The GUI does not create a
 new Quick Request or call the initial-prompt endpoint again.
 
-### 10.3 Dismiss and restore a Quick Request
+### 10.3 Delete a Quick Request
 
 | Step | Actor | Action | Result |
 |---:|---|---|---|
-| 1 | User | Dismisses a completed Quick Request from active presentation. | SQLite records dismissal; OpenCode history remains. |
-| 2 | GUI | Removes it from the active Quick Request presentation but retains history access. | Dismissal does not delete the session. |
-| 3 | User | Opens Quick Request history and selects the dismissed request. | The GUI resolves its stored exact session ID. |
-| 4 | Rust | Reattaches or reconnects the session through the common restore flow. | Existing history renders without another initial prompt. |
-| 5 | GUI | Displays the request and its current/reconciled status. | The user can review history or continue if the request is still eligible. |
+| 1 | User | Chooses **Delete** beside a Quick Request. | The GUI asks for confirmation before making changes. |
+| 2 | User | Confirms deletion. | The GUI removes the Quick Request from its current list. |
+| 3 | Rust | Closes its attached terminal, then transactionally removes its app record, prompt, and session association. | The request is no longer retained by the app; OpenCode's conversation remains. |
 
-The application always uses the SQLite association and exact session ID when
-restoring a Quick Request. It never selects a session solely because it is the
-newest session in the shared directory.
+The application requires explicit confirmation. Cancel leaves the request
+untouched. Search is deferred to Deliverable 3.
 
-### 10.4 Quick Request expiry
+### 10.4 Quick Request recent-list cutoff
 
 | Step | Actor | Action | Result |
 |---:|---|---|---|
-| 1 | Scheduler | Finds a Quick Request whose creation time is at least 24 hours old. | The request is eligible for expiry; follow-ups do not extend it. |
-| 2 | Rust | Reconciles whether the session is running or waiting for input. | Active work is not silently terminated. |
-| 3 | Rust/GUI | Keeps running or input-waiting requests visible and records expiry eligibility. | The user can finish or answer active work. |
-| 4 | Rust | Once the request is no longer active, marks it expired for active navigation. | It leaves active Quick Requests but remains in history. |
-| 5 | User | Opens expired history if needed. | The session and conversation remain retrievable. |
+| 1 | Rust/GUI | Selects recent navigation items by creation time within the last 24 hours. Follow-ups do not reset the age. | Older items are not in recent navigation. |
+| 2 | Rust/GUI | Shows every retained Quick Request in the full list regardless of age. | Older requests remain discoverable without a separate History destination. |
 
-An active request that remains active past the 24-hour point stays visible until
-its execution reaches a stable state. Expiry changes active navigation only; it
-does not terminate the process or delete data.
-
-### 10.5 Promote a Quick Request to regular tracked work
-
-| Step | Actor | Action | Result |
-|---:|---|---|---|
-| 1 | User | Chooses **Promote to tracked work** for a Quick Request. | The GUI asks for the target regular workspace or a new workspace. |
-| 2 | User | Selects or creates the target workspace and supplies any required name. | Promotion has an explicit owner destination. |
-| 3 | Rust | Creates or validates the regular workspace/task record and dedicated home folder. | Future sessions have a stable regular home. |
-| 4 | Rust | Links the prior Quick Request record and session history to the promoted work. | Existing history is preserved. |
-| 5 | Rust | Removes Quick Request expiry for the promoted work. | The work is no longer governed by the 24-hour rule. |
-| 6 | Rust | Leaves earlier sessions associated with their original shared directory. | Historical sessions are not moved or rewritten. |
-| 7 | GUI | Shows the promoted work under regular tracked work and offers a new session in its dedicated home. | Future work uses the regular context. |
-
-Promotion always produces a task in the selected existing workspace or in a
-new workspace created by the promotion flow. It must not rewrite earlier
-OpenCode session directories.
+The 24-hour cutoff is a presentation filter. It does not terminate a process,
+change the request's execution status, or delete data.
 
 ## 11. View, Window, and Application Lifecycle
 
@@ -627,7 +628,7 @@ the v1 `attach` contract is historical only.
 | Complete workspace | User/GUI | Rust + SQLite | Tauri command |
 | Follow up or answer input | User/TUI | OpenCode | PTY input |
 | Report running/waiting/completed | OpenCode events/API | Rust reconciler | Server events and status API |
-| Promote Quick Request | User/GUI | Rust + SQLite + filesystem | Tauri command |
+| Delete Quick Request | User/GUI | Rust + terminal runtime + SQLite | Confirmed Tauri command |
 
 ### 13.1 Registration tool contract
 
@@ -691,21 +692,19 @@ home folder, or alter task/session history. A completed workspace can be
 reactivated explicitly before a new task or workspace session is created.
 Reactivation does not reopen any completed task.
 
-### 14.2 Quick Request promotion
+### 14.2 Quick Request deletion
 
-Promotion moves a Quick Request task into a user-selected existing workspace,
-or into a new regular workspace created during promotion. The task keeps its
-identity, sessions, and history. The task stops being governed by Quick Request
-expiry. Earlier sessions retain the shared Quick Request directory; future
-sessions use the promoted task's dedicated home folder and worktree context.
+Deletion requires user confirmation. It closes any attached terminal and removes
+the Quick Request's task, original prompt, and local session association from the
+application database. It does not delete the OpenCode conversation or transcript.
+Canceling the confirmation changes nothing.
 
-### 14.3 Quick Request expiry
+### 14.3 Quick Request recent-list cutoff
 
-Expiry is based on creation time and is never extended by follow-ups. Expiry
-does not terminate an OpenCode process or delete history. A running or
-input-waiting request remains visible until its current execution reaches a
-stable state. Once inactive, an expired request leaves active navigation and
-remains available in history.
+Recent navigation is based on creation time and is never extended by follow-ups.
+At 24 hours a request leaves recent navigation and remains in the full Quick
+Requests list until the user deletes them. This presentation cutoff does not
+terminate a process or delete the request.
 
 ### 14.4 Repository checkout placement
 

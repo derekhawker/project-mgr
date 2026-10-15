@@ -1,0 +1,1 @@
+DROP TRIGGER IF EXISTS quick_requests_workspace_home_is_shared;

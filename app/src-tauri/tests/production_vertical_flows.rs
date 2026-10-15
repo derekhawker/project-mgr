@@ -46,7 +46,11 @@ impl Fixture {
 
     fn quick_task(&self, id: &str) -> (String, String) {
         let task_id = id.to_owned();
-        let directory = quick_requests_directory(&self._root.path().join("tmp"));
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as i64;
+        let directory = quick_requests_directory(&self._root.path().join("home/OpenCode Projects"));
         let task = NewTask {
             id: task_id.clone(),
             workspace_id: self.quick_workspace.clone(),
@@ -54,7 +58,7 @@ impl Fixture {
             slug: id.into(),
             description: Some("hello".into()),
             setup_status: TaskSetupStatus::Ready,
-            created_at: 1,
+            created_at: now,
         };
         let session_id = format!("session-{id}");
         let session = NewSession {
@@ -62,10 +66,15 @@ impl Fixture {
             owner: SessionOwner::Task(task_id.clone()),
             directory: directory.to_string_lossy().into(),
             last_known_status: "starting".into(),
-            created_at: 2,
+            created_at: now + 1,
         };
         self.store
-            .create_quick_request_with_session_and_model(&task, &session, "openai/gpt-6-luna")
+            .create_quick_request_with_session_and_model(
+                &task,
+                &session,
+                "openai/gpt-6-luna",
+                "Original quick prompt",
+            )
             .unwrap();
         (task_id, session_id)
     }
@@ -80,10 +89,12 @@ fn quick_request_create_start_restore_crosses_store_and_exact_session_context() 
         listed[0].session.as_ref().unwrap().open_code_session_id,
         session_id
     );
+    assert_eq!(listed[0].prompt.as_deref(), Some("Original quick prompt"));
+    assert_eq!(listed[0].task.description, None);
     let wire = serde_json::to_value(&listed[0]).unwrap();
     assert_eq!(wire["task"]["workspaceId"], fixture.quick_workspace);
     assert!(wire["task"].get("workspace_id").is_none());
-    assert_eq!(wire["task"]["quickRequest"]["createdAt"], 1);
+    assert!(wire["task"]["quickRequest"]["createdAt"].as_i64().unwrap() > 0);
     assert!(wire["task"]["quickRequest"].get("created_at").is_none());
     assert_eq!(wire["session"]["openCodeSessionId"], session_id);
     assert!(wire["session"].get("open_code_session_id").is_none());
@@ -94,9 +105,14 @@ fn quick_request_create_start_restore_crosses_store_and_exact_session_context() 
             "owner_id": "quick-1"
         })
     );
+    let updated_at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64
+        + 2;
     fixture
         .store
-        .update_session_status(&session_id, "running", 3)
+        .update_session_status(&session_id, "running", updated_at)
         .unwrap();
     let restored = fixture
         .store
@@ -263,14 +279,24 @@ fn task_completion_queues_cleanup_without_reopening_or_losing_session() {
 fn promotion_preserves_quick_identity_and_history_but_changes_future_owner_context() {
     let fixture = Fixture::new();
     let (task_id, session_id) = fixture.quick_task("quick-promote");
+    let promoted_at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64
+        + 2;
     let promoted = fixture
         .store
-        .promote_quick_request(&task_id, &fixture.regular_workspace, "promoted", 5)
+        .promote_quick_request(
+            &task_id,
+            &fixture.regular_workspace,
+            "promoted",
+            promoted_at,
+        )
         .unwrap();
     assert_eq!(promoted.id, task_id);
     assert!(promoted.quick_request.unwrap().promoted_at.is_some());
     let old = fixture.store.get_session(&session_id).unwrap().unwrap();
-    assert!(old.directory.contains("quick-requests"));
+    assert!(old.directory.ends_with("OpenCode Projects/Quick Requests"));
 }
 
 #[test]

@@ -19,7 +19,8 @@ discussions. For workflow behavior beyond the UX vocabulary, see
   not a generic label for a user's text or an OpenCode interaction.
 - **Prompt:** Text supplied to OpenCode. Call the initial user text the
   **original prompt** and text prepared for a new session the **starting
-  prompt**. A prompt is not a product record.
+  prompt**. A prompt is not itself a product record; Quick Requests retain their
+  original prompt as a field on the tracked request.
 - **Repository context:** The repositories known to a workspace and the subset
   selected or associated for a task. Show relevant repository context before
   work begins; it informs setup and worktree placement.

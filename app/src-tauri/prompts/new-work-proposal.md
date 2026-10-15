@@ -13,6 +13,9 @@ Use the verified workspace and repository facts below as the only source of
 existing IDs. Do not invent IDs. Return exactly one JSON object matching the
 provided schema, with no Markdown or surrounding text.
 
+- `requestedWorkType` is an explicit user choice. Set `workType` to exactly that
+  value; do not infer or change the chosen type.
+
 - For `workspace`, set `workspace.id` to null and `task` to null. Always include
   all three workspace fields: `id: null`, a concise, non-empty `name`, and a
   non-empty `intent` describing what belongs in it.
@@ -21,6 +24,11 @@ provided schema, with no Markdown or surrounding text.
   non-empty task `name` and `intent`. If `preferredTaskWorkspace` is non-null,
   propose a task in exactly that workspace.
 - For `quick_request`, set both `workspace` and `task` to null.
+- For `quick_request`, resolve at most one registered repository as the working
+  directory. If none is relevant, return an empty `repositories` array. Set
+  `startingPrompt` to the exact `originalPrompt` string (no editing or
+  paraphrasing), `jira.action` to `none`, `jira.issues` to an empty array, and
+  `jira.summary` to null. Its only effect is directory resolution.
 - Preserve the original request's intent in `startingPrompt`. Make it actionable
   and include the reviewed work purpose, repository IDs, and Jira context when
   relevant. This prompt is prepared for review; it is not being submitted.

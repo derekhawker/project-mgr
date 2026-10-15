@@ -5,52 +5,91 @@
 - Quick Requests are the top section of the persistent left navigation, above
   all workspaces and tasks.
 - Place **See all Quick Requests** above the recent list.
-- Always show Quick Requests from the last 24 hours in the recent list. Keep the
-  section secondary to the workspace/task workbench in the main area.
-- Quick Requests are tasks under the special Quick Requests workspace and use
-  the shared Quick Request context defined by the application workflow.
+- Put the compact **All** icon button on the same row as the **Quick Requests**
+  heading. Recent requests use the same compact navigation-link styling as
+  workspace entries and have no per-row Delete control.
+- Render **See all Quick Requests** as a compact, accessible list-and-arrow icon
+  button labeled **All**.
+- Keep **New work** pinned to the bottom of the navigation while its contents
+  scroll. Open its work-type menu upward as an overlay so it does not move the
+  pinned button or surrounding navigation content.
+- Show Quick Requests created within the last 24 hours in the recent navigation
+  list. Older requests remain available in **See all Quick Requests**.
+- Quick Requests are tasks under the special Quick Requests workspace. Each
+  uses the directory resolved for that request; when no registered repository
+  is identified, use the shared folder named **Quick Requests** directly under
+  the configured OpenCode Projects root. This is a special shared project
+  folder, not a folder in the system temporary directory or an individual
+  request home.
 
 ## Full-list screen
 
-Use a simple list of all Quick Requests that are currently available in the
-active presentation. Rows show the prompt, status, and age; Quick Request-specific
-actions such as dismiss or promote remain contextual. Do not add a history destination
-in this slice.
+Use a simple list of all retained Quick Requests, including those older than 24
+hours. Each row has an **Open** button on the left, the original prompt as
+non-clickable text truncated with an ellipsis when needed, and one destructive
+action: **Delete**. Ask for confirmation before deleting. Keep spacing compact
+throughout the application; avoid large padding around navigation links, list
+rows, and controls. Search is
+deferred to Deliverable 3. This is the full Quick Requests destination, not a
+separate generic History destination.
+
+The application lists Quick Request records from its management store. It reads
+the displayed original prompt from the dedicated Quick Request prompt record
+linked to each request. It does not read OpenCode's private database or copy the
+conversation transcript into application storage; only the Quick Request's
+original prompt is retained there.
+
+The full-list destination has no Back button. The persistent navigation remains
+available for leaving the destination.
 
 ```text
 ┌ Quick Requests ───────────────────────────────────────────────┐
-│ Quick Requests · 3                          [Search] [New]    │
-│ Chord diagram ideas       Running          32 min ago         │
-│ Compare API approaches    Waiting for input 3 hr ago         │
-│ Review dependency update  Ready for review 18 hr ago          │
+│ Quick Requests                         [New Quick Request]   │
+│ [Open] Chord diagram ideas                         [Delete]   │
+│ [Open] Compare API approaches                      [Delete]   │
+│ [Open] Review dependency update                    [Delete]   │
 └───────────────────────────────────────────────────────────────┘
 ```
 
 The full list is a navigable destination, not a modal or a permanent split pane.
-It slides in as a peer destination, replacing the currently selected main-area
-content without resizing it. Include **Back to Quick Requests** when using a Quick Request
-terminal.
-Returning to the list changes destinations; it does not close the terminal tab.
+It replaces the current main-area destination without resizing the fixed app
+shell. Include **Back to Quick Requests** on the Quick Request terminal page.
+Returning to the list changes destinations; it does not close the terminal.
 
 ## Opening a Quick Request
 
-- Selecting a Quick Request opens its interactive terminal at the full available
-  size. OpenCode generation and all follow-up interaction happen in that
-  terminal so the user can watch progress and make changes.
-- Terminal controls and lifecycle are owned by the terminal. Closing its tab
-  stops its process and closes the tab.
-- Switching back to the list does not close the tab or stop the process.
-- Keep running and input-waiting Quick Requests visible even after the 24-hour point;
-  stable expired or dismissed requests are not exposed through a history screen
-  for now.
+- Selecting a Quick Request opens its own page in the main work area. Keep the
+  left navigation and app shell visible. The terminal fills all available height
+  in that work area, using the workspace terminal's sizing behavior. Keep the
+  window chrome and left navigation visible.
+- The Quick Request page has **Back to Quick Requests** and the terminal only:
+  no workspace/task toolbar, **+ Task**, session tabs, prompt/header, or
+  page-level terminal controls. Show zero tabs on this page.
+- Back returns to the full Quick Requests list without closing the terminal or
+  stopping its process. The Quick Request terminal page can be reopened.
+- The recent navigation list is limited to the last 24 hours. Older requests
+  remain reachable through the full Quick Requests list.
 
-History is deferred; any History menu option remains disabled.
+The full Quick Requests list does not enable the separate generic History menu;
+regular work history remains deferred.
 
-## Shared creation
+## New Quick Request action
 
-The single **New** action will handle Quick Request creation as well as
-workspace and task creation. Quick Request creation is deferred until after the
-workspace/task deliverable. It will use the same prompt/proposal interaction and
-the special Quick Requests workspace context; it will not require a workspace
-choice. Use **prompt** for the user's text, not “request” as a generic product
-type. See [New Work](screen-new-work.md).
+The navigation **New work** dropdown offers **Workspace**, **Task** when a
+regular workspace is selected, and **Quick Request**. The full-list page also
+has a **New Quick Request** action that starts this same flow directly.
+
+Choose **Quick Request** from the dropdown. Quick Request
+creation first resolves a working directory from the app's registered repository
+catalog; the user can correct the proposed repository and confirms the directory.
+If no registered repository is identified, use the shared **Quick Requests**
+folder under the configured OpenCode Projects root. This step does not rewrite
+or reinterpret the user's prompt. Starting the request
+opens its terminal page and sends the original prompt. Use
+**prompt** for the user's text, not “request” as a generic product type. See
+[New Work](screen-new-work.md).
+
+Quick Request rows have one action, **Delete**. Confirm before deletion. This
+removes the request, prompt, and session association from the application and
+closes its attached terminal; the OpenCode conversation remains in OpenCode.
+Do not show dismiss, promote, retry, or other per-row buttons.

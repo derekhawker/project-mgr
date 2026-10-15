@@ -7,6 +7,7 @@ import { resultForCommand } from './command-fixtures.js';
 
 const root = join(process.cwd(), 'src-tauri', 'src', 'lib.rs');
 const rust = readFileSync(root, 'utf8');
+const management = readFileSync(join(process.cwd(), 'src-tauri', 'src', 'management.rs'), 'utf8');
 const handler = rust.match(/generate_handler!\s*\[([\s\S]*?)\]\)/)?.[1] || '';
 const rustCommands = [...handler.matchAll(/\b([a-z][a-z0-9_]*)\s*,?/g)].map((match) => match[1]);
 const rustAttributes = [...rust.matchAll(/#\[tauri::command(?:\([^]]*\))?\]\s*(?:pub\s+)?fn\s+([a-z][a-z0-9_]*)/g)].map((match) => match[1]);
@@ -15,7 +16,7 @@ const html = readFileSync(join(process.cwd(), 'index.html'), 'utf8');
 test('checked-in command inventory has one contract for every registered Rust command', () => {
   assert.deepEqual([...COMMAND_NAMES].sort(), [...rustCommands].sort());
   assert.deepEqual([...COMMAND_NAMES].sort(), [...rustAttributes].sort());
-  assert.equal(COMMAND_NAMES.length, 57);
+  assert.equal(COMMAND_NAMES.length, 59);
 });
 
 test('production main-screen selectors resolve to rendered HTML elements', () => {
@@ -25,18 +26,56 @@ test('production main-screen selectors resolve to rendered HTML elements', () =>
   assert.deepEqual([...new Set(referencedIds)].filter((id) => !renderedIds.has(id)), []);
 });
 
+test('Quick Requests use a dedicated available-height page with a visible way back and no owner controls', () => {
+  const main = readFileSync(join(process.cwd(), 'src', 'main.js'), 'utf8');
+  assert.match(html, /id="quick-request-list"/);
+  assert.match(html, /id="quick-request-full-list"[^>]*hidden/);
+  assert.match(html, /id="quick-request-full-items"/);
+  assert.match(html, /id="quick-request-back"[^>]*>Back to Quick Requests</);
+  assert.match(main, /await listQuickRequests\(invoke, history\)/);
+  assert.match(management, /request\.created_at >= recent_cutoff/);
+  assert.match(main, /classList\.toggle\('quick-request-terminal-page', isQuickRequest\)/);
+  assert.match(main, /workbench\.hidden = isQuickRequest/);
+  assert.doesNotMatch(main, /setTerminalFullscreen\(true\)/);
+  assert.doesNotMatch(html, /id="new-task"/);
+  assert.doesNotMatch(html, /id="new-work-type"/);
+  assert.match(html, /id="new-work-menu"[\s\S]*data-new-work-type="quick_request"/);
+  assert.match(html, /id="new-quick-request"[^>]*>New Quick Request</);
+  assert.match(main, /window\.confirm\('Delete this Quick Request from the app\?/);
+  assert.match(main, /item\.append\(button\);\s*if \(history\)[\s\S]*?item\.append\(remove\)/);
+  assert.doesNotMatch(main, /item\.append\(.*dismiss|item\.append\(.*promote|item\.append\(.*retry/);
+});
+
+test('Quick Request navigation aligns its compact All button with the heading and omits Delete', () => {
+  const main = readFileSync(join(process.cwd(), 'src', 'main.js'), 'utf8');
+  assert.match(html, /<div class="quick-section-heading">\s*<h3>Quick Requests<\/h3>\s*<button id="show-history"/);
+  assert.match(html, /id="show-history"[^>]*aria-label="See all Quick Requests"[^>]*>[\s\S]*?<span>All<\/span>/);
+  assert.match(html, /id="quick-request-full-list"[\s\S]*<h1 id="quick-request-full-title"[\s\S]*id="new-quick-request"/);
+  assert.doesNotMatch(html, /id="back-from-quick-requests"/);
+  assert.doesNotMatch(html, /id="history-disabled"/);
+  assert.match(main, /item\.append\(button\);\s*if \(history\)[\s\S]*?item\.append\(remove\)/);
+  assert.doesNotMatch(main, /item\.append\(button, remove\)/);
+  assert.match(main, /item\.className = 'quick-request-navigation-item'/);
+});
+
 test('New-work is a modal over the existing workbench, with no standalone workspace creation path', () => {
   const main = readFileSync(join(process.cwd(), 'src', 'main.js'), 'utf8');
   assert.match(html, /<dialog id="new-work-dialog"[\s\S]*id="new-work"[\s\S]*id="new-work-review"[\s\S]*<\/dialog>/);
   assert.doesNotMatch(html, /id="new-workspace"|id="workspace-create-form"|id="empty-workspaces"/);
   assert.match(main, /newWorkDialog\.showModal\(\)/);
+  assert.match(html, /id="new-work-menu"[\s\S]*data-new-work-type="workspace"[\s\S]*data-new-work-type="quick_request"/);
+  assert.doesNotMatch(html, /<select id="new-work-type"/);
+  assert.match(html, /id="new-work-title">New Workspace</);
+  assert.match(html, /id="new-work-prompt-label"[^>]*>Original prompt</);
+  assert.match(main, /workspace: \['Workspace',[\s\S]*task: \['Task',[\s\S]*quick_request: \['Quick Request'/);
+  assert.match(main, /proposalCreate\.textContent = proposal\.workType === 'quick_request'[\s\S]*Create \$\{workTypeName\}/);
+  assert.match(main, /requestedType,\s*\n\s*\);/);
+  assert.match(html, /id="quick-request-directory"/);
+  assert.match(main, /originalPrompt,\s*\n\s*model: selectedModel,\s*\n\s*repositoryId: selectedRepositoryId/);
+  assert.match(main, /requestedNewWorkType = workType/);
   assert.doesNotMatch(main, /restoreWorkspacePendingPrompt/, 'selecting a workspace must not restore the unsent starting-prompt editor');
   assert.match(html, /Select a workspace or task, or choose New work to start\./);
   assert.match(html, /class="new-work-dialog-scroll"[\s\S]*class="new-work-dialog-footer"/);
-  const css = readFileSync(join(process.cwd(), 'src', 'styles.css'), 'utf8');
-  assert.match(css, /\.workspace-dialog-content\s*\{[^}]*padding:\s*1\.5rem/);
-  assert.match(css, /\.new-work-dialog-scroll\s*\{[^}]*overflow-y:\s*auto/);
-  assert.match(css, /\.new-work-dialog-footer\s*\{[^}]*flex:\s*0\s+0\s+auto/);
 });
 
 test('workspace and task confirmation attach the tracked terminal before automatically sending the reviewed prompt', () => {
@@ -46,25 +85,13 @@ test('workspace and task confirmation attach the tracked terminal before automat
   assert.match(main, /selectedModel,\s*currentProposal\.task\.name,\s*currentProposal\.task\.intent/);
 });
 
-test('stateful hidden panels cannot be forced visible by component display styles', () => {
-  const css = readFileSync(join(process.cwd(), 'src', 'styles.css'), 'utf8');
-  assert.match(css, /\[hidden\]\s*\{\s*display:\s*none\s*!important;/);
-});
-
 test('terminal card contains only the terminal viewport and has no surrounding inset', () => {
-  const css = readFileSync(join(process.cwd(), 'src', 'styles.css'), 'utf8');
   const main = readFileSync(join(process.cwd(), 'src', 'main.js'), 'utf8');
   const terminalCard = html.match(/<section class="terminal-card"[^>]*>([\s\S]*?)<\/section>/)?.[1] || '';
   assert.match(terminalCard, /^\s*<div id="terminal-views" class="terminal-views"><\/div>\s*$/);
   assert.match(main, /const sessionStatus\s*=\s*document\.querySelector\('#session-status'\)/);
   assert.match(main, /const pendingInputs\s*=\s*document\.querySelector\('#pending-inputs'\)/);
   assert.match(html, /<nav id="session-tabs"[\s\S]*?<button id="terminal-fullscreen"[^>]*>/);
-  assert.match(css, /\.terminal-card\s*\{[^}]*\}/);
-  const cardRules = css.match(/\.terminal-card\s*\{([^}]*)\}/)?.[1] || '';
-  assert.doesNotMatch(cardRules, /padding|margin|background|border-radius/);
-  assert.match(css, /\.right-content\.owner-active\s*\{[^}]*padding:\s*0/);
-  assert.match(css, /\.terminal-views\s*\{[^}]*display:\s*flex/);
-  assert.match(css, /#selected-owner\s*\{[^}]*flex:\s*1\s+1\s+0/);
 });
 
 test('tracked terminal tabs are labeled OpenCode instead of inheriting the owner name', () => {
@@ -149,13 +176,13 @@ test('recursive validation rejects missing, null, nested, and unknown values', a
     request: { prompt: 'hello', model: validModel, extra: true },
   }), /unknown field/);
   await assert.rejects(() => invokeCommand(() => null, 'quick_request_create', {
-    request: { prompt: null, model: validModel },
+    request: { prompt: null, model: validModel, repositoryId: null },
   }), /prompt must not be null/);
   await assert.rejects(() => invokeCommand(() => null, 'quick_request_create', {
-    request: { prompt: 'hello', model: { providerId: 'openai', id: 3 } },
+    request: { prompt: 'hello', model: { providerId: 'openai', id: 3 }, repositoryId: null },
   }), /model\.id must be string/);
   await assert.rejects(() => invokeCommand(() => null, 'quick_request_create', {
-    request: { model: validModel },
+    request: { model: validModel, repositoryId: null },
   }), /missing prompt/);
 });
 

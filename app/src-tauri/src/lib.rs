@@ -226,12 +226,14 @@ pub fn run() {
             opencode_terminal_detach,
             opencode_terminal_cleanup,
             quick_request_create,
+            quick_request_resolve_directory,
             quick_request_start_prompt,
             quick_request_retry_prompt,
             quick_request_follow_up,
             quick_request_restore,
             quick_request_list,
             quick_request_dismiss,
+            quick_request_delete,
             quick_request_expire,
             quick_request_promote,
             workspace_navigation,
@@ -551,6 +553,8 @@ struct NewWorkProposalSessionResult {
 struct NewWorkProposalRunCommand {
     session_id: String,
     original_prompt: String,
+    #[serde(default)]
+    work_type: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     preferred_workspace_id: Option<String>,
 }
@@ -695,6 +699,14 @@ fn new_work_proposal_run(
     if proposal.proposal.is_some() {
         return Err("A proposal has already been generated for this request.".into());
     }
+    let requested_work_type = request
+        .work_type
+        .as_deref()
+        .or_else(|| request.preferred_workspace_id.as_ref().map(|_| "task"))
+        .unwrap_or("workspace");
+    if !["workspace", "task", "quick_request"].contains(&requested_work_type) {
+        return Err("Unsupported New-work type.".into());
+    }
     let workspaces = store.list_workspaces().map_err(|error| error.to_string())?;
     let mut workspace_context = Vec::with_capacity(workspaces.len());
     for workspace in workspaces {
@@ -717,6 +729,7 @@ fn new_work_proposal_run(
         .list_repositories()
         .map_err(|error| error.to_string())?;
     let context = serde_json::json!({
+        "requestedWorkType": requested_work_type,
         "workspaces": workspace_context,
         "repositoryCatalog": repositories,
         "preferredTaskWorkspace": preferred_workspace.as_ref().map(|workspace| {
@@ -728,6 +741,14 @@ fn new_work_proposal_run(
     let parsed: NewWorkProposal = serde_json::from_str(&raw)
         .map_err(|error| format!("OpenCode returned an invalid proposal: {error}"))?;
     validate_new_work_proposal(&parsed, &store)?;
+    if parsed.work_type != requested_work_type {
+        return Err(format!(
+            "Proposal work type did not match requested `{requested_work_type}`."
+        ));
+    }
+    if requested_work_type == "quick_request" {
+        validate_quick_request_resolution(&parsed, &original_prompt)?;
+    }
     if let Ok(mut sessions) = state.proposal_sessions.lock() {
         if let Some(session) = sessions.get_mut(&request.session_id) {
             session.proposal = Some(parsed.clone());
@@ -990,6 +1011,24 @@ fn validate_new_work_proposal(
                 repository.repository_id
             ));
         }
+    }
+    Ok(())
+}
+
+fn validate_quick_request_resolution(
+    proposal: &NewWorkProposal,
+    original_prompt: &str,
+) -> Result<(), String> {
+    if proposal.work_type != "quick_request"
+        || proposal.starting_prompt != original_prompt
+        || proposal.repositories.len() > 1
+        || proposal.jira.action != "none"
+        || !proposal.jira.issues.is_empty()
+        || proposal.jira.summary.is_some()
+    {
+        return Err(
+            "Quick Request resolution must preserve the original prompt, select at most one repository, and avoid Jira actions.".into(),
+        );
     }
     Ok(())
 }
@@ -1970,18 +2009,36 @@ fn session_id_from_response(value: &serde_json::Value) -> Result<String, String>
 struct QuickRequestCreateCommand {
     prompt: String,
     model: ModelCommand,
+    #[serde(default)]
+    repository_id: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct QuickRequestResolveDirectoryCommand {
+    repository_id: Option<String>,
+}
+
+#[tauri::command]
+fn quick_request_resolve_directory(
+    store: State<'_, ManagementStore>,
+    request: QuickRequestResolveDirectoryCommand,
+) -> Result<String, String> {
+    store
+        .quick_request_directory(request.repository_id.as_deref())
+        .map(|directory| directory.to_string_lossy().into_owned())
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
 fn quick_request_create(
-    app: AppHandle,
     runtime: State<'_, opencode::Runtime>,
     store: State<'_, ManagementStore>,
     state: State<'_, AppState>,
     request: QuickRequestCreateCommand,
 ) -> Result<management::QuickRequestRecord, String> {
-    let prompt = request.prompt.trim().to_owned();
-    if prompt.is_empty() {
+    let prompt = request.prompt;
+    if prompt.trim().is_empty() {
         return Err("Enter a prompt first.".into());
     }
     let mut busy = state
@@ -1994,18 +2051,19 @@ fn quick_request_create(
     *busy = true;
     let result = (|| {
         let now = now_millis();
+        let directory = store
+            .quick_request_directory(request.repository_id.as_deref())
+            .map_err(|error| error.to_string())?;
         let workspace = store
             .ensure_quick_requests_workspace(now)
             .map_err(|e| e.to_string())?;
-        let directory = std::path::PathBuf::from(&workspace.home_path);
-        std::fs::create_dir_all(&directory)
-            .map_err(|e| format!("Could not create shared Quick Requests directory: {e}"))?;
+        if request.repository_id.is_none() {
+            std::fs::create_dir_all(&directory)
+                .map_err(|e| format!("Could not create shared Quick Requests directory: {e}"))?;
+        }
         let selected_model = model_key(&request.model);
         let model = request.model.clone().runtime_model();
-        let title = format!(
-            "Quick Request: {}",
-            prompt.chars().take(48).collect::<String>()
-        );
+        let title = "Quick Request".to_owned();
         let response = runtime.create_session(&title, &directory, model.clone())?;
         let session_id = session_id_from_response(&response)?;
         let task_id = request_id();
@@ -2014,7 +2072,7 @@ fn quick_request_create(
             workspace_id: workspace.id,
             name: title.clone(),
             slug: task_id.clone(),
-            description: Some(prompt.clone()),
+            description: None,
             setup_status: management::TaskSetupStatus::Ready,
             created_at: now,
         };
@@ -2026,13 +2084,8 @@ fn quick_request_create(
             created_at: now,
         };
         let record = store
-            .create_quick_request_with_session_and_model(&task, &session, &selected_model)
+            .create_quick_request_with_session_and_model(&task, &session, &selected_model, &prompt)
             .map_err(|e| e.to_string())?;
-        // This ordering is an invariant: attach/readiness precedes model bind
-        // and prompt, so a prompt cannot race a missing visible terminal.
-        if let Err(error) = runtime.attach_terminal(app.clone(), &session_id, &directory) {
-            return Err(mark_session_failed(&store, &session_id, error));
-        }
         Ok(record)
     })();
     *busy = false;
@@ -2044,8 +2097,6 @@ fn quick_request_create(
 struct QuickRequestStartCommand {
     request_id: String,
     model: ModelCommand,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    prompt: Option<String>,
 }
 
 /// The second phase is intentionally explicit: the WebView mounts xterm and
@@ -2063,6 +2114,10 @@ fn quick_request_start_prompt(
     if record.quick_request.is_none() {
         return Err("Record is not a Quick Request".into());
     }
+    let prompt = store
+        .quick_request_prompt(&record.id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Quick Request original prompt is unavailable".to_owned())?;
     let session = store
         .list_sessions(&management::SessionOwner::Task(record.id.clone()))
         .map_err(|e| e.to_string())?
@@ -2086,13 +2141,7 @@ fn quick_request_start_prompt(
             .claim_initial_prompt(&session.open_code_session_id)
             .map_err(|e| e.to_string())?;
         runtime.set_session_model(&session.open_code_session_id, model)?;
-        let prompt = request
-            .prompt
-            .as_deref()
-            .filter(|prompt| !prompt.trim().is_empty())
-            .or(record.description.as_deref())
-            .unwrap_or("");
-        runtime.prompt(&session.open_code_session_id, prompt)
+        runtime.prompt(&session.open_code_session_id, &prompt)
     })();
     match result {
         Ok(()) => {
@@ -2130,8 +2179,12 @@ fn quick_request_retry_prompt(
     if record.quick_request.is_none() {
         return Err("Record is not a Quick Request".into());
     }
+    let prompt = store
+        .quick_request_prompt(&record.id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Quick Request original prompt is unavailable".to_owned())?;
     let session = store
-        .list_sessions(&management::SessionOwner::Task(record.id))
+        .list_sessions(&management::SessionOwner::Task(record.id.clone()))
         .map_err(|e| e.to_string())?
         .into_iter()
         .next()
@@ -2154,10 +2207,7 @@ fn quick_request_retry_prompt(
     let result = (|| {
         ensure_session_model(&claimed, &model)?;
         runtime.set_session_model(&claimed.open_code_session_id, model.runtime_model())?;
-        runtime.prompt(
-            &claimed.open_code_session_id,
-            record.description.as_deref().unwrap_or(""),
-        )
+        runtime.prompt(&claimed.open_code_session_id, &prompt)
     })();
     match result {
         Ok(()) => store
@@ -2238,6 +2288,9 @@ fn quick_request_restore(
     Ok(management::QuickRequestRecord {
         task: record,
         session: Some(session),
+        prompt: store
+            .quick_request_prompt(&request.request_id)
+            .map_err(|e| e.to_string())?,
     })
 }
 
@@ -2283,6 +2336,25 @@ fn quick_request_dismiss(
     store
         .dismiss_quick_request(&request.request_id, now_millis())
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn quick_request_delete(
+    runtime: State<'_, opencode::Runtime>,
+    store: State<'_, ManagementStore>,
+    request: QuickRequestIdCommand,
+) -> Result<(), String> {
+    let sessions = store
+        .list_sessions(&management::SessionOwner::Task(request.request_id.clone()))
+        .map_err(|error| error.to_string())?;
+    for session in sessions {
+        if runtime.terminal_attached(&session.open_code_session_id) {
+            runtime.cleanup_terminal(&session.open_code_session_id)?;
+        }
+    }
+    store
+        .delete_quick_request(&request.request_id)
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -2943,7 +3015,6 @@ mod tests {
     fn quick_start_command_keeps_model_and_request_identity_explicit() {
         let command = QuickRequestStartCommand {
             request_id: "quick-1".into(),
-            prompt: None,
             model: ModelCommand {
                 provider_id: "openai".into(),
                 id: "gpt-6-luna".into(),
@@ -2953,6 +3024,47 @@ mod tests {
             serde_json::to_value(command).unwrap(),
             json!({"requestId":"quick-1","model":{"providerId":"openai","id":"gpt-6-luna"}})
         );
+        assert!(serde_json::from_value::<QuickRequestStartCommand>(json!({
+            "requestId":"quick-1",
+            "model":{"providerId":"openai","id":"gpt-6-luna"},
+            "prompt":"must come from stored original"
+        }))
+        .is_err());
+    }
+
+    #[test]
+    fn quick_request_commands_accept_only_registered_directory_identity_fields() {
+        let create: QuickRequestCreateCommand = serde_json::from_value(json!({
+            "prompt":"original text",
+            "model":{"providerId":"openai","id":"gpt-6-luna"},
+            "repositoryId":"repo-1"
+        }))
+        .unwrap();
+        assert_eq!(create.prompt, "original text");
+        assert_eq!(create.repository_id.as_deref(), Some("repo-1"));
+        assert!(serde_json::from_value::<QuickRequestCreateCommand>(json!({
+            "prompt":"original text",
+            "model":{"providerId":"openai","id":"gpt-6-luna"},
+            "directory":"/untrusted/path"
+        }))
+        .is_err());
+
+        let resolve: QuickRequestResolveDirectoryCommand = serde_json::from_value(json!({
+            "repositoryId":null
+        }))
+        .unwrap();
+        assert_eq!(resolve.repository_id, None);
+    }
+
+    #[test]
+    fn proposal_run_command_carries_explicit_work_type() {
+        let request: NewWorkProposalRunCommand = serde_json::from_value(json!({
+            "sessionId":"proposal-1",
+            "originalPrompt":"unchanged prompt",
+            "workType":"quick_request"
+        }))
+        .unwrap();
+        assert_eq!(request.work_type.as_deref(), Some("quick_request"));
     }
 
     #[test]
@@ -3156,6 +3268,28 @@ mod tests {
             ..proposal.clone()
         };
         assert!(validate_new_work_proposal(&quick_request, &store).is_ok());
+        assert!(
+            validate_quick_request_resolution(&quick_request, "Plan the research project").is_ok()
+        );
+        assert!(validate_quick_request_resolution(&quick_request, "rewritten prompt").is_err());
+        let quick_request_with_multiple_directories = NewWorkProposal {
+            repositories: vec![
+                ProposalRepository {
+                    repository_id: "repo-1".into(),
+                    reason: "Relevant".into(),
+                },
+                ProposalRepository {
+                    repository_id: "repo-2".into(),
+                    reason: "Also relevant".into(),
+                },
+            ],
+            ..quick_request.clone()
+        };
+        assert!(validate_quick_request_resolution(
+            &quick_request_with_multiple_directories,
+            "Plan the research project"
+        )
+        .is_err());
 
         let invalid = NewWorkProposal {
             work_type: "unrecognized".into(),
