@@ -6,3 +6,4 @@
 # Local code-analysis indexes
 **/.codesitter/
 **/.idea/
+/.opencode-handoff.md
