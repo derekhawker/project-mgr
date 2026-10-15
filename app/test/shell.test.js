@@ -31,11 +31,18 @@ import {
   dismissQuickRequest,
   expireQuickRequest,
   loadWorkspaceNavigation,
+  startNewWorkProposal,
+  runNewWorkProposal,
+  readNewWorkProposal,
+  closeNewWorkProposal,
   selectWorkspaceTask,
   createWorkspace,
+  createInitializedWorkspace,
   createWorkspaceTask,
   startTaskSetupPrompt,
+  submitNewWorkStartingPrompt,
   getTaskSetupStatus,
+  formatTaskSetupStatus,
   cancelTaskSetup,
   resumeTaskSetup,
   scanRepositories,
@@ -48,6 +55,7 @@ import {
   workspaceTasks,
   workspaceNavigationModel,
   selectCreatedWorkspace,
+  trackedSessionForOwner,
   sessionStatusLabel,
   completeTask,
   listTaskCleanupJobs,
@@ -60,7 +68,7 @@ import {
   terminalAccessibilityAttributes,
   controlErrorAttributes,
 } from '../src/shell.js';
-import { resultForCommand, completedTask, history, status, reconciliation, task, session } from './command-fixtures.js';
+import { resultForCommand, completedTask, history, status, reconciliation, task, session, newWorkProposal } from './command-fixtures.js';
 
 test('maps every application session state to its visible label', () => {
   assert.deepEqual(
@@ -300,7 +308,8 @@ test('session creation, model binding, prompt, permission, and form adapters use
     model: { providerId: 'openai', id: 'gpt-6-luna' },
   });
   await bindSessionModel(invoke, 'ses_exact', { providerId: 'openai', id: 'gpt-6-luna' });
-  await sendInitialPrompt(invoke, 'ses_exact', 'Start');
+  const model = { providerId: 'openai', id: 'gpt-6-luna' };
+  await sendInitialPrompt(invoke, 'ses_exact', 'Start', model);
   await replyToPermission(invoke, 'ses_exact', 'p1', 'once', 'approved');
   await replyToForm(invoke, 'ses_exact', 'f1', { name: 'Ada' });
   await cancelForm(invoke, 'ses_exact', 'f1');
@@ -311,7 +320,7 @@ test('session creation, model binding, prompt, permission, and form adapters use
     ['opencode_session_model', {
       sessionId: 'ses_exact', model: { providerId: 'openai', id: 'gpt-6-luna' },
     }],
-    ['opencode_session_prompt', { sessionId: 'ses_exact', prompt: 'Start' }],
+    ['opencode_session_prompt', { sessionId: 'ses_exact', prompt: 'Start', model }],
     ['opencode_permission_reply', {
       sessionId: 'ses_exact', requestId: 'p1', decision: 'once', message: 'approved',
     }],
@@ -337,7 +346,9 @@ test('workspace adapters preserve navigation and setup command boundaries', asyn
   const invoke = (...args) => { calls.push(args); return Promise.resolve(resultForCommand(args[0])); };
   await loadWorkspaceNavigation(invoke);
   await createWorkspace(invoke, 'Todo', 'Plan');
-  await createWorkspaceTask(invoke, 'w1', 'Implement task');
+  await createInitializedWorkspace(invoke, 'Ready', { providerId: 'openai', id: 'gpt-6-luna' }, 'Plan the project');
+  await createWorkspaceTask(invoke, 'w1', { providerId: 'openai', id: 'gpt-6-luna' }, 'Implement task', 'Task summary', []);
+  await createWorkspaceTask(invoke, 'w1', { providerId: 'openai', id: 'gpt-6-luna' }, 'Parser', 'Update parser behavior', ['repo-1']);
   await scanRepositories(invoke, ['/home/me/code'], { '/home/me/code/app': 'web app' });
   await listRepositoryCatalog(invoke);
   await attachRepository(invoke, 'w1', 'r1', '/home/me/code', 'main');
@@ -345,12 +356,35 @@ test('workspace adapters preserve navigation and setup command boundaries', asyn
   assert.deepEqual(calls, [
     ['workspace_navigation'],
     ['workspace_create', { name: 'Todo', description: 'Plan' }],
-    ['task_create', { workspaceId: 'w1', prompt: 'Implement task' }],
+    ['workspace_create_initialized', { name: 'Ready', description: 'Plan the project', model: { providerId: 'openai', id: 'gpt-6-luna' } }],
+    ['task_create', { workspaceId: 'w1', model: { providerId: 'openai', id: 'gpt-6-luna' }, name: 'Implement task', description: 'Task summary', repositoryIds: [] }],
+    ['task_create', { workspaceId: 'w1', model: { providerId: 'openai', id: 'gpt-6-luna' }, name: 'Parser', description: 'Update parser behavior', repositoryIds: ['repo-1'] }],
     ['repository_scan', { paths: ['/home/me/code'], purposeProposals: { '/home/me/code/app': 'web app' } }],
     ['repository_catalog'],
     ['repository_attach', { workspaceId: 'w1', repositoryId: 'r1', checkoutPath: '/home/me/code', branch: 'main', checkoutMode: 'existing' }],
     ['workspace_session_create', { workspaceId: 'w1', prompt: 'Inspect', model: { providerId: 'openai', id: 'gpt-6-luna' } }],
   ]);
+});
+
+test('New-work proposal adapters preserve exact session and prompt boundary', async () => {
+  const calls = [];
+  const invoke = (...args) => { calls.push(args); return Promise.resolve(resultForCommand(args[0])); };
+  const model = { providerId: 'openai', id: 'gpt-6-luna' };
+  await startNewWorkProposal(invoke, model);
+  await runNewWorkProposal(invoke, 'proposal-session-1', 'Original prompt', 'workspace-1');
+  await readNewWorkProposal(invoke, 'proposal-session-1', 'workspace-1');
+  await closeNewWorkProposal(invoke, 'proposal-session-1');
+  assert.deepEqual(calls, [
+    ['new_work_proposal_start', { model }],
+    ['new_work_proposal_run', { sessionId: 'proposal-session-1', originalPrompt: 'Original prompt', preferredWorkspaceId: 'workspace-1' }],
+    ['new_work_proposal_read', { sessionId: 'proposal-session-1', preferredWorkspaceId: 'workspace-1' }],
+    ['new_work_proposal_close', { sessionId: 'proposal-session-1' }],
+  ]);
+  assert.deepEqual(await runNewWorkProposal(async () => resultForCommand('new_work_proposal_run'), 'proposal-session-1', 'Original prompt'), newWorkProposal);
+  await assert.rejects(
+    runNewWorkProposal(async () => { throw new Error('artifact missing'); }, 'proposal-session-1', 'Original prompt'),
+    /artifact missing/,
+  );
 });
 
 test('workspace lifecycle and Quick Request promotion adapters preserve explicit contracts', async () => {
@@ -372,16 +406,54 @@ test('task setup controls use the durable task operation and explicit session id
   const calls = [];
   const invoke = (...args) => { calls.push(args); return Promise.resolve(resultForCommand(args[0])); };
   const model = { providerId: 'openai', id: 'gpt-6-luna' };
-  await startTaskSetupPrompt(invoke, 'task-1', 'setup-task-1', 'ses-1', model);
+  await startTaskSetupPrompt(invoke, 'task-1', 'setup-task-1', 'ses-1', model, 'Initial task prompt');
+  await startTaskSetupPrompt(invoke, 'task-2', 'setup-task-2', 'ses-2', model, 'Start work', ['repo-1']);
   await getTaskSetupStatus(invoke, 'task-1');
   await cancelTaskSetup(invoke, 'task-1');
   await resumeTaskSetup(invoke, 'task-1', 'setup-task-1', 'ses-1');
   assert.deepEqual(calls, [
-    ['task_setup_start_prompt', { taskId: 'task-1', operationId: 'setup-task-1', sessionId: 'ses-1', model }],
+    ['task_setup_start_prompt', { taskId: 'task-1', operationId: 'setup-task-1', sessionId: 'ses-1', model, startingPrompt: 'Initial task prompt' }],
+    ['task_setup_start_prompt', { taskId: 'task-2', operationId: 'setup-task-2', sessionId: 'ses-2', model, startingPrompt: 'Start work', repositoryIds: ['repo-1'] }],
     ['task_setup_status', { taskId: 'task-1' }],
     ['task_setup_cancel', { taskId: 'task-1' }],
     ['task_setup_resume', { taskId: 'task-1', operationId: 'setup-task-1', sessionId: 'ses-1' }],
   ]);
+});
+
+test('task setup status shows per-repository outcomes and recovery details', () => {
+  assert.equal(formatTaskSetupStatus({
+    task: { setupStatus: 'incomplete' },
+    repositories: [
+      { repositoryId: 'repo-1', setupStatus: 'ready', branch: 'task-branch', worktreePath: '/worktrees/task' },
+      { repositoryId: 'repo-2', setupStatus: 'failed', errorDetail: 'branch already exists' },
+    ],
+  }), 'Setup incomplete. repo-1 · ready · branch task-branch · /worktrees/task repo-2 · failed · branch already exists');
+});
+
+test('New-work starting prompt submits only through the matching owner command', async () => {
+  const calls = [];
+  const invoke = (...args) => { calls.push(args); return Promise.resolve(resultForCommand(args[0])); };
+  const model = { providerId: 'openai', id: 'gpt-6-luna' };
+  await submitNewWorkStartingPrompt(invoke, {
+    type: 'workspace', sessionId: 'ses-w', model,
+  }, 'Plan the project');
+  await submitNewWorkStartingPrompt(invoke, {
+    type: 'task', id: 'task-1', operationId: 'setup-1', sessionId: 'ses-t', model, repositoryIds: ['repo-1'],
+  }, 'Implement the feature');
+  await submitNewWorkStartingPrompt(invoke, {
+    type: 'quick_request', id: 'quick-1', model,
+  }, 'Summarize the logs');
+  assert.deepEqual(calls, [
+    ['opencode_session_prompt', { sessionId: 'ses-w', prompt: 'Plan the project', model }],
+    ['task_setup_start_prompt', { taskId: 'task-1', operationId: 'setup-1', sessionId: 'ses-t', model, startingPrompt: 'Implement the feature', repositoryIds: ['repo-1'] }],
+    ['quick_request_start_prompt', { requestId: 'quick-1', model, prompt: 'Summarize the logs' }],
+  ]);
+  await assert.rejects(
+    submitNewWorkStartingPrompt(async () => { throw new Error('prompt failed'); }, {
+      type: 'workspace', sessionId: 'ses-w', model,
+    }, 'Plan the project'),
+    /prompt failed/,
+  );
 });
 
 test('task setup cancel, resume, and refresh adapters preserve rejected Rust errors', async () => {
@@ -438,6 +510,21 @@ test('workspace creation selection uses the workspace returned by Rust after ref
   const created = { id: 'w-new', name: 'New workspace' };
   const refreshed = { workspaces: [{ id: 'w-new', name: 'New workspace', status: 'active' }] };
   assert.equal(selectCreatedWorkspace(refreshed, created), refreshed.workspaces[0]);
+});
+
+test('tracked-session selection stays within its exact owner and preserves an open tab choice', () => {
+  const navigation = {
+    sessions: [
+      { ...session, openCodeSessionId: 'workspace-session', owner: { owner_type: 'workspace', owner_id: 'w1' } },
+      { ...session, openCodeSessionId: 'task-session-old', owner: { owner_type: 'task', owner_id: 't1' } },
+      { ...session, openCodeSessionId: 'task-session-new', owner: { owner_type: 'task', owner_id: 't1' }, createdAt: 2 },
+      { ...session, openCodeSessionId: 'unrelated-newest', owner: { owner_type: 'task', owner_id: 't2' }, createdAt: 3 },
+    ],
+  };
+  assert.equal(trackedSessionForOwner(navigation, 'task', 't1').openCodeSessionId, 'task-session-new');
+  assert.equal(trackedSessionForOwner(navigation, 'task', 't1', 'task-session-old').openCodeSessionId, 'task-session-old');
+  assert.equal(trackedSessionForOwner(navigation, 'task', 't1', undefined, ['task-session-old']).openCodeSessionId, 'task-session-old');
+  assert.equal(trackedSessionForOwner(navigation, 'task', 'missing'), null);
 });
 
 test('terminal command adapters preserve names, payloads, results, and errors', async () => {

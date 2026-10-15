@@ -94,20 +94,26 @@ checkout path; the product does not silently move repositories.
 Quick Requests are a special workspace and use one shared directory under the
 system temporary directory. They do not get individual home folders. Their
 management records and exact session IDs belong in SQLite. In the GUI, show
-requests created in the last 24 hours in a secondary Quick Requests section of
-the persistent left navigation; do not make Quick Requests the main page.
+requests created in the last 24 hours in the top Quick Requests section of the
+persistent left navigation. Quick Requests are prominent navigation, but the
+main work area remains the selected workspace, task, or Quick Request terminal.
 
 ## 3.4 Navigation and workspace focus
 
 Keep the Workspace → Task tree prominent in persistent left navigation. Show
 all open workspaces, including idle ones, with tasks nested directly under their
 workspace. Do not require a separate all-workspaces summary screen: selecting a
-workspace renders its working area in the main pane. Provide a visible
-workspace-creation action in the navigation and a task-creation action scoped
-to the selected workspace. In a selected workspace, keep these controls compact
+workspace renders its working area in the main pane. Provide one visible **New**
+action in navigation. It opens the prompt/proposal flow and creates a workspace
+only after confirmation; do not provide a separate name-first workspace path.
+Keep **+ Task** scoped to the selected workspace and route it through the same
+prompt/proposal pattern. In a selected workspace, keep these controls compact
 and give the interactive OpenCode terminal almost all of the main/right pane.
-Show recent Quick Requests below the workspace tree as a distinct, lower-priority
-navigation section.
+The selected workspace and its tasks show the verified workspace repository
+bindings, including checkout path, branch, and verification state; the catalog
+and attachment controls are available at workspace scope.
+Show the Quick Requests section above the workspace tree. Put **See all Quick
+Requests** above the recent requests list.
 
 ## 4. Core Invariants
 
@@ -120,17 +126,20 @@ navigation section.
 6. Task sessions use the task home and task worktrees for implementation.
 7. All sessions for one task share that task's working environment.
 8. OpenCode owns conversation history; SQLite stores associations only.
-9. A new session means a new OpenCode conversation in the same owner context;
+9. Regular workspace/task original and starting prompts are transient command
+   inputs. The application does not persist them in SQLite or files; OpenCode
+   owns any submitted conversation history.
+10. A new session means a new OpenCode conversation in the same owner context;
    it does not create a child task.
-10. Completed tasks cannot be reopened. Further work starts as a new task.
-11. Completing a task does not commit, merge, or discard code.
-12. A workspace cannot be completed while it has active tasks.
-13. A completed task's clean worktree is removable only when no session uses it.
-14. Removing a worktree never removes its branch.
-15. Dirty worktrees and worktrees containing new files remain in place.
-16. Hiding a terminal view or the main window does not stop OpenCode work.
-17. Full application quit stops app-owned TUI and server children.
-18. A failed event subscription, session creation, PTY attachment, or required
+11. Completed tasks cannot be reopened. Further work starts as a new task.
+12. Completing a task does not commit, merge, or discard code.
+13. A workspace cannot be completed while it has active tasks.
+14. A completed task's clean worktree is removable only when no session uses it.
+15. Removing a worktree never removes its branch.
+16. Dirty worktrees and worktrees containing new files remain in place.
+17. Hiding a terminal view or the main window does not stop OpenCode work.
+18. Full application quit stops app-owned TUI and server children.
+19. A failed event subscription, session creation, PTY attachment, or required
    validation stops the affected flow with a visible error.
 
 ## 5. Common Session Flow
@@ -277,30 +286,62 @@ If setup is partial, the workspace remains visible with an explicit setup
 problem. The app does not claim that the repository is attached until identity
 and path validation succeed.
 
+### 7.3 New-work proposal and confirmation
+
+**New** opens a modal over the current destination and captures the original
+prompt. Rust sends it to an internal, request/response-only OpenCode proposal
+step. This is the one exception to the rule that OpenCode sessions use an
+interactive terminal. The proposal step does not create a terminal tab, product
+record, repository change, or normal session association.
+
+For the first deliverable, the only top-level outcome supported by New is
+**create a workspace**. The proposal returns the proposed workspace name,
+description, repository context, and a starting prompt for the workspace's
+first OpenCode session. Rust validates the proposal before showing it for
+confirmation.
+
+The review keeps the original prompt unchanged and read-only. The proposed
+starting prompt is editable. Confirmation creates the workspace, creates a new
+OpenCode session in its workspace context, records the exact session on the
+workspace, opens its interactive terminal, and sends the confirmed starting
+prompt. The user does not need a second manual start action.
+
+If workspace creation or session startup fails, the failure remains visible and
+the app does not claim success or leave an empty owner from the failed
+confirmation. Navigating to a workspace later restores its exact tracked
+session rather than selecting the newest session in a directory.
+
+Task creation uses the same two-prompt shape from a selected workspace: the
+user opens **+ Task** and supplies an original prompt; the internal proposal
+interprets it in that workspace's repository context and returns a task and
+starting prompt; after confirmation Rust creates the task, records the exact
+repository selection, and starts its tracked interactive OpenCode session.
+
 ## 8. Workspace Workflows
 
-### 8.1 Create an empty workspace
+### 8.1 Create a workspace through New
 
 | Step | Actor | Action | Result |
 |---:|---|---|---|
-| 1 | User | Chooses **Create workspace** and supplies a name and optional description. | The GUI validates required fields and name uniqueness. |
+| 1 | User | Chooses **New** and enters a prompt describing the workspace. | The GUI preserves the original prompt and disables duplicate submission. |
 | 2 | GUI | Sends the creation command to Rust. | Rust owns the transaction. |
 | 3 | Rust | Normalizes the name into a safe display name and filesystem slug, checking collisions. | The chosen workspace has stable identity and path. |
 | 4 | Rust | Creates the workspace row in SQLite and its home, `notes/`, `repos/`, and `tasks/` directories. | Filesystem and management record are created together or the operation fails visibly. |
 | 5 | Rust | Initializes the workspace as active with no tasks and no repository bindings. | The workspace appears in the persistent workspace navigation, even with no tasks. |
-| 6 | GUI | Selects the new workspace in the main pane and offers repository attachment, a workspace planning session, or task creation. | The user can continue without an artificial task or a separate workspace-summary screen. |
+| 6 | GUI/Rust | After confirmation, selects the workspace, starts its new OpenCode session, records the exact session, and opens its interactive terminal. | The workspace is immediately usable in the correctly scoped terminal. |
 
-An empty workspace is valid. Creating it does not automatically create a task.
+A workspace may have no repositories or tasks. Creating it through New starts
+its first workspace OpenCode session automatically; it does not create a task.
 
-### 8.2 Start a workspace planning session
+### 8.2 Start or restore a workspace planning session
 
 | Step | Actor | Action | Result |
 |---:|---|---|---|
-| 1 | User | Chooses **Start workspace session** and enters a planning or inspection prompt. | The GUI resolves the workspace owner. |
+| 1 | User | Selects a workspace. | The GUI resolves the workspace's exact stored session. |
 | 2 | Rust | Resolves the workspace home and bound main-branch repository paths. | OpenCode receives the workspace context, not a task worktree. |
-| 3 | Rust | Creates and records a new OpenCode session, then attaches its TUI through the common session flow. | The exact session belongs to the workspace. |
+| 3 | Rust | If no session exists, creates and records a new OpenCode session, then attaches its TUI through the common session flow. Otherwise it restores the stored session. | The exact session belongs to the workspace. |
 | 4 | OpenCode | Inspects main-branch checkouts and edits workspace notes or requirements when requested. | Planning work stays at workspace scope. |
-| 5 | User | Follows up in the same terminal or starts another workspace session. | New conversations share workspace context but retain separate histories. |
+| 5 | User | Follows up in the same terminal. | The workspace session remains the workspace's tracked interactive session. |
 
 Workspace sessions do not implement task changes in task worktrees. A request
 for implementation becomes a task-creation decision.
@@ -327,20 +368,20 @@ before a new task or workspace session can be created.
 
 | Step | Actor | Action | Result |
 |---:|---|---|---|
-| 1 | User | Chooses **Create new task** from a workspace. | The workspace context is already selected. |
-| 2 | User | Enters the task prompt and optional preferences. May explicitly select repositories. | The GUI captures intent without making a branch or worktree yet. |
-| 3 | GUI | Sends the task-creation command to Rust. | Rust creates the task transaction and context. |
-| 4 | Rust | Verifies the workspace is active and creates the task row and task home, `notes/`, and `worktrees/` directories. | The task has a stable owner and working directory. |
-| 5 | Rust | Starts a task OpenCode session in the task home directory and records its exact session ID. | The task can be recovered independently of the GUI. |
-| 6 | GUI/OpenCode | Supplies the task prompt, repository catalog context, setup instructions, and preferences through the session. | OpenCode has the information needed to plan setup. |
-| 7 | OpenCode | Determines relevant repositories unless the user explicitly selected them. | Repository selection is proposed at the task level. |
-| 8 | OpenCode | Creates or requests the required branches and worktrees using the available integration boundary. | Each result includes repository, branch, path, and outcome. |
-| 9 | Rust | Validates each reported repository identity, branch, path, task ownership, and filesystem state. | Untrusted or mismatched setup is rejected. |
-| 10 | Rust | Persists successful task repository associations and records failed or incomplete items. | Partial setup is represented rather than lost. |
-| 11 | GUI | Shows setup progress and any incomplete repository work. | The user can correct setup before implementation proceeds. |
+| 1 | User | Chooses **+ Task** from a workspace and enters the original task prompt. | The workspace context is passed separately; the prompt is preserved exactly. |
+| 2 | Rust/OpenCode | Interprets the prompt in a transient proposal step using the workspace's repository context. | A task proposal and starting prompt are returned without creating a task or terminal. |
+| 3 | User | Reviews the proposed task, repository selection, expected effects, and editable starting prompt. | The user can go back and submit a different original prompt. |
+| 4 | User | Confirms the proposal. | Rust receives the exact confirmed task context. |
+| 5 | Rust | Verifies the workspace is active and creates the task row and task home, `notes/`, and `worktrees/` directories. | The task has a stable owner and working directory. |
+| 6 | Rust | Persists the exact confirmed repository selection with the task setup operation. | The task does not silently widen or replace its context. |
+| 7 | Rust | Creates a task OpenCode session in the task home directory and records its exact session ID. | The task can be recovered independently of the GUI. |
+| 8 | Rust/GUI | Opens the task's interactive terminal and sends the confirmed starting prompt. | OpenCode has the task context and the user can interact immediately. |
+| 9 | OpenCode | Creates or requests the required branches and worktrees using the available integration boundary. | Each result includes repository, branch, path, and outcome. |
+| 10 | Rust | Validates each reported repository identity, branch, path, task ownership, and filesystem state. | Untrusted or mismatched setup is rejected. |
+| 11 | Rust/GUI | Persists setup results and shows setup progress or incomplete repository work. | The user can correct setup without creating a second task. |
 | 12 | OpenCode | Implements the task in the task worktrees after setup is usable. | Task changes are isolated from workspace main checkouts. |
 
-OpenCode performs step 8 through its normal Git/tool execution and reports each
+OpenCode performs step 9 through its normal Git/tool execution and reports each
 result through the registration tool. Rust remains authoritative for validation
 and persistence.
 
@@ -541,6 +582,9 @@ the v1 `attach` contract is historical only.
 3. Rust does not send the initial prompt.
 4. The GUI shows recovery options such as retry attach, inspect history, or
    abandon the incomplete startup record.
+5. If the initial prompt fails, Rust records the session failure, returns an
+   actionable error, and appends failure metadata to the OS-specific application
+   log. Prompt text is neither persisted by the application nor logged.
 
 ### 12.4 Event stream loss
 
@@ -572,7 +616,7 @@ the v1 `attach` contract is historical only.
 | Create workspace | User/GUI | Rust + SQLite + filesystem | Tauri command |
 | Attach or scan repository | User/GUI | Rust + Git + SQLite | Tauri command |
 | Generate repository purpose | Rust/OpenCode flow | Rust stores the generated catalog field | OpenCode discovery session/API |
-| Start workspace session | User/GUI | Rust for association; OpenCode for conversation | Common session runtime |
+| Create or restore workspace session | User/GUI | Rust for association; OpenCode for conversation | Common session runtime |
 | Create task record and home | User/GUI | Rust + SQLite + filesystem | Tauri command |
 | Select task repositories | OpenCode task session | Rust validates the selected resources | Registration tool |
 | Create branch/worktree | OpenCode task session | Git performs the operation; Rust validates the result | OpenCode's normal Git/tool execution |

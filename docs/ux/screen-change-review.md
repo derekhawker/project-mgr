@@ -2,10 +2,10 @@
 
 ## Availability and comparison
 
-- Show **Changes** only for a selected workspace or task with at least one
+- Show **Change Review** only for a selected workspace or task with at least one
   associated repository.
 - Compare each repository's changes against its current `origin/main` using a
-  conventional two-way diff. This is not a three-way merge view.
+  conventional two-way diff, not a three-way merge.
 - Include all changed files across all repositories in the selected owner's
   context.
 
@@ -15,7 +15,7 @@ Use a conventional changed-file list grouped by repository beside the selected
 file diff:
 
 ```text
-┌ Upgrade tonic-one · Changes · 2 repos · 14 files changed ──────┐
+┌ Upgrade tonic-one · Change Review · 2 repos · 14 files changed ─┐
 │ Compare with: origin/main                    [Unified | Split] │
 ├────────────────────────┬───────────────────────────────────────┤
 │ agentic-frontend (8)   │ package.json                          │
@@ -32,7 +32,7 @@ file diff:
 - Selecting a file updates the diff pane.
 - Make the comparison target visible and allow a conventional unified/split
   presentation.
-- Change review is an app view, not a terminal. It does not consume a terminal
+- Change Review is an app destination, not a terminal. It does not consume a terminal
   tab or take over terminal lifecycle.
 
 ## Not specified here

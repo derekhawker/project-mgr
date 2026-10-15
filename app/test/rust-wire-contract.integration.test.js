@@ -31,15 +31,13 @@ test('actual Rust management and session DTOs satisfy frontend command result co
     ['task_create', {
       request: {
         workspaceId: 'wire-workspace',
-        prompt: 'Wire task',
         model: { providerId: 'openai', id: 'gpt-6-luna' },
+        name: 'Wire task',
+        description: 'Wire task summary',
+        repositoryIds: [],
       },
     }, wire.quickRequest.task],
-    ['task_setup_status', { request: { taskId: 'wire-quick-request' } }, {
-      task: wire.quickRequest.task,
-      session: wire.quickRequest.session,
-      repositories: [],
-    }],
+    ['task_setup_status', { request: { taskId: 'wire-quick-request' } }, wire.taskSetupStatus],
     ['task_session_create', {
       request: {
         taskId: 'wire-quick-request',

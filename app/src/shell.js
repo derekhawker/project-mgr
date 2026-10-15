@@ -52,8 +52,8 @@ export function bindSessionModel(invoke, sessionId, model) {
   return invokeCommand(invoke, 'opencode_session_model', { sessionId, model });
 }
 
-export function sendInitialPrompt(invoke, sessionId, prompt) {
-  return invokeCommand(invoke, 'opencode_session_prompt', { sessionId, prompt });
+export function sendInitialPrompt(invoke, sessionId, prompt, model) {
+  return invokeCommand(invoke, 'opencode_session_prompt', { sessionId, prompt, model });
 }
 
 export function replyToPermission(invoke, sessionId, requestId, decision, message = null) {
@@ -153,8 +153,10 @@ export function createQuickRequest(invoke, prompt, model) {
   return invokeCommand(invoke, 'quick_request_create', { prompt, model });
 }
 
-export function startQuickRequestPrompt(invoke, requestId, model) {
-  return invokeCommand(invoke, 'quick_request_start_prompt', { requestId, model });
+export function startQuickRequestPrompt(invoke, requestId, model, prompt = undefined) {
+  const payload = { requestId, model };
+  if (prompt !== undefined) payload.prompt = prompt;
+  return invokeCommand(invoke, 'quick_request_start_prompt', payload);
 }
 
 // Keep the submit lifecycle in one testable place. In particular, preserve the
@@ -254,8 +256,37 @@ export function loadWorkspaceNavigation(invoke) {
   return invokeCommand(invoke, 'workspace_navigation');
 }
 
+export function startNewWorkProposal(invoke, model) {
+  return invokeCommand(invoke, 'new_work_proposal_start', { model });
+}
+
+export function runNewWorkProposal(invoke, sessionId, originalPrompt, preferredWorkspaceId = undefined) {
+  const payload = { sessionId, originalPrompt };
+  if (preferredWorkspaceId !== undefined) payload.preferredWorkspaceId = preferredWorkspaceId;
+  return invokeCommand(invoke, 'new_work_proposal_run', payload);
+}
+
+export function readNewWorkProposal(invoke, sessionId, preferredWorkspaceId = undefined) {
+  const payload = { sessionId };
+  if (preferredWorkspaceId !== undefined) payload.preferredWorkspaceId = preferredWorkspaceId;
+  return invokeCommand(invoke, 'new_work_proposal_read', payload);
+}
+
+export function closeNewWorkProposal(invoke, sessionId) {
+  return invokeCommand(invoke, 'new_work_proposal_close', { sessionId });
+}
+
 export function workspaceTasks(navigation, workspaceId) {
   return (navigation?.tasks || []).filter((task) => task.workspaceId === workspaceId);
+}
+
+export function trackedSessionForOwner(navigation, ownerType, ownerId, preferredId, openSessionIds = []) {
+  const tracked = (navigation?.sessions || []).filter((session) =>
+    session.owner?.owner_type === ownerType && session.owner?.owner_id === ownerId);
+  return tracked.find((session) => session.openCodeSessionId === preferredId)
+    || [...tracked].reverse().find((session) => openSessionIds.includes(session.openCodeSessionId))
+    || tracked.at(-1)
+    || null;
 }
 
 export function workspaceNavigationModel(navigation) {
@@ -282,6 +313,10 @@ export function createWorkspace(invoke, name, description = null) {
   return invokeCommand(invoke, 'workspace_create', { name, description });
 }
 
+export function createInitializedWorkspace(invoke, name, model, description = null) {
+  return invokeCommand(invoke, 'workspace_create_initialized', { name, description, model });
+}
+
 export function completeWorkspace(invoke, workspaceId) {
   return invokeCommand(invoke, 'workspace_complete', { workspaceId });
 }
@@ -299,9 +334,10 @@ export function promoteQuickRequest(invoke, requestId, targetWorkspaceId = null,
   });
 }
 
-export function createWorkspaceTask(invoke, workspaceId, prompt, model = undefined) {
-  const payload = { workspaceId, prompt };
-  if (model !== undefined) payload.model = model;
+export function createWorkspaceTask(invoke, workspaceId, model, name, description = undefined, repositoryIds = undefined) {
+  const payload = { workspaceId, model, name };
+  if (description !== undefined) payload.description = description;
+  if (repositoryIds !== undefined) payload.repositoryIds = repositoryIds;
   return invokeCommand(invoke, 'task_create', payload);
 }
 
@@ -317,14 +353,51 @@ export function retryTaskCleanup(invoke, taskId) {
   return invokeCommand(invoke, 'task_cleanup_retry', { taskId });
 }
 
-export function startTaskSetupPrompt(invoke, taskId, operationId, sessionId, model) {
+export function startTaskSetupPrompt(invoke, taskId, operationId, sessionId, model, startingPrompt, repositoryIds = undefined) {
+  const request = { taskId, operationId, sessionId, model };
+  request.startingPrompt = startingPrompt;
+  if (repositoryIds !== undefined) request.repositoryIds = repositoryIds;
   return invokeCommand(invoke, 'task_setup_start_prompt', {
-    taskId, operationId, sessionId, model,
+    ...request,
   });
+}
+
+export function submitNewWorkStartingPrompt(invoke, action, prompt) {
+  if (!prompt?.trim()) throw new Error('Enter a starting prompt first.');
+  if (action?.type === 'workspace') {
+    return sendInitialPrompt(invoke, action.sessionId, prompt, action.model);
+  }
+  if (action?.type === 'task') {
+    return startTaskSetupPrompt(
+      invoke,
+      action.id,
+      action.operationId,
+      action.sessionId,
+      action.model,
+      prompt,
+      action.repositoryIds,
+    );
+  }
+  if (action?.type === 'quick_request') {
+    return startQuickRequestPrompt(invoke, action.id, action.model, prompt);
+  }
+  throw new Error('The pending starting prompt has no valid owner.');
 }
 
 export function getTaskSetupStatus(invoke, taskId) {
   return invokeCommand(invoke, 'task_setup_status', { taskId });
+}
+
+export function formatTaskSetupStatus(status) {
+  const setupStatus = status?.task?.setupStatus || 'unknown';
+  const items = (status?.repositories || []).map((item) => {
+    const parts = [item.repositoryId, item.setupStatus];
+    if (item.branch) parts.push(`branch ${item.branch}`);
+    if (item.worktreePath) parts.push(item.worktreePath);
+    if (item.errorDetail) parts.push(item.errorDetail);
+    return parts.join(' · ');
+  });
+  return [`Setup ${setupStatus}.`, ...items].join(' ');
 }
 
 export function cancelTaskSetup(invoke, taskId) {

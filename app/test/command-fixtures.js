@@ -37,15 +37,30 @@ export const workspace = {
   homePath: '/tmp/workspace', kind: 'regular', status: 'active', createdAt: 1, completedAt: null,
 };
 
-export const navigation = { workspaces: [workspace], tasks: [task], quickRequests: [] };
+export const navigation = { workspaces: [workspace], tasks: [task], sessions: [session], workspaceRepositories: [], quickRequests: [] };
 
 export const terminal = { replay: [] };
+
+export const newWorkProposal = {
+  schemaVersion: 1,
+  workType: 'workspace',
+  workspace: { id: null, name: 'Movie recommendations', intent: 'Track recommendations' },
+  task: null,
+  repositories: [],
+  jira: { action: 'none', issues: [], summary: null },
+  startingPrompt: 'Set up a movie recommendation tracker',
+  effects: ['Create a workspace and planning session'],
+};
 
 export const cleanupJobs = [];
 
 export function resultForCommand(name) {
   switch (name) {
     case 'opencode_session_history': return history;
+    case 'new_work_proposal_start': return { sessionId: 'proposal-session-1' };
+    case 'new_work_proposal_run': return newWorkProposal;
+    case 'new_work_proposal_read': return newWorkProposal;
+    case 'new_work_proposal_close': return null;
     case 'opencode_session_status': return status;
     case 'opencode_session_reconcile': return reconciliation;
     case 'opencode_pending_inputs': return pendingInputs;
@@ -53,6 +68,7 @@ export function resultForCommand(name) {
     case 'opencode_pending_inputs_all': return [pendingInputs];
     case 'task_session_create':
     case 'workspace_session_create': return session;
+    case 'workspace_create_initialized': return { workspace, session };
     case 'task_complete': return { task: completedTask, cleanupJobs };
     case 'task_cleanup_jobs':
     case 'task_cleanup_retry': return cleanupJobs;
@@ -63,7 +79,7 @@ export function resultForCommand(name) {
     case 'task_create':
     case 'task_setup_cancel':
     case 'task_setup_resume': return task;
-    case 'task_setup_status': return { task, session, repositories: [] };
+    case 'task_setup_status': return { task, session, repositories: [], repositoryIds: null };
     case 'quick_request_create':
     case 'quick_request_restore': return { task, session: null };
     case 'quick_request_list': return [];

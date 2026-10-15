@@ -4,6 +4,15 @@
 - Test both ends of every Tauri command: Rust tests cover behavior and serialized results; frontend tests cover command names, payloads, and result/error handling.
 - Keep layout, rendering, terminal, window, tray, and visual lifecycle acceptance manual on Wayland for now. Automate these only when the user reopens that decision.
 - Preserve Tauri, raw HTML/CSS/JavaScript, and OpenCode-owned conversation history. Read `docs/application-workflows.md` before changing product behavior.
+- Workspace/task prompts are transient inputs, never application database/file records. Log their send failures to Tauri's OS-specific `app_log_dir()/application.log` with session/error metadata only; do not write prompt contents to logs.
+
+## UX Terms
+
+- **Workspace:** A project grouping that knows about zero or more repositories and may contain zero or more tasks. Its repository associations are working context; existing repositories stay where they are unless the user explicitly chooses otherwise.
+- **Task:** An optional, independently progressing unit of work nested under one workspace. It may use one or more repositories associated with that workspace; managed worktrees go under `<task-home>/worktrees/`.
+- **Quick Request:** A named one-off tracked item under the special Quick Requests workspace. It is important work with its own status and lifecycle, not a generic label for a user's text or an OpenCode interaction.
+- **Prompt:** Text supplied to OpenCode. The initial user text is the **original prompt**; text prepared for a new session is the **starting prompt**. A prompt is not a product record.
+- **Interactive terminal:** The user's live interface to an OpenCode session or interactive tool process. Users watch progress and handle follow-ups, approvals, input, and changes there. The terminal is not an app-rendered transcript or a background-only process.
 
 ## Implementation and Testing
 

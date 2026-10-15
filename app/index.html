@@ -8,37 +8,47 @@
   </head>
   <body>
     <main class="shell">
-      <header class="topbar">
-        <a class="brand" href="#" aria-label="OpenCode Project Manager home">
-          <span class="brand-mark" aria-hidden="true">O</span>
-          <span>OpenCode <strong>Project Manager</strong></span>
-        </a>
-        <span class="environment-label">PRODUCTION SHELL</span>
-      </header>
-
       <div class="workspace-layout">
         <aside class="navigation" aria-label="Workspace navigation">
-          <p class="eyebrow">Navigation</p>
-           <div class="navigation-heading"><h2>Workspaces</h2><button id="new-workspace" type="button" class="quiet-button">New</button></div>
+           <section class="quick-section"><div class="navigation-heading"><h3>Quick Requests</h3><button id="show-history" type="button" class="link-button">View all</button></div>
+            <ul id="quick-request-list"><li>None yet</li></ul>
+            </section>
+          <div class="navigation-heading"><h2>Workspaces</h2></div>
            <ul id="workspace-list" aria-busy="true"><li class="placeholder">Loading…</li></ul>
-           <section class="history-section"><h3>Completed tasks</h3><ul id="task-history-list"><li class="placeholder">None yet</li></ul></section>
-           <section class="history-section"><h3>History</h3><ul id="workspace-history-list"><li class="placeholder">None yet</li></ul></section>
-           <section class="catalog-section" aria-labelledby="catalog-title">
-             <div class="navigation-heading"><h3 id="catalog-title">Repositories</h3><button id="scan-repositories" type="button" class="quiet-button">Scan</button></div>
-             <input id="scan-path" class="compact-input" placeholder="Folder to scan" aria-label="Folder to scan" />
-             <ul id="repository-list"><li class="placeholder">No catalog entries</li></ul>
-           </section>
-          <h2 class="quick-heading">Quick Requests</h2>
-          <ul id="quick-request-list"><li>None yet</li></ul>
-          <button id="show-history" type="button" class="quiet-button">Show history</button>
+           <button id="new-work-start" type="button" class="new-work-start">New work</button>
+           <button id="history-disabled" type="button" class="history-disabled" disabled>History</button>
         </aside>
-         <section class="quick-view" aria-labelledby="quick-title">
-           <p class="eyebrow">Selected workspace</p>
-            <h1 id="quick-title">Select a workspace</h1>
-            <p id="workspace-description" class="intro">Choose a workspace to continue. New tasks will be scoped to the selected workspace.</p>
-             <div class="workspace-actions">
-               <button id="new-task" type="button" class="quiet-button">New task</button>
-               <button id="attach-repository" type="button" class="quiet-button">Attach selected repository</button>
+          <section class="quick-view" aria-label="Selected work">
+            <div id="workbench" hidden>
+              <div class="workbench-toolbar" aria-label="Workspace and task selection">
+                <div id="owner-tabs" class="owner-tabs"></div>
+                <button id="new-task" type="button" class="toolbar-action">+ Task</button>
+              </div>
+              <div class="workbench-toolbar secondary-toolbar" aria-label="Session and workspace views">
+                <nav id="session-tabs" class="session-tabs workbench-session-tabs" role="tablist" aria-label="Workspace or task sessions"></nav>
+                <button id="terminal-fullscreen" type="button" class="terminal-fullscreen toolbar-action" aria-pressed="false">Full screen</button>
+              </div>
+            </div>
+            <div id="right-content" class="right-content">
+            <div id="no-selection" class="no-selection">
+              <section id="workspaces-unselected" hidden aria-labelledby="unselected-title">
+                <h1 id="unselected-title">Select a workspace or task, or choose New work to start.</h1>
+              </section>
+            </div>
+            <section id="selected-owner" hidden>
+              <h1 id="selected-title" class="visually-hidden"></h1><p id="workspace-description" class="visually-hidden"></p>
+              <p id="workspace-status" class="workspace-status" role="status" aria-live="polite"></p>
+              <section id="pending-starting-prompt" hidden class="pending-starting-prompt"><label for="pending-prompt-text">Starting prompt · not sent</label><textarea id="pending-prompt-text" rows="3"></textarea><button id="submit-starting-prompt" type="button">Start Quick Request</button></section>
+              <p id="session-status" class="visually-hidden" role="status" aria-live="polite"></p>
+              <ul id="pending-inputs" class="visually-hidden" aria-label="Pending input"></ul>
+              <section class="terminal-card" aria-label="OpenCode terminal">
+                <div id="terminal-views" class="terminal-views"></div>
+              </section>
+              <details class="owner-management">
+                <summary>Workspace and task options</summary>
+                <div class="owner-management-content">
+              <div class="workspace-actions">
+                <button id="attach-repository" type="button" class="quiet-button">Attach selected repository</button>
                <button id="task-setup-cancel" type="button" class="quiet-button" disabled>Cancel setup</button>
                <button id="task-setup-resume" type="button" class="quiet-button" disabled>Resume setup</button>
                 <button id="task-setup-refresh" type="button" class="quiet-button" disabled>Refresh setup</button>
@@ -46,33 +56,38 @@
                 <button id="complete-task" type="button" class="quiet-button" disabled>Complete task</button>
                  <button id="retry-cleanup" type="button" class="quiet-button" disabled>Retry cleanup</button>
                  <button id="complete-workspace" type="button" class="quiet-button" disabled>Complete workspace</button>
-                 <button id="reactivate-workspace" type="button" class="quiet-button" disabled>Reactivate workspace</button>
-             </div>
-            <form id="workspace-session-form" class="request-form">
-              <label for="workspace-prompt">Workspace planning prompt</label>
-              <textarea id="workspace-prompt" rows="2" placeholder="Inspect the workspace and plan the next step"></textarea>
-              <button id="workspace-session-submit" type="submit">Start workspace session</button>
-               <p id="workspace-status" class="success-message" role="status" aria-live="polite"></p>
-               <ul id="cleanup-history" aria-label="Task cleanup history"></ul>
-            </form>
-          <p class="intro">Ask OpenCode something without creating a regular workspace. Requests share a temporary directory and expire after 24 hours.</p>
-          <form id="quick-request-form" class="request-form">
+                <button id="reactivate-workspace" type="button" class="quiet-button" disabled>Reactivate workspace</button>
+              </div>
+              <details id="repository-management" class="repository-management">
+                <summary>Repository catalog and attachment</summary>
+                <label for="scan-path">Scan a folder for repositories</label>
+                <div class="repository-scan-row"><input id="scan-path" type="text" placeholder="/path/to/folder"><button id="scan-repositories" type="button" class="quiet-button">Scan</button></div>
+                <p class="repository-help">Select a catalog repository, then attach it to this workspace.</p>
+                <ul id="repository-list" aria-label="Repository catalog"><li>Loading repositories…</li></ul>
+              </details>
+              <div id="owner-repository-context" class="owner-repository-context"><span>Workspace repositories</span><ul id="attached-repositories" aria-label="Repositories attached to workspace"><li>None</li></ul></div>
+              <form id="workspace-session-form" class="request-form">
+               <label for="workspace-prompt">Workspace planning prompt</label>
+               <textarea id="workspace-prompt" rows="2" placeholder="Inspect the workspace and plan the next step"></textarea>
+               <button id="workspace-session-submit" type="submit">Start workspace session</button>
+              </form>
+              <ul id="cleanup-history" aria-label="Task cleanup history"></ul>
+                </div>
+              </details>
+            <form id="quick-request-form" class="request-form" hidden>
             <label for="quick-prompt">Prompt</label>
              <textarea id="quick-prompt" required rows="4" aria-describedby="quick-error" placeholder="What should OpenCode help with?"></textarea>
              <div class="model-row"><label for="quick-model">Model</label><select id="quick-model" required aria-describedby="quick-error" aria-busy="true"><option>Loading models…</option></select></div>
             <button id="quick-submit" type="submit">Start Quick Request</button>
-            <p id="quick-error" class="error-message" role="alert"></p>
-          </form>
-           <section class="terminal-card" aria-label="OpenCode terminal">
-              <nav id="session-tabs" class="session-tabs" role="tablist" aria-label="OpenCode sessions"></nav>
-              <p id="session-status" class="session-status" role="status" aria-live="polite">No session selected</p>
-             <ul id="pending-inputs" class="pending-inputs" aria-label="Pending input"></ul>
-              <div id="terminal-views" class="terminal-views"></div>
-           </section>
+             <p id="quick-error" class="error-message" role="alert"></p>
+           </form>
+            </section>
+            </div>
         </section>
       </div>
 
-      <section class="status-card" aria-labelledby="connection-title">
+      <section class="visually-hidden" aria-labelledby="connection-title">
+        <span id="app-version">Version —</span>
         <div class="card-heading">
           <div>
             <p class="eyebrow">Application status</p>
@@ -90,11 +105,17 @@
         </div>
       </section>
 
-      <footer class="footer">
-        <span>Local application</span>
-        <span id="app-version">Version —</span>
-      </footer>
+      <p id="app-notice" class="app-notice" role="status" aria-live="polite" hidden></p>
     </main>
+
+    <dialog id="new-work-dialog" class="workspace-dialog" aria-label="New work">
+      <div id="new-work-dialog-content" class="workspace-dialog-content">
+        <section id="new-work" class="new-work" hidden aria-labelledby="new-work-title">
+          <form id="new-work-capture" class="new-work-dialog-layout"><div class="new-work-dialog-scroll"><p class="eyebrow">New work</p><h1 id="new-work-title">What do you want to work on?</h1><label for="new-work-prompt">Describe the intent</label><textarea id="new-work-prompt" required rows="5" placeholder="Describe the project or task"></textarea></div><div class="new-work-dialog-footer"><p id="new-work-error" class="error-message" role="alert"></p><button type="button" id="new-work-cancel" class="quiet-button">Cancel</button><button type="submit">Continue</button></div></form>
+        </section>
+        <section id="new-work-review" class="new-work-review new-work-dialog-layout" hidden aria-labelledby="proposal-title"><div class="new-work-dialog-scroll"><p class="eyebrow">Review proposal</p><h1 id="proposal-title">Check the proposed context</h1><div class="proposal-grid"><div><h3>Original prompt</h3><blockquote id="proposal-original"></blockquote></div><div><h3>Proposed</h3><p id="proposal-summary"></p><p id="proposal-intent"></p></div><div><h3>Repositories</h3><p id="proposal-repositories"></p></div><div><h3>Jira</h3><p id="proposal-jira"></p></div><div class="proposal-wide"><h3>Starting prompt <span>(editable, not submitted)</span></h3><textarea id="proposal-prompt" rows="5"></textarea></div><div class="proposal-wide"><h3>Expected effects</h3><p id="proposal-effects"></p><label for="proposal-model">Model</label><select id="proposal-model" required aria-busy="true"><option>Loading models…</option></select></div></div></div><div class="new-work-dialog-footer"><button type="button" id="proposal-cancel" class="quiet-button">Cancel</button><button type="button" id="proposal-back" class="quiet-button">Back</button><button type="button" id="proposal-create">Create</button><p id="proposal-error" class="error-message" role="alert"></p></div></section>
+      </div>
+    </dialog>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

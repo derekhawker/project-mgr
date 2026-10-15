@@ -63,6 +63,17 @@ fn build_output(root: &std::path::Path) -> Result<Value, String> {
             created_at: 11,
         })
         .map_err(|error| error.to_string())?;
+    let workspace_session_id = "ses_wire_workspace_pending";
+    let workspace_session = NewSession {
+        open_code_session_id: workspace_session_id.into(),
+        owner: SessionOwner::Workspace(workspace.id.clone()),
+        directory: workspace.home_path.clone(),
+        last_known_status: "starting".into(),
+        created_at: 11,
+    };
+    store
+        .create_session_with_model(&workspace_session, "openai/gpt-6-luna")
+        .map_err(|error| error.to_string())?;
 
     let task = NewTask {
         id: "wire-quick-request".into(),
@@ -94,6 +105,30 @@ fn build_output(root: &std::path::Path) -> Result<Value, String> {
         .list_tasks(&quick_workspace.id)
         .map_err(|error| error.to_string())?;
     let workspaces = store.list_workspaces().map_err(|error| error.to_string())?;
+    let mut workspace_repositories = Vec::new();
+    let mut sessions = Vec::new();
+    for entry in &workspaces {
+        sessions.extend(
+            store
+                .list_sessions(&SessionOwner::Workspace(entry.id.clone()))
+                .map_err(|error| error.to_string())?,
+        );
+        for task in store
+            .list_tasks(&entry.id)
+            .map_err(|error| error.to_string())?
+        {
+            sessions.extend(
+                store
+                    .list_sessions(&SessionOwner::Task(task.id))
+                    .map_err(|error| error.to_string())?,
+            );
+        }
+        workspace_repositories.extend(
+            store
+                .list_workspace_repository_bindings(&entry.id)
+                .map_err(|error| error.to_string())?,
+        );
+    }
     let default_model = opencode_model_default_command(&store)?;
 
     let history = SessionHistory {
@@ -133,10 +168,18 @@ fn build_output(root: &std::path::Path) -> Result<Value, String> {
         "defaultModel": default_model,
         "workspace": workspace,
         "quickRequest": quick_requests.first().ok_or("Quick Request record missing")?,
+        "taskSetupStatus": {
+            "task": quick_requests.first().ok_or("Quick Request record missing")?.task,
+            "session": quick_requests.first().ok_or("Quick Request record missing")?.session,
+            "repositories": [],
+            "repositoryIds": null,
+        },
         "quickRequestList": quick_requests,
         "workspaceNavigation": {
             "workspaces": workspaces,
             "tasks": tasks,
+            "sessions": sessions,
+            "workspaceRepositories": workspace_repositories,
             "quickRequests": store.list_quick_requests(false).map_err(|error| error.to_string())?,
         },
         "sessionHistory": history,

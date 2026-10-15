@@ -1,4 +1,4 @@
-# README View
+# README Reader
 
 ## Purpose
 
@@ -11,15 +11,15 @@ its repositories. This is not a general file browser or notes editor.
   file's contents.
 - Display each file's full path in the list; paths must not be hidden behind a
   selection or hover.
-- Automatically select the first found README when the view opens.
+- Automatically select the first found README when the reader opens.
 - Selecting another path changes the displayed contents without hiding the list.
-- If no README is found, do not show an empty README view entry.
-- The README view occupies the main work area. Switching back to a terminal
+- If no README is found, do not show an empty README reader entry.
+- The README reader occupies the main work area. Switching back to a terminal
   restores that terminal at full size; the terminal tab remains open.
 
 ```text
 ┌ Workspace │ Task A │ Task B ──────────────────────────────────┐
-│ Session │ Changes │ READMEs │ Tools                            │
+│ Session │ Change Review │ READMEs │ Tools                       │
 ├─────────────────────────────────┬──────────────────────────────┤
 │ /home/me/project/README.md       │ Selected README contents     │
 │ /home/me/repos/api/README.md     │                              │

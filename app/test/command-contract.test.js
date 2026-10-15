@@ -10,11 +10,66 @@ const rust = readFileSync(root, 'utf8');
 const handler = rust.match(/generate_handler!\s*\[([\s\S]*?)\]\)/)?.[1] || '';
 const rustCommands = [...handler.matchAll(/\b([a-z][a-z0-9_]*)\s*,?/g)].map((match) => match[1]);
 const rustAttributes = [...rust.matchAll(/#\[tauri::command(?:\([^]]*\))?\]\s*(?:pub\s+)?fn\s+([a-z][a-z0-9_]*)/g)].map((match) => match[1]);
+const html = readFileSync(join(process.cwd(), 'index.html'), 'utf8');
 
 test('checked-in command inventory has one contract for every registered Rust command', () => {
   assert.deepEqual([...COMMAND_NAMES].sort(), [...rustCommands].sort());
   assert.deepEqual([...COMMAND_NAMES].sort(), [...rustAttributes].sort());
-  assert.equal(COMMAND_NAMES.length, 52);
+  assert.equal(COMMAND_NAMES.length, 57);
+});
+
+test('production main-screen selectors resolve to rendered HTML elements', () => {
+  const main = readFileSync(join(process.cwd(), 'src', 'main.js'), 'utf8');
+  const referencedIds = [...main.matchAll(/querySelector\(['"]#([a-zA-Z0-9_-]+)/g)].map((match) => match[1]);
+  const renderedIds = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]));
+  assert.deepEqual([...new Set(referencedIds)].filter((id) => !renderedIds.has(id)), []);
+});
+
+test('New-work is a modal over the existing workbench, with no standalone workspace creation path', () => {
+  const main = readFileSync(join(process.cwd(), 'src', 'main.js'), 'utf8');
+  assert.match(html, /<dialog id="new-work-dialog"[\s\S]*id="new-work"[\s\S]*id="new-work-review"[\s\S]*<\/dialog>/);
+  assert.doesNotMatch(html, /id="new-workspace"|id="workspace-create-form"|id="empty-workspaces"/);
+  assert.match(main, /newWorkDialog\.showModal\(\)/);
+  assert.doesNotMatch(main, /restoreWorkspacePendingPrompt/, 'selecting a workspace must not restore the unsent starting-prompt editor');
+  assert.match(html, /Select a workspace or task, or choose New work to start\./);
+  assert.match(html, /class="new-work-dialog-scroll"[\s\S]*class="new-work-dialog-footer"/);
+  const css = readFileSync(join(process.cwd(), 'src', 'styles.css'), 'utf8');
+  assert.match(css, /\.workspace-dialog-content\s*\{[^}]*padding:\s*1\.5rem/);
+  assert.match(css, /\.new-work-dialog-scroll\s*\{[^}]*overflow-y:\s*auto/);
+  assert.match(css, /\.new-work-dialog-footer\s*\{[^}]*flex:\s*0\s+0\s+auto/);
+});
+
+test('workspace and task confirmation attach the tracked terminal before automatically sending the reviewed prompt', () => {
+  const main = readFileSync(join(process.cwd(), 'src', 'main.js'), 'utf8');
+  assert.match(main, /await showSession\(task\.setupSessionId\);\s*await submitNewWorkStartingPrompt\(invoke, taskPromptAction, startingPrompt\);/);
+  assert.match(main, /await showSession\(initialized\.session\.openCodeSessionId\);[\s\S]*await submitNewWorkStartingPrompt\(invoke, workspacePromptAction, startingPrompt\);/);
+  assert.match(main, /selectedModel,\s*currentProposal\.task\.name,\s*currentProposal\.task\.intent/);
+});
+
+test('stateful hidden panels cannot be forced visible by component display styles', () => {
+  const css = readFileSync(join(process.cwd(), 'src', 'styles.css'), 'utf8');
+  assert.match(css, /\[hidden\]\s*\{\s*display:\s*none\s*!important;/);
+});
+
+test('terminal card contains only the terminal viewport and has no surrounding inset', () => {
+  const css = readFileSync(join(process.cwd(), 'src', 'styles.css'), 'utf8');
+  const main = readFileSync(join(process.cwd(), 'src', 'main.js'), 'utf8');
+  const terminalCard = html.match(/<section class="terminal-card"[^>]*>([\s\S]*?)<\/section>/)?.[1] || '';
+  assert.match(terminalCard, /^\s*<div id="terminal-views" class="terminal-views"><\/div>\s*$/);
+  assert.match(main, /const sessionStatus\s*=\s*document\.querySelector\('#session-status'\)/);
+  assert.match(main, /const pendingInputs\s*=\s*document\.querySelector\('#pending-inputs'\)/);
+  assert.match(html, /<nav id="session-tabs"[\s\S]*?<button id="terminal-fullscreen"[^>]*>/);
+  assert.match(css, /\.terminal-card\s*\{[^}]*\}/);
+  const cardRules = css.match(/\.terminal-card\s*\{([^}]*)\}/)?.[1] || '';
+  assert.doesNotMatch(cardRules, /padding|margin|background|border-radius/);
+  assert.match(css, /\.right-content\.owner-active\s*\{[^}]*padding:\s*0/);
+  assert.match(css, /\.terminal-views\s*\{[^}]*display:\s*flex/);
+  assert.match(css, /#selected-owner\s*\{[^}]*flex:\s*1\s+1\s+0/);
+});
+
+test('tracked terminal tabs are labeled OpenCode instead of inheriting the owner name', () => {
+  const main = readFileSync(join(process.cwd(), 'src', 'main.js'), 'utf8');
+  assert.match(main, /function sessionTabLabel\(proposal = false\)\s*\{\s*if \(proposal\) return 'Proposal';\s*return 'OpenCode';\s*\}/);
 });
 
 test('boundary catches the historical flat quick-request payload before Tauri', async () => {
@@ -136,7 +191,7 @@ test('preflight payload failures retain the command name before transport', asyn
   );
 });
 
-test('optional task model still has a strict provider/id wire shape', async () => {
+test('task creation sends only task metadata and confirmed repository context, never prompt text', async () => {
   let sent = false;
   await assert.doesNotReject(() => invokeCommand(async () => {
     sent = true;
@@ -144,8 +199,10 @@ test('optional task model still has a strict provider/id wire shape', async () =
   }, 'task_create', {
     request: {
       workspaceId: 'workspace-1',
-      prompt: 'Implement this',
       model: { providerId: 'openai', id: 'gpt-6-luna' },
+      name: 'Parser fix',
+      description: 'Update the parser',
+      repositoryIds: [],
     },
   }));
   assert.equal(sent, true);
@@ -156,9 +213,16 @@ test('optional task model still has a strict provider/id wire shape', async () =
   }, 'task_create', {
     request: {
       workspaceId: 'workspace-1',
-      prompt: 'Implement this',
       model: { providerId: 'openai', id: 'gpt-6-luna', unexpected: true },
+      name: 'Parser fix',
+      repositoryIds: [],
     },
   }), /unknown field/);
   assert.equal(sent, false);
+  await assert.rejects(() => invokeCommand(() => null, 'task_create', {
+    request: {
+      workspaceId: 'workspace-1', prompt: 'Do not persist me',
+      model: { providerId: 'openai', id: 'gpt-6-luna' }, name: 'Parser fix', repositoryIds: [],
+    },
+  }), /unknown field/);
 });

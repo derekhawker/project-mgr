@@ -3,8 +3,22 @@ import test from 'node:test';
 globalThis.self = globalThis;
 const { default: xterm } = await import('@xterm/xterm');
 const { registerXtGetTcapHandler } = await import('../src/terminal-protocol.js');
-const { TerminalEventBuffer, TerminalAttachmentRouter, TerminalRuntime } = await import('../src/terminal-runtime.js');
+const { TerminalEventBuffer, TerminalAttachmentRouter, TerminalRuntime, resolveTerminalConstructor } = await import('../src/terminal-runtime.js');
 const nullResult = () => Promise.resolve(null);
+
+test('resolves xterm Terminal from the namespace Vite serves for the CommonJS package', () => {
+  const Terminal = function Terminal() {};
+  assert.equal(resolveTerminalConstructor({ default: { Terminal } }), Terminal);
+  assert.equal(resolveTerminalConstructor({ Terminal }), Terminal);
+  assert.throws(() => resolveTerminalConstructor({ default: {} }), /did not expose its Terminal constructor/);
+});
+
+test('terminal runtime loads xterm’s required stylesheet so measurement helpers stay hidden', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { resolve } = await import('node:path');
+  const source = readFileSync(resolve('src/main.js'), 'utf8');
+  assert.match(source, /import ['"]@xterm\/xterm\/css\/xterm\.css['"]/);
+});
 
 test('buffers output before mount and replays it per session', () => {
   const buffer = new TerminalEventBuffer();

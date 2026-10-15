@@ -420,6 +420,19 @@ impl Runtime {
             },
         )
     }
+    pub fn generate_session_text(&self, id: &str, prompt: &str) -> Result<String, String> {
+        let (client, url) = self.client_url()?;
+        let response = post_data_value(
+            &client,
+            &format!("{url}/api/session/{id}/generate"),
+            &json!({"prompt": prompt}),
+        )?;
+        response
+            .get("text")
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+            .ok_or_else(|| "OpenCode returned an invalid session generation response.".to_owned())
+    }
     pub fn reply_permission(
         &self,
         session_id: &str,
@@ -1598,6 +1611,74 @@ mod tests {
         .unwrap();
         delete_empty(&client, &format!("{base}/api/session/ses_1/form/f1")).unwrap();
         server.join().unwrap();
+    }
+
+    #[test]
+    fn proposal_generation_uses_the_transient_generate_contract() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut request_line = String::new();
+            reader.read_line(&mut request_line).unwrap();
+            let mut headers = String::new();
+            let mut content_length = 0;
+            loop {
+                let mut line = String::new();
+                reader.read_line(&mut line).unwrap();
+                if line == "\r\n" {
+                    break;
+                }
+                if let Some(length) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                    content_length = length.trim().parse::<usize>().unwrap();
+                }
+                headers.push_str(&line);
+            }
+            let mut body = vec![0; content_length];
+            std::io::Read::read_exact(&mut reader, &mut body).unwrap();
+            assert_eq!(
+                request_line.split_whitespace().collect::<Vec<_>>(),
+                vec!["POST", "/api/session/ses_proposal/generate", "HTTP/1.1"]
+            );
+            assert!(headers.to_ascii_lowercase().contains(&format!(
+                "authorization: basic {}",
+                STANDARD.encode("opencode:secret").to_ascii_lowercase()
+            )));
+            assert_eq!(
+                serde_json::from_slice::<Value>(&body).unwrap(),
+                json!({"prompt":"Prepare a proposal"})
+            );
+            let response_body =
+                r#"{"data":{"text":"{\"schemaVersion\":1,\"workType\":\"workspace\"}"}}"#;
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                response_body.len(),
+                response_body
+            );
+            (&stream).write_all(response.as_bytes()).unwrap();
+        });
+        let runtime = Runtime {
+            server: Mutex::new(Some(Server {
+                child: Command::new("sh").args(["-c", "sleep 2"]).spawn().unwrap(),
+                info: RuntimeInfo {
+                    executable: "fake".into(),
+                    version: "2.0.27".into(),
+                    base_url: format!("http://{address}"),
+                },
+                _password: "secret".into(),
+                client: api_client("secret").unwrap(),
+            })),
+            terminals: TerminalManager::default(),
+            lifecycle: AtomicU8::new(0),
+            lifecycle_gate: Mutex::new(()),
+        };
+        let result = runtime
+            .generate_session_text("ses_proposal", "Prepare a proposal")
+            .unwrap();
+        assert_eq!(result, r#"{"schemaVersion":1,"workType":"workspace"}"#);
+        server.join().unwrap();
+        runtime.shutdown();
     }
 
     #[test]

@@ -1,10 +1,20 @@
 import { invokeCommand } from './command-contract.js';
 import { listen } from '@tauri-apps/api/event';
-import xterm from '@xterm/xterm';
+import * as xtermModule from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { registerXtGetTcapHandler } from './terminal-protocol.js';
 
-const { Terminal } = xterm;
+export function resolveTerminalConstructor(moduleNamespace) {
+  // Vite exposes this CommonJS package's exports under `default`; Node may
+  // synthesize the named exports directly on the namespace.
+  const moduleExports = moduleNamespace?.default ?? moduleNamespace;
+  if (typeof moduleExports?.Terminal !== 'function') {
+    throw new Error('The xterm package did not expose its Terminal constructor.');
+  }
+  return moduleExports.Terminal;
+}
+
+const Terminal = resolveTerminalConstructor(xtermModule);
 
 const decode = (value) => Uint8Array.from(atob(value), (character) => character.charCodeAt(0));
 
@@ -185,6 +195,16 @@ export class TerminalRuntime {
   }
 
   hide(sessionId) { const session = this.sessions.get(sessionId); if (session) session.hidden = true; return session?.terminal; }
+  forget(sessionId) {
+    const session = this.sessions.get(sessionId);
+    if (!session) return;
+    session.resizeObserver?.disconnect();
+    session.terminal.dispose();
+    this.sessions.delete(sessionId);
+    this.attachments.remove(sessionId);
+    this.buffered.take(sessionId);
+    if (this.selectedSessionId === sessionId) this.selectedSessionId = null;
+  }
   reopen(sessionId) {
     const session = this.sessions.get(sessionId);
     if (!session) return undefined;

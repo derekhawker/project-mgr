@@ -266,11 +266,18 @@
             },
             "prompt": {
               "type": "string"
+            },
+            "model": {
+              "type": "object",
+              "properties": { "providerId": { "type": "string" }, "id": { "type": "string" } },
+              "required": ["providerId", "id"],
+              "additionalProperties": false
             }
           },
           "required": [
             "sessionId",
-            "prompt"
+            "prompt",
+            "model"
           ],
           "additionalProperties": false
         }
@@ -1354,7 +1361,8 @@
                 "id"
               ],
               "additionalProperties": false
-            }
+            },
+            "prompt": { "type": "string" }
           },
           "required": [
             "requestId",
@@ -2316,6 +2324,48 @@
       "additionalProperties": false
     }
   },
+  "new_work_proposal_start": {
+    "payload": {
+      "type": "object",
+      "properties": { "request": { "type": "object", "properties": { "model": { "type": "object", "properties": { "providerId": { "type": "string" }, "id": { "type": "string" } }, "required": ["providerId", "id"], "additionalProperties": false } }, "required": ["model"], "additionalProperties": false } },
+      "required": ["request"], "additionalProperties": false
+    },
+    "result": { "type": "object", "properties": { "sessionId": { "type": "string" } }, "required": ["sessionId"], "additionalProperties": false }
+  },
+  "new_work_proposal_run": {
+    "payload": { "type": "object", "properties": { "request": { "type": "object", "properties": { "sessionId": { "type": "string" }, "originalPrompt": { "type": "string" }, "preferredWorkspaceId": { "type": "string" } }, "required": ["sessionId", "originalPrompt"], "additionalProperties": false } }, "required": ["request"], "additionalProperties": false },
+    "result": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": { "type": "number" },
+        "workType": { "type": "string" },
+        "workspace": { "type": "object", "nullable": true, "properties": { "id": { "type": "string", "nullable": true }, "name": { "type": "string", "nullable": true }, "intent": { "type": "string", "nullable": true } }, "required": ["id", "name", "intent"], "additionalProperties": false },
+        "task": { "type": "object", "nullable": true, "properties": { "name": { "type": "string", "nullable": true }, "intent": { "type": "string", "nullable": true } }, "required": ["name", "intent"], "additionalProperties": false },
+        "repositories": { "type": "array", "items": { "type": "object", "properties": { "repositoryId": { "type": "string" }, "reason": { "type": "string" } }, "required": ["repositoryId", "reason"], "additionalProperties": false } },
+        "jira": { "type": "object", "properties": { "action": { "type": "string" }, "issues": { "type": "array", "items": { "type": "object", "properties": { "key": { "type": "string" }, "summary": { "type": "string" } }, "required": ["key", "summary"], "additionalProperties": false } }, "summary": { "type": "string", "nullable": true } }, "required": ["action", "issues", "summary"], "additionalProperties": false },
+        "startingPrompt": { "type": "string" },
+        "effects": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["schemaVersion", "workType", "workspace", "task", "repositories", "jira", "startingPrompt", "effects"],
+      "additionalProperties": false
+    }
+  },
+  "new_work_proposal_read": {
+    "payload": { "type": "object", "properties": { "sessionId": { "type": "string" }, "preferredWorkspaceId": { "type": "string" } }, "required": ["sessionId"], "additionalProperties": false },
+    "result": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": { "type": "number" }, "workType": { "type": "string" },
+        "workspace": { "type": "object", "nullable": true, "properties": { "id": { "type": "string", "nullable": true }, "name": { "type": "string", "nullable": true }, "intent": { "type": "string", "nullable": true } }, "required": ["id", "name", "intent"], "additionalProperties": false },
+        "task": { "type": "object", "nullable": true, "properties": { "name": { "type": "string", "nullable": true }, "intent": { "type": "string", "nullable": true } }, "required": ["name", "intent"], "additionalProperties": false },
+        "repositories": { "type": "array", "items": { "type": "object", "properties": { "repositoryId": { "type": "string" }, "reason": { "type": "string" } }, "required": ["repositoryId", "reason"], "additionalProperties": false } },
+        "jira": { "type": "object", "properties": { "action": { "type": "string" }, "issues": { "type": "array", "items": { "type": "object", "properties": { "key": { "type": "string" }, "summary": { "type": "string" } }, "required": ["key", "summary"], "additionalProperties": false } }, "summary": { "type": "string", "nullable": true } }, "required": ["action", "issues", "summary"], "additionalProperties": false },
+        "startingPrompt": { "type": "string" }, "effects": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["schemaVersion", "workType", "workspace", "task", "repositories", "jira", "startingPrompt", "effects"], "additionalProperties": false
+    }
+  },
+  "new_work_proposal_close": { "payload": { "type": "object", "properties": { "sessionId": { "type": "string" } }, "required": ["sessionId"], "additionalProperties": false }, "result": { "type": "null" } },
   "workspace_navigation": {
     "payload": "none",
     "result": {
@@ -2474,6 +2524,52 @@
               "setupCancelledAt",
               "setupCancellationDetail"
             ],
+            "additionalProperties": false
+          }
+        },
+        "sessions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "openCodeSessionId": { "type": "string" },
+              "owner": {
+                "type": "object",
+                "properties": {
+                  "owner_type": { "type": "string" },
+                  "owner_id": { "type": "string" }
+                },
+                "required": ["owner_type", "owner_id"],
+                "additionalProperties": false
+              },
+              "directory": { "type": "string" },
+              "lastKnownStatus": { "type": "string" },
+              "createdAt": { "type": "number" },
+              "updatedAt": { "type": "number" },
+              "eventCursor": { "type": "string", "nullable": true },
+              "reconciliationStatus": { "type": "string" },
+              "reconciliationUncertain": { "type": "boolean" },
+              "pendingInputJson": { "type": "string", "nullable": true },
+              "selectedModel": { "type": "string", "nullable": true }
+            },
+            "required": ["openCodeSessionId", "owner", "directory", "lastKnownStatus", "createdAt", "updatedAt", "eventCursor", "reconciliationStatus", "reconciliationUncertain", "pendingInputJson", "selectedModel"],
+            "additionalProperties": false
+          }
+        },
+        "workspaceRepositories": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "workspaceId": { "type": "string" },
+              "repositoryId": { "type": "string" },
+              "checkoutPath": { "type": "string" },
+              "checkoutMode": { "type": "string" },
+              "branch": { "type": "string" },
+              "verificationStatus": { "type": "string" },
+              "createdAt": { "type": "number" }
+            },
+            "required": ["workspaceId", "repositoryId", "checkoutPath", "checkoutMode", "branch", "verificationStatus", "createdAt"],
             "additionalProperties": false
           }
         },
@@ -2664,9 +2760,11 @@
           }
         }
       },
-      "required": [
-        "workspaces",
-        "tasks",
+          "required": [
+            "workspaces",
+            "tasks",
+            "sessions",
+            "workspaceRepositories",
         "quickRequests"
       ],
       "additionalProperties": false
@@ -2742,6 +2840,82 @@
         "createdAt",
         "completedAt"
       ],
+      "additionalProperties": false
+    }
+  },
+  "workspace_create_initialized": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "request": {
+          "type": "object",
+          "properties": {
+            "name": { "type": "string" },
+            "description": { "type": "string", "nullable": true },
+            "model": {
+              "type": "object",
+              "properties": {
+                "providerId": { "type": "string" },
+                "id": { "type": "string" }
+              },
+              "required": ["providerId", "id"],
+              "additionalProperties": false
+            }
+          },
+          "required": ["name", "model"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["request"],
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "object",
+      "properties": {
+        "workspace": {
+          "type": "object",
+          "properties": {
+            "id": { "type": "string" },
+            "name": { "type": "string" },
+            "slug": { "type": "string" },
+            "description": { "type": "string", "nullable": true },
+            "homePath": { "type": "string" },
+            "kind": { "type": "string" },
+            "status": { "type": "string" },
+            "createdAt": { "type": "number" },
+            "completedAt": { "type": "number", "nullable": true }
+          },
+          "required": ["id", "name", "slug", "description", "homePath", "kind", "status", "createdAt", "completedAt"],
+          "additionalProperties": false
+        },
+        "session": {
+          "type": "object",
+          "properties": {
+            "openCodeSessionId": { "type": "string" },
+            "owner": {
+              "type": "object",
+              "properties": {
+                "owner_type": { "type": "string" },
+                "owner_id": { "type": "string" }
+              },
+              "required": ["owner_type", "owner_id"],
+              "additionalProperties": false
+            },
+            "directory": { "type": "string" },
+            "lastKnownStatus": { "type": "string" },
+            "createdAt": { "type": "number" },
+            "updatedAt": { "type": "number" },
+            "eventCursor": { "type": "string", "nullable": true },
+            "reconciliationStatus": { "type": "string" },
+            "reconciliationUncertain": { "type": "boolean" },
+            "pendingInputJson": { "type": "string", "nullable": true },
+            "selectedModel": { "type": "string", "nullable": true }
+          },
+          "required": ["openCodeSessionId", "owner", "directory", "lastKnownStatus", "createdAt", "updatedAt", "eventCursor", "reconciliationStatus", "reconciliationUncertain", "pendingInputJson", "selectedModel"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["workspace", "session"],
       "additionalProperties": false
     }
   },
@@ -2893,12 +3067,8 @@
             "workspaceId": {
               "type": "string"
             },
-            "prompt": {
-              "type": "string"
-            },
             "model": {
               "type": "object",
-              "nullable": true,
               "properties": {
                 "providerId": {
                   "type": "string"
@@ -2912,11 +3082,16 @@
                 "id"
               ],
               "additionalProperties": false
-            }
+            },
+            "name": { "type": "string" },
+            "description": { "type": "string", "nullable": true },
+            "repositoryIds": { "type": "array", "items": { "type": "string" } }
           },
           "required": [
             "workspaceId",
-            "prompt"
+            "model",
+            "name",
+            "repositoryIds"
           ],
           "additionalProperties": false
         }
@@ -3434,13 +3609,16 @@
                 "id"
               ],
               "additionalProperties": false
-            }
+            },
+            "startingPrompt": { "type": "string" },
+            "repositoryIds": { "type": "array", "items": { "type": "string" } }
           },
           "required": [
             "taskId",
             "operationId",
             "sessionId",
-            "model"
+            "model",
+            "startingPrompt"
           ],
           "additionalProperties": false
         }
@@ -3700,12 +3878,18 @@
             ],
             "additionalProperties": false
           }
+        },
+        "repositoryIds": {
+          "type": "array",
+          "nullable": true,
+          "items": { "type": "string" }
         }
       },
       "required": [
         "task",
         "session",
-        "repositories"
+        "repositories",
+        "repositoryIds"
       ],
       "additionalProperties": false
     }

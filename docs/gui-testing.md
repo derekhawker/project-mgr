@@ -1,11 +1,14 @@
-# GUI Testing Boundaries
+# GUI Testing
+
+For a concise overview of Rust unit tests, frontend command-contract tests, and
+Tauri end-to-end options, see [Tauri Testing Cliff Notes](tauri-testing-notes.md).
 
 ## Highlights
 
 - **System logic:** implement and test it in Rust; keep frontend unit tests focused on both sides of Tauri command contracts.
-- **Visual acceptance:** window visibility, layout, terminal rendering, tray behavior, and lifecycle are manual Wayland checks for now.
-- **Display isolation:** no automated display-isolation runner is retained. Xvfb exercises X11, not this Wayland app; a headless Weston approach was considered but not completed or validated.
-- **Progress:** the production app's Rust/frontend unit tests and builds pass. The user reports completing the updated SQLite-enabled shell's manual Wayland verification; this remains user-reported rather than independently observed evidence. No I-02 GUI work was needed.
+- **WebView E2E:** use Tauri's WebDriver integration for automated interaction and assertions against the running app. It is not configured in this repository yet.
+- **Visual acceptance:** inspect the app in a Wayland session. Xvfb exercises X11 and does not establish Wayland behavior.
+- **Current validation:** no visual acceptance was completed in this session. The app process was running, but the captured desktop showed a locked KeePass dialog rather than the app, so no UI result is claimed.
 
 ## Automated tests
 
@@ -21,7 +24,7 @@ The automated frontend and Rust tests are the primary checks for application
 logic. Keep them local and deterministic; do not require a running desktop or
 provider service for these contracts.
 
-## Manual Wayland checks
+## Wayland visual checks
 
 Run the built or development app in the target Wayland session when reviewing
 layout, rendered content, terminal behavior, window visibility, tray actions, or
@@ -34,13 +37,11 @@ application. Do not treat an empty screenshot from a shared desktop as evidence
 of an application failure. Record the compositor, exact interaction, observed
 result, and any occlusion when reporting a manual check.
 
-## Display-isolation attempts
+## Display and automation notes
 
 The earlier Xvfb runner was removed because it forced GTK onto X11 and did not
 exercise this Wayland application. A private headless Weston compositor was
-considered as a Wayland replacement, but that runner was not completed or
-validated. No automated GUI acceptance result is claimed from either attempt.
-
-GUI and lifecycle automation remain deferred until the user explicitly reopens
-that decision. Until then, keep those checks manual and cover application logic
-through Rust and frontend unit tests.
+considered but not completed or validated. These facts do not rule out adding a
+Wayland-capable automated test setup; validate its compositor and WebView
+behavior before treating it as acceptance coverage. Keep automated WebDriver
+assertions distinct from visual review and from Rust/frontend unit tests.

@@ -22,6 +22,9 @@ const MIGRATION_4: &str = include_str!("migrations/0004_setup_cancellation.sql")
 const MIGRATION_5: &str = include_str!("migrations/0005_setup_operation_state.sql");
 const MIGRATION_6: &str = include_str!("migrations/0006_session_reconciliation.sql");
 const MIGRATION_7: &str = include_str!("migrations/0007_session_model.sql");
+const MIGRATION_8: &str = include_str!("migrations/0008_setup_repository_selection.sql");
+const MIGRATION_9: &str = include_str!("migrations/0009_workspace_starting_prompt.sql");
+const MIGRATION_10: &str = include_str!("migrations/0010_remove_starting_prompt_storage.sql");
 
 fn now_millis_for_cleanup() -> i64 {
     std::time::SystemTime::now()
@@ -595,8 +598,12 @@ impl ManagementStore {
         if database_path.is_some() {
             connection.pragma_update(None, "journal_mode", "WAL")?;
             connection.pragma_update(None, "synchronous", "NORMAL")?;
+            connection.pragma_update(None, "secure_delete", "ON")?;
         }
         Self::migrate(&mut connection)?;
+        if database_path.is_some() {
+            connection.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
+        }
         Self::ensure_default_settings(&connection)?;
         Ok(Self {
             connection: Mutex::new(connection),
@@ -623,7 +630,7 @@ impl ManagementStore {
             [],
             |row| row.get(0),
         )?;
-        if current_version > 7 {
+        if current_version > 10 {
             return Err(ManagementStoreError::UnsupportedSchemaVersion(
                 current_version,
             ));
@@ -674,6 +681,27 @@ impl ManagementStore {
             transaction.execute_batch(MIGRATION_7)?;
             transaction.execute(
                 "INSERT INTO schema_migrations(version, applied_at) VALUES (7, 0)",
+                [],
+            )?;
+        }
+        if current_version < 8 {
+            transaction.execute_batch(MIGRATION_8)?;
+            transaction.execute(
+                "INSERT INTO schema_migrations(version, applied_at) VALUES (8, 0)",
+                [],
+            )?;
+        }
+        if current_version < 9 {
+            transaction.execute_batch(MIGRATION_9)?;
+            transaction.execute(
+                "INSERT INTO schema_migrations(version, applied_at) VALUES (9, 0)",
+                [],
+            )?;
+        }
+        if current_version < 10 {
+            transaction.execute_batch(MIGRATION_10)?;
+            transaction.execute(
+                "INSERT INTO schema_migrations(version, applied_at) VALUES (10, 0)",
                 [],
             )?;
         }
@@ -821,6 +849,34 @@ impl ManagementStore {
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         transaction.execute("DELETE FROM workspaces WHERE id = ?1", [id])?;
         transaction.commit()?;
+        Ok(())
+    }
+
+    /// Removes the session association created by a failed workspace
+    /// initialization attempt. This is intentionally narrow: it is only valid
+    /// while the workspace has no tasks or repository bindings.
+    pub fn rollback_workspace_session(
+        &self,
+        workspace_id: &str,
+        session_id: &str,
+    ) -> StoreResult<()> {
+        let connection = self.lock()?;
+        let owner: Option<String> = connection
+            .query_row(
+                "SELECT owner_workspace_id FROM sessions WHERE open_code_session_id = ?1",
+                [session_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if owner.as_deref() != Some(workspace_id) {
+            return Err(ManagementStoreError::InvalidTransition(
+                "workspace initialization session does not belong to the workspace".into(),
+            ));
+        }
+        connection.execute(
+            "DELETE FROM sessions WHERE open_code_session_id = ?1",
+            [session_id],
+        )?;
         Ok(())
     }
 
@@ -1049,6 +1105,7 @@ impl ManagementStore {
         )?;
 
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        transaction.execute("DELETE FROM setup_operation_state WHERE task_id = ?1", [id])?;
         if session_count != 0 {
             transaction.execute("DELETE FROM sessions WHERE owner_task_id = ?1", [id])?;
         }
@@ -1421,6 +1478,85 @@ impl ManagementStore {
         )?;
         Self::get_task_from(&connection, task_id)?
             .ok_or_else(|| ManagementStoreError::NotFound(format!("task {task_id}")))
+    }
+
+    /// Persists the user's confirmed repository subset for a setup operation.
+    /// Once selected, retries cannot silently widen or replace that context.
+    pub fn save_task_setup_repository_selection(
+        &self,
+        operation_id: &str,
+        repository_ids: &[String],
+    ) -> StoreResult<()> {
+        let encoded = serde_json::to_string(repository_ids).map_err(|error| {
+            ManagementStoreError::InvalidTransition(format!(
+                "could not encode task repository selection: {error}"
+            ))
+        })?;
+        let connection = self.lock()?;
+        let existing: Option<String> = connection.query_row(
+            "SELECT selected_repository_ids FROM setup_operation_state WHERE operation_id = ?1",
+            [operation_id],
+            |row| row.get::<_, Option<String>>(0),
+        )?;
+        if let Some(existing) = existing {
+            if existing != encoded {
+                return Err(ManagementStoreError::InvalidTransition(
+                    "confirmed task repository selection cannot be changed during setup".into(),
+                ));
+            }
+            return Ok(());
+        }
+        let changed = connection.execute(
+            "UPDATE setup_operation_state SET selected_repository_ids = ?2 WHERE operation_id = ?1",
+            params![operation_id, encoded],
+        )?;
+        if changed == 0 {
+            return Err(ManagementStoreError::NotFound(format!(
+                "setup operation {operation_id}"
+            )));
+        }
+        Ok(())
+    }
+
+    pub fn task_setup_repository_selection(
+        &self,
+        operation_id: &str,
+    ) -> StoreResult<Option<Vec<String>>> {
+        let connection = self.lock()?;
+        let encoded: Option<String> = connection
+            .query_row(
+                "SELECT selected_repository_ids FROM setup_operation_state WHERE operation_id = ?1",
+                [operation_id],
+                |row| row.get::<_, Option<String>>(0),
+            )
+            .optional()?
+            .flatten();
+        encoded
+            .map(|encoded| {
+                serde_json::from_str(&encoded).map_err(|error| {
+                    ManagementStoreError::InvalidTransition(format!(
+                        "stored task repository selection is invalid: {error}"
+                    ))
+                })
+            })
+            .transpose()
+    }
+
+    pub fn finish_initial_prompt(&self, session_id: &str, updated_at: i64) -> StoreResult<()> {
+        let mut connection = self.lock()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let changed = transaction.execute(
+            "UPDATE sessions SET last_known_status = 'running', updated_at = ?2
+             WHERE open_code_session_id = ?1 AND last_known_status = 'prompting'",
+            params![session_id, updated_at],
+        )?;
+        if changed == 0 {
+            return Err(ManagementStoreError::InvalidTransition(format!(
+                "session {session_id} is not submitting its initial prompt"
+            )));
+        }
+        transaction.commit()?;
+        Ok(())
     }
 
     pub fn cancel_task_setup(&self, id: &str) -> StoreResult<Task> {
@@ -3882,6 +4018,102 @@ mod tests {
         }
     }
 
+    #[test]
+    fn setup_repository_selection_is_durable_and_immutable() {
+        let store = ManagementStore::in_memory().unwrap();
+        store
+            .create_workspace(&workspace("w-selection", "selection"))
+            .unwrap();
+        let mut new_task = task("t-selection", "w-selection", "selection-task");
+        new_task.setup_status = TaskSetupStatus::NotStarted;
+        let task_record = store.create_task(&new_task).unwrap();
+        store
+            .create_session(&NewSession {
+                open_code_session_id: "ses-selection".into(),
+                owner: SessionOwner::Task(task_record.id.clone()),
+                directory: task_record.home_path,
+                last_known_status: "starting".into(),
+                created_at: CREATED + 2,
+            })
+            .unwrap();
+        store
+            .bind_task_setup_operation("t-selection", "op-selection", "ses-selection")
+            .unwrap();
+
+        assert_eq!(
+            store
+                .task_setup_repository_selection("op-selection")
+                .unwrap(),
+            None
+        );
+        let selection = vec!["repo-1".to_owned(), "repo-2".to_owned()];
+        store
+            .save_task_setup_repository_selection("op-selection", &selection)
+            .unwrap();
+        assert_eq!(
+            store
+                .task_setup_repository_selection("op-selection")
+                .unwrap(),
+            Some(selection.clone())
+        );
+        store
+            .save_task_setup_repository_selection("op-selection", &selection)
+            .unwrap();
+        store
+            .update_session_status("ses-selection", "failed", CREATED + 3)
+            .unwrap();
+        assert!(store
+            .save_task_setup_repository_selection("op-selection", &["repo-3".to_owned()])
+            .is_err());
+        store.rollback_new_task("t-selection").unwrap();
+    }
+
+    #[test]
+    fn schema_migration_removes_legacy_starting_prompt_storage() {
+        let directory = tempdir().unwrap();
+        let user_home = directory.path().join("home");
+        let system_temp = directory.path().join("system-temp");
+        fs::create_dir_all(&user_home).unwrap();
+        fs::create_dir_all(&system_temp).unwrap();
+        let database = directory.path().join("management.sqlite");
+        drop(ManagementStore::open_with_paths(&database, &user_home, &system_temp).unwrap());
+        {
+            let legacy = Connection::open(&database).unwrap();
+            legacy
+                .execute_batch(
+                    "ALTER TABLE setup_operation_state ADD COLUMN starting_prompt TEXT;
+                     CREATE TABLE workspace_starting_prompts (
+                         session_id TEXT PRIMARY KEY NOT NULL,
+                         prompt TEXT NOT NULL
+                     );
+                     INSERT INTO workspace_starting_prompts(session_id, prompt)
+                         VALUES ('legacy-session', 'legacy prompt to remove');
+                     DELETE FROM schema_migrations WHERE version = 10;",
+                )
+                .unwrap();
+        }
+        let migrated =
+            ManagementStore::open_with_paths(&database, &user_home, &system_temp).unwrap();
+        assert_eq!(migrated.migration_versions().unwrap().last(), Some(&10));
+        let connection = migrated.lock().unwrap();
+        let legacy_table_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'workspace_starting_prompts'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(legacy_table_count, 0);
+        let columns = connection
+            .prepare("PRAGMA table_info(setup_operation_state)")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert!(!columns.iter().any(|name| name == "starting_prompt"));
+    }
+
     fn repository(id: &str) -> NewRepository {
         NewRepository {
             id: id.to_owned(),
@@ -4089,7 +4321,7 @@ mod tests {
                     .unwrap();
             assert_eq!(
                 store.migration_versions().unwrap(),
-                vec![1, 2, 3, 4, 5, 6, 7]
+                vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
             );
             assert_eq!(
                 store.project_home_root().unwrap(),
@@ -4116,7 +4348,7 @@ mod tests {
         let reopened = ManagementStore::open_with_paths(&path, user_home, system_temp).unwrap();
         assert_eq!(
             reopened.migration_versions().unwrap(),
-            vec![1, 2, 3, 4, 5, 6, 7]
+            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
         );
         assert_eq!(
             reopened.get_workspace("w-1").unwrap().unwrap().slug,
@@ -4540,6 +4772,45 @@ mod tests {
             store.get_session("ses-failed-promotion").unwrap().unwrap(),
             session_before
         );
+    }
+
+    #[test]
+    fn failed_workspace_initialization_removes_session_owner_and_managed_home() {
+        let fixture = tempdir().unwrap();
+        let store = ManagementStore::in_memory_with_paths(
+            fixture.path().join("home"),
+            fixture.path().join("system-temp"),
+        )
+        .unwrap();
+        let workspace = NewWorkspace {
+            id: "w-init-failed".into(),
+            name: "Initialization failed".into(),
+            slug: "initialization-failed".into(),
+            description: None,
+            kind: WorkspaceKind::Regular,
+            created_at: CREATED,
+        };
+        let created = store.create_workspace(&workspace).unwrap();
+        let session = NewSession {
+            open_code_session_id: "ses-init-failed".into(),
+            owner: SessionOwner::Workspace(workspace.id.clone()),
+            directory: created.home_path.clone(),
+            last_known_status: "starting".into(),
+            created_at: CREATED,
+        };
+        store.create_session(&session).unwrap();
+
+        store
+            .rollback_workspace_session(&workspace.id, &session.open_code_session_id)
+            .unwrap();
+        store.rollback_new_workspace(&workspace.id).unwrap();
+
+        assert!(store.get_workspace(&workspace.id).unwrap().is_none());
+        assert!(store
+            .get_session(&session.open_code_session_id)
+            .unwrap()
+            .is_none());
+        assert!(!PathBuf::from(created.home_path).exists());
     }
 
     #[test]
