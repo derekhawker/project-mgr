@@ -16,7 +16,7 @@ const html = readFileSync(join(process.cwd(), 'index.html'), 'utf8');
 test('checked-in command inventory has one contract for every registered Rust command', () => {
   assert.deepEqual([...COMMAND_NAMES].sort(), [...rustCommands].sort());
   assert.deepEqual([...COMMAND_NAMES].sort(), [...rustAttributes].sort());
-  assert.equal(COMMAND_NAMES.length, 59);
+  assert.equal(COMMAND_NAMES.length, 61);
 });
 
 test('production main-screen selectors resolve to rendered HTML elements', () => {
@@ -24,6 +24,36 @@ test('production main-screen selectors resolve to rendered HTML elements', () =>
   const referencedIds = [...main.matchAll(/querySelector\(['"]#([a-zA-Z0-9_-]+)/g)].map((match) => match[1]);
   const renderedIds = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]));
   assert.deepEqual([...new Set(referencedIds)].filter((id) => !renderedIds.has(id)), []);
+});
+
+test('workspace creation reports live setup steps and renders error details as text', () => {
+  const main = readFileSync(join(process.cwd(), 'src', 'main.js'), 'utf8');
+  assert.match(html, /id="new-work-progress"[\s\S]*id="new-work-progress-steps"/);
+  assert.match(html, /id="new-work-prompt"[\s\S]*id="new-work-progress"/);
+  assert.match(main, /newWorkPrompt\.after\(progressPanel\)/);
+  assert.match(main, /progressAnchor\.after\(progressPanel\)/);
+  assert.match(main, /listen\('workspace-setup-progress'/);
+  assert.match(main, /row\.detail\.querySelector\('pre'\)\.textContent = detail/);
+  assert.match(main, /Workspace create[\s\S]*failed/);
+});
+
+test('repository directory management is a page opened from top navigation', () => {
+  const nav = html.match(/<aside class="navigation"[\s\S]*?<\/aside>/)?.[0] || '';
+  assert.match(nav, /id="show-directories"/);
+  assert.match(html, /id="directories-page"[\s\S]*id="add-repository-directories"/);
+  assert.match(html, /id="directory-list"/);
+  assert.doesNotMatch(html, /id="disallowed-repository-list"|id="repository-list"/);
+  assert.doesNotMatch(html, /id="scan-path"|id="scan-repositories"/);
+});
+
+test('proposal review uses a compact repository path list and has one starting prompt field', () => {
+  assert.match(html, /<ul id="proposal-repositories" class="proposal-repository-list"><\/ul>/);
+  assert.match(html, /id="workspace-review-name" type="text" required/);
+  assert.match(html, /id="workspace-review-directory"/);
+  assert.match(html, /<textarea id="workspace-original-prompt" rows="3" readonly><\/textarea>/);
+  assert.match(html, /<label for="proposal-prompt">Starting prompt<\/label>/);
+  assert.doesNotMatch(html, /proposal-grid/);
+  assert.doesNotMatch(html, /Pinned submodules|Workspace clone:/);
 });
 
 test('Quick Requests use a dedicated available-height page with a visible way back and no owner controls', () => {
@@ -78,11 +108,53 @@ test('New-work is a modal over the existing workbench, with no standalone worksp
   assert.match(html, /class="new-work-dialog-scroll"[\s\S]*class="new-work-dialog-footer"/);
 });
 
-test('workspace and task confirmation attach the tracked terminal before automatically sending the reviewed prompt', () => {
+test('Task creation has a Workspace selector for both navigation and Workspace context-menu entry points', () => {
   const main = readFileSync(join(process.cwd(), 'src', 'main.js'), 'utf8');
-  assert.match(main, /await showSession\(task\.setupSessionId\);\s*await submitNewWorkStartingPrompt\(invoke, taskPromptAction, startingPrompt\);/);
-  assert.match(main, /await showSession\(initialized\.session\.openCodeSessionId\);[\s\S]*await submitNewWorkStartingPrompt\(invoke, workspacePromptAction, startingPrompt\);/);
-  assert.match(main, /selectedModel,\s*currentProposal\.task\.name,\s*currentProposal\.task\.intent/);
+  assert.match(html, /id="workspace-context-menu"[^>]*role="menu"[\s\S]*id="workspace-context-new-task"[^>]*role="menuitem"/);
+  assert.match(html, /id="task-workspace-field"[^>]*hidden[\s\S]*label for="task-workspace-select"[^>]*>Workspace<\/label><select id="task-workspace-select" required>/);
+  assert.match(html, /data-new-work-type="task"/);
+  assert.match(main, /bindWorkspaceContextMenu\(button, workspace, openWorkspaceContextMenu\)/);
+  assert.match(main, /if \(workspace\) openNewWork\('task', workspace\.id\)/);
+  assert.match(main, /if \(workType === 'task'\) populateTaskWorkspace\(workspaceId\)/);
+  assert.match(main, /runNewWorkProposal\([\s\S]*requestedType === 'task' \? newWorkWorkspaceContext/);
+});
+
+test('Task proposal review shows editable creation details and optional revised prompt without sending it', () => {
+  const main = readFileSync(join(process.cwd(), 'src', 'main.js'), 'utf8');
+  assert.match(html, /id="task-review-details"[^>]*class="workspace-review-form"[^>]*hidden/);
+  assert.match(html, /id="task-review-name" type="text" required/);
+  assert.match(html, /id="task-review-intent" rows="3" required/);
+  assert.match(html, /id="task-review-workspace"/);
+  assert.match(html, /id="task-review-directory"/);
+  assert.match(html, /id="task-original-prompt" rows="3" readonly/);
+  assert.match(html, /label for="task-revised-prompt">Revised prompt \(optional\)/);
+  assert.match(html, /not sent to Task sessions or saved/);
+  assert.match(main, /task-review-name'\)\.value = proposal\.task\?\.name/);
+  assert.match(main, /task-revised-prompt'\)\.value = proposal\.startingPrompt \|\| ''/);
+  assert.match(main, /createWorkspaceTask\([\s\S]*taskName,[\s\S]*taskIntent,[\s\S]*currentProposal\.repositories\.map/);
+  assert.doesNotMatch(main.match(/else if \(currentProposal\.workType === 'task'\) \{([\s\S]*?)\n    \} else \{/i)?.[1] || '', /task-revised-prompt|submitNewWorkStartingPrompt/);
+});
+
+test('active Task does not show routine ready status or let it overwrite terminal errors', () => {
+  const main = readFileSync(join(process.cwd(), 'src', 'main.js'), 'utf8');
+  assert.match(main, /const setupNotice = taskSetupStatusNotice\(status\)/);
+  assert.match(main, /if \(setupNotice\) \{[\s\S]*workspaceStatus\.textContent = setupNotice/);
+  assert.match(main, /workspaceStatus\.textContent === currentTaskSetupNotice/);
+  assert.doesNotMatch(main, /workspaceStatus\.textContent = formatTaskSetupStatus\(status\)/);
+  assert.match(main, /workspaceStatus\.textContent = failed\.length[\s\S]*: '';/);
+});
+
+test('workspace confirmation sends its reviewed prompt, while optional Task revised prompt stays unsent', () => {
+  const main = readFileSync(join(process.cwd(), 'src', 'main.js'), 'utf8');
+  assert.match(main, /const task = created\.task;[\s\S]*created\.sessions\[0\]\.openCodeSessionId/);
+  assert.doesNotMatch(main, /submitNewWorkStartingPrompt\(invoke, taskPromptAction/);
+  assert.match(main, /for \(const session of workspaceSessions\) await showSession\(session\.openCodeSessionId\);[\s\S]*if \(!multiRepositoryWorkspace\)[\s\S]*await submitNewWorkStartingPrompt\(invoke, workspacePromptAction, startingPrompt\);/);
+  assert.match(main, /initialized\.sessions \|\| \[\]/);
+  assert.match(main, /selectedModel,\s*taskName,\s*taskIntent/);
+  assert.match(main, /task-revised-prompt'\)\.value = proposal\.startingPrompt \|\| ''/);
+  assert.doesNotMatch(main.match(/else if \(currentProposal\.workType === 'task'\) \{([\s\S]*?)\n    \} else \{/i)?.[1] || '', /task-revised-prompt|submitNewWorkStartingPrompt/);
+  assert.match(html, /id="proposal-starting-prompt"/);
+  assert.match(main, /proposal-starting-prompt'\)\.hidden = proposal\.workType !== 'workspace'/);
 });
 
 test('terminal card contains only the terminal viewport and has no surrounding inset', () => {
@@ -91,12 +163,15 @@ test('terminal card contains only the terminal viewport and has no surrounding i
   assert.match(terminalCard, /^\s*<div id="terminal-views" class="terminal-views"><\/div>\s*$/);
   assert.match(main, /const sessionStatus\s*=\s*document\.querySelector\('#session-status'\)/);
   assert.match(main, /const pendingInputs\s*=\s*document\.querySelector\('#pending-inputs'\)/);
-  assert.match(html, /<nav id="session-tabs"[\s\S]*?<button id="terminal-fullscreen"[^>]*>/);
+  assert.doesNotMatch(html, /fullscreen/i);
+  assert.doesNotMatch(main, /setTerminalFullscreen|terminal-fullscreen/);
 });
 
-test('tracked terminal tabs are labeled OpenCode instead of inheriting the owner name', () => {
+test('workspace terminal tabs identify their repository while other sessions use OpenCode', () => {
   const main = readFileSync(join(process.cwd(), 'src', 'main.js'), 'utf8');
-  assert.match(main, /function sessionTabLabel\(proposal = false\)\s*\{\s*if \(proposal\) return 'Proposal';\s*return 'OpenCode';\s*\}/);
+  assert.match(main, /function sessionTabLabel\(proposal = false, session = null\)/);
+  assert.match(main, /return repository\?\.name \|\| binding\.repositoryId/);
+  assert.match(main, /return 'OpenCode'/);
 });
 
 test('boundary catches the historical flat quick-request payload before Tauri', async () => {

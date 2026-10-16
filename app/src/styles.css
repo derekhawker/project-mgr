@@ -51,6 +51,7 @@ body {
 .navigation h2 { margin: 0 0 .375rem; }
 .navigation-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: .375rem; }
 .navigation-heading h2 { margin: 0; }
+#repository-status { margin: .15rem 0; color: #66736e; font-size: 11px; line-height: 1.35; }
 .quick-section-heading { display: flex; align-items: center; justify-content: space-between; gap: .25rem; margin-bottom: .25rem; }
 .quick-section h3 { margin: 0; font-size: 14px; }
 .quick-section #show-history { display: inline-flex; align-items: center; gap: .2rem; margin: 0; padding: .125rem .25rem; border: 1px solid #d9e1db; border-radius: 4px; color: #426a59; background: #fbfcfa; font-size: 11px; line-height: 1.2; cursor: pointer; }
@@ -96,27 +97,23 @@ body {
 .new-work, .new-work-review { min-width: 0; min-height: 0; flex: 1; }
 .new-work h1, .new-work-review h1 { margin: 0 0 1.25rem; font-size: clamp(30px, 4vw, 46px); }
 .new-work-actions { display: flex; justify-content: space-between; align-items: center; gap: .75rem; margin-top: 1rem; }
-.proposal-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
-.proposal-grid > div { border: 1px solid #dfe4df; border-radius: 8px; padding: .5rem; background: #fbfcfa; }
-.proposal-grid h3 { margin: 0 0 .5rem; color: #426a59; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
-.proposal-grid blockquote { margin: 0; white-space: pre-wrap; line-height: 1.6; }
-.proposal-wide { grid-column: 1 / -1; }
-.proposal-grid h3 span { color: #77827d; font-weight: 400; text-transform: none; letter-spacing: 0; }
-.proposal-grid textarea { width: 100%; border: 1px solid #cfd9d2; border-radius: 6px; padding: .35rem; font: inherit; background: #fff; }
+.workspace-review-form { display: grid; gap: .3rem; }
+.workspace-review-form label, .proposal-starting-prompt label, .proposal-model-field label { color: #426a59; font-size: 12px; font-weight: 700; }
+.workspace-review-form input, .workspace-review-form textarea, .proposal-starting-prompt textarea { width: 100%; border: 1px solid #cfd9d2; border-radius: 6px; padding: .4rem; font: inherit; background: #fff; }
+.workspace-review-form textarea[readonly] { color: #52645a; background: #f4f5f2; resize: vertical; }
+.workspace-review-directory { display: block; overflow-wrap: anywhere; padding: .4rem; border: 1px solid #dfe4df; border-radius: 6px; background: #fbfcfa; font-size: 12px; }
+.workspace-review-form .field-help { margin: 0; color: #52645a; font-size: 12px; }
+.proposal-repository-list { max-height: 5.5rem; overflow-y: auto; margin: .2rem 0 .65rem; padding-left: 1.15rem; font-size: 12px; line-height: 1.4; }
+.proposal-repository-list li { overflow-wrap: anywhere; }
+.proposal-starting-prompt { display: grid; gap: .3rem; margin: .25rem 0 .65rem; }
+.proposal-model-field { display: grid; gap: .3rem; }
+.new-work-review blockquote { margin: .25rem 0 .75rem; white-space: pre-wrap; line-height: 1.4; }
 .new-work-dialog-scroll select { width: 100%; border: 1px solid #cfd9d2; border-radius: 6px; padding: .325rem; font: inherit; background: #fff; }
 .pending-starting-prompt { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: .225rem .35rem; margin-top: 0; padding: .25rem .325rem; border: 1px solid #cbd9cf; border-radius: 6px; background: #fbfcfa; }
 .pending-starting-prompt label { color: #426a59; font-size: 12px; font-weight: 700; }
 .pending-starting-prompt label, .pending-starting-prompt textarea { grid-column: 1; }
 .pending-starting-prompt textarea { min-height: 2.8rem; max-height: 7rem; resize: vertical; border: 1px solid #cfd9d2; border-radius: 5px; padding: .25rem; font: inherit; background: #fff; }
 .pending-starting-prompt button { grid-column: 2; grid-row: 1 / span 2; white-space: nowrap; }
-.repository-management { margin: .35rem 0; padding: .275rem .35rem; border: 1px solid #dfe4df; border-radius: 8px; color: #34433b; }
-.repository-management summary { cursor: pointer; font-size: 13px; font-weight: 650; }
-.repository-management label { display: block; margin: .325rem 0 .15rem; font-size: 12px; }
-.repository-scan-row { display: flex; gap: .45rem; }
-.repository-scan-row input { min-width: 0; flex: 1; border: 1px solid #cfd9d2; border-radius: 6px; padding: .225rem .3rem; font: inherit; }
-.repository-management ul { display: flex; flex-wrap: wrap; gap: .35rem; margin: .5rem 0 0; padding: 0; list-style: none; }
-.repository-management li button { padding: .175rem .275rem; border: 1px solid #d7ded8; border-radius: 6px; color: #34433b; background: #fff; }
-.repository-management li button.selected { border-color: #287652; background: #edf6f0; }
 .owner-repository-context { display: flex; align-items: baseline; flex-wrap: wrap; gap: .5rem; margin: .45rem 0; color: #66736e; font-size: 12px; }
 .owner-repository-context ul { display: flex; flex-wrap: wrap; gap: .4rem; margin: 0; padding: 0; list-style: none; }
 .proposal-mode > :not(.terminal-card) { display: none !important; }
@@ -141,15 +138,6 @@ body {
 .owner-management { flex: 0 0 auto; margin-top: .4rem; color: #52645a; font-size: 12px; }
 .owner-management summary { width: max-content; cursor: pointer; padding: .15rem .3rem; }
 .owner-management-content { max-height: 42vh; overflow: auto; padding: .25rem; border: 1px solid #dfe4df; border-radius: 6px; background: #fbfcfa; }
-.terminal-fullscreen { flex: 0 0 auto; white-space: nowrap; }
-.terminal-card.is-fullscreen { position: fixed; inset: 0; z-index: 1000; width: 100vw; height: 100dvh; margin: 0; padding: 0; border-radius: 0; }
-.terminal-fullscreen-active #workbench,
-.terminal-fullscreen-active .navigation,
-.terminal-fullscreen-active .workspace-status,
-.terminal-fullscreen-active .pending-starting-prompt,
-.terminal-fullscreen-active .owner-management { visibility: hidden; }
-.terminal-fullscreen-active #terminal-fullscreen { position: fixed; top: .5rem; right: .5rem; z-index: 1001; visibility: visible; }
-.terminal-card.is-fullscreen .terminal-views { min-height: 0; }
 .quick-request-full-list { min-width: 0; min-height: 0; flex: 1; overflow: auto; padding: .5rem .625rem; }
 .quick-request-list-heading { display: flex; align-items: center; gap: .4rem; margin-bottom: .5rem; }
 .quick-request-list-heading h1 { flex: 1; margin: 0; }
@@ -169,6 +157,9 @@ body {
 .new-work-menu-options button { border: 0; border-radius: 4px; padding: .275rem .3rem; background: transparent; color: #176c52; text-align: left; cursor: pointer; }
 .new-work-menu-options button:hover { background: #e9f1eb; }
 .new-work-menu-options button:disabled { color: #9ba7a1; cursor: not-allowed; }
+.workspace-context-menu { position: fixed; z-index: 20; min-width: 9rem; margin: 0; padding: .2rem; border: 1px solid #dfe4df; border-radius: 6px; background: #fbfcfa; box-shadow: 0 8px 20px rgb(30 55 43 / 16%); }
+.workspace-context-menu button { width: 100%; border: 0; border-radius: 4px; padding: .4rem .55rem; background: transparent; color: #176c52; text-align: left; cursor: pointer; }
+.workspace-context-menu button:hover, .workspace-context-menu button:focus-visible { background: #e9f1eb; }
 .primary-button { border: 0; border-radius: 5px; padding: .3rem .45rem; color: #effcf5; background: #176c52; cursor: pointer; font-weight: 650; }
 .workspace-dialog { width: min(34rem, calc(100vw - 2rem)); height: auto; max-width: none; max-height: calc(100dvh - 2rem); padding: 0; overflow: hidden; border: 1px solid #d5ddd7; border-radius: 12px; color: #1c2926; background: #fbfcfa; box-shadow: 0 24px 80px rgb(12 24 18 / 28%); }
 .workspace-dialog.proposal-open { width: min(58rem, calc(100vw - 2rem)); height: min(48rem, calc(100dvh - 2rem)); }
@@ -182,10 +173,17 @@ body {
 .workspace-create-inline { width: 100%; text-align: left; }
 .workspace-create-inline .workspace-dialog-form { border: 1px solid #d5ddd7; border-radius: 8px; background: #fbfcfa; }
 .workspace-create-inline .workspace-dialog-form h2 { display: none; }
-.workspace-dialog-content { display: flex; width: 100%; min-height: 0; flex: 0 1 auto; padding: 1rem; }
+.workspace-dialog-content { display: flex; width: 100%; min-height: 0; flex: 0 1 auto; flex-direction: column; padding: 1rem; }
 .workspace-dialog.proposal-open .workspace-dialog-content { flex: 1 1 auto; padding: 1.5rem; }
 .new-work:not([hidden]), .new-work-review:not([hidden]) { display: flex; flex-direction: column; }
 .new-work-dialog-layout { display: flex; min-width: 0; min-height: 0; flex: 1; flex-direction: column; }
+.new-work-progress { flex: 0 0 auto; max-height: 9rem; overflow-y: auto; margin-top: .5rem; border-top: 1px solid #dfe4df; padding: .5rem .25rem 0; }
+.new-work-progress h2 { margin: 0 0 .25rem; font-size: 14px; }
+.new-work-progress ol { display: grid; gap: .2rem; margin: 0; padding-left: 1.3rem; font-size: 13px; }
+.new-work-progress li[data-status="success"] { color: #236447; }
+.new-work-progress li[data-status="failed"] { color: #a02c2c; }
+.new-work-progress li[data-status="running"] { color: #765214; }
+.new-work-progress details pre { max-width: 100%; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
 .new-work-dialog-scroll { min-height: 0; flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: .125rem .125rem .5rem; }
 .workspace-dialog:not(.proposal-open) .new-work-dialog-scroll { flex: 0 1 auto; overflow: visible; padding-bottom: .25rem; }
 .workspace-dialog:not(.proposal-open) .new-work h1 { margin-bottom: .6rem; font-size: clamp(25px, 3vw, 34px); }
@@ -387,8 +385,6 @@ h2 {
   .owner-tabs button, .toolbar-action { padding: .2rem .25rem; white-space: nowrap; }
   .pending-starting-prompt { grid-template-columns: minmax(0, 1fr); }
   .pending-starting-prompt label, .pending-starting-prompt textarea, .pending-starting-prompt button { grid-column: 1; grid-row: auto; }
-  .proposal-grid { grid-template-columns: 1fr; }
-  .proposal-wide { grid-column: auto; }
 }
 
 @media (prefers-reduced-motion: reduce) {

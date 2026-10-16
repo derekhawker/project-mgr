@@ -41,7 +41,7 @@ follow-up also remain unvalidated.
 
 Use the installed OpenCode CLI and verify its version and command contract at startup. For the installed v2.0.27 contract, use an app-owned `opencode serve`, authenticated `/api/...` routes, and the root TUI invocation `opencode --server <url> --session <id> <directory>`. The v1 `attach`, unprefixed `/session`, and `prompt_async` forms are historical prototype evidence and must not be mixed with v2. See [`opencode-v2-contract.md`](opencode-v2-contract.md).
 
-Every terminal attachment requires an exact session ID and its correct working directory. The application layer resolves those values: workspace sessions use workspace/main-branch context, task sessions use their task/worktree context, and Quick Requests use the confirmed registered-repository directory or the shared `<configured OpenCode Projects root>/Quick Requests/` directory. Store exact session IDs and working directories with their owners. Keep this routing outside the terminal renderer. Each session gets its own PTY and xterm instance; never infer a session from whichever conversation is foreground or newest in a directory.
+Every terminal attachment requires an exact session ID and its correct working directory. The application layer resolves those values: a workspace with zero repositories has one session at its home; one repository has one session at its clone; multiple repositories have one session per clone; each task repo session uses that repository's task worktree; Quick Requests use the confirmed registered-repository directory or the shared `<configured OpenCode Projects root>/Quick Requests/` directory. Store exact session IDs, directories, and workspace/task repository associations. Keep this routing outside the terminal renderer. Each session gets its own PTY and xterm instance; never infer a session from whichever conversation is foreground or newest in a directory.
 
 ## Startup gates
 
@@ -79,6 +79,10 @@ Register this handler before replaying any buffered PTY output. Surface PTY-writ
 - Forward xterm's `onData` bytes to the Rust `write_terminal` command for the same session ID. Rust writes and flushes them to that session's PTY master.
 - Forward xterm's fitted column and row counts to Rust. Resize that session's PTY master so the TUI redraws for the actual visible terminal dimensions.
 - Keep one PTY and one xterm instance per session. Switching tabs selects an existing session; it must not attach to a different conversation.
+- If a TUI exits while its OpenCode session still exists, leave its tab tracked and
+  expose **Restart terminal**. Relaunch the TUI with the same session ID and
+  directory; do not create a conversation or submit a prompt. Verify this after
+  Ctrl+D as well as a normal TUI exit.
 
 ## Reopening saved work
 
@@ -110,5 +114,6 @@ Keep errors associated with the session ID. Never send the initial prompt if the
 5. **Follow-up:** enter a follow-up in xterm and verify it continues the same OpenCode session and appears in that same terminal history.
 6. **Context isolation:** open workspace, task, and Quick Request sessions through the same terminal runtime. Verify each uses its resolved directory and only its own session ID/history. Include two sessions sharing a directory.
 7. **Lifecycle:** hide and reopen a terminal view, hide and show the app through its tray, and verify the same session remains usable with only one app/tray instance. On full quit, verify no TUI or server child remains.
+8. **Restart exited terminal:** press Ctrl+D in a tracked TUI, use **Restart terminal**, and verify the same session ID/history and exact directory return without sending a prompt.
 
 The saved-history GUI result used an existing Quick Request `2+3` session and visibly rendered the prompt and `5` without generating another model response. This is historical v1 evidence for Quick Requests only. The current v2 restore-selector unit tests are not GUI acceptance. Live v2 API/TUI behavior, model-backed streaming, follow-up behavior, regular workspace/task resolution, approval/user-input flows, event recovery, manual Wayland rendering, macOS rendering, and complete awaited quit cleanup remain open validation items.

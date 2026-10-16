@@ -1,4 +1,44 @@
 import { invokeCommand } from './command-contract.js';
+
+export function createKeyedSingleFlight(operation, keyOf = (key) => key) {
+  const pending = new Map();
+  return (...args) => {
+    const key = keyOf(...args);
+    if (pending.has(key)) return pending.get(key);
+    const result = Promise.resolve().then(() => operation(...args));
+    pending.set(key, result);
+    result.then(
+      () => { if (pending.get(key) === result) pending.delete(key); },
+      () => { if (pending.get(key) === result) pending.delete(key); },
+    );
+    return result;
+  };
+}
+
+export function workspaceProposalRepositoryLocations(proposalRepositories, repositoryCatalog) {
+  const repositoriesById = new Map((repositoryCatalog || []).map((repository) => [repository.id, repository]));
+  return (proposalRepositories || []).map(({ repositoryId }) => {
+    const repository = repositoriesById.get(repositoryId);
+    return {
+      name: repository?.name || repositoryId,
+      path: repository?.repositoryPath || 'Location unavailable',
+    };
+  });
+}
+
+export function workspaceStartingPrompt(proposal) {
+  return typeof proposal?.startingPrompt === 'string' && proposal.startingPrompt.trim()
+    ? proposal.startingPrompt
+    : '';
+}
+
+export function workspaceReviewDetails(proposal) {
+  return {
+    name: proposal?.workspace?.name || '',
+    directory: proposal?.setupPlan?.workspaceHome || 'Directory unavailable',
+  };
+}
+
 export function formatShellResponse(info) {
   if (
     !info ||
@@ -110,8 +150,8 @@ export function sessionStatusLabel(status) {
   return SESSION_STATUS_LABELS[key] || 'Unknown';
 }
 
-export function createTaskSession(invoke, taskId, prompt, model) {
-  return invokeCommand(invoke, 'task_session_create', { taskId, prompt, model });
+export function createTaskSession(invoke, taskId, repositoryId, model) {
+  return invokeCommand(invoke, 'task_session_create', { taskId, repositoryId, model });
 }
 
 // Reattachment is observation only. In particular, restoring a conversation
@@ -135,6 +175,10 @@ export function startTerminal(invoke, sessionId, directory) {
 
 export function writeTerminal(invoke, sessionId, data) {
   return invokeCommand(invoke, 'opencode_terminal_write', { sessionId, data });
+}
+
+export function restartOpenCodeTerminal(invoke, sessionId) {
+  return invokeCommand(invoke, 'opencode_terminal_restart', { sessionId });
 }
 
 export function resizeTerminal(invoke, sessionId, cols, rows) {
@@ -309,6 +353,18 @@ export function workspaceTasks(navigation, workspaceId) {
   return (navigation?.tasks || []).filter((task) => task.workspaceId === workspaceId);
 }
 
+export function taskWorkspaceOptions(workspaces) {
+  return (workspaces || [])
+    .filter((workspace) => workspace.kind === 'regular' && workspace.status === 'active')
+    .map(({ id, name }) => ({ id, name }));
+}
+
+export function preferredTaskWorkspaceId(workspaces, preferredId = null) {
+  return taskWorkspaceOptions(workspaces).some((workspace) => workspace.id === preferredId)
+    ? preferredId
+    : '';
+}
+
 export function trackedSessionForOwner(navigation, ownerType, ownerId, preferredId, openSessionIds = []) {
   const tracked = (navigation?.sessions || []).filter((session) =>
     session.owner?.owner_type === ownerType && session.owner?.owner_id === ownerId);
@@ -342,8 +398,8 @@ export function createWorkspace(invoke, name, description = null) {
   return invokeCommand(invoke, 'workspace_create', { name, description });
 }
 
-export function createInitializedWorkspace(invoke, name, model, description = null) {
-  return invokeCommand(invoke, 'workspace_create_initialized', { name, description, model });
+export function createInitializedWorkspace(invoke, name, model, description = null, proposalSessionId) {
+  return invokeCommand(invoke, 'workspace_create_initialized', { name, description, model, proposalSessionId });
 }
 
 export function completeWorkspace(invoke, workspaceId) {
@@ -382,30 +438,10 @@ export function retryTaskCleanup(invoke, taskId) {
   return invokeCommand(invoke, 'task_cleanup_retry', { taskId });
 }
 
-export function startTaskSetupPrompt(invoke, taskId, operationId, sessionId, model, startingPrompt, repositoryIds = undefined) {
-  const request = { taskId, operationId, sessionId, model };
-  request.startingPrompt = startingPrompt;
-  if (repositoryIds !== undefined) request.repositoryIds = repositoryIds;
-  return invokeCommand(invoke, 'task_setup_start_prompt', {
-    ...request,
-  });
-}
-
 export function submitNewWorkStartingPrompt(invoke, action, prompt) {
   if (!prompt?.trim()) throw new Error('Enter a starting prompt first.');
   if (action?.type === 'workspace') {
     return sendInitialPrompt(invoke, action.sessionId, prompt, action.model);
-  }
-  if (action?.type === 'task') {
-    return startTaskSetupPrompt(
-      invoke,
-      action.id,
-      action.operationId,
-      action.sessionId,
-      action.model,
-      prompt,
-      action.repositoryIds,
-    );
   }
   if (action?.type === 'quick_request') {
     return startQuickRequestPrompt(invoke, action.id, action.model);
@@ -429,6 +465,11 @@ export function formatTaskSetupStatus(status) {
   return [`Setup ${setupStatus}.`, ...items].join(' ');
 }
 
+export function taskSetupStatusNotice(status) {
+  if (status?.task?.setupStatus === 'ready') return null;
+  return formatTaskSetupStatus(status);
+}
+
 export function cancelTaskSetup(invoke, taskId) {
   return invokeCommand(invoke, 'task_setup_cancel', { taskId });
 }
@@ -439,28 +480,49 @@ export function resumeTaskSetup(invoke, taskId, operationId, sessionId) {
   });
 }
 
-export function listTaskRegistrationResults(invoke, taskId) {
-  return invokeCommand(invoke, 'task_registration_results', { taskId });
+export function retryTaskSetup(invoke, taskId, model) {
+  return invokeCommand(invoke, 'task_setup_retry', { taskId, model });
 }
 
-export function submitTaskRegistration(invoke, report) {
-  return invokeCommand(invoke, 'task_registration_report', report);
+export function listTaskRegistrationResults(invoke, taskId) {
+  return invokeCommand(invoke, 'task_registration_results', { taskId });
 }
 
 export function scanRepositories(invoke, paths, purposeProposals = null) {
   return invokeCommand(invoke, 'repository_scan', { paths, purposeProposals });
 }
 
+export async function addRepositoryDirectories(invoke, openDirectoryPicker, onScanStart = () => {}) {
+  const selected = await openDirectoryPicker({
+    directory: true,
+    multiple: true,
+    title: 'Add repository directories',
+  });
+  if (!selected) return null;
+  const paths = Array.isArray(selected) ? selected : [selected];
+  if (paths.length === 0) return null;
+  onScanStart(paths);
+  return scanRepositories(invoke, paths);
+}
+
 export function listRepositoryCatalog(invoke) {
   return invokeCommand(invoke, 'repository_catalog');
+}
+
+export function loadRepositoryDirectoryPage(invoke) {
+  return invokeCommand(invoke, 'repository_directory_page');
+}
+
+export function setRepositoryEnabled(invoke, repositoryId, enabled) {
+  return invokeCommand(invoke, 'repository_enabled_set', { repositoryId, enabled });
 }
 
 export function formatWorkspaceError(action, error) {
   return `${action} failed: ${String(error)}`;
 }
 
-export function attachRepository(invoke, workspaceId, repositoryId, checkoutPath, branch, checkoutMode = 'existing') {
-  return invokeCommand(invoke, 'repository_attach', { workspaceId, repositoryId, checkoutPath, branch, checkoutMode });
+export function attachRepository(invoke, workspaceId, repositoryId) {
+  return invokeCommand(invoke, 'repository_attach', { workspaceId, repositoryId });
 }
 
 export function createWorkspaceSession(invoke, workspaceId, prompt, model) {

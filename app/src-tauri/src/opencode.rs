@@ -672,6 +672,18 @@ impl Runtime {
         self.wait_for_terminal_ready(session_id)
     }
 
+    pub fn restart_exited_terminal(
+        &self,
+        app: tauri::AppHandle,
+        session_id: &str,
+        directory: &Path,
+    ) -> Result<(), String> {
+        self.ensure_running()?;
+        self.terminals.prepare_restart(session_id)?;
+        self.attach_terminal(app, session_id, directory)?;
+        self.wait_for_terminal_ready(session_id)
+    }
+
     pub fn write_terminal(&self, session_id: &str, data: &str) -> Result<(), String> {
         self.ensure_running()?;
         self.terminals.write(session_id, data)
@@ -698,6 +710,10 @@ impl Runtime {
 
     pub fn terminal_attached(&self, session_id: &str) -> bool {
         self.terminals.is_attached(session_id)
+    }
+
+    pub fn terminal_exited(&self, session_id: &str) -> bool {
+        self.terminals.is_exited(session_id)
     }
     fn client_url(&self) -> Result<(Client, String), String> {
         let info = self.ensure_started()?;

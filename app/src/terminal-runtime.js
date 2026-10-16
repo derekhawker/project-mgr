@@ -52,7 +52,7 @@ export class TerminalAttachmentRouter {
 }
 
 export class TerminalRuntime {
-  constructor({ invoke, listenEvent = listen, onError = () => {} } = {}) {
+  constructor({ invoke, listenEvent = listen, onError = () => {}, onExit = () => {} } = {}) {
     this.invoke = invoke;
     this.listenEvent = listenEvent;
     this.sessions = new Map();
@@ -61,6 +61,7 @@ export class TerminalRuntime {
     this.listenersReady = false;
     this.selectedSessionId = null;
     this.onError = onError;
+    this.onExit = onExit;
   }
 
   async start() {
@@ -132,6 +133,7 @@ export class TerminalRuntime {
     this.attachments.add(sessionId);
     for (const bytes of this.buffered.take(sessionId)) terminal.write(bytes);
     this.replay(sessionId, await invokeCommand(this.invoke, 'opencode_terminal_replay', { sessionId }));
+    await this.resize(sessionId);
     if (typeof ResizeObserver !== 'undefined') {
       session.resizeObserver = new ResizeObserver(() => {
         if (!session.hidden) void this.resize(sessionId).catch((error) => this.onError({ sessionId, operation: 'resize', message: String(error) }));
@@ -165,6 +167,7 @@ export class TerminalRuntime {
       const session = this.sessions.get(payload.sessionId);
       if (session) session.exited = true;
       this.exited = payload.sessionId;
+      this.onExit(payload);
     }
   }
 
@@ -175,6 +178,26 @@ export class TerminalRuntime {
   write(sessionId, data) {
     if (this.sessions.get(sessionId)?.exited) return Promise.reject(new Error(`Terminal has exited: ${sessionId}`));
     return invokeCommand(this.invoke, 'opencode_terminal_write', { sessionId, data });
+  }
+
+  isExited(sessionId) {
+    return this.sessions.get(sessionId)?.exited === true;
+  }
+
+  async restart(sessionId, directory, container) {
+    const session = this.sessions.get(sessionId);
+    if (session && !session.exited) throw new Error(`Terminal is still running: ${sessionId}`);
+    if (session) {
+      session.resizeObserver?.disconnect();
+      session.terminal.dispose();
+      this.sessions.delete(sessionId);
+      this.attachments.remove(sessionId);
+    }
+    if (this.selectedSessionId === sessionId) this.selectedSessionId = null;
+    container.replaceChildren();
+    this.buffered.take(sessionId);
+    await invokeCommand(this.invoke, 'opencode_terminal_restart', { sessionId });
+    return this.attachExisting(sessionId, container);
   }
 
   select(sessionId) {

@@ -47,12 +47,25 @@ export const newWorkProposal = {
   workspace: { id: null, name: 'Movie recommendations', intent: 'Track recommendations' },
   task: null,
   repositories: [],
-  jira: { action: 'none', issues: [], summary: null },
-  startingPrompt: 'Set up a movie recommendation tracker',
-  effects: ['Create a workspace and planning session'],
+  startingPrompt: 'Organize movie recommendations and record why each one is worth watching.',
+  setupPlan: { workspaceHome: '/tmp/workspace', repositories: [] },
 };
 
 export const cleanupJobs = [];
+
+export const repositoryDirectoryPage = {
+  directories: [{
+    path: '/code',
+    repositories: [{
+      repository: {
+        id: 'repo-1', name: 'repo-1', repositoryPath: '/code/repo-1',
+        repositoryIdentity: 'identity-1', purpose: null, purposeStatus: 'unavailable',
+        createdAt: 1, updatedAt: 1,
+      },
+      enabled: true,
+    }],
+  }],
+};
 
 export function resultForCommand(name) {
   switch (name) {
@@ -68,15 +81,17 @@ export function resultForCommand(name) {
     case 'opencode_pending_inputs_all': return [pendingInputs];
     case 'task_session_create':
     case 'workspace_session_create': return session;
-    case 'workspace_create_initialized': return { workspace, session };
+    case 'workspace_create_initialized': return { workspace, sessions: [session], setup: [], sessionErrors: [] };
     case 'task_complete': return { task: completedTask, cleanupJobs };
     case 'task_cleanup_jobs':
     case 'task_cleanup_retry': return cleanupJobs;
     case 'workspace_navigation': return navigation;
+    case 'repository_directory_page': return repositoryDirectoryPage;
     case 'workspace_create':
     case 'workspace_complete':
     case 'workspace_reactivate': return workspace;
-    case 'task_create':
+    case 'task_create': return { task, sessions: [session], repositories: [] };
+    case 'task_setup_retry': return { task, sessions: [session], repositories: [] };
     case 'task_setup_cancel':
     case 'task_setup_resume': return task;
     case 'task_setup_status': return { task, session, repositories: [], repositoryIds: null };
@@ -93,11 +108,12 @@ export function resultForCommand(name) {
     case 'opencode_terminal_attach':
     case 'opencode_terminal_start':
     case 'opencode_terminal_replay': return terminal;
+    case 'opencode_terminal_restart': return null;
     case 'repository_catalog': return [];
     case 'repository_scan': return { repositories: [], errors: [] };
     case 'repository_attach': return {
-      workspaceId: 'workspace-1', repositoryId: 'repo-1', checkoutPath: '/tmp/repo',
-      checkoutMode: 'existing', branch: 'main', verificationStatus: 'verified', createdAt: 1,
+      workspaceId: 'workspace-1', repositoryId: 'repo-1', setupStatus: 'ready',
+      planJson: '{}', checkoutIdentity: 'clone-identity', errorCode: null, errorDetail: null, updatedAt: 1,
     };
     case 'opencode_models': return [];
     case 'opencode_model_default': return { providerId: 'openai', id: 'gpt-6-luna' };

@@ -177,6 +177,11 @@ fn build_output(root: &std::path::Path) -> Result<Value, String> {
         "defaultModel": default_model,
         "workspace": workspace,
         "quickRequest": quick_requests.first().ok_or("Quick Request record missing")?,
+        "taskCreate": {
+            "task": quick_requests.first().ok_or("Quick Request record missing")?.task,
+            "sessions": [quick_requests.first().ok_or("Quick Request record missing")?.session],
+            "repositories": [],
+        },
         "taskSetupStatus": {
             "task": quick_requests.first().ok_or("Quick Request record missing")?.task,
             "session": quick_requests.first().ok_or("Quick Request record missing")?.session,

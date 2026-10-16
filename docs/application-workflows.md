@@ -12,10 +12,10 @@ historical v1 evidence remains in the prototype notes. OpenCode conversation
 history remains in OpenCode; SQLite stores
 only application associations and lifecycle state.
 
-OpenCode reports repository, branch, and worktree setup through a structured
-registration tool. Rust validates each report and writes authoritative
-associations to SQLite. The tool reports management state; it does not replace
-the application command boundary or duplicate OpenCode conversation history.
+Rust creates and validates Workspace clones, Task branches/worktrees, and their
+associations before opening user-facing sessions. OpenCode owns conversation
+history and performs requested implementation work; it does not provision
+application-managed repositories or worktrees.
 
 ## 2. Actors
 
@@ -49,7 +49,7 @@ SQLite records include:
 - Workspaces and their lifecycle state.
 - Tasks and their owning workspace and lifecycle state.
 - Repository catalog entries and repository identity.
-- Workspace repository bindings and main-branch checkout paths.
+- Workspace repository bindings, source identities, and independent clone paths.
 - Task repository bindings, branches, and worktree paths.
 - OpenCode session IDs, session owners, working directories, and last-known
   status.
@@ -91,9 +91,10 @@ A regular workspace uses this conceptual layout:
         └── worktrees/
 ```
 
-Existing repositories may remain at their current locations. A workspace
-repository binding records the existing location or the managed main-branch
-checkout path; the product does not silently move repositories.
+Existing source repositories remain at their current locations. New Workspace
+attachments are independent clones under that Workspace's `repos/` directory;
+the catalog continues to identify the source checkout. Existing bindings keep
+their recorded checkout paths and are not rewritten by migration.
 
 ### 3.3 Quick Requests
 
@@ -121,9 +122,12 @@ Keep the Workspace → Task tree prominent in persistent left navigation. Show
 all open workspaces, including idle ones, with tasks nested directly under their
 workspace. Do not require a separate all-workspaces summary screen: selecting a
 workspace renders its working area in the main pane. Provide a **New work**
-dropdown in navigation. Its choices start workspace, contextual task, or Quick
-Request flows; do not put a work-type selector inside the prompt form. Do not
-provide a separate name-first workspace path or a standalone **+ Task** button.
+dropdown in navigation. Its choices start workspace, task, or Quick Request
+flows; do not put a work-type selector inside the prompt form. The Task flow
+always shows a Workspace selector. Right-clicking a Workspace in the navigation
+tree also offers **New Task**, with that Workspace preselected in the same
+selector; the user may change it. Do not provide a separate name-first workspace
+path or a standalone **+ Task** button.
 In a selected workspace, keep available controls compact and give the
 interactive OpenCode terminal almost all of the main/right pane.
 The selected workspace and its tasks show the verified workspace repository
@@ -138,10 +142,13 @@ Requests** above the recent requests list.
 2. Every task belongs to exactly one workspace.
 3. Quick Requests are tasks under the special Quick Requests workspace.
 4. A task may use multiple repositories and multiple sessions.
-5. Workspace sessions use workspace/main-branch context for planning and
-   inspection.
-6. Task sessions use the task home and task worktrees for implementation.
-7. All sessions for one task share that task's working environment.
+5. A workspace with zero repositories has one workspace-home session; one
+   repository has one clone-rooted session; multiple repositories have one
+   empty clone-rooted session per repository.
+6. Each task repository has an independent task worktree and an empty OpenCode
+   session rooted at that worktree; there is no task-home coordinator session.
+7. A task's sessions are coordinated by the user across separate interactive
+   terminals; each session is associated with both the task and its repository.
 8. OpenCode owns conversation history; SQLite stores associations only.
 9. Regular workspace/task original and starting prompts are transient command
    inputs. The application does not persist them in SQLite or files; OpenCode
@@ -275,35 +282,44 @@ runtime or report a recoverable conflict for the user.
 
 ## 7. Repository Catalog and Discovery
 
-### 7.1 Scan user-selected folders
+### 7.1 Add user-selected repository directories
 
 | Step | Actor | Action | Result |
 |---:|---|---|---|
-| 1 | User | Chooses one or more folders to scan. | The GUI sends explicit paths to Rust. |
-| 2 | Rust | Validates readable directories and walks them according to the scan policy. | Candidate Git repositories are identified without changing them. |
+| 1 | User | Opens **Directories** from top navigation and uses **Add directories** to select one or more folders with the native folder picker. | The GUI sends only those explicit paths to Rust. |
+| 2 | Rust | Canonicalizes and validates readable directories; discovers Git repositories while excluding the configured OpenCode Projects root. | Candidate Git repositories are identified without changing them; the managed project tree is never scanned. |
 | 3 | Git | Reports repository roots, remotes, branches, and identity data. | Rust has verifiable repository facts. |
-| 4 | Rust | De-duplicates candidates against the repository catalog by verified identity and path. | Existing catalog entries are updated rather than duplicated. |
+| 4 | Rust | De-duplicates candidates against the repository catalog by verified identity and canonical path; linked worktrees do not become separate catalog entries. | Existing repository identities are reused rather than duplicated. |
 | 5 | OpenCode | Generates a concise purpose description from repository content or metadata when requested by the discovery flow. | The description is proposed content, not repository identity. |
 | 6 | User | Reviews or edits the purpose description. | The catalog stores the accepted concise purpose. |
-| 7 | Rust | Writes the repository catalog entry and discovery result to SQLite. | Repositories can be attached to future workspaces or tasks. |
+| 7 | Rust | Writes the repository catalog entry and discovery result to SQLite. | The shared catalog is additional context to any New-work proposal; discovery alone does not attach a repo to a workspace. |
 
-The mechanism by which OpenCode receives repository facts and returns a
-description remains an implementation decision. It must not allow model output
-to replace Rust's verified path or repository identity.
+Saved scan roots persist and startup rescans each root. Repository identities
+discovered under overlapping roots are shown only once under the most-specific
+root. Individual repository checkboxes persist enabled/disabled state. Only
+enabled repositories are included in the initial New-work proposal context and
+can be selected as a Quick Request working directory; the user's original
+prompt remains unchanged.
+
+The configured project-home root is a hard scan exclusion: Rust rejects a
+selected path inside it and prunes it when a selected ancestor contains it.
+OpenCode receives the catalog as proposal context, but model output cannot
+replace Rust's verified path or repository identity.
 
 ### 7.2 Attach a repository to a workspace
 
 | Step | Actor | Action | Result |
 |---:|---|---|---|
-| 1 | User | Selects a catalog repository for a workspace, or supplies an existing path. | The GUI sends the repository reference to Rust. |
-| 2 | Rust | Verifies repository identity, accessibility, and branch state. | A stale or mismatched path is rejected. |
-| 3 | Rust | Records the workspace binding and intended main-branch context. | Workspace sessions can resolve the correct repository. |
-| 4 | Rust/Git | Creates or validates the workspace's main-branch checkout when the chosen layout requires one. | The workspace has an inspectable main context. |
-| 5 | Rust | Records the actual checkout path, branch, and verification result. | Future sessions use recorded paths, not reconstructed guesses. |
+| 1 | User | Confirms a catalog repository in a new-work proposal. | Rust receives its verified catalog ID, not an arbitrary path or Git command. |
+| 2 | Rust | Revalidates source identity, clean state, default branch, and configured upstream fetch URL. | Stale or dirty sources are rejected before provisioning. |
+| 3 | Rust/Git | Creates an independent clone at a stable path under `<workspace-home>/repos/`, recursively initializes submodules, and validates the result. | The source checkout remains unchanged; the workspace owns its clone. |
+| 4 | Rust | Persists source and clone identities, exact paths, branch, and setup outcome. | Future operations use recorded paths and validated identities. |
+| 5 | Rust | Sets the workspace clone's `origin` to the source's configured upstream fetch URL, or removes the local-path origin when none exists. | The clone does not retain the source checkout as its parent remote. |
 
-If setup is partial, the workspace remains visible with an explicit setup
-problem. The app does not claim that the repository is attached until identity
-and path validation succeed.
+Cloning uses `git clone --no-hardlinks --recurse-submodules`. Git's standard
+relative submodule URL resolution is used. Recursive submodule failure leaves
+an explicit incomplete setup; do not fetch Git LFS objects. Existing workspace
+bindings are not rewritten by this new-work provisioning behavior.
 
 ### 7.3 New-work proposal and confirmation
 
@@ -313,28 +329,45 @@ step. This is the one exception to the rule that OpenCode sessions use an
 interactive terminal. The proposal step does not create a terminal tab, product
 record, repository change, or normal session association.
 
-For the first deliverable, the only top-level outcome supported by New is
-**create a workspace**. The proposal returns the proposed workspace name,
-description, repository context, and a starting prompt for the workspace's
-first OpenCode session. Rust validates the proposal before showing it for
-confirmation.
+For a Workspace, the proposal returns the proposed name, description, selected
+repository IDs and reasons. Rust validates the proposal before showing it for
+confirmation. The user may edit the workspace name; the form also shows the full
+planned home path, which remains fixed when the display name changes. Repository
+locations appear as a compact name-and-path list. OpenCode's revised prompt
+pre-fills the single editable starting-prompt field; it is not replaced by the
+original prompt, and there is no separate proposed-prompt section. For a Task,
+the proposal returns task name/purpose and repository IDs selected only from the
+workspace's attached clones. Review shows the selected Workspace and Task home
+location; the user can edit the Task name, intent, and optional revised prompt.
+The original prompt remains read-only. The revised Task prompt is optional
+reference text only: it is never sent to a Task session or persisted. The
+original prompt is transient extraction/review input and is not sent to task
+sessions.
 
-The review keeps the original prompt unchanged and read-only. The proposed
-starting prompt is editable. Confirmation creates the workspace, creates a new
-OpenCode session in its workspace context, records the exact session on the
-workspace, opens its interactive terminal, and sends the confirmed starting
-prompt. The user does not need a second manual start action.
+For a Workspace, confirmation provisions selected clones before
+creating sessions. With zero repositories, Rust creates one session rooted in
+the workspace home; with one repository, one session rooted in its clone; with
+multiple repositories, one empty session per repository clone. Only the zero-
+and one-repository cases receive the confirmed starting prompt automatically.
+Multi-repository workspaces receive no prompt fan-out. Task confirmation creates
+task worktrees and one empty session per selected repository, rooted in its
+worktree; no prompt is sent automatically.
 
-If workspace creation or session startup fails, the failure remains visible and
-the app does not claim success or leave an empty owner from the failed
-confirmation. Navigating to a workspace later restores its exact tracked
-session rather than selecting the newest session in a directory.
+If workspace setup or session startup fails, keep the durable workspace and show
+the failed step and details in the New-work dialog with an explicit retry.
+Do not leave setup progress, a routine “setup ready” message, or a setup report
+on the selected Workspace or Task page. Keep actionable terminal/restore errors
+visible inline and do not overwrite them with routine setup refreshes. Navigating
+to a workspace later restores all exact tracked sessions rather than selecting
+the newest session in a directory. If a terminal process exits, offer restart
+for that same session and directory without submitting a prompt.
 
-Task creation uses the same two-prompt shape from a selected workspace: the
-user selects **Task** in the navigation's **New work** dropdown and supplies an original prompt; the internal proposal
-interprets it in that workspace's repository context and returns a task and
-starting prompt; after confirmation Rust creates the task, records the exact
-repository selection, and starts its tracked interactive OpenCode session.
+Task creation uses the same capture-and-review flow from a selected workspace.
+The internal proposal uses the attached workspace clone context to identify
+task repositories. On confirmation Rust creates task worktrees and one empty
+interactive session per selected repo. The user coordinates across those
+sessions and enters prompts manually. A task with no selected repositories has
+no repo session or terminal until a supported session can be started.
 
 ## 8. Workspace Workflows
 
@@ -347,20 +380,22 @@ repository selection, and starts its tracked interactive OpenCode session.
 | 3 | Rust | Normalizes the name into a safe display name and filesystem slug, checking collisions. | The chosen workspace has stable identity and path. |
 | 4 | Rust | Creates the workspace row in SQLite and its home, `notes/`, `repos/`, and `tasks/` directories. | Filesystem and management record are created together or the operation fails visibly. |
 | 5 | Rust | Initializes the workspace as active with no tasks and no repository bindings. | The workspace appears in the persistent workspace navigation, even with no tasks. |
-| 6 | GUI/Rust | After confirmation, selects the workspace, starts its new OpenCode session, records the exact session, and opens its interactive terminal. | The workspace is immediately usable in the correctly scoped terminal. |
+| 6 | Rust/GUI | Provisions selected clones; creates one workspace-home session for zero repos, one clone-rooted session for one repo, or one empty clone-rooted session per repo for multiple repos. | Each workspace terminal has the correct repository context; multi-repo setup opens one tab per repo and sends no prompt automatically. |
 
 A workspace may have no repositories or tasks. Creating it through New starts
-its first workspace OpenCode session automatically; it does not create a task.
+its workspace session(s) automatically; a multi-repository workspace starts
+empty per-repository sessions and receives no automatic starting prompt. It does
+not create a task.
 
 ### 8.2 Start or restore a workspace planning session
 
 | Step | Actor | Action | Result |
 |---:|---|---|---|
 | 1 | User | Selects a workspace. | The GUI resolves the workspace's exact stored session. |
-| 2 | Rust | Resolves the workspace home and bound main-branch repository paths. | OpenCode receives the workspace context, not a task worktree. |
-| 3 | Rust | If no session exists, creates and records a new OpenCode session, then attaches its TUI through the common session flow. Otherwise it restores the stored session. | The exact session belongs to the workspace. |
-| 4 | OpenCode | Inspects main-branch checkouts and edits workspace notes or requirements when requested. | Planning work stays at workspace scope. |
-| 5 | User | Follows up in the same terminal. | The workspace session remains the workspace's tracked interactive session. |
+| 2 | Rust | Resolves the workspace-home directory for zero bindings, one clone for one binding, or each clone for multiple bindings. | OpenCode receives stable workspace/repository context, not a task worktree. |
+| 3 | Rust | Creates or restores every tracked workspace session at its exact directory. | Each repository tab belongs to the workspace and its exact repository. |
+| 4 | OpenCode | Inspects workspace context and edits workspace notes or requirements when requested. | Planning work stays at workspace scope. |
+| 5 | User | Follows up in the selected terminal. | The workspace session remains tracked; repository tabs remain independent. |
 
 Workspace sessions do not implement task changes in task worktrees. A request
 for implementation becomes a task-creation decision.
@@ -388,37 +423,34 @@ before a new task or workspace session can be created.
 | Step | Actor | Action | Result |
 |---:|---|---|---|
 | 1 | User | Chooses **Task** from the navigation's **New work** dropdown while a workspace is selected and enters the original task prompt. | The workspace context is passed separately; the prompt is preserved exactly. |
-| 2 | Rust/OpenCode | Interprets the prompt in a transient proposal step using the workspace's repository context. | A task proposal and starting prompt are returned without creating a task or terminal. |
-| 3 | User | Reviews the proposed task, repository selection, expected effects, and editable starting prompt. | The user can go back and submit a different original prompt. |
+| 2 | Rust/OpenCode | Interprets the prompt in a transient proposal step using the workspace clones. | A task proposal and repository selection are returned without creating a task or terminal. |
+| 3 | User | Reviews the proposed task, repository selection, and expected effects. | The user can go back and submit a different original prompt; no task starting prompt is generated. |
 | 4 | User | Confirms the proposal. | Rust receives the exact confirmed task context. |
 | 5 | Rust | Verifies the workspace is active and creates the task row and task home, `notes/`, and `worktrees/` directories. | The task has a stable owner and working directory. |
-| 6 | Rust | Persists the exact confirmed repository selection with the task setup operation. | The task does not silently widen or replace its context. |
-| 7 | Rust | Creates a task OpenCode session in the task home directory and records its exact session ID. | The task can be recovered independently of the GUI. |
-| 8 | Rust/GUI | Opens the task's interactive terminal and sends the confirmed starting prompt. | OpenCode has the task context and the user can interact immediately. |
-| 9 | OpenCode | Creates or requests the required branches and worktrees using the available integration boundary. | Each result includes repository, branch, path, and outcome. |
-| 10 | Rust | Validates each reported repository identity, branch, path, task ownership, and filesystem state. | Untrusted or mismatched setup is rejected. |
-| 11 | Rust/GUI | Persists setup results and shows setup progress or incomplete repository work. | The user can correct setup without creating a second task. |
-| 12 | OpenCode | Implements the task in the task worktrees after setup is usable. | Task changes are isolated from workspace main checkouts. |
+| 6 | Rust | Persists the exact confirmed repository selection with the task. | Retry cannot silently widen or replace its context. |
+| 7 | Rust/Git | Creates each deterministic task branch/worktree from its workspace clone and recursively initializes pinned submodules. | Task worktrees are independent, validated Git roots. |
+| 8 | Rust | Persists each setup result, then creates one empty session per selected repository at its task worktree and associates it with that repository and task. | Every terminal is rooted in exactly one repo worktree; no original or generated prompt is submitted. |
+| 9 | Rust/GUI | Opens the repo sessions as separate interactive terminals and reports any partial startup failure. | Successful sessions remain usable and failed items remain visible/recoverable. |
+| 10 | User/OpenCode | Coordinates across terminals and manually enters work prompts. | Each conversation and repository's changes remain independently scoped. |
 
-OpenCode performs step 9 through its normal Git/tool execution and reports each
-result through the registration tool. Rust remains authoritative for validation
-and persistence.
+Rust owns task branch, worktree, and session setup. OpenCode performs requested
+implementation work only after the user enters it in the matching repo session.
 
 ### 9.2 Task setup with multiple repositories
 
 | Step | Actor | Action | Result |
 |---:|---|---|---|
-| 1 | OpenCode | Determines that the task spans multiple repositories. | Each repository is treated as an independent setup item. |
-| 2 | Rust/OpenCode | Processes repository setup one item at a time or as a batch with per-item results. | A failure in one repository does not erase successful results for others. |
-| 3 | Rust | Checks branch collisions, existing worktrees, repository identity, path containment, and task ownership. | Unsafe or ambiguous worktrees are rejected. |
-| 4 | Rust | Stores successful associations and an itemized failure record for each unsuccessful repository. | The task has a complete setup report. |
-| 5 | GUI | Shows ready, failed, and pending repositories separately. | The user can retry or adjust only the affected items. |
+| 1 | Rust/Git | Sets up each selected repository independently from its workspace clone. | A failure in one repository does not erase successful results for others. |
+| 2 | Rust | Checks branch collisions, existing worktrees, repository identity, path containment, and task ownership. | Unsafe or ambiguous worktrees are rejected. |
+| 3 | Rust | Stores successful associations and an itemized failure record for each unsuccessful repository. | The task has an explicit setup report. |
+| 4 | Rust/OpenCode | Creates one empty repo-rooted session for each successfully set-up repository and records its repository association. | Partial session startup does not discard other usable sessions. |
+| 5 | GUI | Shows ready, failed, and pending repositories/sessions separately. | The user can retry or adjust only affected items. |
 
 ### 9.3 Partial task setup failure
 
 | Step | Actor | Action | Result |
 |---:|---|---|---|
-| 1 | Git/OpenCode | A branch, worktree, or repository setup operation fails. | The failure includes the repository and attempted operation. |
+| 1 | Git/OpenCode | A clone, submodule, branch, worktree, or session startup operation fails. | The failure includes the repository and attempted operation. |
 | 2 | Rust | Verifies whether any filesystem or Git side effect occurred. | Partial side effects are not hidden. |
 | 3 | Rust | Persists the task as setup-incomplete and records successful and failed items. | The task remains recoverable without pretending to be ready. |
 | 4 | GUI | Shows the reason and offers retry, correction, or cancellation according to the failure. | The user can make the next decision with full context. |
@@ -433,9 +465,9 @@ record until the user cancels or resolves it.
 | Step | Actor | Action | Result |
 |---:|---|---|---|
 | 1 | User | Chooses **New session** from an active task. | The GUI keeps the same task owner. |
-| 2 | Rust | Resolves the task home and all recorded task worktrees. | The new session receives the same task environment. |
-| 3 | Rust | Creates a new OpenCode conversation and records its exact session ID under the task. | Existing session history remains separate and intact. |
-| 4 | OpenCode/TUI | Runs the new conversation in the same task context. | The task may have multiple coordinated sessions. |
+| 2 | User | Chooses a repository associated with the task. | The new session is assigned to that repository's task worktree. |
+| 3 | Rust | Creates a new OpenCode conversation at the exact worktree and records task, repo, session ID, and directory. | Existing session history remains separate and intact. |
+| 4 | OpenCode/TUI | Opens the new repo-rooted interactive terminal without an initial prompt. | The user can coordinate it with other repo sessions. |
 
 Starting a new task session never reopens a completed task. The user must
 create a new task for further work.
@@ -619,10 +651,9 @@ the v1 `attach` contract is historical only.
 | Generate repository purpose | Rust/OpenCode flow | Rust stores the generated catalog field | OpenCode discovery session/API |
 | Create or restore workspace session | User/GUI | Rust for association; OpenCode for conversation | Common session runtime |
 | Create task record and home | User/GUI | Rust + SQLite + filesystem | Tauri command |
-| Select task repositories | OpenCode task session | Rust validates the selected resources | Registration tool |
-| Create branch/worktree | OpenCode task session | Git performs the operation; Rust validates the result | OpenCode's normal Git/tool execution |
-| Report setup result | OpenCode task session | Rust + SQLite | Registration tool |
-| Start task session | User/GUI | Rust for association; OpenCode for implementation | Common session runtime |
+| Select task repositories | User/GUI | Rust validates selected workspace bindings | Task proposal/confirmation command |
+| Create branch/worktree | Rust | Rust + Git + SQLite | Validated deterministic Git operations |
+| Create repo-rooted task session | Rust | Rust + OpenCode + SQLite | Common session runtime with exact worktree directory |
 | Complete task | User/GUI | Rust + SQLite | Tauri command |
 | Clean completed worktree | Cleanup worker | Rust + Git | Background app operation |
 | Complete workspace | User/GUI | Rust + SQLite | Tauri command |
@@ -630,11 +661,14 @@ the v1 `attach` contract is historical only.
 | Report running/waiting/completed | OpenCode events/API | Rust reconciler | Server events and status API |
 | Delete Quick Request | User/GUI | Rust + terminal runtime + SQLite | Confirmed Tauri command |
 
-### 13.1 Registration tool contract
+### 13.1 Legacy registration tool contract
 
-The registration tool is the boundary used when OpenCode has selected or
-prepared resources that belong to application-managed workspace or task state.
-It is a reporting and association operation, not a second application service.
+The existing registration tool reports setup performed by the current
+model-driven Task flow. The provisioning design removes it from Task setup:
+Rust will own selection validation, Git side effects, and persistence directly.
+Do not extend this reporting contract for new Workspace clones or Task
+worktrees; remove/deprecate the task setup command and tool as part of the
+vertical migration once no production path depends on them.
 
 The tool accepts one idempotent setup report with:
 
@@ -708,35 +742,37 @@ terminate a process or delete the request.
 
 ### 14.4 Repository checkout placement
 
-An existing repository remains at its current path by default. The workspace
-binding records that path as the workspace's main-branch inspection context.
-When the application creates a managed main checkout, it uses:
+The repository catalog records the user-selected source checkout. New Workspace
+attachments are independent clones under:
 
 ```text
-<workspace-home>/repos/<repository-name>/
+<workspace-home>/repos/<stable-repository-directory>/
 ```
 
-The binding records which mode is in use and always records the canonical path,
-repository identity, and main branch.
+The Workspace binding records both source identity/path and clone identity/path,
+plus the verified default branch. The source remains untouched. Existing
+Workspace bindings retain their recorded paths; the clone policy applies to new
+attachments.
 
 ### 14.5 Branch and worktree authority
 
-OpenCode performs task setup through its normal Git/tool execution. It reports
-the result through the registration tool. Rust does not trust the report until
-it independently validates the repository identity, branch, path, ownership,
-and Git worktree state. A failed or rejected report leaves the task in setup
-incomplete state and does not create an authoritative association.
+Rust creates task branches and worktrees from the validated Workspace clone,
+initializes recursive pinned submodules, validates repository identity, branch,
+path, ownership, and Git worktree state, and persists the result before creating
+repo-rooted task sessions. OpenCode does not provision Git state or report
+authoritative setup. Each task session is associated with both its Task and
+repository binding.
 
 ### 14.6 Incomplete setup
 
-Task setup is itemized. A task with one or more failed or not-attempted
-repository items remains active but is marked setup incomplete. Retries reuse
-the task and operation records and do not create a second task. Git artifacts
-created before a failure are retained until a later explicit cleanup operation
-can prove that removal is safe; the application never removes them as an
-implicit consequence of reporting failure. The user may cancel an in-progress
-setup operation; cancellation records the event, leaves the task setup
-incomplete, retains its artifacts, and requires an explicit resume to continue.
+Workspace clone and Task worktree/session setup are itemized. A task with one or
+more failed repository items remains active but is marked setup incomplete.
+Successful clones, worktrees, and sessions are retained; retries reuse verified
+state and do not create a second task or duplicate session for a completed item.
+Git artifacts created before a failure are retained until cleanup can prove
+removal is safe. Task sessions are created empty. Original prompts used to
+propose task metadata and optional revised Task prompts shown during review are
+transient, never persisted or logged, and never automatically sent to sessions.
 
 ### 14.7 Repository purpose generation
 

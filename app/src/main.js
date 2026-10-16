@@ -1,12 +1,14 @@
 import '@xterm/xterm/css/xterm.css';
 import { invokeCommand } from './command-contract.js';
 import { listen } from '@tauri-apps/api/event';
+import { open as openDirectoryPicker } from '@tauri-apps/plugin-dialog';
 import { loadApplicationShell } from './shell.js';
-import { listQuickRequests, restoreQuickRequest, deleteQuickRequest, loadWorkspaceNavigation, createInitializedWorkspace, createWorkspaceTask, startTaskSetupPrompt, submitNewWorkStartingPrompt, getTaskSetupStatus, formatTaskSetupStatus, cancelTaskSetup, resumeTaskSetup, scanRepositories, listRepositoryCatalog, attachRepository, createWorkspaceSession, formatWorkspaceError, workspaceNavigationModel, selectCreatedWorkspace, trackedSessionForOwner, listPendingInputs, listAllPendingInputs, getSessionStatus, reconcileSession, createTaskSession, sessionStatusLabel, completeTask, listTaskCleanupJobs, retryTaskCleanup, completeWorkspace, reactivateWorkspace, sessionTabAttributes, terminalAccessibilityAttributes, controlErrorAttributes, startNewWorkProposal, runNewWorkProposal, closeNewWorkProposal, cleanupTerminal, resolveQuickRequestDirectory, submitResolvedQuickRequestFlow } from './shell.js';
+import { listQuickRequests, restoreQuickRequest, deleteQuickRequest, loadWorkspaceNavigation, createInitializedWorkspace, createWorkspaceTask, submitNewWorkStartingPrompt, getTaskSetupStatus, taskSetupStatusNotice, cancelTaskSetup, resumeTaskSetup, retryTaskSetup, addRepositoryDirectories, scanRepositories, listRepositoryCatalog, loadRepositoryDirectoryPage, setRepositoryEnabled, attachRepository, createWorkspaceSession, formatWorkspaceError, workspaceNavigationModel, selectCreatedWorkspace, listPendingInputs, listAllPendingInputs, getSessionStatus, reconcileSession, createTaskSession, sessionStatusLabel, completeTask, listTaskCleanupJobs, retryTaskCleanup, completeWorkspace, reactivateWorkspace, sessionTabAttributes, terminalAccessibilityAttributes, controlErrorAttributes, startNewWorkProposal, runNewWorkProposal, closeNewWorkProposal, cleanupTerminal, resolveQuickRequestDirectory, submitResolvedQuickRequestFlow, createKeyedSingleFlight, workspaceProposalRepositoryLocations, workspaceStartingPrompt, workspaceReviewDetails, taskWorkspaceOptions } from './shell.js';
 import './styles.css';
 import { showCleanupError } from './error-events.js';
 import { bindQuickRequestForm } from './quick-request-form.js';
 import { initializeModelSelector } from './model-selector.js';
+import { bindWorkspaceContextMenu, populateTaskWorkspaceSelector } from './task-workspace-ui.js';
 
 // Command-boundary client.  Raw Tauri invoke is intentionally not available
 // in this module or any other production presentation module.
@@ -33,6 +35,10 @@ void loadApplicationShell({
 export const terminalRuntime = import('./terminal-runtime.js')
   .then(({ TerminalRuntime }) => new TerminalRuntime({
     invoke,
+    onExit: ({ sessionId }) => {
+      const restart = sessionTabs?.querySelector(`[data-restart-session="${CSS.escape(sessionId)}"]`);
+      if (restart) restart.hidden = false;
+    },
     onError: ({ sessionId, operation, message }) => {
       const text = `Session ${sessionId} terminal ${operation} failed: ${message}`;
       setSessionStatus(text);
@@ -53,6 +59,41 @@ function setAppNotice(message) {
   appNotice.textContent = message;
   appNotice.hidden = !message;
 }
+
+function resetProgress(sessionId = null) {
+  progressProposalSessionId = sessionId;
+  progressRows.clear();
+  progressSteps.replaceChildren();
+  newWorkPrompt.after(progressPanel);
+  progressPanel.hidden = false;
+}
+
+function setProgress(key, label, status, detail = null) {
+  let row = progressRows.get(key);
+  if (!row) {
+    row = { item: document.createElement('li'), text: document.createElement('span'), detail: document.createElement('details') };
+    row.detail.append(Object.assign(document.createElement('summary'), { textContent: 'Details' }), document.createElement('pre'));
+    row.item.append(row.text, row.detail);
+    progressRows.set(key, row);
+    progressSteps.append(row.item);
+  }
+  const displayStatus = status === 'running' ? 'in progress' : status === 'skipped' ? 'not run' : status;
+  row.text.textContent = `${label} — ${displayStatus}`;
+  row.item.dataset.status = status;
+  row.detail.hidden = !detail;
+  if (detail) row.detail.querySelector('pre').textContent = detail;
+}
+
+void listen('workspace-setup-progress', ({ payload }) => {
+  if (!payload || payload.proposalSessionId !== progressProposalSessionId) return;
+  const repositoryId = /^(?:clone|session):(.+)$/.exec(payload.key || '')?.[1];
+  const repository = currentProposal?.repositories?.find((item) => item.repositoryId === repositoryId);
+  const label = repository && payload.key.startsWith('clone:')
+    ? `Clone ${repository.name}`
+    : repository && payload.key.startsWith('session:')
+      ? `Start ${repository.name} terminal` : payload.label;
+  setProgress(payload.key, label, payload.status, payload.detail);
+});
 
 void listen('session-recovery-error', ({ payload }) => {
   const text = `Session recovery failed (${payload?.sessionId || 'unknown'}): ${payload?.message || 'unknown error'}`;
@@ -82,28 +123,37 @@ const fullRequestList = document.querySelector('#quick-request-full-items');
 const fullRequestDestination = document.querySelector('#quick-request-full-list');
 const terminalViews = document.querySelector('#terminal-views');
 const workspaceList = document.querySelector('#workspace-list');
+const workspaceContextMenu = document.querySelector('#workspace-context-menu');
+const taskWorkspaceField = document.querySelector('#task-workspace-field');
+const taskWorkspaceSelect = document.querySelector('#task-workspace-select');
 const workspaceTitle = document.querySelector('#selected-title');
 const workspaceDescription = document.querySelector('#workspace-description');
 const workspaceStatus = document.querySelector('#workspace-status');
 const sessionStatus = document.querySelector('#session-status');
 const pendingInputs = document.querySelector('#pending-inputs');
-const repositoryList = document.querySelector('#repository-list');
 let selectedWorkspace = null;
 let selectedTask = null;
-let selectedRepository = null;
 let navigationData = { workspaces: [], tasks: [], sessions: [], workspaceRepositories: [] };
 const sessionTabs = document.querySelector('#session-tabs');
 const openSessions = new Set();
 const sessionOwners = new Map();
 const selectedSessionByOwner = new Map();
+const sessionDirectories = new Map();
+const progressPanel = document.querySelector('#new-work-progress');
+const progressSteps = document.querySelector('#new-work-progress-steps');
+const progressRows = new Map();
 let modelsReady = false;
 let currentProposal = null;
 let quickRequestDirectoryReady = false;
 let proposalSessionId = null;
+let progressProposalSessionId = null;
 let pendingPromptAction = null;
 let ownerSetupNotice = '';
 let ownerSetupBusy = false;
 let newWorkWorkspaceContext = null;
+let contextMenuWorkspace = null;
+let contextMenuTrigger = null;
+let currentTaskSetupNotice = null;
 const noSelection = document.querySelector('#no-selection');
 const workbench = document.querySelector('#workbench');
 const selectedOwner = document.querySelector('#selected-owner');
@@ -141,8 +191,16 @@ function keyForSessionOwner(owner) {
   return owner?.owner_type && owner?.owner_id ? `${owner.owner_type}:${owner.owner_id}` : null;
 }
 
-function sessionTabLabel(proposal = false) {
+function sessionTabLabel(proposal = false, session = null) {
   if (proposal) return 'Proposal';
+  if (session?.owner?.owner_type === 'workspace') {
+    const binding = (navigationData.workspaceRepositories || []).find((item) =>
+      item.workspaceId === session.owner.owner_id && item.checkoutPath === session.directory);
+    if (binding) {
+      const repository = (window.repositoryCatalog || []).find((item) => item.id === binding.repositoryId);
+      return repository?.name || binding.repositoryId;
+    }
+  }
   return 'OpenCode';
 }
 
@@ -162,7 +220,6 @@ function syncOwnerControls() {
   const isRegularTask = isTask && !selectedTask.quickRequest;
   document.querySelector('#workspace-session-form').hidden = isTask;
   document.querySelector('#attach-repository').hidden = isTask;
-  document.querySelector('#repository-management').hidden = isTask;
   for (const id of ['task-setup-cancel', 'task-setup-resume', 'task-setup-refresh', 'new-task-session', 'complete-task', 'retry-cleanup']) {
     document.querySelector(`#${id}`).hidden = !isRegularTask;
   }
@@ -216,13 +273,15 @@ function syncOwnerSessions() {
 
 async function restoreTrackedOwnerSession(owner) {
   const ownerKey = `${owner.type}:${owner.id}`;
-  const existing = selectedSessionByOwner.get(ownerKey);
-  const session = trackedSessionForOwner(
-    navigationData, owner.type, owner.id, existing, [...openSessions],
-  );
-  if (!session || selectedOwnerKey() !== ownerKey) return;
+  const sessions = (navigationData.sessions || []).filter((session) =>
+    session.owner?.owner_type === owner.type && session.owner?.owner_id === owner.id);
+  if (!sessions.length || selectedOwnerKey() !== ownerKey) return;
+  const preferred = sessions.find((session) => session.openCodeSessionId === selectedSessionByOwner.get(ownerKey))
+    || sessions.find((session) => openSessions.has(session.openCodeSessionId))
+    || sessions[0];
   try {
-    await showSession(session.openCodeSessionId);
+    for (const session of sessions) await showSession(session.openCodeSessionId);
+    await showSession(preferred.openCodeSessionId);
   } catch (error) {
     if (selectedOwnerKey() === ownerKey) {
       workspaceStatus.textContent = formatWorkspaceError('Restore tracked session', error);
@@ -230,7 +289,8 @@ async function restoreTrackedOwnerSession(owner) {
   }
 }
 
-async function showSession(sessionId, { proposal = false } = {}) {
+const showSession = createKeyedSingleFlight(async (sessionId, options = {}) => {
+  const { proposal = false } = options;
   const runtime = await terminalRuntime;
   if (!runtime) throw new Error('Terminal runtime is unavailable; see the startup error above.');
   // Rust resolves the persisted id/directory and owns PTY attachment first;
@@ -241,6 +301,7 @@ async function showSession(sessionId, { proposal = false } = {}) {
     && (selectedTask?.id === restoredSession.owner.owner_id && selectedTask.quickRequest
       || navigationData.tasks?.some((task) => task.id === restoredSession.owner.owner_id && task.quickRequest));
   if (ownerKey) sessionOwners.set(sessionId, ownerKey);
+  if (restoredSession?.directory) sessionDirectories.set(sessionId, restoredSession.directory);
   let terminalContainer = document.querySelector(`[data-terminal-session="${CSS.escape(sessionId)}"]`);
   if (!openSessions.has(sessionId)) {
     terminalContainer = document.createElement('div');
@@ -253,7 +314,7 @@ async function showSession(sessionId, { proposal = false } = {}) {
     openSessions.add(sessionId);
     if (!requestOwner) {
       const tab = document.createElement('button');
-      tab.type = 'button'; tab.dataset.sessionId = sessionId; tab.dataset.ownerKey = ownerKey || ''; tab.textContent = sessionTabLabel(proposal);
+      tab.type = 'button'; tab.dataset.sessionId = sessionId; tab.dataset.ownerKey = ownerKey || ''; tab.textContent = sessionTabLabel(proposal, restoredSession);
       Object.entries(sessionTabAttributes(sessionId, true)).forEach(([name, value]) => tab.setAttribute(name, value));
       tab.setAttribute('aria-label', `Open ${tab.textContent}`);
      tab.setAttribute('aria-selected', 'true');
@@ -271,14 +332,23 @@ async function showSession(sessionId, { proposal = false } = {}) {
     const tabItem = document.createElement('div');
     tabItem.className = 'session-tab-item';
     tabItem.setAttribute('role', 'presentation');
-    const close = document.createElement('button');
+      const close = document.createElement('button');
     close.type = 'button';
     close.className = 'session-tab-close';
     close.textContent = '×';
     close.setAttribute('aria-label', `Close ${tab.textContent}`);
-    close.addEventListener('click', () => void closeWorkbenchSession(sessionId));
-    tabItem.append(tab);
-    if (!proposal) tabItem.append(close);
+      close.addEventListener('click', () => void closeWorkbenchSession(sessionId));
+      const restart = document.createElement('button');
+      restart.type = 'button';
+      restart.className = 'session-tab-restart';
+      restart.textContent = 'Restart';
+      restart.dataset.restartSession = sessionId;
+      restart.setAttribute('aria-label', `Restart terminal for ${tab.textContent}`);
+      restart.hidden = !runtime.isExited(sessionId);
+      restart.addEventListener('click', () => void restartSessionTerminal(sessionId, restart));
+      tabItem.append(tab);
+      if (!proposal) tabItem.append(restart);
+      if (!proposal) tabItem.append(close);
       sessionTabs.append(tabItem);
     }
   } else runtime.select(sessionId);
@@ -293,6 +363,23 @@ async function showSession(sessionId, { proposal = false } = {}) {
   if (proposal) setSessionStatus('Proposal session · interactive');
   else await refreshSessionEvidence(sessionId);
   syncOwnerSessions();
+});
+
+async function restartSessionTerminal(sessionId, button) {
+  button.disabled = true;
+  try {
+    const container = document.querySelector(`[data-terminal-session="${CSS.escape(sessionId)}"]`);
+    const directory = sessionDirectories.get(sessionId);
+    if (!container || !directory) throw new Error('The saved session directory is unavailable.');
+    const runtime = await terminalRuntime;
+    await runtime.restart(sessionId, directory, container);
+    button.hidden = true;
+    await refreshSessionEvidence(sessionId);
+  } catch (error) {
+    setSessionStatus(`Could not restart terminal: ${String(error)}`);
+  } finally {
+    button.disabled = false;
+  }
 }
 
 sessionTabs.addEventListener('keydown', (event) => {
@@ -368,14 +455,54 @@ function renderNavigation(data) {
      button.type = 'button';
      button.textContent = workspace.name;
      button.className = selectedWorkspace?.id === workspace.id ? 'selected' : '';
+     button.setAttribute('aria-haspopup', 'menu');
+     button.setAttribute('aria-expanded', 'false');
      button.addEventListener('click', () => selectWorkspace(workspace, data));
+     bindWorkspaceContextMenu(button, workspace, openWorkspaceContextMenu);
      item.append(button);
       item.append(...renderTasks({ workspace, tasks }));
      return item;
   };
   workspaceList.replaceChildren(...(regular.length ? regular.map((entry) => renderWorkspace(entry)) : [Object.assign(document.createElement('li'), { className: 'placeholder', textContent: 'No workspaces yet' })]));
   if (selectedWorkspace) renderAttachedRepositories(selectedWorkspace.id, data);
+  syncNewWorkTaskOption();
 }
+
+function closeWorkspaceContextMenu(restoreFocus = false) {
+  workspaceContextMenu.hidden = true;
+  contextMenuTrigger?.setAttribute('aria-expanded', 'false');
+  if (restoreFocus) contextMenuTrigger?.focus();
+  contextMenuWorkspace = null;
+  contextMenuTrigger = null;
+}
+
+function openWorkspaceContextMenu(workspace, left, top, trigger) {
+  if (workspace.kind !== 'regular' || workspace.status !== 'active') return;
+  contextMenuTrigger?.setAttribute('aria-expanded', 'false');
+  contextMenuWorkspace = workspace;
+  contextMenuTrigger = trigger;
+  contextMenuTrigger?.setAttribute('aria-expanded', 'true');
+  workspaceContextMenu.hidden = false;
+  const bounds = workspaceContextMenu.getBoundingClientRect();
+  workspaceContextMenu.style.left = `${Math.max(0, Math.min(left, window.innerWidth - bounds.width))}px`;
+  workspaceContextMenu.style.top = `${Math.max(0, Math.min(top, window.innerHeight - bounds.height))}px`;
+  workspaceContextMenu.querySelector('[role="menuitem"]').focus();
+}
+
+workspaceContextMenu.querySelector('#workspace-context-new-task').addEventListener('click', () => {
+  const workspace = contextMenuWorkspace;
+  closeWorkspaceContextMenu();
+  if (workspace) openNewWork('task', workspace.id);
+});
+document.addEventListener('pointerdown', (event) => {
+  if (!workspaceContextMenu.hidden && !workspaceContextMenu.contains(event.target)) closeWorkspaceContextMenu();
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && !workspaceContextMenu.hidden) {
+    event.preventDefault();
+    closeWorkspaceContextMenu(true);
+  }
+});
 
 function renderAttachedRepositories(workspaceId, data = navigationData) {
   const bindings = (data.workspaceRepositories || []).filter((binding) => binding.workspaceId === workspaceId);
@@ -389,14 +516,15 @@ function renderAttachedRepositories(workspaceId, data = navigationData) {
 }
 
 function selectWorkspace(workspace, data = navigationData) {
+  document.querySelector('#directories-page').hidden = true;
   fullRequestDestination.hidden = true;
   document.querySelector('#workbench').hidden = false;
   document.querySelector('#right-content').classList.remove('quick-request-terminal-page');
   document.querySelector('#quick-request-terminal-actions').hidden = true;
   selectedOwner.classList.remove('proposal-mode');
   document.querySelector('#right-content').classList.add('owner-active');
-  if (terminalCard.classList.contains('is-fullscreen')) setTerminalFullscreen(false);
   workspaceStatus.textContent = '';
+  currentTaskSetupNotice = null;
   selectedWorkspace = workspace;
   selectedTask = null;
   syncOwnerControls();
@@ -404,7 +532,6 @@ function selectWorkspace(workspace, data = navigationData) {
   workspaceTitle.textContent = workspace.name;
   workspaceDescription.textContent = `${workspace.description || 'Workspace ready for planning and tasks.'} · ${workspace.status}`;
   const disabled = workspace.status !== 'active';
-  document.querySelector('[data-new-work-type="task"]').disabled = disabled || workspace.kind !== 'regular';
   document.querySelector('#attach-repository').disabled = disabled;
   document.querySelector('#workspace-session-submit').disabled = disabled || !modelsReady;
   document.querySelector('#complete-workspace').disabled = disabled;
@@ -417,6 +544,7 @@ function selectWorkspace(workspace, data = navigationData) {
 }
 
 function selectTask(task, workspace, data = navigationData) {
+  document.querySelector('#directories-page').hidden = true;
   fullRequestDestination.hidden = true;
   const isQuickRequest = Boolean(task.quickRequest);
   document.querySelector('#workbench').hidden = isQuickRequest;
@@ -424,15 +552,14 @@ function selectTask(task, workspace, data = navigationData) {
   document.querySelector('#quick-request-terminal-actions').hidden = !isQuickRequest;
   selectedOwner.classList.remove('proposal-mode');
   document.querySelector('#right-content').classList.add('owner-active');
-  if (terminalCard.classList.contains('is-fullscreen')) setTerminalFullscreen(false);
   workspaceStatus.textContent = '';
+  currentTaskSetupNotice = null;
   selectedWorkspace = workspace;
   selectedTask = task;
   syncOwnerControls();
   noSelection.hidden = true; workbench.hidden = isQuickRequest; selectedOwner.hidden = false; newWork.hidden = true; newWorkReview.hidden = true;
   workspaceTitle.textContent = task.name;
   workspaceDescription.textContent = `${task.description || 'Task'} · ${task.status}`;
-  document.querySelector('[data-new-work-type="task"]').disabled = workspace.status !== 'active' || workspace.kind !== 'regular';
   document.querySelector('#attach-repository').disabled = workspace.status !== 'active';
   document.querySelector('#workspace-session-submit').disabled = workspace.status !== 'active' || !modelsReady;
   document.querySelector('#complete-workspace').disabled = workspace.status !== 'active';
@@ -448,9 +575,9 @@ function selectTask(task, workspace, data = navigationData) {
 function setTaskSetupControls(task) {
   const hasTask = Boolean(task);
   document.querySelector('#task-setup-cancel').disabled = !hasTask || task.setupStatus !== 'in_progress';
-  document.querySelector('#task-setup-resume').disabled = !hasTask
-    || task.setupStatus !== 'incomplete'
-    || !task.setupCancelledAt;
+  document.querySelector('#task-setup-resume').disabled = !hasTask || task.setupStatus !== 'incomplete';
+  document.querySelector('#task-setup-resume').textContent = task?.setupOperationId
+    ? 'Resume setup' : 'Retry repository setup';
   document.querySelector('#task-setup-refresh').disabled = !hasTask;
    document.querySelector('#new-task-session').disabled = !hasTask || task.status !== 'active';
    document.querySelector('#complete-task').disabled = !hasTask || task.status !== 'active';
@@ -483,7 +610,16 @@ async function refreshTaskSetup() {
   const status = await getTaskSetupStatus(invoke, requestedTaskId);
   if (selectedTask?.id !== requestedTaskId) return status;
   selectedTask = status.task;
-  workspaceStatus.textContent = formatTaskSetupStatus(status);
+  const setupNotice = taskSetupStatusNotice(status);
+  if (setupNotice) {
+    currentTaskSetupNotice = setupNotice;
+    workspaceStatus.textContent = setupNotice;
+  } else {
+    if (currentTaskSetupNotice && workspaceStatus.textContent === currentTaskSetupNotice) {
+      workspaceStatus.textContent = '';
+    }
+    currentTaskSetupNotice = null;
+  }
   setTaskSetupControls(selectedTask);
   return status;
 }
@@ -493,9 +629,17 @@ document.querySelector('#task-setup-refresh').addEventListener('click', () => {
 });
 document.querySelector('#new-task-session').addEventListener('click', async () => {
   if (!selectedTask) return;
-  const value = window.prompt(`Prompt for a new session in ${selectedTask.name}`);
-  if (!value?.trim()) return;
-  try { const selectedModel = JSON.parse(model.value); const record = await createTaskSession(invoke, selectedTask.id, value.trim(), selectedModel); await showSession(record.openCodeSessionId); }
+  try {
+    const status = await getTaskSetupStatus(invoke, selectedTask.id);
+    const ready = (status.repositories || []).filter((binding) => binding.setupStatus === 'ready');
+    if (!ready.length) throw new Error('This task has no ready repository worktrees.');
+    const repositoryId = window.prompt(`Repository ID for the new empty session:\n${ready.map((binding) => binding.repositoryId).join('\n')}`);
+    if (!repositoryId) return;
+    if (!ready.some((binding) => binding.repositoryId === repositoryId.trim())) throw new Error('Choose one of the listed ready repository IDs.');
+    const selectedModel = JSON.parse(model.value);
+    const record = await createTaskSession(invoke, selectedTask.id, repositoryId.trim(), selectedModel);
+    await showSession(record.openCodeSessionId);
+  }
   catch (error) { workspaceStatus.textContent = formatWorkspaceError('New task session', error); }
 });
 document.querySelector('#complete-task').addEventListener('click', async () => {
@@ -536,20 +680,19 @@ document.querySelector('#task-setup-cancel').addEventListener('click', async () 
 document.querySelector('#task-setup-resume').addEventListener('click', async () => {
   if (!selectedTask) return;
   try {
-     const task = await resumeTaskSetup(invoke, selectedTask.id, selectedTask.setupOperationId, selectedTask.setupSessionId);
+    if (!selectedTask.setupOperationId) {
+      const result = await retryTaskSetup(invoke, selectedTask.id, JSON.parse(model.value));
+      selectedTask = result.task;
+      await refreshTaskSetup();
+      if (result.sessions?.length) await showSession(result.sessions[0].openCodeSessionId);
+      return;
+    }
+    const task = await resumeTaskSetup(invoke, selectedTask.id, selectedTask.setupOperationId, selectedTask.setupSessionId);
     selectedTask = task;
      const status = await getTaskSetupStatus(invoke, task.id);
-     const selectedModel = JSON.parse(model.value);
-     if (!status.session) throw new Error('Task setup session was not found.');
-     await showSession(status.session.openCodeSessionId);
-      await startTaskSetupPrompt(
-        invoke,
-        task.id,
-        task.setupOperationId,
-        status.session.openCodeSessionId,
-        selectedModel,
-        'Continue the previously confirmed task setup using its recorded repository selection.',
-      );
+      if (!status.session) throw new Error('Task setup session was not found.');
+      await showSession(status.session.openCodeSessionId);
+      workspaceStatus.textContent = 'Opened the legacy setup conversation. New task setup is managed by Rust; use the repository terminals shown for current work.';
     await refreshTaskSetup();
   } catch (error) { workspaceStatus.textContent = formatWorkspaceError('Resume setup', error); }
 });
@@ -572,6 +715,11 @@ function openNewWork(workType = 'workspace', workspaceId = null) {
   newWork.hidden = false;
   newWorkReview.hidden = true;
   newWorkPrompt.value = '';
+  taskWorkspaceField.hidden = workType !== 'task';
+  taskWorkspaceSelect.disabled = workType !== 'task';
+  taskWorkspaceSelect.required = workType === 'task';
+  if (workType === 'task') populateTaskWorkspace(workspaceId);
+  syncNewWorkContinueButton();
   document.querySelector('#new-work-error').textContent = '';
   if (!newWorkDialog.open) newWorkDialog.showModal();
   newWorkPrompt.focus();
@@ -579,36 +727,31 @@ function openNewWork(workType = 'workspace', workspaceId = null) {
 let requestedNewWorkType = 'workspace';
 const newWorkMenu = document.querySelector('#new-work-menu');
 function syncNewWorkTaskOption() {
-  document.querySelector('[data-new-work-type="task"]').disabled = !selectedWorkspace
-    || selectedWorkspace.kind !== 'regular'
-    || selectedWorkspace.status !== 'active';
+  document.querySelector('[data-new-work-type="task"]').disabled = taskWorkspaceOptions(navigationData.workspaces).length === 0;
 }
+function populateTaskWorkspace(preferredId = null) {
+  newWorkWorkspaceContext = populateTaskWorkspaceSelector(
+    taskWorkspaceSelect,
+    navigationData.workspaces,
+    preferredId,
+  );
+}
+function syncNewWorkContinueButton() {
+  const continueButton = document.querySelector('#new-work-capture button[type="submit"]');
+  continueButton.disabled = requestedNewWorkType === 'task' && !taskWorkspaceSelect.value;
+}
+taskWorkspaceSelect.addEventListener('change', () => {
+  newWorkWorkspaceContext = taskWorkspaceSelect.value || null;
+  syncNewWorkContinueButton();
+});
 newWorkMenu.querySelectorAll('[data-new-work-type]').forEach((button) => {
   button.addEventListener('click', () => {
     const type = button.dataset.newWorkType;
-    const workspaceId = type === 'task' ? selectedWorkspace?.id : null;
     newWorkMenu.open = false;
-    openNewWork(type, workspaceId);
+    openNewWork(type);
   });
 });
 syncNewWorkTaskOption();
-const terminalCard = document.querySelector('.terminal-card');
-const terminalFullscreenButton = document.querySelector('#terminal-fullscreen');
-function setTerminalFullscreen(enabled) {
-  document.body.classList.toggle('terminal-fullscreen-active', enabled);
-  terminalCard.classList.toggle('is-fullscreen', enabled);
-  terminalFullscreenButton.textContent = enabled ? 'Exit full screen' : 'Full screen';
-  terminalFullscreenButton.setAttribute('aria-pressed', String(enabled));
-  if (enabled) terminalFullscreenButton.focus();
-}
-terminalFullscreenButton.addEventListener('click', () => {
-  setTerminalFullscreen(!terminalCard.classList.contains('is-fullscreen'));
-});
-document.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape' && terminalCard.classList.contains('is-fullscreen')) {
-    setTerminalFullscreen(false);
-  }
-});
 document.querySelector('#new-work-cancel').addEventListener('click', async () => {
   if (proposalSessionId) {
     try { await closeProposalSession(); }
@@ -634,26 +777,44 @@ async function renderProposal(proposal, originalPrompt) {
   proposalCreate.textContent = proposal.workType === 'quick_request'
     ? 'Start Quick Request'
     : `Create ${workTypeName}`;
-  document.querySelector('#proposal-original').textContent = originalPrompt;
   const matchedWorkspace = proposal.workspace?.id ? navigationData.workspaces.find((entry) => entry.id === proposal.workspace.id) : null;
-  document.querySelector('#proposal-summary').textContent = proposal.workType === 'task'
-    ? `Task in ${matchedWorkspace?.name || proposal.workspace?.name || 'Unknown workspace'} · ${proposal.task?.name || 'Untitled task'}`
-    : proposal.workType === 'quick_request' ? 'Quick Request'
-      : `New workspace “${proposal.workspace?.name || 'Untitled workspace'}”`;
-  document.querySelector('#proposal-intent').textContent = proposal.task?.intent || proposal.workspace?.intent || '';
-  const repoById = new Map((window.repositoryCatalog || []).map((repository) => [repository.id, repository]));
-  document.querySelector('#proposal-repositories').textContent = proposal.repositories.length
-    ? proposal.repositories.map((entry) => `${repoById.get(entry.repositoryId)?.name || entry.repositoryId} — ${entry.reason}`).join('\n') : 'None';
-  document.querySelector('#proposal-jira').textContent = `${proposal.jira.action}${proposal.jira.summary ? ` · ${proposal.jira.summary}` : ''}${proposal.jira.issues.length ? ` · ${proposal.jira.issues.map((issue) => `${issue.key}: ${issue.summary}`).join(', ')}` : ''}`;
-  document.querySelector('#proposal-prompt').value = proposal.startingPrompt;
-  document.querySelector('#proposal-effects').textContent = proposal.effects.join('\n');
+  document.querySelector('#proposal-original').textContent = originalPrompt;
+  const workspaceReviewForm = document.querySelector('#workspace-review-form');
+  const taskReviewDetails = document.querySelector('#task-review-details');
+  workspaceReviewForm.hidden = proposal.workType !== 'workspace';
+  taskReviewDetails.hidden = proposal.workType !== 'task';
+  if (proposal.workType === 'workspace') {
+    const details = workspaceReviewDetails(proposal);
+    document.querySelector('#workspace-review-name').value = details.name;
+    document.querySelector('#workspace-review-directory').textContent = details.directory;
+    document.querySelector('#workspace-original-prompt').value = originalPrompt;
+  }
+  if (proposal.workType === 'task') {
+    const workspaceHome = matchedWorkspace?.homePath?.replace(/\/+$/, '') || '';
+    document.querySelector('#task-review-name').value = proposal.task?.name || '';
+    document.querySelector('#task-review-intent').value = proposal.task?.intent || '';
+    document.querySelector('#task-review-workspace').textContent = matchedWorkspace?.name || proposal.workspace?.name || 'Workspace unavailable';
+    document.querySelector('#task-review-directory').textContent = workspaceHome
+      ? `${workspaceHome}/tasks/ (a unique Task folder will be created here)`
+      : 'Workspace task directory unavailable';
+    document.querySelector('#task-original-prompt').value = originalPrompt;
+    document.querySelector('#task-revised-prompt').value = proposal.startingPrompt || '';
+  }
+  const repositoryList = document.querySelector('#proposal-repositories');
+  const repositoryLocations = workspaceProposalRepositoryLocations(proposal.repositories, window.repositoryCatalog);
+  document.querySelector('#proposal-repository-section').hidden = proposal.workType === 'quick_request';
+  repositoryList.replaceChildren(...(repositoryLocations.length
+    ? repositoryLocations.map(({ name, path }) => Object.assign(document.createElement('li'), {
+      textContent: `${name} — ${path}`,
+    }))
+    : [Object.assign(document.createElement('li'), { textContent: 'None' })]));
+  document.querySelector('#proposal-prompt').value = workspaceStartingPrompt(proposal);
+  document.querySelector('#proposal-starting-prompt').hidden = proposal.workType !== 'workspace';
   proposalCreate.textContent = proposal.workType === 'task'
     ? 'Create Task'
     : proposal.workType === 'quick_request' ? 'Confirm directory and start Quick Request' : 'Create Workspace';
   const quickDirectoryReview = document.querySelector('#quick-request-directory-review');
-  const proposalGrid = document.querySelector('#proposal-grid');
   quickDirectoryReview.hidden = proposal.workType !== 'quick_request';
-  proposalGrid.hidden = proposal.workType === 'quick_request';
   if (proposal.workType === 'quick_request') {
     document.querySelector('#proposal-title').textContent = 'New Quick Request — Confirm directory';
     document.querySelector('#quick-request-original').textContent = originalPrompt;
@@ -669,6 +830,10 @@ async function renderProposal(proposal, originalPrompt) {
   } else {
     document.querySelector('#proposal-title').textContent = `Review New ${workTypeName}`;
   }
+  const progressAnchor = proposal.workType === 'workspace'
+    ? document.querySelector('#proposal-starting-prompt')
+    : proposal.workType === 'task' ? taskReviewDetails : quickDirectoryReview;
+  progressAnchor.after(progressPanel);
 }
 
 async function refreshQuickRequestDirectoryPath() {
@@ -698,10 +863,17 @@ document.querySelector('#new-work-capture').addEventListener('submit', async (ev
   const continueButton = document.querySelector('#new-work-capture button[type="submit"]');
   const error = document.querySelector('#new-work-error'); error.textContent = '';
   continueButton.disabled = true;
+  resetProgress();
+  setProgress('interpret', 'Interpret request', 'running');
   try {
     if (proposalSessionId) await closeProposalSession();
     const requestedType = requestedNewWorkType;
-    if (requestedType === 'task' && !newWorkWorkspaceContext) throw new Error('Choose a workspace before creating a task.');
+    if (requestedType === 'task') {
+      newWorkWorkspaceContext = taskWorkspaceSelect.value || null;
+      if (!taskWorkspaceOptions(navigationData.workspaces).some((workspace) => workspace.id === newWorkWorkspaceContext)) {
+        throw new Error('Choose an active workspace before creating a task.');
+      }
+    }
     if (requestedType === 'quick_request') await refreshCatalog();
     const selectedModel = JSON.parse(proposalModel.value);
     const started = await startNewWorkProposal(invoke, selectedModel);
@@ -715,11 +887,13 @@ document.querySelector('#new-work-capture').addEventListener('submit', async (ev
       requestedType === 'task' ? newWorkWorkspaceContext : undefined,
       requestedType,
     );
+    setProgress('interpret', 'Interpret request', 'success');
     await renderProposal(proposal, newWorkPrompt.value);
     newWork.hidden = true; newWorkReview.hidden = false;
     newWorkDialog.classList.add('proposal-open');
     newWorkDialog.setAttribute('aria-label', document.querySelector('#proposal-title').textContent);
   } catch (failure) {
+    setProgress('interpret', 'Interpret request', 'failed', String(failure));
     error.textContent = formatWorkspaceError('Prepare proposal', failure);
   }
   finally { continueButton.disabled = false; }
@@ -739,9 +913,11 @@ proposalCreate.addEventListener('click', async () => {
   ownerSetupBusy = true;
   const proposalError = document.querySelector('#proposal-error'); proposalError.textContent = '';
   ownerSetupNotice = '';
+  progressProposalSessionId = proposalSessionId;
   let ownerCreated = false;
   try {
     const selectedModel = JSON.parse(proposalModel.value); const startingPrompt = document.querySelector('#proposal-prompt').value;
+    const workspaceName = document.querySelector('#workspace-review-name').value.trim();
     if (currentProposal.workType === 'quick_request') {
       const originalPrompt = newWorkPrompt.value;
       const selectedRepositoryId = document.querySelector('#quick-request-directory').value || null;
@@ -764,62 +940,84 @@ proposalCreate.addEventListener('click', async () => {
       });
     } else if (currentProposal.workType === 'task') {
       const workspaceId = currentProposal.workspace.id;
-      const task = await createWorkspaceTask(
+      const taskName = document.querySelector('#task-review-name').value.trim();
+      const taskIntent = document.querySelector('#task-review-intent').value.trim();
+      if (!taskName) throw new Error('Task name is required.');
+      if (!taskIntent) throw new Error('Task intent is required.');
+      const created = await createWorkspaceTask(
         invoke,
         workspaceId,
         selectedModel,
-        currentProposal.task.name,
-        currentProposal.task.intent,
+        taskName,
+        taskIntent,
         currentProposal.repositories.map((repository) => repository.repositoryId),
       );
       ownerCreated = true;
-      if (!task.setupSessionId || !task.setupOperationId) throw new Error('Task setup session was not created.');
-      const taskPromptAction = { type: 'task', id: task.id, ownerKey: `task:${task.id}`, sessionId: task.setupSessionId, operationId: task.setupOperationId, model: selectedModel, repositoryIds: currentProposal.repositories.map((repository) => repository.repositoryId) };
+      const task = created.task;
       const currentWorkspace = navigationData.workspaces.find((entry) => entry.id === task.workspaceId)
         || { ...currentProposal.workspace, status: 'active', kind: 'regular' };
       selectTask(task, currentWorkspace, navigationData);
       const data = await refreshNavigation();
       const workspace = data.workspaces.find((entry) => entry.id === task.workspaceId) || currentWorkspace;
       selectTask(task, workspace, data);
-      await showSession(task.setupSessionId);
-      await submitNewWorkStartingPrompt(invoke, taskPromptAction, startingPrompt);
-      workspaceStatus.textContent = 'Task setup started. Follow setup status here and interact in the terminal.';
+      const failed = (created.repositories || []).filter((entry) => entry.setupStatus !== 'ready' || entry.sessionError);
+      workspaceStatus.textContent = failed.length
+        ? `Task created with setup issues: ${failed.map((entry) => `${entry.repositoryId}: ${entry.errorDetail || entry.sessionError || entry.setupStatus}`).join('; ')}`
+        : '';
+      if (created.sessions?.length) await showSession(created.sessions[0].openCodeSessionId);
     } else {
+      if (!workspaceName) throw new Error('Workspace name is required.');
+      setProgress('workspace', 'Create workspace', 'running');
       const initialized = await createInitializedWorkspace(
         invoke,
-        currentProposal.workspace.name,
+        workspaceName,
         selectedModel,
         currentProposal.workspace.intent || null,
+        proposalSessionId,
       );
       ownerCreated = true;
-      const workspacePromptAction = { type: 'workspace', ownerKey: `workspace:${initialized.workspace.id}`, sessionId: initialized.session.openCodeSessionId, model: selectedModel };
       selectWorkspace(initialized.workspace, navigationData);
-      await showSession(initialized.session.openCodeSessionId);
       const data = await refreshNavigation();
       selectWorkspace(selectCreatedWorkspace(data, initialized.workspace), data);
-      const repositories = new Map((window.repositoryCatalog || []).map((repository) => [repository.id, repository]));
-      const attachmentFailures = [];
-      for (const proposalRepository of currentProposal.repositories) {
-        const repository = repositories.get(proposalRepository.repositoryId);
-        if (!repository) {
-          attachmentFailures.push(`${proposalRepository.repositoryId}: no longer in the repository catalog`);
-          continue;
-        }
-        try {
-          await attachRepository(invoke, initialized.workspace.id, repository.id, repository.repositoryPath, 'main');
-        } catch (error) {
-          attachmentFailures.push(`${repository.name}: ${String(error)}`);
-        }
-      }
-      ownerSetupNotice = attachmentFailures.length
-        ? `Workspace created, but repository setup needs attention: ${attachmentFailures.join('; ')}`
-        : currentProposal.repositories.length ? 'Workspace and confirmed repositories are ready.' : 'Workspace created without repositories.';
-      workspaceStatus.textContent = ownerSetupNotice;
+      const setupFailures = initialized.setup.filter((entry) => entry.setupStatus === 'failed');
+      const sessionErrors = initialized.sessionErrors || [];
       await refreshNavigation();
-      await submitNewWorkStartingPrompt(invoke, workspacePromptAction, startingPrompt);
-      workspaceStatus.textContent = `${ownerSetupNotice} Starting prompt submitted to the interactive terminal.`;
+      if (setupFailures.length) {
+        setProgress('workspace-result', 'Workspace create', 'failed', setupFailures.map((entry) => `${entry.repositoryId}: ${entry.errorDetail}`).join('\n'));
+        proposalError.textContent = 'Workspace create failed. Review the failed repository step(s), then choose Retry setup.';
+        proposalCreate.textContent = 'Retry setup';
+        ownerCreated = false; // Rust binds this proposal to the durable workspace for idempotent retry.
+        return;
+      }
+      const workspaceSessions = initialized.sessions || [];
+      for (const session of workspaceSessions) await showSession(session.openCodeSessionId);
+      if (sessionErrors.length) {
+        setProgress('workspace-result', 'Workspace create', 'failed', sessionErrors.join('\n'));
+        proposalError.textContent = 'Workspace create failed while starting a terminal. Review the details, then choose Retry session.';
+        proposalCreate.textContent = 'Retry session';
+        ownerCreated = false;
+        return;
+      }
+      if (!workspaceSessions.length) {
+        setProgress('workspace-result', 'Workspace create', 'failed', 'No workspace terminal was created.');
+        proposalError.textContent = 'Workspace create failed: no terminal was created.';
+        ownerCreated = false;
+        return;
+      }
+      await showSession(workspaceSessions[0].openCodeSessionId);
+      const multiRepositoryWorkspace = currentProposal.repositories.length > 1;
+      if (!multiRepositoryWorkspace) {
+        const session = workspaceSessions[0];
+        const workspacePromptAction = { type: 'workspace', ownerKey: `workspace:${initialized.workspace.id}`, sessionId: session.openCodeSessionId, model: selectedModel };
+        setProgress('starting-prompt', 'Submit starting prompt', 'running');
+        await submitNewWorkStartingPrompt(invoke, workspacePromptAction, startingPrompt);
+        setProgress('starting-prompt', 'Submit starting prompt', 'success');
+      }
+      setProgress('workspace-result', 'Workspace create', 'success');
+      workspaceStatus.textContent = '';
     }
     newWorkReview.hidden = true; currentProposal = null;
+    proposalCreate.textContent = 'Create';
     newWorkDialog.close();
     if (proposalSessionId) {
       try { await closeProposalSession(); }
@@ -831,6 +1029,9 @@ proposalCreate.addEventListener('click', async () => {
       }
     }
   } catch (error) {
+    if (currentProposal?.workType === 'workspace') {
+      setProgress('workspace-result', 'Workspace create', 'failed', String(error));
+    }
     if (ownerCreated) {
       const quickRequestFailure = currentProposal?.workType === 'quick_request';
       // Creation already committed. Leave the owner selected and do not expose
@@ -930,30 +1131,117 @@ async function closeWorkbenchSession(sessionId) {
     setSessionStatus('');
   }
 }
-document.querySelector('#scan-repositories')?.addEventListener('click', async () => {
-  const path = document.querySelector('#scan-path').value.trim();
-  workspaceStatus.textContent = 'Scanning repositories…';
-  try { const result = await scanRepositories(invoke, path ? [path] : []); workspaceStatus.textContent = result.errors?.length ? `Scan completed with issues: ${result.errors.join('; ')}` : `Found ${result.repositories.length} repository entr${result.repositories.length === 1 ? 'y' : 'ies'}.`; await refreshCatalog(); } catch (error) { workspaceStatus.textContent = formatWorkspaceError('Scan', error); }
-});
-document.querySelector('#attach-repository')?.addEventListener('click', async () => {
-  if (!selectedWorkspace || !selectedRepository) { workspaceStatus.textContent = 'Select a workspace and a catalog repository first.'; return; }
-  workspaceStatus.textContent = 'Attaching repository…';
+document.querySelector('#add-repository-directories')?.addEventListener('click', async () => {
+  const status = document.querySelector('#repository-status');
+  const button = document.querySelector('#add-repository-directories');
+  button.disabled = true;
+  status.textContent = 'Choose repository directories…';
   try {
-    await attachRepository(invoke, selectedWorkspace.id, selectedRepository.id, selectedRepository.repositoryPath, 'main');
-    workspaceStatus.textContent = `Attached ${selectedRepository.name}.`;
-    await refreshNavigation();
-  } catch (error) { workspaceStatus.textContent = formatWorkspaceError('Attach', error); }
+    const result = await addRepositoryDirectories(invoke, openDirectoryPicker, () => {
+      status.textContent = 'Scanning selected directories…';
+    });
+    if (!result) {
+      status.textContent = '';
+      return;
+    }
+    await refreshCatalog();
+    await refreshDirectories();
+    const errors = result.errors || [];
+    status.textContent = errors.length
+      ? `Added ${result.repositories.length} repositories. ${errors.join('; ')}`
+      : `Added ${result.repositories.length} repositories to proposal context.`;
+  } catch (error) {
+    status.textContent = formatWorkspaceError('Add repository directories', error);
+  } finally {
+    button.disabled = false;
+  }
 });
 async function refreshCatalog() {
    const repositories = await listRepositoryCatalog(invoke);
     window.repositoryCatalog = repositories;
+    const repositorySelect = document.querySelector('#attach-repository-select');
+    const selectedId = repositorySelect.value;
+    repositorySelect.replaceChildren(new Option('Select an enabled repository', ''), ...repositories.map((repository) => new Option(`${repository.name} — ${repository.repositoryPath}`, repository.id)));
+    repositorySelect.value = repositories.some((repository) => repository.id === selectedId) ? selectedId : '';
     if (selectedWorkspace) renderAttachedRepositories(selectedWorkspace.id, navigationData);
-   if (!repositoryList) return repositories;
-  repositoryList.replaceChildren(...(repositories.length ? repositories.map((repository) => {
-    const item = document.createElement('li'); const button = document.createElement('button'); button.type = 'button'; button.textContent = repository.name; button.title = repository.repositoryPath;
-    button.addEventListener('click', () => { selectedRepository = repository; repositoryList.querySelectorAll('button').forEach((entry) => entry.classList.remove('selected')); button.classList.add('selected'); }); item.append(button); return item;
-  }) : [Object.assign(document.createElement('li'), { className: 'placeholder', textContent: 'No catalog entries' })]));
+  return repositories;
 }
+
+document.querySelector('#attach-repository')?.addEventListener('click', async () => {
+  if (!selectedWorkspace) { workspaceStatus.textContent = 'Select a workspace first.'; return; }
+  const repository = (window.repositoryCatalog || []).find((entry) => entry.id === document.querySelector('#attach-repository-select').value);
+  if (!repository) { workspaceStatus.textContent = 'Select an enabled repository first.'; return; }
+  workspaceStatus.textContent = 'Attaching repository…';
+  try {
+    const setup = await attachRepository(invoke, selectedWorkspace.id, repository.id);
+    workspaceStatus.textContent = setup.setupStatus === 'ready'
+      ? `Attached independent workspace clone of ${repository.name}.`
+      : `Repository setup needs attention: ${setup.errorDetail || setup.setupStatus}`;
+    await refreshNavigation();
+  } catch (error) { workspaceStatus.textContent = formatWorkspaceError('Attach', error); }
+});
+
+async function refreshDirectories() {
+  const page = await loadRepositoryDirectoryPage(invoke);
+  const directoryList = document.querySelector('#directory-list');
+  const renderRepository = (entry) => {
+    const { repository, enabled } = entry;
+    const item = document.createElement('li');
+    const label = document.createElement('label');
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = enabled;
+    checkbox.addEventListener('change', async () => {
+      checkbox.disabled = true;
+      try {
+        await setRepositoryEnabled(invoke, repository.id, checkbox.checked);
+        await refreshDirectories();
+        await refreshCatalog();
+      } catch (error) {
+        checkbox.checked = !checkbox.checked;
+        document.querySelector('#repository-status').textContent = formatWorkspaceError('Update repository', error);
+      } finally { checkbox.disabled = false; }
+    });
+    label.append(checkbox, document.createTextNode(` ${repository.name} — ${repository.repositoryPath}`));
+    item.append(label);
+    return item;
+  };
+  directoryList.replaceChildren(...(page.directories.length ? page.directories.map((directory) => {
+    const group = document.createElement('li');
+    const heading = document.createElement('h2'); heading.textContent = directory.path;
+    const repositories = document.createElement('ul');
+    repositories.replaceChildren(...(directory.repositories.length
+      ? directory.repositories.map(renderRepository)
+      : [Object.assign(document.createElement('li'), { textContent: 'No repositories discovered here.' })]));
+    group.append(heading, repositories);
+    return group;
+  }) : [Object.assign(document.createElement('li'), { textContent: 'No directories saved yet.' })]));
+}
+
+async function showDirectoriesPage() {
+  await refreshDirectories();
+  fullRequestDestination.hidden = true;
+  document.querySelector('#directories-page').hidden = false;
+  document.querySelector('#no-selection').hidden = true;
+  document.querySelector('#selected-owner').hidden = true;
+  document.querySelector('#workbench').hidden = true;
+  document.querySelector('#right-content').classList.remove('owner-active', 'quick-request-terminal-page');
+}
+
+async function scanSavedRepositoryDirectories() {
+  const page = await loadRepositoryDirectoryPage(invoke);
+  const roots = page.directories.map((entry) => entry.path);
+  if (roots.length) await scanRepositories(invoke, roots);
+  await refreshCatalog();
+}
+
+document.querySelector('#show-directories').addEventListener('click', () => {
+  void showDirectoriesPage().catch((error) => { document.querySelector('#repository-status').textContent = String(error); });
+});
+document.querySelector('#directories-back').addEventListener('click', () => {
+  document.querySelector('#directories-page').hidden = true;
+  document.querySelector('#no-selection').hidden = false;
+});
 async function forgetDeletedQuickRequestTerminal(sessionId) {
   const ownerKey = sessionOwners.get(sessionId);
   const runtime = await terminalRuntime;
@@ -1046,6 +1334,7 @@ async function refreshRequests(history = false) {
 
 async function showQuickRequestList() {
   await refreshRequests(true);
+  document.querySelector('#directories-page').hidden = true;
   fullRequestDestination.hidden = false;
   document.querySelector('#no-selection').hidden = true;
   document.querySelector('#selected-owner').hidden = true;
@@ -1082,7 +1371,7 @@ bindQuickRequestForm({
 
 void refreshRequests().catch((error) => { errorMessage.textContent = String(error); });
 void refreshNavigation().catch((error) => { errorMessage.textContent = String(error); });
-void refreshCatalog().catch((error) => { workspaceStatus.textContent = `Catalog unavailable: ${String(error)}`; });
+void scanSavedRepositoryDirectories().catch((error) => { workspaceStatus.textContent = `Repository scan unavailable: ${String(error)}`; });
 
 void initializeModelSelector({
   invoke,

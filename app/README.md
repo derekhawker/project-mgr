@@ -6,21 +6,10 @@ SQLite database in Tauri's per-user application-data directory. The startup UI
 invokes `app_shell_info` and shows that the Rust core and management storage are
 initialized. OpenCode and other background services are not started yet.
 
-## Production registration MCP boundary
-
-`registration-mcp` is the configurable OpenCode tool boundary for task setup.
-It is a stdio adapter over the same app SQLite database; it does not start an
-OpenCode server, own sessions, or copy conversation history. Configure the
-OpenCode tool entry to run:
-
-```sh
-registration-mcp /path/to/management.sqlite3 "$HOME" "${TMPDIR:-/tmp}"
-```
-
-The database path, user home, and temporary root are explicit process arguments
-so packaging can supply the app's per-user paths. OpenCode remains the owner of
-the conversation and invokes this adapter only to report validated setup
-results to Rust.
+Task Git setup is owned by Rust. The app creates deterministic task branches and
+worktrees from verified workspace clones, then starts one empty OpenCode session
+per selected repository; no setup MCP process or prompt-driven Git mutation is
+used.
 
 ## Prerequisites
 

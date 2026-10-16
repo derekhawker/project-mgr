@@ -7,6 +7,7 @@ use serde::Serialize;
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use tauri::{AppHandle, Emitter};
@@ -132,6 +133,7 @@ struct Terminal {
     master: Mutex<Box<dyn MasterPty + Send>>,
     writer: Mutex<Box<dyn Write + Send>>,
     child: Mutex<Box<dyn PtyChild + Send + Sync>>,
+    exited: AtomicBool,
 }
 
 #[derive(Default)]
@@ -313,6 +315,7 @@ impl TerminalManager {
             master: Mutex::new(pair.master),
             writer: Mutex::new(writer),
             child: Mutex::new(child),
+            exited: AtomicBool::new(false),
         });
         let mut terminals = self
             .terminals
@@ -396,6 +399,7 @@ impl TerminalManager {
                         eprintln!("{{\"event\":\"child-cleanup-error\",\"message\":\"terminal reader wait failed: {error}\"}}");
                     }
                 }
+                terminal_for_thread.exited.store(true, Ordering::Release);
                 if let Err(delivery) = app.emit(
                     "terminal-exit",
                     TerminalExit {
@@ -528,6 +532,34 @@ impl TerminalManager {
         } else {
             Err(errors.join("; "))
         }
+    }
+
+    pub fn is_exited(&self, session_id: &str) -> bool {
+        self.terminals
+            .lock()
+            .ok()
+            .and_then(|terminals| terminals.get(session_id).cloned())
+            .is_some_and(|terminal| terminal.exited.load(Ordering::Acquire))
+    }
+
+    /// Releases only a process known to have exited and been waited by its
+    /// reader thread. Live terminals cannot be replaced through this path.
+    pub fn prepare_restart(&self, session_id: &str) -> Result<(), String> {
+        let mut terminals = self
+            .terminals
+            .lock()
+            .map_err(|_| "The terminal manager is unavailable.".to_owned())?;
+        let terminal = terminals
+            .get(session_id)
+            .ok_or_else(|| "This OpenCode terminal is not available to restart.".to_owned())?;
+        if !terminal.exited.load(Ordering::Acquire) {
+            return Err("The OpenCode terminal is still running.".to_owned());
+        }
+        terminals.remove(session_id);
+        if let Ok(mut events) = self.startup_events.lock() {
+            events.remove(session_id);
+        }
+        Ok(())
     }
 }
 
@@ -672,6 +704,7 @@ mod tests {
                 killed: Arc::new(AtomicBool::new(false)),
                 waited: Arc::clone(&waited),
             })),
+            exited: AtomicBool::new(false),
         });
         let manager = TerminalManager::default();
         manager
@@ -694,6 +727,38 @@ mod tests {
     }
 
     #[test]
+    fn restart_releases_only_a_terminal_marked_exited() {
+        let pair = native_pty_system()
+            .openpty(PtySize::default())
+            .expect("test PTY");
+        let writer = pair.master.take_writer().expect("test PTY writer");
+        let terminal = Arc::new(Terminal {
+            master: Mutex::new(pair.master),
+            writer: Mutex::new(writer),
+            child: Mutex::new(Box::new(CleanupTestChild {
+                kill_failed: false,
+                wait_failed: false,
+                killed: Arc::new(AtomicBool::new(false)),
+                waited: Arc::new(AtomicBool::new(false)),
+            })),
+            exited: AtomicBool::new(false),
+        });
+        let manager = TerminalManager::default();
+        manager
+            .terminals
+            .lock()
+            .unwrap()
+            .insert("session".into(), terminal.clone());
+
+        assert!(manager.prepare_restart("session").is_err());
+        assert!(manager.is_attached("session"));
+
+        terminal.exited.store(true, Ordering::Release);
+        manager.prepare_restart("session").unwrap();
+        assert!(!manager.is_attached("session"));
+    }
+
+    #[test]
     fn shutdown_attempts_all_children_after_one_cleanup_failure() {
         fn terminal(child: CleanupTestChild) -> Arc<Terminal> {
             let pair = native_pty_system()
@@ -704,6 +769,7 @@ mod tests {
                 master: Mutex::new(pair.master),
                 writer: Mutex::new(writer),
                 child: Mutex::new(Box::new(child)),
+                exited: AtomicBool::new(false),
             })
         }
 

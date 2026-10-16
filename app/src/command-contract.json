@@ -1041,6 +1041,15 @@
       "additionalProperties": false
     }
   },
+  "opencode_terminal_restart": {
+    "payload": {
+      "type": "object",
+      "properties": { "sessionId": { "type": "string" } },
+      "required": ["sessionId"],
+      "additionalProperties": false
+    },
+    "result": { "type": "null" }
+  },
   "opencode_terminal_write": {
     "payload": {
       "type": "object",
@@ -2142,105 +2151,22 @@
     "result": {
       "type": "object",
       "properties": {
-        "id": {
-          "type": "string"
-        },
-        "workspaceId": {
-          "type": "string"
-        },
-        "name": {
-          "type": "string"
-        },
-        "slug": {
-          "type": "string"
-        },
-        "description": {
-          "type": "string",
-          "nullable": true
-        },
-        "homePath": {
-          "type": "string"
-        },
-        "status": {
-          "type": "string"
-        },
-        "setupStatus": {
-          "type": "string"
-        },
-        "createdAt": {
-          "type": "number"
-        },
-        "completedAt": {
-          "type": "number",
-          "nullable": true
-        },
-        "quickRequest": {
-          "type": "object",
-          "properties": {
-            "createdAt": {
-              "type": "number"
-            },
-            "dismissedAt": {
-              "type": "number",
-              "nullable": true
-            },
-            "expiresAt": {
-              "type": "number",
-              "nullable": true
-            },
-            "expiredAt": {
-              "type": "number",
-              "nullable": true
-            },
-            "promotedAt": {
-              "type": "number",
-              "nullable": true
-            }
-          },
-          "required": [
-            "createdAt",
-            "dismissedAt",
-            "expiresAt",
-            "expiredAt",
-            "promotedAt"
-          ],
-          "additionalProperties": false,
-          "nullable": true
-        },
-        "setupOperationId": {
-          "type": "string",
-          "nullable": true
-        },
-        "setupSessionId": {
-          "type": "string",
-          "nullable": true
-        },
-        "setupCancelledAt": {
-          "type": "number",
-          "nullable": true
-        },
-        "setupCancellationDetail": {
-          "type": "string",
-          "nullable": true
-        }
+        "id": { "type": "string" }, "workspaceId": { "type": "string" },
+        "name": { "type": "string" }, "slug": { "type": "string" },
+        "description": { "type": "string", "nullable": true }, "homePath": { "type": "string" },
+        "status": { "type": "string" }, "setupStatus": { "type": "string" },
+        "createdAt": { "type": "number" }, "completedAt": { "type": "number", "nullable": true },
+        "quickRequest": { "type": "object", "nullable": true, "properties": {
+          "createdAt": { "type": "number" }, "dismissedAt": { "type": "number", "nullable": true },
+          "expiresAt": { "type": "number", "nullable": true }, "expiredAt": { "type": "number", "nullable": true },
+          "promotedAt": { "type": "number", "nullable": true }
+        }, "required": ["createdAt", "dismissedAt", "expiresAt", "expiredAt", "promotedAt"], "additionalProperties": false },
+        "setupOperationId": { "type": "string", "nullable": true },
+        "setupSessionId": { "type": "string", "nullable": true },
+        "setupCancelledAt": { "type": "number", "nullable": true },
+        "setupCancellationDetail": { "type": "string", "nullable": true }
       },
-      "required": [
-        "id",
-        "workspaceId",
-        "name",
-        "slug",
-        "description",
-        "homePath",
-        "status",
-        "setupStatus",
-        "createdAt",
-        "completedAt",
-        "quickRequest",
-        "setupOperationId",
-        "setupSessionId",
-        "setupCancelledAt",
-        "setupCancellationDetail"
-      ],
+      "required": ["id", "workspaceId", "name", "slug", "description", "homePath", "status", "setupStatus", "createdAt", "completedAt", "quickRequest", "setupOperationId", "setupSessionId", "setupCancelledAt", "setupCancellationDetail"],
       "additionalProperties": false
     }
   },
@@ -2401,11 +2327,10 @@
         "workspace": { "type": "object", "nullable": true, "properties": { "id": { "type": "string", "nullable": true }, "name": { "type": "string", "nullable": true }, "intent": { "type": "string", "nullable": true } }, "required": ["id", "name", "intent"], "additionalProperties": false },
         "task": { "type": "object", "nullable": true, "properties": { "name": { "type": "string", "nullable": true }, "intent": { "type": "string", "nullable": true } }, "required": ["name", "intent"], "additionalProperties": false },
         "repositories": { "type": "array", "items": { "type": "object", "properties": { "repositoryId": { "type": "string" }, "reason": { "type": "string" } }, "required": ["repositoryId", "reason"], "additionalProperties": false } },
-        "jira": { "type": "object", "properties": { "action": { "type": "string" }, "issues": { "type": "array", "items": { "type": "object", "properties": { "key": { "type": "string" }, "summary": { "type": "string" } }, "required": ["key", "summary"], "additionalProperties": false } }, "summary": { "type": "string", "nullable": true } }, "required": ["action", "issues", "summary"], "additionalProperties": false },
-        "startingPrompt": { "type": "string" },
-        "effects": { "type": "array", "items": { "type": "string" } }
+        "startingPrompt": { "type": "string", "nullable": true },
+        "setupPlan": { "type": "object", "properties": { "workspaceHome": { "type": "string" }, "repositories": { "type": "array", "items": { "type": "object", "properties": { "repositoryId": { "type": "string" }, "sourcePath": { "type": "string" }, "sourceIdentity": { "type": "string" }, "sourceHead": { "type": "string" }, "defaultBranch": { "type": "string" }, "defaultBranchHead": { "type": "string" }, "destinationPath": { "type": "string" }, "upstreamFetchUrl": { "type": "string", "nullable": true }, "submodules": { "type": "array", "items": { "type": "object", "properties": { "path": { "type": "string" }, "url": { "type": "string", "nullable": true } }, "required": ["path", "url"], "additionalProperties": false } } }, "required": ["repositoryId", "sourcePath", "sourceIdentity", "sourceHead", "defaultBranch", "defaultBranchHead", "destinationPath", "upstreamFetchUrl", "submodules"], "additionalProperties": false } } }, "required": ["workspaceHome", "repositories"], "additionalProperties": false }
       },
-      "required": ["schemaVersion", "workType", "workspace", "task", "repositories", "jira", "startingPrompt", "effects"],
+      "required": ["schemaVersion", "workType", "workspace", "task", "repositories", "startingPrompt"],
       "additionalProperties": false
     }
   },
@@ -2418,10 +2343,10 @@
         "workspace": { "type": "object", "nullable": true, "properties": { "id": { "type": "string", "nullable": true }, "name": { "type": "string", "nullable": true }, "intent": { "type": "string", "nullable": true } }, "required": ["id", "name", "intent"], "additionalProperties": false },
         "task": { "type": "object", "nullable": true, "properties": { "name": { "type": "string", "nullable": true }, "intent": { "type": "string", "nullable": true } }, "required": ["name", "intent"], "additionalProperties": false },
         "repositories": { "type": "array", "items": { "type": "object", "properties": { "repositoryId": { "type": "string" }, "reason": { "type": "string" } }, "required": ["repositoryId", "reason"], "additionalProperties": false } },
-        "jira": { "type": "object", "properties": { "action": { "type": "string" }, "issues": { "type": "array", "items": { "type": "object", "properties": { "key": { "type": "string" }, "summary": { "type": "string" } }, "required": ["key", "summary"], "additionalProperties": false } }, "summary": { "type": "string", "nullable": true } }, "required": ["action", "issues", "summary"], "additionalProperties": false },
-        "startingPrompt": { "type": "string" }, "effects": { "type": "array", "items": { "type": "string" } }
+        "startingPrompt": { "type": "string", "nullable": true },
+        "setupPlan": { "type": "object", "properties": { "workspaceHome": { "type": "string" }, "repositories": { "type": "array", "items": { "type": "object", "properties": { "repositoryId": { "type": "string" }, "sourcePath": { "type": "string" }, "sourceIdentity": { "type": "string" }, "sourceHead": { "type": "string" }, "defaultBranch": { "type": "string" }, "defaultBranchHead": { "type": "string" }, "destinationPath": { "type": "string" }, "upstreamFetchUrl": { "type": "string", "nullable": true }, "submodules": { "type": "array", "items": { "type": "object", "properties": { "path": { "type": "string" }, "url": { "type": "string", "nullable": true } }, "required": ["path", "url"], "additionalProperties": false } } }, "required": ["repositoryId", "sourcePath", "sourceIdentity", "sourceHead", "defaultBranch", "defaultBranchHead", "destinationPath", "upstreamFetchUrl", "submodules"], "additionalProperties": false } } }, "required": ["workspaceHome", "repositories"], "additionalProperties": false }
       },
-      "required": ["schemaVersion", "workType", "workspace", "task", "repositories", "jira", "startingPrompt", "effects"], "additionalProperties": false
+      "required": ["schemaVersion", "workType", "workspace", "task", "repositories", "startingPrompt"], "additionalProperties": false
     }
   },
   "new_work_proposal_close": { "payload": { "type": "object", "properties": { "sessionId": { "type": "string" } }, "required": ["sessionId"], "additionalProperties": false }, "result": { "type": "null" } },
@@ -2924,9 +2849,10 @@
               },
               "required": ["providerId", "id"],
               "additionalProperties": false
-            }
+            },
+            "proposalSessionId": { "type": "string" }
           },
-          "required": ["name", "model"],
+          "required": ["name", "model", "proposalSessionId"],
           "additionalProperties": false
         }
       },
@@ -2952,7 +2878,9 @@
           "required": ["id", "name", "slug", "description", "homePath", "kind", "status", "createdAt", "completedAt"],
           "additionalProperties": false
         },
-        "session": {
+        "sessions": {
+          "type": "array",
+          "items": {
           "type": "object",
           "properties": {
             "openCodeSessionId": { "type": "string" },
@@ -2977,9 +2905,12 @@
           },
           "required": ["openCodeSessionId", "owner", "directory", "lastKnownStatus", "createdAt", "updatedAt", "eventCursor", "reconciliationStatus", "reconciliationUncertain", "pendingInputJson", "selectedModel"],
           "additionalProperties": false
-        }
+          }
+        },
+        "setup": { "type": "array", "items": { "type": "object", "properties": { "workspaceId": { "type": "string" }, "repositoryId": { "type": "string" }, "setupStatus": { "type": "string", "enum": ["pending", "ready", "failed"] }, "planJson": { "type": "string" }, "checkoutIdentity": { "type": "string", "nullable": true }, "errorCode": { "type": "string", "nullable": true }, "errorDetail": { "type": "string", "nullable": true }, "updatedAt": { "type": "number" } }, "required": ["workspaceId", "repositoryId", "setupStatus", "planJson", "checkoutIdentity", "errorCode", "errorDetail", "updatedAt"], "additionalProperties": false } },
+        "sessionErrors": { "type": "array", "items": { "type": "string" } }
       },
-      "required": ["workspace", "session"],
+      "required": ["workspace", "sessions", "setup", "sessionErrors"],
       "additionalProperties": false
     }
   },
@@ -3168,105 +3099,11 @@
     "result": {
       "type": "object",
       "properties": {
-        "id": {
-          "type": "string"
-        },
-        "workspaceId": {
-          "type": "string"
-        },
-        "name": {
-          "type": "string"
-        },
-        "slug": {
-          "type": "string"
-        },
-        "description": {
-          "type": "string",
-          "nullable": true
-        },
-        "homePath": {
-          "type": "string"
-        },
-        "status": {
-          "type": "string"
-        },
-        "setupStatus": {
-          "type": "string"
-        },
-        "createdAt": {
-          "type": "number"
-        },
-        "completedAt": {
-          "type": "number",
-          "nullable": true
-        },
-        "quickRequest": {
-          "type": "object",
-          "properties": {
-            "createdAt": {
-              "type": "number"
-            },
-            "dismissedAt": {
-              "type": "number",
-              "nullable": true
-            },
-            "expiresAt": {
-              "type": "number",
-              "nullable": true
-            },
-            "expiredAt": {
-              "type": "number",
-              "nullable": true
-            },
-            "promotedAt": {
-              "type": "number",
-              "nullable": true
-            }
-          },
-          "required": [
-            "createdAt",
-            "dismissedAt",
-            "expiresAt",
-            "expiredAt",
-            "promotedAt"
-          ],
-          "additionalProperties": false,
-          "nullable": true
-        },
-        "setupOperationId": {
-          "type": "string",
-          "nullable": true
-        },
-        "setupSessionId": {
-          "type": "string",
-          "nullable": true
-        },
-        "setupCancelledAt": {
-          "type": "number",
-          "nullable": true
-        },
-        "setupCancellationDetail": {
-          "type": "string",
-          "nullable": true
-        }
+        "task": { "type": "object", "additionalProperties": true },
+        "sessions": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
+        "repositories": { "type": "array", "items": { "type": "object", "additionalProperties": true } }
       },
-      "required": [
-        "id",
-        "workspaceId",
-        "name",
-        "slug",
-        "description",
-        "homePath",
-        "status",
-        "setupStatus",
-        "createdAt",
-        "completedAt",
-        "quickRequest",
-        "setupOperationId",
-        "setupSessionId",
-        "setupCancelledAt",
-        "setupCancellationDetail"
-      ],
+      "required": ["task", "sessions", "repositories"],
       "additionalProperties": false
     }
   },
@@ -3640,60 +3477,6 @@
         ],
         "additionalProperties": false
       }
-    }
-  },
-  "task_setup_start_prompt": {
-    "payload": {
-      "type": "object",
-      "properties": {
-        "request": {
-          "type": "object",
-          "properties": {
-            "taskId": {
-              "type": "string"
-            },
-            "operationId": {
-              "type": "string"
-            },
-            "sessionId": {
-              "type": "string"
-            },
-            "model": {
-              "type": "object",
-              "properties": {
-                "id": {
-                  "type": "string"
-                },
-                "providerId": {
-                  "type": "string"
-                }
-              },
-              "required": [
-                "providerId",
-                "id"
-              ],
-              "additionalProperties": false
-            },
-            "startingPrompt": { "type": "string" },
-            "repositoryIds": { "type": "array", "items": { "type": "string" } }
-          },
-          "required": [
-            "taskId",
-            "operationId",
-            "sessionId",
-            "model",
-            "startingPrompt"
-          ],
-          "additionalProperties": false
-        }
-      },
-      "required": [
-        "request"
-      ],
-      "additionalProperties": false
-    },
-    "result": {
-      "type": "null"
     }
   },
   "task_setup_status": {
@@ -4220,173 +4003,35 @@
       "additionalProperties": false
     }
   },
-  "task_registration_report": {
+  "task_setup_retry": {
     "payload": {
       "type": "object",
       "properties": {
-        "report": {
+        "request": {
           "type": "object",
           "properties": {
-            "operationId": {
-              "type": "string"
-            },
-            "workspaceId": {
-              "type": "string"
-            },
-            "taskId": {
-              "type": "string"
-            },
-            "sessionId": {
-              "type": "string"
-            },
-            "items": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "properties": {
-                  "itemId": {
-                    "type": "string"
-                  },
-                  "repositoryId": {
-                    "type": "string"
-                  },
-                  "repositoryPath": {
-                    "type": "string"
-                  },
-                  "gitIdentity": {
-                    "type": "string"
-                  },
-                  "branch": {
-                    "type": "string",
-                    "nullable": true
-                  },
-                  "worktreePath": {
-                    "type": "string",
-                    "nullable": true
-                  },
-                  "result": {
-                    "type": "string"
-                  },
-                  "errorCode": {
-                    "type": "string",
-                    "nullable": true
-                  },
-                  "detail": {
-                    "type": "string",
-                    "nullable": true
-                  }
-                },
-                "required": [
-                  "itemId",
-                  "repositoryId",
-                  "repositoryPath",
-                  "gitIdentity",
-                  "branch",
-                  "worktreePath",
-                  "result",
-                  "errorCode",
-                  "detail"
-                ],
-                "additionalProperties": false
-              }
-            }
+            "taskId": { "type": "string" },
+            "model": { "type": "object", "properties": { "providerId": { "type": "string" }, "id": { "type": "string" } }, "required": ["providerId", "id"], "additionalProperties": false }
           },
-          "required": [
-            "operationId",
-            "workspaceId",
-            "taskId",
-            "sessionId",
-            "items"
-          ],
+          "required": ["taskId", "model"],
           "additionalProperties": false
         }
       },
-      "required": [
-        "report"
-      ],
+      "required": ["request"],
       "additionalProperties": false
     },
     "result": {
       "type": "object",
       "properties": {
-        "operationId": {
-          "type": "string"
-        },
-        "workspaceId": {
-          "type": "string"
-        },
-        "taskId": {
-          "type": "string"
-        },
-        "sessionId": {
-          "type": "string"
-        },
-        "replayed": {
-          "type": "boolean"
-        },
-        "items": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "itemId": {
-                "type": "string"
-              },
-              "repositoryId": {
-                "type": "string"
-              },
-              "repositoryPath": {
-                "type": "string"
-              },
-              "gitIdentity": {
-                "type": "string"
-              },
-              "branch": {
-                "type": "string",
-                "nullable": true
-              },
-              "worktreePath": {
-                "type": "string",
-                "nullable": true
-              },
-              "result": {
-                "type": "string"
-              },
-              "errorCode": {
-                "type": "string",
-                "nullable": true
-              },
-              "detail": {
-                "type": "string",
-                "nullable": true
-              }
-            },
-            "required": [
-              "itemId",
-              "repositoryId",
-              "repositoryPath",
-              "gitIdentity",
-              "branch",
-              "worktreePath",
-              "result",
-              "errorCode",
-              "detail"
-            ],
-            "additionalProperties": false
-          }
-        }
+        "task": { "type": "object", "additionalProperties": true },
+        "sessions": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
+        "repositories": { "type": "array", "items": { "type": "object", "additionalProperties": true } }
       },
-      "required": [
-        "operationId",
-        "workspaceId",
-        "taskId",
-        "sessionId",
-        "replayed",
-        "items"
-      ],
+      "required": ["task", "sessions", "repositories"],
       "additionalProperties": false
     }
   },
+
   "task_registration_results": {
     "payload": {
       "type": "object",
@@ -4601,6 +4246,21 @@
       }
     }
   },
+  "repository_directory_page": {
+    "payload": "none",
+    "result": {
+      "type": "object",
+      "properties": {
+        "directories": { "type": "array", "items": { "type": "object", "properties": { "path": { "type": "string" }, "repositories": { "type": "array", "items": { "type": "object", "properties": { "repository": { "type": "object", "properties": { "id": { "type": "string" }, "name": { "type": "string" }, "repositoryPath": { "type": "string" }, "repositoryIdentity": { "type": "string" }, "purpose": { "type": "string", "nullable": true }, "purposeStatus": { "type": "string" }, "createdAt": { "type": "number" }, "updatedAt": { "type": "number" } }, "required": ["id", "name", "repositoryPath", "repositoryIdentity", "purpose", "purposeStatus", "createdAt", "updatedAt"], "additionalProperties": false }, "enabled": { "type": "boolean" } }, "required": ["repository", "enabled"], "additionalProperties": false } } }, "required": ["path", "repositories"], "additionalProperties": false } }
+      },
+      "required": ["directories"],
+      "additionalProperties": false
+    }
+  },
+  "repository_enabled_set": {
+    "payload": { "type": "object", "properties": { "request": { "type": "object", "properties": { "repositoryId": { "type": "string" }, "enabled": { "type": "boolean" } }, "required": ["repositoryId", "enabled"], "additionalProperties": false } }, "required": ["request"], "additionalProperties": false },
+    "result": { "type": "null" }
+  },
   "repository_attach": {
     "payload": {
       "type": "object",
@@ -4613,23 +4273,11 @@
             },
             "repositoryId": {
               "type": "string"
-            },
-            "checkoutPath": {
-              "type": "string"
-            },
-            "branch": {
-              "type": "string"
-            },
-            "checkoutMode": {
-              "type": "string"
             }
           },
           "required": [
             "workspaceId",
-            "repositoryId",
-            "checkoutPath",
-            "branch",
-            "checkoutMode"
+            "repositoryId"
           ],
           "additionalProperties": false
         }
@@ -4648,30 +4296,24 @@
         "repositoryId": {
           "type": "string"
         },
-        "checkoutPath": {
-          "type": "string"
-        },
-        "checkoutMode": {
-          "type": "string"
-        },
-        "branch": {
-          "type": "string"
-        },
-        "verificationStatus": {
-          "type": "string"
-        },
-        "createdAt": {
+        "setupStatus": { "type": "string", "enum": ["pending", "ready", "failed"] },
+        "planJson": { "type": "string" },
+        "checkoutIdentity": { "type": "string", "nullable": true },
+        "errorCode": { "type": "string", "nullable": true },
+        "errorDetail": { "type": "string", "nullable": true },
+        "updatedAt": {
           "type": "number"
         }
       },
       "required": [
         "workspaceId",
         "repositoryId",
-        "checkoutPath",
-        "checkoutMode",
-        "branch",
-        "verificationStatus",
-        "createdAt"
+        "setupStatus",
+        "planJson",
+        "checkoutIdentity",
+        "errorCode",
+        "errorDetail",
+        "updatedAt"
       ],
       "additionalProperties": false
     }
@@ -4798,10 +4440,7 @@
             "taskId": {
               "type": "string"
             },
-            "prompt": {
-              "type": "string",
-              "nullable": true
-            },
+            "repositoryId": { "type": "string" },
             "model": {
               "type": "object",
               "properties": {
@@ -4821,6 +4460,7 @@
           },
           "required": [
             "taskId",
+            "repositoryId",
             "model"
           ],
           "additionalProperties": false

@@ -29,6 +29,10 @@ const MIGRATION_10: &str = include_str!("migrations/0010_remove_starting_prompt_
 const MIGRATION_11: &str = include_str!("migrations/0011_quick_request_prompts.sql");
 const MIGRATION_12: &str = include_str!("migrations/0012_quick_request_repository_directories.sql");
 const MIGRATION_13: &str = include_str!("migrations/0013_quick_requests_project_directory.sql");
+const MIGRATION_14: &str = include_str!("migrations/0014_repository_directories.sql");
+const MIGRATION_15: &str = include_str!("migrations/0015_workspace_repository_setup.sql");
+const MIGRATION_16: &str = include_str!("migrations/0016_task_session_repositories.sql");
+const MIGRATION_17: &str = include_str!("migrations/0017_task_repository_selection.sql");
 
 fn validate_quick_request_prompt(prompt: &str) -> StoreResult<()> {
     if prompt.trim().is_empty() {
@@ -187,8 +191,9 @@ sqlite_enum!(RepositorySetupStatus {
 pub enum CheckoutMode {
     Existing,
     Managed,
+    Clone,
 }
-sqlite_enum!(CheckoutMode { Existing => "existing", Managed => "managed" });
+sqlite_enum!(CheckoutMode { Existing => "existing", Managed => "managed", Clone => "clone" });
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -312,6 +317,26 @@ pub struct Repository {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct RepositoryScanDirectory {
+    pub path: String,
+    pub repositories: Vec<RepositoryDirectoryEntry>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RepositoryDirectoryEntry {
+    pub repository: Repository,
+    pub enabled: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RepositoryDirectoryPage {
+    pub directories: Vec<RepositoryScanDirectory>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct NewRepository {
     pub id: String,
     pub name: String,
@@ -345,6 +370,69 @@ pub struct WorkspaceRepositoryBinding {
     pub created_at: i64,
 }
 
+pub fn workspace_session_directories(
+    workspace_home: &Path,
+    bindings: &[WorkspaceRepositoryBinding],
+) -> StoreResult<Vec<(Option<String>, PathBuf)>> {
+    if bindings
+        .iter()
+        .any(|binding| binding.verification_status != VerificationStatus::Verified)
+    {
+        return Err(ManagementStoreError::InvalidTransition(
+            "workspace sessions require every selected repository checkout to be verified".into(),
+        ));
+    }
+    if bindings.is_empty() {
+        return Ok(vec![(None, workspace_home.to_path_buf())]);
+    }
+    Ok(bindings
+        .iter()
+        .map(|binding| {
+            (
+                Some(binding.repository_id.clone()),
+                PathBuf::from(&binding.checkout_path),
+            )
+        })
+        .collect())
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceRepositoryCheckoutMetadata {
+    pub workspace_id: String,
+    pub repository_id: String,
+    pub checkout_path: String,
+    pub source_identity: String,
+    pub checkout_identity: String,
+    pub default_branch: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkspaceRepositorySetupStatus {
+    Pending,
+    Ready,
+    Failed,
+}
+sqlite_enum!(WorkspaceRepositorySetupStatus {
+    Pending => "pending",
+    Ready => "ready",
+    Failed => "failed"
+});
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceRepositorySetupRecord {
+    pub workspace_id: String,
+    pub repository_id: String,
+    pub setup_status: WorkspaceRepositorySetupStatus,
+    pub plan_json: String,
+    pub checkout_identity: Option<String>,
+    pub error_code: Option<String>,
+    pub error_detail: Option<String>,
+    pub updated_at: i64,
+}
+
 /// Stable paths available to a workspace planning session. Failed or
 /// unverified attachment attempts are never session context.
 pub fn resolve_workspace_context(
@@ -361,6 +449,30 @@ pub fn resolve_workspace_context(
         }
     }
     paths
+}
+
+/// Adds verified repository checkout paths to a workspace's first or follow-up prompt.
+/// The workspace home remains the terminal working directory; bound repositories stay
+/// at their existing locations and are supplied as explicit context.
+pub fn workspace_prompt_with_repository_context(
+    prompt: &str,
+    workspace_home: &Path,
+    bindings: &[WorkspaceRepositoryBinding],
+) -> String {
+    let context_paths = resolve_workspace_context(workspace_home, bindings);
+    let repository_paths = context_paths
+        .iter()
+        .skip(1)
+        .map(|path| path.display().to_string())
+        .collect::<Vec<_>>();
+    if repository_paths.is_empty() {
+        prompt.to_owned()
+    } else {
+        format!(
+            "{prompt}\n\nVerified workspace repository checkouts:\n{}",
+            repository_paths.join("\n")
+        )
+    }
 }
 
 /// The terminal has one OpenCode directory, but a task conversation must be
@@ -643,7 +755,7 @@ impl ManagementStore {
             [],
             |row| row.get(0),
         )?;
-        if current_version > 13 {
+        if current_version > 17 {
             return Err(ManagementStoreError::UnsupportedSchemaVersion(
                 current_version,
             ));
@@ -736,6 +848,34 @@ impl ManagementStore {
             transaction.execute_batch(MIGRATION_13)?;
             transaction.execute(
                 "INSERT INTO schema_migrations(version, applied_at) VALUES (13, 0)",
+                [],
+            )?;
+        }
+        if current_version < 14 {
+            transaction.execute_batch(MIGRATION_14)?;
+            transaction.execute(
+                "INSERT INTO schema_migrations(version, applied_at) VALUES (14, 0)",
+                [],
+            )?;
+        }
+        if current_version < 15 {
+            transaction.execute_batch(MIGRATION_15)?;
+            transaction.execute(
+                "INSERT INTO schema_migrations(version, applied_at) VALUES (15, 0)",
+                [],
+            )?;
+        }
+        if current_version < 16 {
+            transaction.execute_batch(MIGRATION_16)?;
+            transaction.execute(
+                "INSERT INTO schema_migrations(version, applied_at) VALUES (16, 0)",
+                [],
+            )?;
+        }
+        if current_version < 17 {
+            transaction.execute_batch(MIGRATION_17)?;
+            transaction.execute(
+                "INSERT INTO schema_migrations(version, applied_at) VALUES (17, 0)",
                 [],
             )?;
         }
@@ -916,6 +1056,52 @@ impl ManagementStore {
             &["notes", "repos", "tasks"],
         )?;
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        transaction.execute("DELETE FROM workspaces WHERE id = ?1", [id])?;
+        transaction.commit()?;
+        Ok(())
+    }
+
+    /// Deletes a user-confirmed empty regular workspace while retaining its
+    /// OpenCode-owned conversation. Its local session association is removed;
+    /// the OpenCode session itself is never deleted or stopped here.
+    pub fn delete_empty_regular_workspace(&self, id: &str) -> StoreResult<()> {
+        let mut connection = self.lock()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let workspace = Self::get_workspace_from(&transaction, id)?
+            .ok_or_else(|| ManagementStoreError::NotFound(format!("workspace {id}")))?;
+        if workspace.kind != WorkspaceKind::Regular {
+            return Err(ManagementStoreError::InvalidTransition(
+                "only regular workspaces can be deleted".into(),
+            ));
+        }
+        let task_count: i64 = transaction.query_row(
+            "SELECT COUNT(*) FROM tasks WHERE workspace_id = ?1",
+            [id],
+            |row| row.get(0),
+        )?;
+        if task_count != 0 {
+            return Err(ManagementStoreError::InvalidTransition(
+                "workspace has tasks and cannot be deleted".into(),
+            ));
+        }
+        let configured_root = Self::project_home_root_from(&transaction)?;
+        let project_root = safety::resolve_project_home_root(&configured_root, &self.user_home)?;
+        safety::remove_empty_managed_home(
+            &project_root,
+            Path::new(&workspace.home_path),
+            "workspace",
+            id,
+            &["notes", "repos", "tasks"],
+        )?;
+        transaction.execute(
+            "DELETE FROM workspace_repositories WHERE workspace_id = ?1",
+            [id],
+        )?;
+        transaction.execute(
+            "DELETE FROM workspace_repository_setup WHERE workspace_id = ?1",
+            [id],
+        )?;
+        transaction.execute("DELETE FROM sessions WHERE owner_workspace_id = ?1", [id])?;
         transaction.execute("DELETE FROM workspaces WHERE id = ?1", [id])?;
         transaction.commit()?;
         Ok(())
@@ -2130,12 +2316,145 @@ impl ManagementStore {
 
     pub fn list_repositories(&self) -> StoreResult<Vec<Repository>> {
         let connection = self.lock()?;
+        let repositories = Self::list_all_repositories_from(&connection)?;
+        let mut allowed = Vec::new();
+        for repository in repositories {
+            let disallowed: bool = connection.query_row(
+                "SELECT EXISTS(SELECT 1 FROM repository_disallowed WHERE repository_id = ?1)",
+                [&repository.id],
+                |row| row.get(0),
+            )?;
+            if !disallowed {
+                allowed.push(repository);
+            }
+        }
+        Ok(allowed)
+    }
+
+    fn list_all_repositories_from(connection: &Connection) -> StoreResult<Vec<Repository>> {
         let mut statement = connection.prepare(
             "SELECT id, name, repository_path, repository_identity, purpose, purpose_status,
                     created_at, updated_at FROM repository_catalog ORDER BY name, id",
         )?;
         let rows = statement.query_map([], repository_from_row)?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    fn list_repository_scan_directories_from(
+        connection: &Connection,
+    ) -> StoreResult<Vec<RepositoryScanDirectory>> {
+        let mut statement =
+            connection.prepare("SELECT path FROM repository_scan_directories ORDER BY path")?;
+        let rows = statement.query_map([], |row| {
+            Ok(RepositoryScanDirectory {
+                path: row.get(0)?,
+                repositories: Vec::new(),
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    pub fn repository_directory_page(&self) -> StoreResult<RepositoryDirectoryPage> {
+        let connection = self.lock()?;
+        let mut directories = Self::list_repository_scan_directories_from(&connection)?;
+        let all_repositories = Self::list_all_repositories_from(&connection)?;
+        let roots = directories
+            .iter()
+            .enumerate()
+            .map(|(index, directory)| (index, PathBuf::from(&directory.path)))
+            .collect::<Vec<_>>();
+        for repository in all_repositories {
+            let disallowed: bool = connection.query_row(
+                "SELECT EXISTS(SELECT 1 FROM repository_disallowed WHERE repository_id = ?1)",
+                [&repository.id],
+                |row| row.get(0),
+            )?;
+            let repository_path = Path::new(&repository.repository_path);
+            if let Some((index, _)) = roots
+                .iter()
+                .filter(|(_, root)| repository_path.starts_with(root))
+                .max_by_key(|(_, root)| root.components().count())
+            {
+                directories[*index]
+                    .repositories
+                    .push(RepositoryDirectoryEntry {
+                        repository,
+                        enabled: !disallowed,
+                    });
+            }
+        }
+        Ok(RepositoryDirectoryPage { directories })
+    }
+
+    pub fn add_repository_scan_directory(
+        &self,
+        path: &Path,
+        updated_at: i64,
+    ) -> StoreResult<RepositoryScanDirectory> {
+        let canonical_path = fs::canonicalize(path)?;
+        if !canonical_path.is_dir() {
+            return Err(ManagementStoreError::Safety(SafetyError::InvalidPath(
+                "repository scan directory is not a directory".into(),
+            )));
+        }
+        let project_home = self.resolved_project_home_root()?;
+        if canonical_path.starts_with(&project_home) {
+            return Err(ManagementStoreError::Safety(SafetyError::InvalidPath(
+                format!(
+                    "cannot add a scan directory inside OpenCode Projects ({})",
+                    project_home.display()
+                ),
+            )));
+        }
+        let path = path_to_string(&canonical_path)?;
+        let connection = self.lock()?;
+        connection.execute(
+            "INSERT INTO repository_scan_directories(path, created_at, updated_at)
+             VALUES (?1, ?2, ?2)
+             ON CONFLICT(path) DO UPDATE SET updated_at = excluded.updated_at",
+            params![path, updated_at],
+        )?;
+        Ok(RepositoryScanDirectory {
+            path,
+            repositories: Vec::new(),
+        })
+    }
+
+    pub fn set_repository_enabled(
+        &self,
+        repository_id: &str,
+        enabled: bool,
+        updated_at: i64,
+    ) -> StoreResult<()> {
+        let connection = self.lock()?;
+        let repository = Self::get_repository_from(&connection, repository_id)?
+            .ok_or_else(|| ManagementStoreError::NotFound(format!("repository {repository_id}")))?;
+        if enabled {
+            connection.execute(
+                "DELETE FROM repository_disallowed WHERE repository_id = ?1",
+                [repository_id],
+            )?;
+        } else {
+            connection.execute(
+                "INSERT INTO repository_disallowed(repository_id, created_at) VALUES (?1, ?2)
+                 ON CONFLICT(repository_id) DO NOTHING",
+                params![repository.id, updated_at],
+            )?;
+        }
+        Ok(())
+    }
+
+    pub fn repository_is_disallowed(&self, repository_identity: &str) -> StoreResult<bool> {
+        let connection = self.lock()?;
+        Ok(connection.query_row(
+            "SELECT EXISTS(
+                 SELECT 1 FROM repository_disallowed d
+                 JOIN repository_catalog r ON r.id = d.repository_id
+                 WHERE r.repository_identity = ?1
+             )",
+            [repository_identity],
+            |row| row.get(0),
+        )?)
     }
 
     /// Add a verified discovery result, updating an existing catalog record by
@@ -2292,8 +2611,21 @@ impl ManagementStore {
                 )));
             }
             CheckoutMode::Managed => {}
+            CheckoutMode::Clone if checkout.repository.identity == catalog.repository_identity => {
+                return Err(ManagementStoreError::Safety(SafetyError::IdentityMismatch(
+                    "independent workspace clone shares the source Git identity".into(),
+                )));
+            }
+            CheckoutMode::Clone => {}
         }
-        let Some(default_branch) = checkout.repository.default_branch.as_deref() else {
+        let persisted_default_branch;
+        let default_branch = if binding.checkout_mode == CheckoutMode::Clone {
+            persisted_default_branch = binding.branch.clone();
+            Some(persisted_default_branch.as_str())
+        } else {
+            checkout.repository.default_branch.as_deref()
+        };
+        let Some(default_branch) = default_branch else {
             return Err(ManagementStoreError::Safety(SafetyError::Git(
                 "repository's canonical default branch is unavailable or ambiguous".into(),
             )));
@@ -2304,7 +2636,7 @@ impl ManagementStore {
                 binding.branch, default_branch
             ))));
         }
-        let branch = safety::inspect_branch(Path::new(&catalog.repository_path), &binding.branch)?;
+        let branch = safety::inspect_branch(Path::new(&binding.checkout_path), &binding.branch)?;
         if !branch.valid || !branch.exists {
             return Err(ManagementStoreError::Safety(SafetyError::Git(format!(
                 "branch {:?} is invalid or absent",
@@ -2322,7 +2654,7 @@ impl ManagementStore {
                     )));
                 }
             }
-            CheckoutMode::Managed => {
+            CheckoutMode::Managed | CheckoutMode::Clone => {
                 let configured_root = Self::project_home_root_from(&connection)?;
                 let project_root =
                     safety::resolve_project_home_root(&configured_root, &self.user_home)?;
@@ -2374,7 +2706,15 @@ impl ManagementStore {
             checkout_path: path_to_string(&checkout.repository.canonical_root)?,
             ..binding.clone()
         };
-        self.save_workspace_repository_binding(&canonical_binding)
+        self.save_workspace_repository_binding(&canonical_binding)?;
+        self.save_workspace_repository_checkout_metadata(&WorkspaceRepositoryCheckoutMetadata {
+            workspace_id: binding.workspace_id.clone(),
+            repository_id: binding.repository_id.clone(),
+            checkout_path: path_to_string(&checkout.repository.canonical_root)?,
+            source_identity: catalog.repository_identity,
+            checkout_identity: checkout.repository.identity.clone(),
+            default_branch: default_branch.to_owned(),
+        })
     }
 
     pub(crate) fn save_workspace_repository_binding(
@@ -2384,13 +2724,19 @@ impl ManagementStore {
         let connection = self.lock()?;
         connection.execute(
             "INSERT INTO workspace_repositories(
-                workspace_id, repository_id, checkout_path, checkout_mode, branch, verification_status, created_at
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                workspace_id, repository_id, checkout_path, checkout_mode, branch, verification_status,
+                source_identity, checkout_identity, default_branch, created_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6,
+                (SELECT repository_identity FROM repository_catalog WHERE id = ?2),
+                (SELECT repository_identity FROM repository_catalog WHERE id = ?2), ?5, ?7)
              ON CONFLICT(workspace_id, repository_id) DO UPDATE SET
                 checkout_path = excluded.checkout_path,
                 checkout_mode = excluded.checkout_mode,
                 branch = excluded.branch,
-                verification_status = excluded.verification_status",
+                verification_status = excluded.verification_status,
+                source_identity = excluded.source_identity,
+                checkout_identity = excluded.checkout_identity,
+                default_branch = excluded.default_branch",
             params![
                 binding.workspace_id,
                 binding.repository_id,
@@ -2428,6 +2774,138 @@ impl ManagementStore {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
+    pub fn workspace_repository_checkout_metadata(
+        &self,
+        workspace_id: &str,
+        repository_id: &str,
+    ) -> StoreResult<Option<WorkspaceRepositoryCheckoutMetadata>> {
+        let connection = self.lock()?;
+        Ok(connection
+            .query_row(
+                "SELECT workspace_id, repository_id, checkout_path, source_identity, checkout_identity, default_branch
+                 FROM workspace_repositories WHERE workspace_id = ?1 AND repository_id = ?2",
+                params![workspace_id, repository_id],
+                |row| {
+                    Ok(WorkspaceRepositoryCheckoutMetadata {
+                        workspace_id: row.get(0)?,
+                        repository_id: row.get(1)?,
+                        checkout_path: row.get(2)?,
+                        source_identity: row.get(3)?,
+                        checkout_identity: row.get(4)?,
+                        default_branch: row.get(5)?,
+                    })
+                },
+            )
+            .optional()?)
+    }
+
+    pub fn save_workspace_repository_checkout_metadata(
+        &self,
+        metadata: &WorkspaceRepositoryCheckoutMetadata,
+    ) -> StoreResult<()> {
+        if metadata.source_identity.is_empty()
+            || metadata.checkout_identity.is_empty()
+            || metadata.default_branch.is_empty()
+        {
+            return Err(ManagementStoreError::InvalidTransition(
+                "workspace checkout metadata must include both Git identities and its default branch".into(),
+            ));
+        }
+        let connection = self.lock()?;
+        let changed = connection.execute(
+            "UPDATE workspace_repositories
+             SET source_identity = ?3, checkout_identity = ?4, default_branch = ?5
+             WHERE workspace_id = ?1 AND repository_id = ?2",
+            params![
+                metadata.workspace_id,
+                metadata.repository_id,
+                metadata.source_identity,
+                metadata.checkout_identity,
+                metadata.default_branch,
+            ],
+        )?;
+        if changed != 1 {
+            return Err(ManagementStoreError::NotFound(format!(
+                "workspace repository binding {} / {}",
+                metadata.workspace_id, metadata.repository_id
+            )));
+        }
+        Ok(())
+    }
+
+    pub fn save_workspace_repository_setup(
+        &self,
+        record: &WorkspaceRepositorySetupRecord,
+    ) -> StoreResult<()> {
+        if record.setup_status == WorkspaceRepositorySetupStatus::Failed
+            && record.error_detail.as_deref().is_none_or(str::is_empty)
+        {
+            return Err(ManagementStoreError::InvalidTransition(
+                "failed repository setup requires error detail".into(),
+            ));
+        }
+        if record.setup_status == WorkspaceRepositorySetupStatus::Ready
+            && record
+                .checkout_identity
+                .as_deref()
+                .is_none_or(str::is_empty)
+        {
+            return Err(ManagementStoreError::InvalidTransition(
+                "ready repository setup requires a verified checkout identity".into(),
+            ));
+        }
+        let connection = self.lock()?;
+        connection.execute(
+            "INSERT INTO workspace_repository_setup(
+                workspace_id, repository_id, setup_status, plan_json, checkout_identity,
+                error_code, error_detail, updated_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+             ON CONFLICT(workspace_id, repository_id) DO UPDATE SET
+                setup_status = excluded.setup_status,
+                plan_json = excluded.plan_json,
+                checkout_identity = excluded.checkout_identity,
+                error_code = excluded.error_code,
+                error_detail = excluded.error_detail,
+                updated_at = excluded.updated_at",
+            params![
+                record.workspace_id,
+                record.repository_id,
+                record.setup_status.as_str(),
+                record.plan_json,
+                record.checkout_identity,
+                record.error_code,
+                record.error_detail,
+                record.updated_at,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_workspace_repository_setups(
+        &self,
+        workspace_id: &str,
+    ) -> StoreResult<Vec<WorkspaceRepositorySetupRecord>> {
+        let connection = self.lock()?;
+        let mut statement = connection.prepare(
+            "SELECT workspace_id, repository_id, setup_status, plan_json, checkout_identity,
+                    error_code, error_detail, updated_at
+             FROM workspace_repository_setup WHERE workspace_id = ?1 ORDER BY repository_id",
+        )?;
+        let rows = statement.query_map([workspace_id], |row| {
+            Ok(WorkspaceRepositorySetupRecord {
+                workspace_id: row.get(0)?,
+                repository_id: row.get(1)?,
+                setup_status: row.get(2)?,
+                plan_json: row.get(3)?,
+                checkout_identity: row.get(4)?,
+                error_code: row.get(5)?,
+                error_detail: row.get(6)?,
+                updated_at: row.get(7)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
     /// Preserve an attempted attachment when setup is incomplete. This is
     /// intentionally separate from the verified binding path: failed paths
     /// are visible for correction but are never used as session context.
@@ -2451,9 +2929,17 @@ impl ManagementStore {
             |row| row.get(0),
         )?;
         connection.execute(
-            "INSERT INTO workspace_repositories(workspace_id, repository_id, checkout_path, checkout_mode, branch, verification_status, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, 'failed', ?6)
-             ON CONFLICT(workspace_id, repository_id) DO UPDATE SET checkout_path=excluded.checkout_path, checkout_mode=excluded.checkout_mode, branch=excluded.branch, verification_status='failed'",
+            "INSERT INTO workspace_repositories(
+                workspace_id, repository_id, checkout_path, checkout_mode, branch, verification_status,
+                source_identity, checkout_identity, default_branch, created_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5, 'failed',
+                (SELECT repository_identity FROM repository_catalog WHERE id = ?2),
+                (SELECT repository_identity FROM repository_catalog WHERE id = ?2), ?5, ?6)
+             ON CONFLICT(workspace_id, repository_id) DO UPDATE SET
+                checkout_path=excluded.checkout_path, checkout_mode=excluded.checkout_mode,
+                branch=excluded.branch, verification_status='failed',
+                source_identity=excluded.source_identity, checkout_identity=excluded.checkout_identity,
+                default_branch=excluded.default_branch",
             params![binding.workspace_id, binding.repository_id, binding.checkout_path, binding.checkout_mode.as_str(), binding.branch, binding.created_at],
         )?;
         Ok(())
@@ -2536,7 +3022,7 @@ impl ManagementStore {
                 "Quick Requests cannot own repository worktrees".into(),
             ));
         }
-        let catalog =
+        let _catalog =
             Self::get_repository_from(&connection, &binding.repository_id)?.ok_or_else(|| {
                 ManagementStoreError::NotFound(format!("repository {}", binding.repository_id))
             })?;
@@ -2583,20 +3069,35 @@ impl ManagementStore {
             )));
         }
 
-        let catalog_inspection = safety::inspect_repository(Path::new(&catalog.repository_path))?;
-        verify_catalog_identity(&catalog, &catalog_inspection.repository)?;
+        let (workspace_checkout_path, workspace_checkout_identity): (String, String) = connection
+            .query_row(
+                "SELECT checkout_path, checkout_identity FROM workspace_repositories
+                 WHERE workspace_id = ?1 AND repository_id = ?2 AND verification_status = 'verified'",
+                params![task.workspace_id, binding.repository_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()?
+            .ok_or_else(|| ManagementStoreError::InvalidTransition(
+                "task repository is not bound to a verified workspace checkout".into(),
+            ))?;
+        let workspace_checkout = safety::inspect_repository(Path::new(&workspace_checkout_path))?;
+        if workspace_checkout.repository.identity != workspace_checkout_identity {
+            return Err(ManagementStoreError::Safety(SafetyError::IdentityMismatch(
+                "workspace checkout identity differs from its persisted binding".into(),
+            )));
+        }
         let worktree_inspection = safety::inspect_repository(&canonical_worktree)?;
-        if worktree_inspection.repository.identity != catalog.repository_identity {
+        if worktree_inspection.repository.identity != workspace_checkout_identity {
             return Err(ManagementStoreError::Safety(SafetyError::IdentityMismatch(
                 format!(
                     "worktree {} belongs to {}, expected {}",
                     canonical_worktree.display(),
                     worktree_inspection.repository.identity,
-                    catalog.repository_identity
+                    workspace_checkout_identity
                 ),
             )));
         }
-        let branch = safety::inspect_branch(Path::new(&catalog.repository_path), &binding.branch)?;
+        let branch = safety::inspect_branch(Path::new(&workspace_checkout_path), &binding.branch)?;
         if !branch.valid || !branch.exists {
             return Err(ManagementStoreError::Safety(SafetyError::Git(format!(
                 "branch {:?} is invalid or absent",
@@ -2621,7 +3122,8 @@ impl ManagementStore {
                  SELECT 1 FROM task_repositories tr
                  JOIN tasks t ON t.id = tr.task_id
                  WHERE tr.repository_id = ?1 AND tr.branch = ?2
-                   AND tr.task_id <> ?3 AND t.status = 'active'
+                    AND tr.task_id <> ?3 AND t.status = 'active'
+                    AND t.workspace_id = (SELECT workspace_id FROM tasks WHERE id = ?3)
              )",
             params![binding.repository_id, binding.branch, binding.task_id],
             |row| row.get(0),
@@ -2786,7 +3288,7 @@ impl ManagementStore {
             };
             if matches!(item.result, RegistrationItemResult::Ready) {
                 let metadata_error = (|| -> StoreResult<()> {
-                    let catalog = Self::get_repository_from(&transaction, &item.repository_id)?
+                    let _catalog = Self::get_repository_from(&transaction, &item.repository_id)?
                         .ok_or_else(|| {
                             ManagementStoreError::NotFound(format!(
                                 "repository {}",
@@ -2795,20 +3297,31 @@ impl ManagementStore {
                         })?;
                     let reported =
                         safety::canonicalize_or_resolve_missing(Path::new(&item.repository_path))?;
+                    let (workspace_checkout_path, workspace_checkout_identity): (String, String) = transaction
+                        .query_row(
+                            "SELECT checkout_path, checkout_identity FROM workspace_repositories
+                             WHERE workspace_id = ?1 AND repository_id = ?2 AND verification_status = 'verified'",
+                            params![task.workspace_id, item.repository_id],
+                            |row| Ok((row.get(0)?, row.get(1)?)),
+                        )
+                        .optional()?
+                        .ok_or_else(|| ManagementStoreError::InvalidTransition(
+                            "task repository is not bound to a verified workspace checkout".into(),
+                        ))?;
                     let expected = safety::canonicalize_or_resolve_missing(Path::new(
-                        &catalog.repository_path,
+                        &workspace_checkout_path,
                     ))?;
                     if reported != expected {
                         return Err(ManagementStoreError::Safety(SafetyError::IdentityMismatch(
-                            "reported repository path does not match the catalog".into(),
+                            "reported repository path does not match the workspace checkout".into(),
                         )));
                     }
                     let inspection = safety::inspect_repository(Path::new(&item.repository_path))?;
                     if inspection.repository.identity != item.git_identity
-                        || inspection.repository.identity != catalog.repository_identity
+                        || inspection.repository.identity != workspace_checkout_identity
                     {
                         return Err(ManagementStoreError::Safety(SafetyError::IdentityMismatch(
-                            "reported Git identity does not match the catalog".into(),
+                            "reported Git identity does not match the workspace checkout".into(),
                         )));
                     }
                     Ok(())
@@ -2899,6 +3412,101 @@ impl ManagementStore {
         })
     }
 
+    pub fn bind_task_session_repository(
+        &self,
+        task_id: &str,
+        session_id: &str,
+        repository_id: &str,
+    ) -> StoreResult<()> {
+        let connection = self.lock()?;
+        let task = Self::get_task_from(&connection, task_id)?
+            .ok_or_else(|| ManagementStoreError::NotFound(format!("task {task_id}")))?;
+        let session = Self::get_session_from(&connection, session_id)?
+            .ok_or_else(|| ManagementStoreError::NotFound(format!("session {session_id}")))?;
+        if session.owner != SessionOwner::Task(task_id.to_owned()) {
+            return Err(ManagementStoreError::InvalidTransition(
+                "repository session must be owned by the selected task".into(),
+            ));
+        }
+        let binding_exists: bool = connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM task_repositories WHERE task_id = ?1 AND repository_id = ?2 AND setup_status = 'ready')",
+            params![task_id, repository_id],
+            |row| row.get(0),
+        )?;
+        if !binding_exists || session.directory != connection.query_row::<String, _, _>(
+            "SELECT worktree_path FROM task_repositories WHERE task_id = ?1 AND repository_id = ?2",
+            params![task_id, repository_id],
+            |row| row.get(0),
+        )? {
+            return Err(ManagementStoreError::InvalidTransition(
+                "session directory does not match the ready task repository worktree".into(),
+            ));
+        }
+        connection.execute(
+            "INSERT INTO task_session_repositories(open_code_session_id, task_id, repository_id) VALUES (?1, ?2, ?3)",
+            params![session_id, task.id, repository_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn save_task_repository_selection(
+        &self,
+        task_id: &str,
+        repository_ids: &[String],
+        created_at: i64,
+    ) -> StoreResult<()> {
+        let encoded = serde_json::to_string(repository_ids)
+            .map_err(|error| ManagementStoreError::InvalidTransition(error.to_string()))?;
+        let connection = self.lock()?;
+        connection.execute(
+            "INSERT INTO task_repository_selection(task_id, repository_ids_json, created_at) VALUES (?1, ?2, ?3)
+             ON CONFLICT(task_id) DO NOTHING",
+            params![task_id, encoded, created_at],
+        )?;
+        let stored: String = connection.query_row(
+            "SELECT repository_ids_json FROM task_repository_selection WHERE task_id = ?1",
+            [task_id],
+            |row| row.get(0),
+        )?;
+        if stored != encoded {
+            return Err(ManagementStoreError::InvalidTransition(
+                "confirmed task repository selection cannot be changed".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    pub fn task_repository_selection(&self, task_id: &str) -> StoreResult<Option<Vec<String>>> {
+        let connection = self.lock()?;
+        let encoded: Option<String> = connection
+            .query_row(
+                "SELECT repository_ids_json FROM task_repository_selection WHERE task_id = ?1",
+                [task_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        encoded
+            .map(|value| {
+                serde_json::from_str(&value)
+                    .map_err(|error| ManagementStoreError::InvalidTransition(error.to_string()))
+            })
+            .transpose()
+    }
+
+    pub fn list_task_repository_sessions(
+        &self,
+        task_id: &str,
+    ) -> StoreResult<Vec<(String, String, String)>> {
+        let connection = self.lock()?;
+        let mut statement = connection.prepare(
+            "SELECT open_code_session_id, repository_id, directory FROM task_session_repositories
+             JOIN sessions USING(open_code_session_id) WHERE task_id = ?1 ORDER BY repository_id",
+        )?;
+        let rows =
+            statement.query_map([task_id], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
     fn insert_session(connection: &Connection, session: &NewSession) -> StoreResult<()> {
         Self::insert_session_with_model(connection, session, None)
     }
@@ -2954,11 +3562,29 @@ impl ManagementStore {
                 format!("session {session_id} directory does not match its persisted owner"),
             )));
         }
-        let owner_expected = match &session.owner {
+        let owner_context_matches = match &session.owner {
             SessionOwner::Workspace(id) => {
-                self.get_workspace(id)?
-                    .ok_or_else(|| ManagementStoreError::NotFound(format!("workspace {id}")))?
-                    .home_path
+                let workspace = self
+                    .get_workspace(id)?
+                    .ok_or_else(|| ManagementStoreError::NotFound(format!("workspace {id}")))?;
+                let home =
+                    safety::canonicalize_or_resolve_missing(Path::new(&workspace.home_path))?;
+                let mut allowed = vec![home];
+                allowed.extend(
+                    self.list_workspace_repository_bindings(id)?
+                        .into_iter()
+                        .filter(|binding| {
+                            binding.verification_status == VerificationStatus::Verified
+                        })
+                        .map(|binding| {
+                            safety::canonicalize_or_resolve_missing(Path::new(
+                                &binding.checkout_path,
+                            ))
+                            .map_err(Into::into)
+                        })
+                        .collect::<StoreResult<Vec<_>>>()?,
+                );
+                allowed.contains(&actual)
             }
             SessionOwner::Task(id) => {
                 let task = self
@@ -2969,20 +3595,46 @@ impl ManagementStore {
                     .as_ref()
                     .is_some_and(|request| request.promoted_at.is_none());
                 if quick_shared {
-                    self.get_workspace(&task.workspace_id)?
+                    let owner_path = self
+                        .get_workspace(&task.workspace_id)?
                         .ok_or_else(|| {
                             ManagementStoreError::NotFound(format!(
                                 "workspace {}",
                                 task.workspace_id
                             ))
                         })?
-                        .home_path
+                        .home_path;
+                    actual == safety::canonicalize_or_resolve_missing(Path::new(&owner_path))?
                 } else {
-                    task.home_path
+                    let task_home =
+                        safety::canonicalize_or_resolve_missing(Path::new(&task.home_path))?;
+                    let bindings = self.list_task_repository_bindings(id)?;
+                    let repository_sessions = self.list_task_repository_sessions(id)?;
+                    let mut registered_session_worktrees = Vec::new();
+                    for (bound_session_id, repository_id, session_directory) in repository_sessions
+                    {
+                        if bound_session_id != session_id {
+                            continue;
+                        }
+                        let Some(binding) = bindings.iter().find(|binding| {
+                            binding.repository_id == repository_id
+                                && binding.setup_status == RepositorySetupStatus::Ready
+                        }) else {
+                            continue;
+                        };
+                        let session_path =
+                            safety::canonicalize_or_resolve_missing(Path::new(&session_directory))?;
+                        let worktree_path = safety::canonicalize_or_resolve_missing(Path::new(
+                            &binding.worktree_path,
+                        ))?;
+                        if session_path == worktree_path {
+                            registered_session_worktrees.push(worktree_path);
+                        }
+                    }
+                    actual == task_home || registered_session_worktrees.contains(&actual)
                 }
             }
         };
-        let owner_expected = safety::canonicalize_or_resolve_missing(Path::new(&owner_expected))?;
         let historical_quick_request_session = if let SessionOwner::Task(id) = &session.owner {
             self.get_task(id)?
                 .is_some_and(|task| task.quick_request.is_some())
@@ -3013,7 +3665,7 @@ impl ManagementStore {
         } else {
             false
         };
-        if actual != owner_expected && !historical_quick && !historical_quick_request_session {
+        if !owner_context_matches && !historical_quick && !historical_quick_request_session {
             return Err(ManagementStoreError::Safety(SafetyError::InvalidPath(
                 format!("session {session_id} directory does not match its owner context"),
             )));
@@ -3462,12 +4114,23 @@ impl ManagementStore {
                         repo.ok_or_else(|| "repository catalog entry is missing".to_owned())
                     })
                     .and_then(|repo| {
+                        let task = self
+                            .get_task(&job.task_id)
+                            .map_err(|error| error.to_string())?
+                            .ok_or_else(|| "task record is missing".to_owned())?;
+                        let checkout = self
+                            .workspace_repository_checkout_metadata(
+                                &task.workspace_id,
+                                &job.repository_id,
+                            )
+                            .map_err(|error| error.to_string())?
+                            .ok_or_else(|| "workspace repository checkout is missing".to_owned())?;
                         safety::remove_clean_worktree(
-                            Path::new(&repo.repository_path),
+                            Path::new(&checkout.checkout_path),
                             Path::new(&canonical_path),
                             &branch_retained,
                         )
-                        .map_err(|e| e.to_string())
+                        .map_err(|e| format!("{}: {e}", repo.name))
                     });
                 match result {
                     Ok(()) => (CleanupJobState::Removed, None, None),
@@ -3554,7 +4217,7 @@ impl ManagementStore {
                 reason: "worktree binding is not in the ready state".into(),
             });
         }
-        let Some(repository) = Self::get_repository_from(&connection, repository_id)? else {
+        let Some(_repository) = Self::get_repository_from(&connection, repository_id)? else {
             return Ok(CleanupPlan::Failed {
                 reason: format!("repository catalog entry {repository_id} is missing"),
             });
@@ -3667,8 +4330,25 @@ impl ManagementStore {
                 reason: "recorded path is the worktrees container, not a worktree".into(),
             });
         }
-        let catalog_inspection =
-            match safety::inspect_repository(Path::new(&repository.repository_path)) {
+        let (workspace_checkout_path, workspace_checkout_identity): (String, String) =
+            match connection
+                .query_row(
+                    "SELECT checkout_path, checkout_identity FROM workspace_repositories
+             WHERE workspace_id = ?1 AND repository_id = ?2 AND verification_status = 'verified'",
+                    params![task.workspace_id, repository_id],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .optional()?
+            {
+                Some(metadata) => metadata,
+                None => {
+                    return Ok(CleanupPlan::Failed {
+                        reason: "verified workspace checkout is missing".into(),
+                    })
+                }
+            };
+        let checkout_inspection =
+            match safety::inspect_repository(Path::new(&workspace_checkout_path)) {
                 Ok(inspection) => inspection,
                 Err(error) => {
                     return Ok(CleanupPlan::Failed {
@@ -3676,9 +4356,9 @@ impl ManagementStore {
                     })
                 }
             };
-        if let Err(error) = verify_catalog_identity(&repository, &catalog_inspection.repository) {
+        if checkout_inspection.repository.identity != workspace_checkout_identity {
             return Ok(CleanupPlan::Failed {
-                reason: error.to_string(),
+                reason: "workspace checkout identity differs from its persisted binding".into(),
             });
         }
         let worktree_inspection = match safety::inspect_repository(&canonical_worktree) {
@@ -3689,16 +4369,16 @@ impl ManagementStore {
                 })
             }
         };
-        if worktree_inspection.repository.identity != repository.repository_identity {
+        if worktree_inspection.repository.identity != workspace_checkout_identity {
             return Ok(CleanupPlan::Failed {
                 reason: format!(
-                    "worktree repository identity {} does not match catalog identity {}",
-                    worktree_inspection.repository.identity, repository.repository_identity
+                    "worktree repository identity {} does not match workspace checkout identity {}",
+                    worktree_inspection.repository.identity, workspace_checkout_identity
                 ),
             });
         }
         let branch =
-            match safety::inspect_branch(Path::new(&repository.repository_path), &binding.branch) {
+            match safety::inspect_branch(Path::new(&workspace_checkout_path), &binding.branch) {
                 Ok(branch) => branch,
                 Err(error) => {
                     return Ok(CleanupPlan::Failed {
@@ -3717,7 +4397,7 @@ impl ManagementStore {
                 ),
             });
         }
-        let Some(worktree_state) = catalog_inspection
+        let Some(worktree_state) = checkout_inspection
             .worktrees
             .iter()
             .find(|worktree| worktree.canonical_path == canonical_worktree)
@@ -3862,6 +4542,16 @@ impl ManagementStore {
     pub fn project_home_root(&self) -> StoreResult<String> {
         let connection = self.lock()?;
         Self::project_home_root_from(&connection)
+    }
+
+    /// Canonical location reserved for managed workspaces and task worktrees.
+    pub fn resolved_project_home_root(&self) -> StoreResult<PathBuf> {
+        let connection = self.lock()?;
+        let configured = Self::project_home_root_from(&connection)?;
+        Ok(safety::resolve_project_home_root(
+            &configured,
+            &self.user_home,
+        )?)
     }
 
     pub fn set_project_home_root(&self, value: &str, updated_at: i64) -> StoreResult<String> {
@@ -4286,13 +4976,14 @@ mod tests {
                       INSERT INTO workspace_starting_prompts(session_id, prompt)
                           VALUES ('legacy-session', 'legacy prompt to remove');
                       DROP TABLE quick_request_prompts;
+                      DROP TABLE workspace_repository_setup;
                       DELETE FROM schema_migrations WHERE version >= 10;",
                 )
                 .unwrap();
         }
         let migrated =
             ManagementStore::open_with_paths(&database, &user_home, &system_temp).unwrap();
-        assert_eq!(migrated.migration_versions().unwrap().last(), Some(&13));
+        assert_eq!(migrated.migration_versions().unwrap().last(), Some(&17));
         let connection = migrated.lock().unwrap();
         let legacy_table_count: i64 = connection
             .query_row(
@@ -4497,14 +5188,15 @@ mod tests {
                     "UPDATE tasks SET description = 'legacy Quick Request prompt', name = 'Quick Request: legacy Quick Request prompt' WHERE id = 'qr-legacy-prompt';
                      DELETE FROM quick_request_prompts WHERE task_id = 'qr-legacy-prompt';
                      DROP TABLE quick_request_prompts;
-                     DELETE FROM schema_migrations WHERE version IN (11, 12, 13);",
+                     DROP TABLE workspace_repository_setup;
+                     DELETE FROM schema_migrations WHERE version >= 11;",
                 )
                 .unwrap();
         }
 
         let migrated =
             ManagementStore::open_with_paths(&database, &user_home, &system_temp).unwrap();
-        assert_eq!(migrated.migration_versions().unwrap().last(), Some(&13));
+        assert_eq!(migrated.migration_versions().unwrap().last(), Some(&17));
         assert_eq!(
             migrated
                 .quick_request_prompt("qr-legacy-prompt")
@@ -4547,6 +5239,241 @@ mod tests {
         }
     }
 
+    #[test]
+    fn repository_directories_group_repositories_and_persist_enabled_state() {
+        let fixture = tempdir().unwrap();
+        let user_home = fixture.path().join("home");
+        fs::create_dir_all(&user_home).unwrap();
+        let scan_root = fixture.path().join("source");
+        let first_path = scan_root.join("first");
+        let bound_path = scan_root.join("bound");
+        fs::create_dir_all(&first_path).unwrap();
+        fs::create_dir_all(&bound_path).unwrap();
+        let db_path = fixture.path().join("management.sqlite");
+        let store = ManagementStore::open_with_paths(&db_path, &user_home, fixture.path()).unwrap();
+        store
+            .add_repository_scan_directory(&scan_root, CREATED)
+            .unwrap();
+        store
+            .add_repository_scan_directory(&first_path, CREATED)
+            .unwrap();
+
+        for (id, path) in [("repo-first", &first_path), ("repo-bound", &bound_path)] {
+            let mut record = repository(id);
+            record.repository_path = path.to_string_lossy().into();
+            store.create_repository(&record).unwrap();
+        }
+        store
+            .set_repository_enabled("repo-first", false, CREATED + 1)
+            .unwrap();
+        store
+            .create_workspace(&workspace("w-directory", "directory"))
+            .unwrap();
+        store
+            .save_workspace_repository_binding(&WorkspaceRepositoryBinding {
+                workspace_id: "w-directory".into(),
+                repository_id: "repo-bound".into(),
+                checkout_path: bound_path.to_string_lossy().into(),
+                checkout_mode: CheckoutMode::Existing,
+                branch: "main".into(),
+                verification_status: VerificationStatus::Verified,
+                created_at: CREATED,
+            })
+            .unwrap();
+        let checkout_metadata = store
+            .workspace_repository_checkout_metadata("w-directory", "repo-bound")
+            .unwrap()
+            .unwrap();
+        assert_eq!(checkout_metadata.source_identity, "git-identity-repo-bound");
+        assert_eq!(
+            checkout_metadata.checkout_identity,
+            "git-identity-repo-bound"
+        );
+        assert_eq!(checkout_metadata.default_branch, "main");
+
+        let before = store.repository_directory_page().unwrap();
+        assert_eq!(before.directories.len(), 2);
+        let first_dir = before
+            .directories
+            .iter()
+            .find(|directory| directory.path == first_path.to_string_lossy())
+            .unwrap();
+        assert_eq!(first_dir.repositories.len(), 1);
+        assert_eq!(first_dir.repositories[0].repository.id, "repo-first");
+        assert!(!first_dir.repositories[0].enabled);
+        let source_dir = before
+            .directories
+            .iter()
+            .find(|directory| directory.path == scan_root.to_string_lossy())
+            .unwrap();
+        assert_eq!(source_dir.repositories.len(), 1);
+        assert_eq!(source_dir.repositories[0].repository.id, "repo-bound");
+        assert!(source_dir.repositories[0].enabled);
+        let serialized = serde_json::to_value(&before).unwrap();
+        assert_eq!(
+            serialized["directories"][0]["repositories"][0]["enabled"],
+            true
+        );
+        assert!(
+            serialized["directories"][0]["repositories"][0]["repository"]
+                .get("repositoryPath")
+                .is_some()
+        );
+        assert_eq!(store.list_repositories().unwrap().len(), 1);
+        assert!(store.quick_request_directory(Some("repo-first")).is_err());
+        assert_eq!(
+            store.quick_request_directory(Some("repo-bound")).unwrap(),
+            bound_path
+        );
+        assert!(store.get_repository("repo-first").unwrap().is_some());
+        assert!(store.get_repository("repo-bound").unwrap().is_some());
+
+        drop(store);
+        let reopened =
+            ManagementStore::open_with_paths(&db_path, &user_home, fixture.path()).unwrap();
+        let persisted = reopened.repository_directory_page().unwrap();
+        assert_eq!(persisted.directories, before.directories);
+    }
+
+    #[test]
+    fn workspace_repository_setup_outcomes_survive_reopen_and_enforce_status_data() {
+        let fixture = tempdir().unwrap();
+        let home = fixture.path().join("home");
+        fs::create_dir_all(&home).unwrap();
+        let database = fixture.path().join("management.sqlite");
+        let store = ManagementStore::open_with_paths(&database, &home, fixture.path()).unwrap();
+        store
+            .create_workspace(&workspace("w-setup-record", "setup-record"))
+            .unwrap();
+        store
+            .create_repository(&repository("repo-setup-record"))
+            .unwrap();
+        let pending = WorkspaceRepositorySetupRecord {
+            workspace_id: "w-setup-record".into(),
+            repository_id: "repo-setup-record".into(),
+            setup_status: WorkspaceRepositorySetupStatus::Pending,
+            plan_json: r#"{"destinationPath":"/projects/w/repos/repo-id"}"#.into(),
+            checkout_identity: None,
+            error_code: None,
+            error_detail: None,
+            updated_at: CREATED,
+        };
+        store.save_workspace_repository_setup(&pending).unwrap();
+        let mut failed = pending.clone();
+        failed.setup_status = WorkspaceRepositorySetupStatus::Failed;
+        failed.error_code = Some("source_changed".into());
+        failed.error_detail = Some("Source HEAD changed after review".into());
+        failed.updated_at += 1;
+        store.save_workspace_repository_setup(&failed).unwrap();
+        assert_eq!(
+            store
+                .list_workspace_repository_setups("w-setup-record")
+                .unwrap(),
+            vec![failed.clone()]
+        );
+        assert!(store
+            .save_workspace_repository_setup(&WorkspaceRepositorySetupRecord {
+                error_detail: None,
+                ..failed.clone()
+            })
+            .is_err());
+        drop(store);
+        let reopened = ManagementStore::open_with_paths(&database, &home, fixture.path()).unwrap();
+        assert_eq!(
+            reopened
+                .list_workspace_repository_setups("w-setup-record")
+                .unwrap(),
+            vec![failed]
+        );
+        assert_eq!(reopened.migration_versions().unwrap().last(), Some(&17));
+    }
+
+    #[test]
+    fn deleting_workspace_forgets_local_session_but_preserves_repositories() {
+        let fixture = tempdir().unwrap();
+        let home = fixture.path().join("home");
+        fs::create_dir_all(&home).unwrap();
+        let store = ManagementStore::in_memory_with_paths(&home, fixture.path()).unwrap();
+        let workspace = store
+            .create_workspace(&workspace("w-delete", "delete-me"))
+            .unwrap();
+        let repository_path = fixture.path().join("repo");
+        fs::create_dir_all(&repository_path).unwrap();
+        let mut repository = repository("repo-preserved");
+        repository.repository_path = repository_path.to_string_lossy().into();
+        store.create_repository(&repository).unwrap();
+        store
+            .save_workspace_repository_binding(&WorkspaceRepositoryBinding {
+                workspace_id: workspace.id.clone(),
+                repository_id: repository.id.clone(),
+                checkout_path: repository.repository_path.clone(),
+                checkout_mode: CheckoutMode::Existing,
+                branch: "main".into(),
+                verification_status: VerificationStatus::Verified,
+                created_at: CREATED,
+            })
+            .unwrap();
+        store
+            .create_session(&NewSession {
+                open_code_session_id: "ses-preserved-in-opencode".into(),
+                owner: SessionOwner::Workspace(workspace.id.clone()),
+                directory: workspace.home_path.clone(),
+                last_known_status: "running".into(),
+                created_at: CREATED,
+            })
+            .unwrap();
+
+        store.delete_empty_regular_workspace(&workspace.id).unwrap();
+
+        assert!(store.get_workspace(&workspace.id).unwrap().is_none());
+        assert!(store
+            .get_session("ses-preserved-in-opencode")
+            .unwrap()
+            .is_none());
+        assert!(store.get_repository(&repository.id).unwrap().is_some());
+        assert!(!Path::new(&workspace.home_path).exists());
+    }
+
+    #[test]
+    fn overlapping_directories_display_a_repository_only_once() {
+        let fixture = tempdir().unwrap();
+        let user_home = fixture.path().join("home");
+        fs::create_dir_all(&user_home).unwrap();
+        let broad = fixture.path().join("source");
+        let repo_path = broad.join("repo");
+        fs::create_dir_all(&repo_path).unwrap();
+        let store = ManagementStore::in_memory_with_paths(&user_home, fixture.path()).unwrap();
+        store
+            .add_repository_scan_directory(&broad, CREATED)
+            .unwrap();
+        store
+            .add_repository_scan_directory(&repo_path, CREATED)
+            .unwrap();
+        let mut record = repository("repo-nested");
+        record.repository_path = repo_path.to_string_lossy().into();
+        store.create_repository(&record).unwrap();
+
+        let page = store.repository_directory_page().unwrap();
+        assert_eq!(page.directories.len(), 2);
+        assert_eq!(
+            page.directories
+                .iter()
+                .map(|directory| directory.repositories.len())
+                .sum::<usize>(),
+            1
+        );
+        assert_eq!(
+            page.directories
+                .iter()
+                .find(|directory| directory.path == repo_path.to_string_lossy())
+                .unwrap()
+                .repositories[0]
+                .repository
+                .id,
+            "repo-nested"
+        );
+    }
+
     fn task_binding(task_id: &str, repository_id: &str) -> TaskRepositoryBinding {
         TaskRepositoryBinding {
             task_id: task_id.to_owned(),
@@ -4586,6 +5513,70 @@ mod tests {
     }
 
     #[test]
+    fn workspace_session_directories_follow_repository_cardinality() {
+        let home = Path::new("/projects/alpha");
+        let one = WorkspaceRepositoryBinding {
+            workspace_id: "w".into(),
+            repository_id: "r1".into(),
+            checkout_path: "/projects/alpha/repos/one".into(),
+            checkout_mode: CheckoutMode::Clone,
+            branch: "main".into(),
+            verification_status: VerificationStatus::Verified,
+            created_at: CREATED,
+        };
+        assert_eq!(
+            workspace_session_directories(home, &[]).unwrap(),
+            vec![(None, home.to_path_buf())]
+        );
+        assert_eq!(
+            workspace_session_directories(home, std::slice::from_ref(&one)).unwrap(),
+            vec![(Some("r1".into()), PathBuf::from(&one.checkout_path))]
+        );
+        let two = WorkspaceRepositoryBinding {
+            repository_id: "r2".into(),
+            checkout_path: "/projects/alpha/repos/two".into(),
+            ..one.clone()
+        };
+        assert_eq!(
+            workspace_session_directories(home, &[one, two]).unwrap(),
+            vec![
+                (
+                    Some("r1".into()),
+                    PathBuf::from("/projects/alpha/repos/one")
+                ),
+                (
+                    Some("r2".into()),
+                    PathBuf::from("/projects/alpha/repos/two")
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn workspace_initial_prompt_includes_every_verified_repository_checkout() {
+        let home = Path::new("/managed/workspace");
+        let bindings =
+            ["/tmp/repo-a", "/tmp/repo-b"].map(|checkout_path| WorkspaceRepositoryBinding {
+                workspace_id: "workspace-1".into(),
+                repository_id: checkout_path.rsplit('/').next().unwrap().into(),
+                checkout_path: checkout_path.into(),
+                checkout_mode: CheckoutMode::Existing,
+                branch: "main".into(),
+                verification_status: VerificationStatus::Verified,
+                created_at: 1,
+            });
+
+        assert_eq!(
+            workspace_prompt_with_repository_context(
+                "Coordinate work across the selected repositories.",
+                home,
+                &bindings,
+            ),
+            "Coordinate work across the selected repositories.\n\nVerified workspace repository checkouts:\n/tmp/repo-a\n/tmp/repo-b"
+        );
+    }
+
+    #[test]
     fn task_context_keeps_home_and_all_verified_worktrees_isolated() {
         let home = PathBuf::from("/projects/alpha/tasks/one");
         let first = task_binding("t", "r1");
@@ -4611,6 +5602,7 @@ mod tests {
         _directory: tempfile::TempDir,
         store: ManagementStore,
         repository_path: PathBuf,
+        workspace_checkout_path: PathBuf,
         task_home: PathBuf,
         worktree_path: PathBuf,
         task_id: String,
@@ -4680,12 +5672,65 @@ mod tests {
                 CREATED,
             )
             .unwrap();
+        git_ok(
+            &repository_path,
+            &[
+                "symbolic-ref",
+                "refs/remotes/origin/HEAD",
+                "refs/remotes/origin/main",
+            ],
+        );
+        store
+            .validate_and_save_workspace_repository_binding(&WorkspaceRepositoryBinding {
+                workspace_id: "w-cleanup-fixture".into(),
+                repository_id: "repo-cleanup-fixture".into(),
+                checkout_path: {
+                    let repository = store
+                        .get_repository("repo-cleanup-fixture")
+                        .unwrap()
+                        .unwrap();
+                    let workspace = store.get_workspace("w-cleanup-fixture").unwrap().unwrap();
+                    let plan = crate::workspace_setup::plan_workspace_setup(
+                        Path::new(&workspace.home_path),
+                        vec![
+                            crate::workspace_setup::inspect_repository_preflight(&repository)
+                                .unwrap(),
+                        ],
+                    )
+                    .unwrap()
+                    .repositories
+                    .remove(0);
+                    let staging = Path::new(&workspace.home_path).join("repos/.staging-cleanup");
+                    crate::workspace_setup::provision_independent_clone(
+                        &repository,
+                        &plan,
+                        &staging,
+                    )
+                    .unwrap()
+                    .checkout_path
+                    .to_string_lossy()
+                    .into_owned()
+                },
+                checkout_mode: CheckoutMode::Clone,
+                branch: "main".into(),
+                verification_status: VerificationStatus::Verified,
+                created_at: CREATED,
+            })
+            .unwrap();
+
+        let workspace_checkout_path = PathBuf::from(
+            store
+                .workspace_repository_checkout_metadata("w-cleanup-fixture", "repo-cleanup-fixture")
+                .unwrap()
+                .unwrap()
+                .checkout_path,
+        );
 
         let task_home = PathBuf::from(&task.home_path);
         let worktree_path = task_home.join("worktrees/repository");
         let branch = format!("work/{task_id}");
         git_ok(
-            &repository_path,
+            &workspace_checkout_path,
             &[
                 "worktree",
                 "add",
@@ -4713,10 +5758,42 @@ mod tests {
             _directory: directory,
             store,
             repository_path,
+            workspace_checkout_path,
             task_home,
             worktree_path,
             task_id: task_id.to_owned(),
         }
+    }
+
+    #[test]
+    fn task_cleanup_removes_only_the_worktree_from_its_workspace_clone() {
+        let fixture = cleanup_fixture("t-clean-clone");
+        let source_head = git_ok(&fixture.repository_path, &["rev-parse", "HEAD"]).stdout;
+        let source_refs = git_ok(&fixture.repository_path, &["show-ref"]).stdout;
+        fixture
+            .store
+            .complete_task_and_queue_cleanup(&fixture.task_id, CREATED + 10)
+            .unwrap();
+        let job = fixture
+            .store
+            .list_cleanup_jobs(&fixture.task_id)
+            .unwrap()
+            .remove(0);
+        let removed = fixture
+            .store
+            .execute_cleanup_job(&job.id, &[], CREATED + 11)
+            .unwrap();
+        assert_eq!(removed.state, CleanupJobState::Removed);
+        assert!(!fixture.worktree_path.exists());
+        assert!(fixture.workspace_checkout_path.exists());
+        assert_eq!(
+            git_ok(&fixture.repository_path, &["rev-parse", "HEAD"]).stdout,
+            source_head
+        );
+        assert_eq!(
+            git_ok(&fixture.repository_path, &["show-ref"]).stdout,
+            source_refs
+        );
     }
 
     #[test]
@@ -4742,7 +5819,7 @@ mod tests {
                     .unwrap();
             assert_eq!(
                 store.migration_versions().unwrap(),
-                vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
+                vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]
             );
             assert_eq!(
                 store.project_home_root().unwrap(),
@@ -4769,7 +5846,7 @@ mod tests {
         let reopened = ManagementStore::open_with_paths(&path, user_home, system_temp).unwrap();
         assert_eq!(
             reopened.migration_versions().unwrap(),
-            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
+            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]
         );
         assert_eq!(
             reopened.get_workspace("w-1").unwrap().unwrap().slug,
@@ -4799,6 +5876,70 @@ mod tests {
             reopened.project_home_root().unwrap(),
             configured_project_root_text
         );
+    }
+
+    #[test]
+    fn migration_15_preserves_existing_workspace_binding_path_and_mode() {
+        let fixture = tempdir().unwrap();
+        let home = fixture.path().join("home");
+        fs::create_dir_all(&home).unwrap();
+        let database = fixture.path().join("management.sqlite");
+        let store = ManagementStore::open_with_paths(&database, &home, fixture.path()).unwrap();
+        store
+            .create_workspace(&workspace("w-migration", "migration"))
+            .unwrap();
+        store
+            .create_repository(&repository("repo-migration"))
+            .unwrap();
+        let legacy = WorkspaceRepositoryBinding {
+            workspace_id: "w-migration".into(),
+            repository_id: "repo-migration".into(),
+            checkout_path: "/original/checkout".into(),
+            checkout_mode: CheckoutMode::Managed,
+            branch: "main".into(),
+            verification_status: VerificationStatus::Verified,
+            created_at: CREATED,
+        };
+        store.save_workspace_repository_binding(&legacy).unwrap();
+        drop(store);
+
+        let connection = Connection::open(&database).unwrap();
+        connection.execute_batch(
+            "DROP TABLE task_session_repositories;
+             DROP TABLE workspace_repository_setup;
+             DROP TABLE workspace_repositories;
+             CREATE TABLE workspace_repositories (
+                workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+                repository_id TEXT NOT NULL REFERENCES repository_catalog(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+                checkout_path TEXT NOT NULL,
+                checkout_mode TEXT NOT NULL CHECK (checkout_mode IN ('existing', 'managed')),
+                branch TEXT NOT NULL,
+                verification_status TEXT NOT NULL DEFAULT 'pending'
+                    CHECK (verification_status IN ('pending', 'verified', 'failed')),
+                created_at INTEGER NOT NULL,
+                PRIMARY KEY (workspace_id, repository_id),
+                UNIQUE (workspace_id, checkout_path)
+             );
+             INSERT INTO workspace_repositories VALUES
+                ('w-migration', 'repo-migration', '/original/checkout', 'managed', 'main', 'verified', 1700000000000);
+             DELETE FROM schema_migrations WHERE version >= 15;",
+        ).unwrap();
+        drop(connection);
+
+        let reopened = ManagementStore::open_with_paths(&database, &home, fixture.path()).unwrap();
+        assert_eq!(
+            reopened
+                .list_workspace_repository_bindings("w-migration")
+                .unwrap(),
+            vec![legacy]
+        );
+        let metadata = reopened
+            .workspace_repository_checkout_metadata("w-migration", "repo-migration")
+            .unwrap()
+            .unwrap();
+        assert_eq!(metadata.source_identity, "git-identity-repo-migration");
+        assert_eq!(metadata.checkout_identity, "git-identity-repo-migration");
+        assert_eq!(metadata.default_branch, "main");
     }
 
     #[test]
@@ -5734,6 +6875,44 @@ mod tests {
             "prompting"
         );
         assert!(store.claim_initial_prompt("ses-route").is_err());
+    }
+
+    #[test]
+    fn workspace_repository_session_is_valid_in_its_verified_checkout_context() {
+        let store = ManagementStore::in_memory().unwrap();
+        store
+            .create_workspace(&workspace("w-repo-session", "repo-session"))
+            .unwrap();
+        store
+            .create_repository(&repository("repo-session"))
+            .unwrap();
+        store
+            .save_workspace_repository_binding(&WorkspaceRepositoryBinding {
+                workspace_id: "w-repo-session".into(),
+                repository_id: "repo-session".into(),
+                checkout_path: "/fixtures/workspace/repos/repo-session".into(),
+                checkout_mode: CheckoutMode::Clone,
+                branch: "main".into(),
+                verification_status: VerificationStatus::Verified,
+                created_at: CREATED,
+            })
+            .unwrap();
+        let session = store
+            .create_session(&NewSession {
+                open_code_session_id: "ses-repo-session".into(),
+                owner: SessionOwner::Workspace("w-repo-session".into()),
+                directory: "/fixtures/workspace/repos/repo-session".into(),
+                last_known_status: "starting".into(),
+                created_at: CREATED,
+            })
+            .unwrap();
+
+        assert_eq!(
+            store
+                .validate_session_context("ses-repo-session", Path::new(&session.directory))
+                .unwrap(),
+            session,
+        );
     }
 
     #[test]

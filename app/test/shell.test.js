@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { repositoryDirectoryPage } from './command-fixtures.js';
 import {
   checkOpenCodeRuntime,
   createSession,
@@ -39,17 +40,23 @@ import {
   readNewWorkProposal,
   closeNewWorkProposal,
   selectWorkspaceTask,
+  taskWorkspaceOptions,
+  preferredTaskWorkspaceId,
   createWorkspace,
   createInitializedWorkspace,
   createWorkspaceTask,
-  startTaskSetupPrompt,
   submitNewWorkStartingPrompt,
   getTaskSetupStatus,
   formatTaskSetupStatus,
+  taskSetupStatusNotice,
   cancelTaskSetup,
   resumeTaskSetup,
+  retryTaskSetup,
   scanRepositories,
+  addRepositoryDirectories,
   listRepositoryCatalog,
+  loadRepositoryDirectoryPage,
+  setRepositoryEnabled,
   formatWorkspaceError,
   attachRepository,
   createWorkspaceSession,
@@ -70,8 +77,53 @@ import {
   sessionTabAttributes,
   terminalAccessibilityAttributes,
   controlErrorAttributes,
+  createKeyedSingleFlight,
+  workspaceProposalRepositoryLocations,
+  workspaceStartingPrompt,
+  workspaceReviewDetails,
 } from '../src/shell.js';
 import { resultForCommand, completedTask, history, status, reconciliation, task, session, newWorkProposal } from './command-fixtures.js';
+
+test('concurrent requests to show one session share a single restore and tab creation', async () => {
+  let starts = 0;
+  let release;
+  const show = createKeyedSingleFlight(async (sessionId) => {
+    starts += 1;
+    await new Promise((resolve) => { release = resolve; });
+    return `shown:${sessionId}`;
+  });
+  const first = show('ses-one');
+  const second = show('ses-one');
+  assert.equal(first, second);
+  await Promise.resolve();
+  assert.equal(starts, 1);
+  release();
+  assert.equal(await first, 'shown:ses-one');
+  const afterCompletion = show('ses-one');
+  await Promise.resolve();
+  release();
+  assert.equal(await afterCompletion, 'shown:ses-one');
+  assert.equal(starts, 2);
+});
+
+test('workspace review lists repository locations and uses the proposal prompt as its starting prompt', () => {
+  assert.deepEqual(
+    workspaceProposalRepositoryLocations(
+      [{ repositoryId: 'repo-a', reason: 'matches the request' }],
+      [{ id: 'repo-a', name: 'Alpha', repositoryPath: '/work/alpha' }],
+    ),
+    [{ name: 'Alpha', path: '/work/alpha' }],
+  );
+  assert.equal(workspaceStartingPrompt({ startingPrompt: 'Revised starting text' }), 'Revised starting text');
+  assert.equal(workspaceStartingPrompt({}), '');
+  assert.deepEqual(workspaceReviewDetails({
+    workspace: { name: 'Edited proposal name' },
+    setupPlan: { workspaceHome: '/home/user/Projects/proposed-folder' },
+  }), {
+    name: 'Edited proposal name',
+    directory: '/home/user/Projects/proposed-folder',
+  });
+});
 
 test('maps every application session state to its visible label', () => {
   assert.deepEqual(
@@ -259,10 +311,10 @@ test('session adapters use explicit IDs and exact command payloads', async () =>
 test('task-session and pending-input adapters preserve exact session identity', async () => {
   const calls = [];
   const invoke = (...args) => { calls.push(args); return Promise.resolve(resultForCommand(args[0])); };
-  await createTaskSession(invoke, 'task-1', 'follow up', { providerId: 'openai', id: 'm' });
+  await createTaskSession(invoke, 'task-1', 'repo-1', { providerId: 'openai', id: 'm' });
   await listPendingInputs(invoke, 'ses-1');
   assert.deepEqual(calls, [
-    ['task_session_create', { taskId: 'task-1', prompt: 'follow up', model: { providerId: 'openai', id: 'm' } }],
+    ['task_session_create', { taskId: 'task-1', repositoryId: 'repo-1', model: { providerId: 'openai', id: 'm' } }],
     ['opencode_pending_inputs', { sessionId: 'ses-1' }],
   ]);
 });
@@ -349,24 +401,80 @@ test('workspace adapters preserve navigation and setup command boundaries', asyn
   const invoke = (...args) => { calls.push(args); return Promise.resolve(resultForCommand(args[0])); };
   await loadWorkspaceNavigation(invoke);
   await createWorkspace(invoke, 'Todo', 'Plan');
-  await createInitializedWorkspace(invoke, 'Ready', { providerId: 'openai', id: 'gpt-6-luna' }, 'Plan the project');
+  await createInitializedWorkspace(invoke, 'Ready', { providerId: 'openai', id: 'gpt-6-luna' }, 'Plan the project', 'proposal-1');
   await createWorkspaceTask(invoke, 'w1', { providerId: 'openai', id: 'gpt-6-luna' }, 'Implement task', 'Task summary', []);
   await createWorkspaceTask(invoke, 'w1', { providerId: 'openai', id: 'gpt-6-luna' }, 'Parser', 'Update parser behavior', ['repo-1']);
+  await createWorkspaceTask(invoke, 'w1', { providerId: 'openai', id: 'gpt-6-luna' }, 'Cross-repo task', 'Coordinate both repositories', ['repo-a', 'repo-b']);
   await scanRepositories(invoke, ['/home/me/code'], { '/home/me/code/app': 'web app' });
   await listRepositoryCatalog(invoke);
-  await attachRepository(invoke, 'w1', 'r1', '/home/me/code', 'main');
+  await attachRepository(invoke, 'w1', 'r1');
   await createWorkspaceSession(invoke, 'w1', 'Inspect', { providerId: 'openai', id: 'gpt-6-luna' });
   assert.deepEqual(calls, [
     ['workspace_navigation'],
     ['workspace_create', { name: 'Todo', description: 'Plan' }],
-    ['workspace_create_initialized', { name: 'Ready', description: 'Plan the project', model: { providerId: 'openai', id: 'gpt-6-luna' } }],
+    ['workspace_create_initialized', { name: 'Ready', description: 'Plan the project', model: { providerId: 'openai', id: 'gpt-6-luna' }, proposalSessionId: 'proposal-1' }],
     ['task_create', { workspaceId: 'w1', model: { providerId: 'openai', id: 'gpt-6-luna' }, name: 'Implement task', description: 'Task summary', repositoryIds: [] }],
     ['task_create', { workspaceId: 'w1', model: { providerId: 'openai', id: 'gpt-6-luna' }, name: 'Parser', description: 'Update parser behavior', repositoryIds: ['repo-1'] }],
+    ['task_create', { workspaceId: 'w1', model: { providerId: 'openai', id: 'gpt-6-luna' }, name: 'Cross-repo task', description: 'Coordinate both repositories', repositoryIds: ['repo-a', 'repo-b'] }],
     ['repository_scan', { paths: ['/home/me/code'], purposeProposals: { '/home/me/code/app': 'web app' } }],
     ['repository_catalog'],
-    ['repository_attach', { workspaceId: 'w1', repositoryId: 'r1', checkoutPath: '/home/me/code', branch: 'main', checkoutMode: 'existing' }],
+    ['repository_attach', { workspaceId: 'w1', repositoryId: 'r1' }],
     ['workspace_session_create', { workspaceId: 'w1', prompt: 'Inspect', model: { providerId: 'openai', id: 'gpt-6-luna' } }],
   ]);
+});
+
+test('repository directory picker scans only the selected folders and handles cancel', async () => {
+  const calls = [];
+  const result = {
+    repositories: [
+      { id: 'repo-a', name: 'repo-a', repositoryPath: '/code/repo-a', repositoryIdentity: 'identity-a', purpose: null, purposeStatus: 'unavailable', createdAt: 1, updatedAt: 1 },
+      { id: 'repo-b', name: 'repo-b', repositoryPath: '/work/repo-b', repositoryIdentity: 'identity-b', purpose: null, purposeStatus: 'unavailable', createdAt: 1, updatedAt: 1 },
+    ],
+    errors: [],
+  };
+  const invoke = async (name, payload) => {
+    calls.push([name, payload]);
+    return result;
+  };
+  let options;
+  let scanStartedWith;
+  const picked = await addRepositoryDirectories(invoke, async (value) => {
+    options = value;
+    return ['/code/repo-a', '/work/repo-b'];
+  }, (paths) => {
+    scanStartedWith = paths;
+  });
+  assert.deepEqual(options, {
+    directory: true,
+    multiple: true,
+    title: 'Add repository directories',
+  });
+  assert.deepEqual(scanStartedWith, ['/code/repo-a', '/work/repo-b']);
+  assert.equal(picked, result);
+  assert.deepEqual(calls, [[
+    'repository_scan',
+    { paths: ['/code/repo-a', '/work/repo-b'], purposeProposals: null },
+  ]]);
+
+  calls.length = 0;
+  assert.equal(await addRepositoryDirectories(invoke, async () => null), null);
+  assert.deepEqual(calls, []);
+});
+
+test('directory page and repository enabled adapter preserve explicit payloads and errors', async () => {
+  const calls = [];
+  const invoke = async (name, payload) => {
+    calls.push([name, payload]);
+    if (name === 'repository_directory_page') return repositoryDirectoryPage;
+    return null;
+  };
+  assert.deepEqual(await loadRepositoryDirectoryPage(invoke), repositoryDirectoryPage);
+  await setRepositoryEnabled(invoke, 'repo-1', false);
+  assert.deepEqual(calls, [
+    ['repository_directory_page', undefined],
+    ['repository_enabled_set', { repositoryId: 'repo-1', enabled: false }],
+  ]);
+  await assert.rejects(setRepositoryEnabled(async () => { throw new Error('denied'); }, 'repo-1', false), /denied/);
 });
 
 test('New-work proposal adapters preserve exact session and prompt boundary', async () => {
@@ -405,21 +513,19 @@ test('workspace lifecycle and Quick Request promotion adapters preserve explicit
   ]);
 });
 
-test('task setup controls use the durable task operation and explicit session identity', async () => {
+test('task setup controls use durable status and repository retry commands', async () => {
   const calls = [];
   const invoke = (...args) => { calls.push(args); return Promise.resolve(resultForCommand(args[0])); };
   const model = { providerId: 'openai', id: 'gpt-6-luna' };
-  await startTaskSetupPrompt(invoke, 'task-1', 'setup-task-1', 'ses-1', model, 'Initial task prompt');
-  await startTaskSetupPrompt(invoke, 'task-2', 'setup-task-2', 'ses-2', model, 'Start work', ['repo-1']);
   await getTaskSetupStatus(invoke, 'task-1');
   await cancelTaskSetup(invoke, 'task-1');
   await resumeTaskSetup(invoke, 'task-1', 'setup-task-1', 'ses-1');
+  await retryTaskSetup(invoke, 'task-2', model);
   assert.deepEqual(calls, [
-    ['task_setup_start_prompt', { taskId: 'task-1', operationId: 'setup-task-1', sessionId: 'ses-1', model, startingPrompt: 'Initial task prompt' }],
-    ['task_setup_start_prompt', { taskId: 'task-2', operationId: 'setup-task-2', sessionId: 'ses-2', model, startingPrompt: 'Start work', repositoryIds: ['repo-1'] }],
     ['task_setup_status', { taskId: 'task-1' }],
     ['task_setup_cancel', { taskId: 'task-1' }],
     ['task_setup_resume', { taskId: 'task-1', operationId: 'setup-task-1', sessionId: 'ses-1' }],
+    ['task_setup_retry', { taskId: 'task-2', model }],
   ]);
 });
 
@@ -433,6 +539,17 @@ test('task setup status shows per-repository outcomes and recovery details', () 
   }), 'Setup incomplete. repo-1 · ready · branch task-branch · /worktrees/task repo-2 · failed · branch already exists');
 });
 
+test('ready Task refresh has no routine notice, while incomplete setup remains visible', () => {
+  assert.equal(taskSetupStatusNotice({
+    task: { setupStatus: 'ready' },
+    repositories: [{ repositoryId: 'repo-a', setupStatus: 'ready' }],
+  }), null);
+  assert.equal(taskSetupStatusNotice({
+    task: { setupStatus: 'incomplete' },
+    repositories: [{ repositoryId: 'repo-a', setupStatus: 'failed', errorDetail: 'terminal attach failed' }],
+  }), 'Setup incomplete. repo-a · failed · terminal attach failed');
+});
+
 test('New-work starting prompt submits only through the matching owner command', async () => {
   const calls = [];
   const invoke = (...args) => { calls.push(args); return Promise.resolve(resultForCommand(args[0])); };
@@ -440,15 +557,14 @@ test('New-work starting prompt submits only through the matching owner command',
   await submitNewWorkStartingPrompt(invoke, {
     type: 'workspace', sessionId: 'ses-w', model,
   }, 'Plan the project');
-  await submitNewWorkStartingPrompt(invoke, {
-    type: 'task', id: 'task-1', operationId: 'setup-1', sessionId: 'ses-t', model, repositoryIds: ['repo-1'],
-  }, 'Implement the feature');
+  assert.throws(() => submitNewWorkStartingPrompt(invoke, {
+    type: 'task', id: 'task-1', operationId: 'setup-1', sessionId: 'ses-t', model,
+  }, 'Implement the feature'), /no valid owner/);
   await submitNewWorkStartingPrompt(invoke, {
     type: 'quick_request', id: 'quick-1', model,
   }, 'Summarize the logs');
   assert.deepEqual(calls, [
     ['opencode_session_prompt', { sessionId: 'ses-w', prompt: 'Plan the project', model }],
-    ['task_setup_start_prompt', { taskId: 'task-1', operationId: 'setup-1', sessionId: 'ses-t', model, startingPrompt: 'Implement the feature', repositoryIds: ['repo-1'] }],
     ['quick_request_start_prompt', { requestId: 'quick-1', model }],
   ]);
   await assert.rejects(
@@ -507,6 +623,18 @@ test('workspace navigation model nests active and completed tasks beneath their 
     ['w2', ['t2']],
   ]);
   assert.deepEqual(workspaceTasks(navigation, 'w2'), [navigation.tasks[1]]);
+});
+
+test('Task workspace chooser lists active regular workspaces and accepts a contextual preselection', () => {
+  const workspaces = [
+    { id: 'workspace-a', name: 'Alpha', kind: 'regular', status: 'active' },
+    { id: 'workspace-b', name: 'Beta', kind: 'regular', status: 'completed' },
+    { id: 'workspace-quick', name: 'Quick Requests', kind: 'quick_requests', status: 'active' },
+  ];
+  assert.deepEqual(taskWorkspaceOptions(workspaces), [{ id: 'workspace-a', name: 'Alpha' }]);
+  assert.equal(preferredTaskWorkspaceId(workspaces, 'workspace-a'), 'workspace-a');
+  assert.equal(preferredTaskWorkspaceId(workspaces, 'workspace-b'), '');
+  assert.equal(preferredTaskWorkspaceId(workspaces, null), '');
 });
 
 test('workspace creation selection uses the workspace returned by Rust after refresh', () => {

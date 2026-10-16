@@ -6,8 +6,12 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use opencode_project_manager_lib::management::{
-    ManagementStore, NewSession, NewTask, NewWorkspace, RegistrationItem, RegistrationItemResult,
-    RegistrationReport, RepositorySetupStatus, SessionOwner, TaskSetupStatus, WorkspaceKind,
+    CheckoutMode, ManagementStore, NewSession, NewTask, NewWorkspace, RegistrationItem,
+    RegistrationItemResult, RegistrationReport, RepositorySetupStatus, SessionOwner,
+    TaskSetupStatus, VerificationStatus, WorkspaceKind, WorkspaceRepositoryBinding,
+};
+use opencode_project_manager_lib::workspace_setup::{
+    inspect_repository_preflight, plan_workspace_setup, provision_independent_clone,
 };
 use rusqlite::Connection;
 use tempfile::tempdir;
@@ -101,6 +105,26 @@ impl Fixture {
         let repository = store
             .catalog_discovered_repository("repository-id", &repository_path, None, 1)
             .unwrap();
+        let plan = plan_workspace_setup(
+            Path::new(&workspace.home_path),
+            vec![inspect_repository_preflight(&repository).unwrap()],
+        )
+        .unwrap()
+        .repositories
+        .remove(0);
+        let staging = Path::new(&workspace.home_path).join("repos/.staging-test-repository");
+        let clone = provision_independent_clone(&repository, &plan, &staging).unwrap();
+        store
+            .validate_and_save_workspace_repository_binding(&WorkspaceRepositoryBinding {
+                workspace_id: workspace.id.clone(),
+                repository_id: repository.id.clone(),
+                checkout_path: clone.checkout_path.to_string_lossy().into_owned(),
+                checkout_mode: CheckoutMode::Clone,
+                branch: clone.branch.clone(),
+                verification_status: VerificationStatus::Verified,
+                created_at: 1,
+            })
+            .unwrap();
         let task_id = format!("task-{name}");
         let task = store
             .create_task(&NewTask {
@@ -127,15 +151,13 @@ impl Fixture {
         store
             .bind_task_setup_operation(&task_id, &operation_id, &session_id)
             .unwrap();
-        let identity = opencode_project_manager_lib::safety::inspect_repository(&repository_path)
-            .unwrap()
-            .repository
-            .identity;
+        let identity = clone.checkout_identity;
+        let workspace_checkout_path = clone.checkout_path;
         Self {
             root,
             store,
             repository_id: repository.id,
-            repository_path,
+            repository_path: workspace_checkout_path,
             identity,
             task_id,
             operation_id,
@@ -258,6 +280,203 @@ fn mixed_report_persists_ready_failed_and_not_attempted_items() {
             .unwrap()
             .setup_status,
         TaskSetupStatus::Incomplete
+    );
+}
+
+#[test]
+fn task_repository_session_is_persisted_at_its_exact_worktree() {
+    let fixture = Fixture::new("session-binding");
+    let path = fixture.worktree("task-session-binding", "ready");
+    let item = fixture.item(
+        "ready",
+        RegistrationItemResult::Ready,
+        Some("task-session-binding"),
+        Some(&path),
+    );
+    fixture
+        .store
+        .apply_registration_report(&fixture.report("operation-session-binding", vec![item]))
+        .unwrap();
+    let session_id = "session-repo-root";
+    fixture
+        .store
+        .create_session(&NewSession {
+            open_code_session_id: session_id.into(),
+            owner: SessionOwner::Task(fixture.task_id.clone()),
+            directory: path.to_string_lossy().into_owned(),
+            last_known_status: "starting".into(),
+            created_at: 4,
+        })
+        .unwrap();
+    fixture
+        .store
+        .bind_task_session_repository(&fixture.task_id, session_id, &fixture.repository_id)
+        .unwrap();
+    assert_eq!(
+        fixture
+            .store
+            .list_task_repository_sessions(&fixture.task_id)
+            .unwrap(),
+        vec![(
+            session_id.into(),
+            fixture.repository_id.clone(),
+            path.to_string_lossy().into_owned()
+        )]
+    );
+}
+
+#[test]
+fn task_repository_selection_is_persisted_and_immutable_for_retry() {
+    let fixture = Fixture::new("selection-retry");
+    let selection = vec![fixture.repository_id.clone()];
+    fixture
+        .store
+        .save_task_repository_selection(&fixture.task_id, &selection, 5)
+        .unwrap();
+    assert_eq!(
+        fixture
+            .store
+            .task_repository_selection(&fixture.task_id)
+            .unwrap(),
+        Some(selection.clone())
+    );
+    assert!(fixture
+        .store
+        .save_task_repository_selection(&fixture.task_id, &[], 6)
+        .is_err());
+}
+
+#[test]
+fn one_workspace_task_registers_worktrees_from_two_independent_repositories() {
+    let fixture = Fixture::new("two-repositories");
+    let second_repository_path = fixture.root.path().join("repository-b");
+    repo(&second_repository_path);
+    let second_repository = fixture
+        .store
+        .catalog_discovered_repository("repository-id-b", &second_repository_path, None, 1)
+        .unwrap();
+    let workspace_id = "workspace-two-repositories";
+    let workspace = fixture.store.get_workspace(workspace_id).unwrap().unwrap();
+    let second_plan = plan_workspace_setup(
+        Path::new(&workspace.home_path),
+        vec![inspect_repository_preflight(&second_repository).unwrap()],
+    )
+    .unwrap()
+    .repositories
+    .remove(0);
+    let second_staging = Path::new(&workspace.home_path).join("repos/.staging-second-repository");
+    let second_clone =
+        provision_independent_clone(&second_repository, &second_plan, &second_staging).unwrap();
+    fixture
+        .store
+        .validate_and_save_workspace_repository_binding(&WorkspaceRepositoryBinding {
+            workspace_id: workspace_id.into(),
+            repository_id: second_repository.id.clone(),
+            checkout_path: second_clone.checkout_path.to_string_lossy().into_owned(),
+            checkout_mode: CheckoutMode::Clone,
+            branch: second_clone.branch.clone(),
+            verification_status: VerificationStatus::Verified,
+            created_at: 1,
+        })
+        .unwrap();
+
+    let selection = vec![fixture.repository_id.clone(), second_repository.id.clone()];
+    fixture
+        .store
+        .save_task_setup_repository_selection(&fixture.operation_id, &selection)
+        .unwrap();
+    assert_eq!(
+        fixture
+            .store
+            .task_setup_repository_selection(&fixture.operation_id)
+            .unwrap(),
+        Some(selection)
+    );
+
+    let first_worktree = fixture.worktree("task-two-repos-a", "repository-a");
+    let second_worktree = fixture.task_home.join("worktrees/repository-b");
+    fs::create_dir_all(second_worktree.parent().unwrap()).unwrap();
+    git(
+        &second_clone.checkout_path,
+        &[
+            "worktree",
+            "add",
+            "-b",
+            "task-two-repos-b",
+            second_worktree.to_str().unwrap(),
+            "main",
+        ],
+    );
+
+    let second_identity = second_clone.checkout_identity.clone();
+    let report = fixture.report(
+        &fixture.operation_id,
+        vec![
+            fixture.item(
+                "repository-a",
+                RegistrationItemResult::Ready,
+                Some("task-two-repos-a"),
+                Some(&first_worktree),
+            ),
+            RegistrationItem {
+                item_id: "repository-b".into(),
+                repository_id: second_repository.id.clone(),
+                repository_path: second_clone.checkout_path.to_string_lossy().into(),
+                git_identity: second_identity.clone(),
+                branch: Some("task-two-repos-b".into()),
+                worktree_path: Some(second_worktree.to_string_lossy().into()),
+                result: RegistrationItemResult::Ready,
+                error_code: None,
+                detail: None,
+            },
+        ],
+    );
+    let result = fixture.store.apply_registration_report(&report).unwrap();
+    assert_eq!(
+        result
+            .items
+            .iter()
+            .map(|item| (&item.repository_id, &item.result))
+            .collect::<Vec<_>>(),
+        vec![
+            (&fixture.repository_id, &RegistrationItemResult::Ready),
+            (&second_repository.id, &RegistrationItemResult::Ready),
+        ]
+    );
+
+    let bindings = fixture
+        .store
+        .list_task_repository_bindings(&fixture.task_id)
+        .unwrap();
+    assert_eq!(bindings.len(), 2);
+    assert!(bindings.iter().all(|binding| {
+        binding.setup_status == RepositorySetupStatus::Ready
+            && Path::new(&binding.worktree_path).is_dir()
+    }));
+    let context = opencode_project_manager_lib::management::resolve_task_context(
+        &fixture.task_home,
+        &bindings,
+    );
+    assert_eq!(context.len(), 3);
+    assert!(context.contains(&fixture.task_home));
+    assert!(context.contains(&first_worktree));
+    assert!(context.contains(&second_worktree));
+
+    let first_status =
+        opencode_project_manager_lib::safety::inspect_repository(&first_worktree).unwrap();
+    let second_status =
+        opencode_project_manager_lib::safety::inspect_repository(&second_worktree).unwrap();
+    assert_ne!(
+        first_status.repository.identity,
+        second_status.repository.identity
+    );
+    assert_eq!(
+        first_status.repository.current_branch.as_deref(),
+        Some("task-two-repos-a")
+    );
+    assert_eq!(
+        second_status.repository.current_branch.as_deref(),
+        Some("task-two-repos-b")
     );
 }
 
