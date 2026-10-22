@@ -13,6 +13,7 @@ import { recordSessionReplacement, resolveSessionReplacement } from './session-r
 import { loadChangeReview, renderChangeReview } from './change-review-ui.js';
 import { listRepositoryTools, renderRepositoryTools, startRepositoryTool, repoToolTerminalCommand } from './repo-tools-ui.js';
 import { groupRepositoryDirectories } from './directory-groups.js';
+import { bindEnterToSubmit } from './form-keyboard.js';
 
 // Command-boundary client.  Raw Tauri invoke is intentionally not available
 // in this module or any other production presentation module.
@@ -178,6 +179,8 @@ const newWorkReview = document.querySelector('#new-work-review');
 const newWorkPrompt = document.querySelector('#new-work-prompt');
 const proposalCreate = document.querySelector('#proposal-create');
 const proposalModel = document.querySelector('#proposal-model');
+bindEnterToSubmit(document.querySelector('#new-work-capture'));
+bindEnterToSubmit(document.querySelector('#workspace-session-form'));
 
 function setSessionStatus(message) {
   if (!sessionStatus) return;

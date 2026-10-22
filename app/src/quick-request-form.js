@@ -1,4 +1,5 @@
 import { submitQuickRequestFlow } from './shell.js';
+import { bindEnterToSubmit } from './form-keyboard.js';
 
 // Owns the rendered form's submit lifecycle so browser-level tests exercise the
 // same event handler as production. The app injects only the Tauri transport and
@@ -45,9 +46,13 @@ export function bindQuickRequestForm({
     pendingSubmission = onSubmit(event);
   };
   form.addEventListener('submit', listener);
+  const unbindEnter = bindEnterToSubmit(form);
 
   return {
     whenSettled: () => pendingSubmission,
-    dispose: () => form.removeEventListener('submit', listener),
+    dispose: () => {
+      form.removeEventListener('submit', listener);
+      unbindEnter();
+    },
   };
 }

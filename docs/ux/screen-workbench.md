@@ -104,6 +104,9 @@ full-size terminal:
 
 ## Workspace and task behavior
 
+In multiline prompt fields that belong to forms, **Enter** submits the form and
+**Shift+Enter** inserts a newline. Enter during IME composition does not submit.
+
 - A workspace can have no repos and no tasks and still be useful through its own
   OpenCode session.
 - A workspace knows about zero or more repositories. Task proposals use that

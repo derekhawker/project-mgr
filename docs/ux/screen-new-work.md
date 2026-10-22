@@ -40,6 +40,9 @@ that prompt will start. Preserve the original prompt exactly as entered. For a
 Task, pass the Workspace selected in the separate Workspace selector as context;
 do not prepend Workspace text into the prompt.
 
+In the multiline Original prompt field, **Enter** continues the form and
+**Shift+Enter** inserts a newline. Enter during IME composition does not submit.
+
 ### 2. Review the interpretation
 
 The first interaction is an internal OpenCode proposal request. It does not use
