@@ -31,10 +31,7 @@ export function renderRepositoryTools(menu, groups, { onRun, onInstall } = {}) {
     group.className = 'repo-tools-group';
     const heading = document.createElement('h2');
     heading.textContent = repository.name;
-    const path = document.createElement('p');
-    path.textContent = repository.path;
-    path.className = 'repo-tools-path';
-    group.append(heading, path);
+    group.append(heading);
     if (repository.npmInstallNeeded) {
       const status = document.createElement('p');
       status.textContent = 'Dependencies missing · npm install';

@@ -37,6 +37,8 @@ test('Tools displays repository groups, all named targets/scripts, and starts th
     onInstall: (repository) => { install = repository.repositoryId; },
   });
   assert.equal(menu.querySelectorAll('.repo-tools-group').length, 2);
+  assert.equal(menu.querySelectorAll('.repo-tools-path').length, 0);
+  assert.match(menu.querySelector('.repo-tools-group h2').textContent, /^Alpha$/);
   assert.match(menu.textContent, /build/);
   assert.match(menu.textContent, /test/);
   assert.match(menu.textContent, /check/);
