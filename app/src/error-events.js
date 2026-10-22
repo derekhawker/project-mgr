@@ -10,3 +10,10 @@ export function showCleanupError(kind, payload, element) {
   if (element) element.textContent = text;
   return text;
 }
+
+export function clearNoticeIfStartsWith(element, prefix) {
+  if (!element?.textContent.startsWith(prefix)) return false;
+  element.textContent = '';
+  element.hidden = true;
+  return true;
+}

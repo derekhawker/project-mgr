@@ -233,6 +233,15 @@ and never exposes it to the WebView.
 | 6 | Rust/GUI | Reconciles current OpenCode status, pending input, and event cursor. | The GUI reports running, waiting, ready, failed, or uncertain state. |
 | 7 | Rust | Does not call the initial-prompt endpoint. | Restore never generates a duplicate response. |
 
+If OpenCode's authenticated session lookup returns HTTP 404, Rust creates a new
+empty session in the same owner directory using the configured app default
+model, persists it, and attaches its interactive terminal. Task replacements
+retain the same Task/repository association. The stale record is marked missing
+and is not restored again; its OpenCode history is not deleted. A completed
+Task cannot receive a replacement session. Network, authentication, server,
+validation, and terminal-attachment failures are not treated as a missing
+session and remain visible errors. Replacement never submits a prompt.
+
 ### 5.3 Follow-up, approval, or user input
 
 | Step | Actor | Action | Result |
@@ -261,6 +270,14 @@ The GUI exposes these application-level states:
 `inactive` alone is never treated as completed. On an event disconnect, Rust
 reconnects and reconciles API status, pending requests, session history, and
 the last event cursor before changing the displayed state.
+
+Global pending-input refresh checks current tracked sessions only. Session
+records retired as `missing` are excluded, and an OpenCode HTTP 404 for any
+session is treated as having no pending input for that session; it must not
+prevent pending-input state for other sessions from loading. Other API errors
+remain visible. A later successful refresh clears the matching
+pending-input-unavailable notice without clearing unrelated startup or recovery
+notices.
 
 ## 6. Application Startup and Recovery
 

@@ -401,6 +401,14 @@ impl Runtime {
         };
         post_data_value(&client, &format!("{url}/api/session"), &body)
     }
+
+    /// Returns `false` only when OpenCode confirms that the session does not
+    /// exist. Network, authentication, and other API failures remain errors.
+    pub fn session_exists(&self, id: &str) -> Result<bool, String> {
+        let id = validate_session_id(id)?;
+        let (client, url) = self.client_url()?;
+        session_exists_at(&client, &url, &id)
+    }
     pub fn set_session_model(&self, id: &str, model: ModelReference) -> Result<(), String> {
         validate_model(&self.catalog()?, &model)?;
         let (client, url) = self.client_url()?;
@@ -750,6 +758,18 @@ fn get_data_value(client: &Client, url: &str) -> Result<Value, String> {
         .cloned()
         .ok_or_else(|| "invalid OpenCode response: missing data wrapper".to_owned())
 }
+
+fn session_exists_at(client: &Client, base_url: &str, id: &str) -> Result<bool, String> {
+    let response = client
+        .get(format!("{base_url}/api/session/{id}"))
+        .send()
+        .map_err(|error| error.to_string())?;
+    if response.status().as_u16() == 404 {
+        let _ = response.text();
+        return Ok(false);
+    }
+    checked(response).map(|_| true)
+}
 fn get_data_with_cursor(
     client: &Client,
     url: &str,
@@ -865,6 +885,10 @@ fn checked(response: Response) -> Result<Response, String> {
         let _ = response.text();
         Err(format!("OpenCode API returned HTTP {status}"))
     }
+}
+
+pub fn is_not_found_api_error(error: &str) -> bool {
+    error.starts_with("OpenCode API returned HTTP 404 ")
 }
 fn api_client(password: &str) -> Result<Client, String> {
     let mut headers = HeaderMap::new();
@@ -1627,6 +1651,54 @@ mod tests {
         .unwrap();
         delete_empty(&client, &format!("{base}/api/session/ses_1/form/f1")).unwrap();
         server.join().unwrap();
+    }
+
+    #[test]
+    fn missing_session_detection_only_treats_http_404_as_absence() {
+        for (status, expected) in [
+            ("404 Not Found", Ok(false)),
+            ("503 Unavailable", Err(())),
+            ("200 OK", Ok(true)),
+        ] {
+            let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+            let address = listener.local_addr().unwrap();
+            let status = status.to_owned();
+            let server = thread::spawn(move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                let mut line = String::new();
+                reader.read_line(&mut line).unwrap();
+                assert_eq!(
+                    line.split_whitespace().take(2).collect::<Vec<_>>(),
+                    ["GET", "/api/session/ses_missing"]
+                );
+                let mut line = String::new();
+                loop {
+                    line.clear();
+                    reader.read_line(&mut line).unwrap();
+                    if line == "\r\n" || line.is_empty() {
+                        break;
+                    }
+                }
+                let body = "{}";
+                write!(
+                    stream,
+                    "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                )
+                .unwrap();
+            });
+            let result = session_exists_at(
+                &api_client("secret").unwrap(),
+                &format!("http://{address}"),
+                "ses_missing",
+            );
+            match expected {
+                Ok(value) => assert_eq!(result.unwrap(), value),
+                Err(()) => assert!(result.unwrap_err().contains("503")),
+            }
+            server.join().unwrap();
+        }
     }
 
     #[test]

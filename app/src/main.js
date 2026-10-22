@@ -5,10 +5,11 @@ import { open as openDirectoryPicker } from '@tauri-apps/plugin-dialog';
 import { loadApplicationShell } from './shell.js';
 import { listQuickRequests, restoreQuickRequest, deleteQuickRequest, loadWorkspaceNavigation, createInitializedWorkspace, createWorkspaceTask, submitNewWorkStartingPrompt, getTaskSetupStatus, taskSetupStatusNotice, cancelTaskSetup, resumeTaskSetup, retryTaskSetup, addRepositoryDirectories, scanRepositories, listRepositoryCatalog, loadRepositoryDirectoryPage, setRepositoryEnabled, attachRepository, createWorkspaceSession, formatWorkspaceError, workspaceNavigationModel, selectCreatedWorkspace, listPendingInputs, listAllPendingInputs, getSessionStatus, reconcileSession, createTaskSession, sessionStatusLabel, completeTask, listTaskCleanupJobs, retryTaskCleanup, completeWorkspace, reactivateWorkspace, sessionTabAttributes, terminalAccessibilityAttributes, controlErrorAttributes, startNewWorkProposal, runNewWorkProposal, closeNewWorkProposal, cleanupTerminal, resolveQuickRequestDirectory, submitResolvedQuickRequestFlow, createKeyedSingleFlight, workspaceProposalRepositoryLocations, workspaceStartingPrompt, workspaceReviewDetails, taskWorkspaceOptions } from './shell.js';
 import './styles.css';
-import { showCleanupError } from './error-events.js';
+import { clearNoticeIfStartsWith, showCleanupError } from './error-events.js';
 import { bindQuickRequestForm } from './quick-request-form.js';
 import { initializeModelSelector } from './model-selector.js';
 import { bindWorkspaceContextMenu, populateTaskWorkspaceSelector } from './task-workspace-ui.js';
+import { recordSessionReplacement, resolveSessionReplacement } from './session-restore-ui.js';
 
 // Command-boundary client.  Raw Tauri invoke is intentionally not available
 // in this module or any other production presentation module.
@@ -139,6 +140,7 @@ const openSessions = new Set();
 const sessionOwners = new Map();
 const selectedSessionByOwner = new Map();
 const sessionDirectories = new Map();
+const missingSessionReplacements = new Map();
 const progressPanel = document.querySelector('#new-work-progress');
 const progressSteps = document.querySelector('#new-work-progress-steps');
 const progressRows = new Map();
@@ -274,7 +276,8 @@ function syncOwnerSessions() {
 async function restoreTrackedOwnerSession(owner) {
   const ownerKey = `${owner.type}:${owner.id}`;
   const sessions = (navigationData.sessions || []).filter((session) =>
-    session.owner?.owner_type === owner.type && session.owner?.owner_id === owner.id);
+    session.owner?.owner_type === owner.type && session.owner?.owner_id === owner.id
+      && session.lastKnownStatus !== 'missing');
   if (!sessions.length || selectedOwnerKey() !== ownerKey) return;
   const preferred = sessions.find((session) => session.openCodeSessionId === selectedSessionByOwner.get(ownerKey))
     || sessions.find((session) => openSessions.has(session.openCodeSessionId))
@@ -291,11 +294,18 @@ async function restoreTrackedOwnerSession(owner) {
 
 const showSession = createKeyedSingleFlight(async (sessionId, options = {}) => {
   const { proposal = false } = options;
+  sessionId = resolveSessionReplacement(missingSessionReplacements, sessionId);
   const runtime = await terminalRuntime;
   if (!runtime) throw new Error('Terminal runtime is unavailable; see the startup error above.');
   // Rust resolves the persisted id/directory and owns PTY attachment first;
   // this is intentionally before creating the xterm surface.
   const restoredSession = proposal ? null : await invokeCommand(invoke, 'opencode_session_restore', { sessionId });
+  if (!proposal && restoredSession?.openCodeSessionId !== sessionId) {
+    const replacementId = recordSessionReplacement(
+      missingSessionReplacements, navigationData, sessionId, restoredSession,
+    );
+    return showSession(replacementId, options);
+  }
   const ownerKey = proposal ? 'proposal' : keyForSessionOwner(restoredSession?.owner);
   const requestOwner = !proposal && restoredSession?.owner?.owner_type === 'task'
     && (selectedTask?.id === restoredSession.owner.owner_id && selectedTask.quickRequest
@@ -405,6 +415,7 @@ async function refreshSessionEvidence(sessionId) {
 async function refreshGlobalPendingInputs() {
   try {
     const records = await listAllPendingInputs(invoke);
+    clearNoticeIfStartsWith(appNotice, 'Pending input status unavailable:');
     pendingInputs.replaceChildren(...records.flatMap((record) => [...(record.permissions || []), ...(record.forms || [])].map((item) => {
       const entry = document.createElement('li'); const button = document.createElement('button'); button.type = 'button';
       button.textContent = `${record.sessionId} · Input required · ${item.id || item.requestID || 'request'}`;

@@ -78,6 +78,11 @@ full-size terminal:
   show **Restart terminal**. Restart the TUI with the same OpenCode session ID
   and exact working directory. Do not create a new conversation or send a prompt
   when restarting.
+- If OpenCode confirms a tracked session no longer exists, open a fresh empty
+  session in the same Workspace or Task repository context. Do not reuse the
+  missing ID or send a prompt; preserve the old OpenCode history. Do not create
+  replacement sessions for completed Tasks. Other restore failures remain
+  actionable errors.
 - Give each terminal tab an explicit close control; closing removes only that
   session's terminal and leaves other owner tabs running.
 - Workspace/task OpenCode session tabs are named **OpenCode**; the selected

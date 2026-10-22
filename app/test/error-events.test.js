@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { showCleanupError } from '../src/error-events.js';
+import { clearNoticeIfStartsWith, showCleanupError } from '../src/error-events.js';
 
 for (const [kind, payload, expected] of [
   ['cleanup-worker-error', { failureDetail: 'database unavailable' }, 'Cleanup worker failed: database unavailable'],
@@ -13,3 +13,13 @@ for (const [kind, payload, expected] of [
     assert.equal(result.textContent, expected);
   });
 }
+
+test('successful pending-input refresh clears only its own stale startup notice', () => {
+  const pendingNotice = { textContent: 'Pending input status unavailable: OpenCode API returned HTTP 404 Not Found', hidden: false };
+  assert.equal(clearNoticeIfStartsWith(pendingNotice, 'Pending input status unavailable:'), true);
+  assert.deepEqual(pendingNotice, { textContent: '', hidden: true });
+
+  const otherNotice = { textContent: 'Startup recovery failed: another issue', hidden: false };
+  assert.equal(clearNoticeIfStartsWith(otherNotice, 'Pending input status unavailable:'), false);
+  assert.deepEqual(otherNotice, { textContent: 'Startup recovery failed: another issue', hidden: false });
+});

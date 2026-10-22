@@ -3412,6 +3412,77 @@ impl ManagementStore {
         })
     }
 
+    /// Atomically records a replacement session, transfers a Task repository
+    /// binding when present, and retires the stale session association.
+    pub fn replace_missing_session(
+        &self,
+        old_session_id: &str,
+        replacement: &NewSession,
+        selected_model: &str,
+        updated_at: i64,
+    ) -> StoreResult<SessionRecord> {
+        let mut connection = self.lock()?;
+        let transaction = connection.transaction()?;
+        let old = Self::get_session_from(&transaction, old_session_id)?
+            .ok_or_else(|| ManagementStoreError::NotFound(format!("session {old_session_id}")))?;
+        if old.last_known_status == "missing"
+            || old.owner != replacement.owner
+            || old.directory != replacement.directory
+        {
+            return Err(ManagementStoreError::InvalidTransition(
+                "replacement must retain the active owner and exact directory of a non-missing session".into(),
+            ));
+        }
+        Self::insert_session_with_model(&transaction, replacement, Some(selected_model))?;
+
+        if let SessionOwner::Task(task_id) = &replacement.owner {
+            let changed = transaction.execute(
+                "UPDATE task_session_repositories
+                 SET open_code_session_id = ?3
+                 WHERE task_id = ?1 AND open_code_session_id = ?2",
+                params![task_id, old_session_id, replacement.open_code_session_id],
+            )?;
+            if changed != 1 {
+                return Err(ManagementStoreError::InvalidTransition(
+                    "missing Task session has no current repository association".into(),
+                ));
+            }
+            let new = Self::get_session_from(&transaction, &replacement.open_code_session_id)?
+                .expect("replacement session was inserted");
+            let association_matches: bool = transaction.query_row(
+                "SELECT EXISTS(
+                    SELECT 1 FROM task_session_repositories tsr
+                    JOIN task_repositories tr USING(task_id, repository_id)
+                    WHERE tsr.open_code_session_id = ?1 AND tr.setup_status = 'ready'
+                      AND tr.worktree_path = ?2
+                )",
+                params![replacement.open_code_session_id, new.directory],
+                |row| row.get(0),
+            )?;
+            if !association_matches {
+                return Err(ManagementStoreError::InvalidTransition(
+                    "replacement session directory does not match its ready Task worktree".into(),
+                ));
+            }
+        }
+        transaction.execute(
+            "UPDATE sessions SET last_known_status = 'missing',
+                 reconciliation_status = 'missing', reconciliation_uncertain = 0,
+                 pending_input_json = NULL, updated_at = ?2
+             WHERE open_code_session_id = ?1",
+            params![old_session_id, updated_at],
+        )?;
+        let result = Self::get_session_from(&transaction, &replacement.open_code_session_id)?
+            .ok_or_else(|| {
+                ManagementStoreError::NotFound(format!(
+                    "replacement session {}",
+                    replacement.open_code_session_id
+                ))
+            })?;
+        transaction.commit()?;
+        Ok(result)
+    }
+
     pub fn bind_task_session_repository(
         &self,
         task_id: &str,
@@ -3884,7 +3955,8 @@ impl ManagementStore {
                  reconciliation_status = 'reconnecting',
                  reconciliation_uncertain = 1,
                  updated_at = ?1
-             WHERE reconciliation_status != 'failed'",
+             WHERE reconciliation_status NOT IN ('failed', 'missing')
+               AND last_known_status != 'missing'",
             [now],
         )?)
     }

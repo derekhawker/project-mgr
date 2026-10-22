@@ -15,6 +15,7 @@ use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
 pub mod management;
 pub mod opencode;
 pub mod safety;
+pub mod session_restore;
 pub mod task_setup;
 pub mod terminal;
 pub mod workspace_setup;
@@ -298,7 +299,7 @@ fn reconcile_startup(app: &AppHandle, store: &ManagementStore) -> Result<(), Str
     let mut failures = Vec::new();
     for session in sessions
         .into_iter()
-        .filter(|session| session.last_known_status != "failed")
+        .filter(|session| !matches!(session.last_known_status.as_str(), "failed" | "missing"))
     {
         let result = runtime
             .reconcile_session(
@@ -2831,6 +2832,39 @@ fn opencode_terminal_restart(
 
 /// Resolve and attach a persisted session in Rust before the renderer mounts
 /// its terminal surface. Restore never creates a new conversation or prompt.
+struct SessionRestoreRuntimeAdapter<'a> {
+    app: AppHandle,
+    runtime: &'a opencode::Runtime,
+}
+
+impl session_restore::SessionRestoreRuntime for SessionRestoreRuntimeAdapter<'_> {
+    fn session_exists(&mut self, session_id: &str) -> Result<bool, String> {
+        self.runtime.session_exists(session_id)
+    }
+
+    fn create_session(
+        &mut self,
+        title: &str,
+        directory: &std::path::Path,
+        model: &opencode::ModelReference,
+    ) -> Result<String, String> {
+        session_id_from_response(
+            &self
+                .runtime
+                .create_session(title, directory, model.clone())?,
+        )
+    }
+
+    fn attach_terminal(
+        &mut self,
+        session_id: &str,
+        directory: &std::path::Path,
+    ) -> Result<(), String> {
+        self.runtime
+            .restore_terminal(self.app.clone(), session_id, directory)
+    }
+}
+
 #[tauri::command]
 fn opencode_session_restore(
     app: AppHandle,
@@ -2838,19 +2872,16 @@ fn opencode_session_restore(
     store: State<'_, ManagementStore>,
     session_id: String,
 ) -> Result<management::SessionRecord, String> {
-    let session = store
-        .get_session(&session_id)
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "Persisted OpenCode session not found".to_owned())?;
-    store
-        .validate_session_context(&session_id, std::path::Path::new(&session.directory))
-        .map_err(|e| e.to_string())?;
-    runtime.restore_terminal(
-        app.clone(),
-        &session.open_code_session_id,
-        std::path::Path::new(&session.directory),
-    )?;
-    Ok(session)
+    let mut adapter = SessionRestoreRuntimeAdapter {
+        app,
+        runtime: &runtime,
+    };
+    session_restore::restore_or_replace(
+        &store,
+        &session_id,
+        || Ok(opencode_model_default_command(&store)?.runtime_model()),
+        &mut adapter,
+    )
 }
 
 #[tauri::command]
@@ -3230,17 +3261,33 @@ fn opencode_session_pending_inputs(
     state.pending_inputs(&request.session_id)
 }
 
+fn collect_pending_inputs(
+    sessions: Vec<management::SessionRecord>,
+    mut pending_for: impl FnMut(&str) -> Result<opencode::PendingInputs, String>,
+) -> Result<Vec<opencode::PendingInputs>, String> {
+    let mut pending_inputs = Vec::new();
+    for session in sessions {
+        if session.last_known_status == "missing" {
+            continue;
+        }
+        match pending_for(&session.open_code_session_id) {
+            Ok(pending) => pending_inputs.push(pending),
+            Err(error) if opencode::is_not_found_api_error(&error) => continue,
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(pending_inputs)
+}
+
 #[tauri::command]
 fn opencode_pending_inputs_all(
     runtime: State<'_, opencode::Runtime>,
     store: State<'_, ManagementStore>,
 ) -> Result<Vec<opencode::PendingInputs>, String> {
-    store
-        .list_all_sessions()
-        .map_err(|e| e.to_string())?
-        .into_iter()
-        .map(|session| runtime.pending_inputs(&session.open_code_session_id))
-        .collect()
+    collect_pending_inputs(
+        store.list_all_sessions().map_err(|e| e.to_string())?,
+        |session_id| runtime.pending_inputs(session_id),
+    )
 }
 
 #[cfg(test)]
@@ -3259,6 +3306,49 @@ mod tests {
             info.message,
             "The Rust core and management storage are initialized."
         );
+    }
+
+    #[test]
+    fn global_pending_input_collection_ignores_retired_session_ids() {
+        let session = |id: &str, status: &str| management::SessionRecord {
+            open_code_session_id: id.into(),
+            owner: management::SessionOwner::Workspace("workspace-1".into()),
+            directory: "/tmp/workspace-1/repo-a".into(),
+            last_known_status: status.into(),
+            created_at: 1,
+            updated_at: 1,
+            event_cursor: None,
+            reconciliation_status: "unknown".into(),
+            reconciliation_uncertain: false,
+            pending_input_json: None,
+            selected_model: None,
+        };
+        let result = collect_pending_inputs(
+            vec![
+                session("ses_missing_repo_a_restore_test_20261022", "failed"),
+                session("ses_replacement", "starting"),
+            ],
+            |session_id| {
+                if session_id.starts_with("ses_missing") {
+                    return Err("OpenCode API returned HTTP 404 Not Found".into());
+                }
+                Ok(opencode::PendingInputs {
+                    session_id: session_id.into(),
+                    permissions: Vec::new(),
+                    forms: Vec::new(),
+                })
+            },
+        )
+        .unwrap();
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].session_id, "ses_replacement");
+
+        let active_error = collect_pending_inputs(vec![session("ses_active", "running")], |_| {
+            Err("OpenCode API returned HTTP 503 Service Unavailable".into())
+        })
+        .unwrap_err();
+        assert!(active_error.contains("503"));
     }
 
     #[test]
