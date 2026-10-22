@@ -306,8 +306,9 @@ pub fn plan_workspace_setup(
         }
         if !repository.clean {
             return Err(format!(
-                "Repository {} has uncommitted changes.",
-                repository.repository_id
+                "Repository `{}` at `{}` has uncommitted changes.",
+                repository.name,
+                repository.source_path.display()
             ));
         }
         let branch = repository
@@ -863,9 +864,11 @@ mod tests {
         let home = Path::new("/projects/workspace");
         let mut dirty = repository("repo-1", "Repo");
         dirty.clean = false;
-        assert!(plan_workspace_setup(home, vec![dirty])
-            .unwrap_err()
-            .contains("uncommitted"));
+        dirty.source_path = PathBuf::from("/sources/my-repo");
+        assert_eq!(
+            plan_workspace_setup(home, vec![dirty]).unwrap_err(),
+            "Repository `Repo` at `/sources/my-repo` has uncommitted changes."
+        );
         let mut unknown_default = repository("repo-1", "Repo");
         unknown_default.default_branch = None;
         assert!(plan_workspace_setup(home, vec![unknown_default])

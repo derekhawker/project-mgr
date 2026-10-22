@@ -100,6 +100,17 @@ body {
 .change-review-unified, .change-review-split { margin: 0; padding: .5rem; overflow: auto; color: #23352e; background: #fbfcfa; font: 12px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre; }
 .change-review-content [data-review-diff]:has(.change-review-split) { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); overflow: auto; }
 .change-review-error { color: #9b3d32; font-size: 12px; }
+.repo-tools-control { position: relative; flex: 0 0 auto; }
+.repo-tools-menu { position: absolute; z-index: 30; top: calc(100% + .25rem); right: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: .75rem; width: min(64rem, calc(100vw - 18rem)); max-height: min(70vh, 38rem); overflow: auto; padding: .75rem; border: 1px solid #cbd7cf; border-radius: 6px; background: #fff; box-shadow: 0 8px 24px #17251f33; }
+.repo-tools-group { min-width: 0; padding: .35rem; border-right: 1px solid #e3e9e4; }
+.repo-tools-group h2 { margin: 0 0 .2rem; font-size: 14px; }
+.repo-tools-group h3 { margin: .55rem 0 .15rem; color: #66736e; font-size: 11px; }
+.repo-tools-group > button { display: block; width: 100%; padding: .3rem .4rem; border: 0; border-radius: 3px; background: transparent; color: #176c52; text-align: left; cursor: pointer; }
+.repo-tools-group > button:hover { background: #e5eee8; }
+.repo-tools-group > p { margin: .2rem 0; color: #66736e; font-size: 10px; overflow-wrap: anywhere; }
+.repo-tools-group .repo-tools-path { font-size: 9px; }
+.repo-tools-menu[hidden] { display: none; }
+.repo-tools-group button:focus-visible { outline: 3px solid #d28b32; outline-offset: 2px; }
 .session-tab-item { display: inline-flex; align-items: stretch; }
 .session-tabs .session-tab-close { padding: .35rem .5rem; border-left: 0; border-radius: 0 5px 5px 0; color: #d9f5e7; background: #1b2925; }
 .workbench-session-tabs .session-tab-close { color: #426a59; border-color: #d9e1db; background: #fbfcfa; }

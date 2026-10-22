@@ -11,6 +11,8 @@ import { initializeModelSelector } from './model-selector.js';
 import { createWorkspaceNavigationButton, populateTaskWorkspaceSelector } from './task-workspace-ui.js';
 import { recordSessionReplacement, resolveSessionReplacement } from './session-restore-ui.js';
 import { loadChangeReview, renderChangeReview } from './change-review-ui.js';
+import { listRepositoryTools, renderRepositoryTools, startRepositoryTool, repoToolTerminalCommand } from './repo-tools-ui.js';
+import { groupRepositoryDirectories } from './directory-groups.js';
 
 // Command-boundary client.  Raw Tauri invoke is intentionally not available
 // in this module or any other production presentation module.
@@ -38,6 +40,8 @@ export const terminalRuntime = import('./terminal-runtime.js')
   .then(({ TerminalRuntime }) => new TerminalRuntime({
     invoke,
     onExit: ({ sessionId }) => {
+      const installKey = repositoryInstallTerminalKeys.get(sessionId);
+      if (installKey) { repositoryInstallStarted.delete(installKey); repositoryInstallTerminalKeys.delete(sessionId); }
       const restart = sessionTabs?.querySelector(`[data-restart-session="${CSS.escape(sessionId)}"]`);
       if (restart) restart.hidden = false;
     },
@@ -162,6 +166,11 @@ const workbench = document.querySelector('#workbench');
 const selectedOwner = document.querySelector('#selected-owner');
 const changeReviewPage = document.querySelector('#change-review-page');
 const changeReviewButton = document.querySelector('#show-change-review');
+const repoToolsButton = document.querySelector('#show-repo-tools');
+const repoToolsMenu = document.querySelector('#repo-tools-menu');
+const repositoryToolTerminals = new Set();
+const repositoryInstallStarted = new Set();
+const repositoryInstallTerminalKeys = new Map();
 let selectedOwnerRepositoryCount = 0;
 const newWork = document.querySelector('#new-work');
 const newWorkReview = document.querySelector('#new-work-review');
@@ -185,6 +194,7 @@ function syncChangeReviewAvailability() {
   const available = Boolean(selectedWorkspace && selectedOwnerRepositoryCount > 0 && !selectedTask?.quickRequest);
   changeReviewButton.hidden = !available;
   if (!available) showOwnerTerminal();
+  syncRepositoryToolsAvailability();
 }
 
 changeReviewButton.addEventListener('click', async () => {
@@ -207,6 +217,104 @@ changeReviewButton.addEventListener('click', async () => {
   } finally { changeReviewButton.disabled = false; }
 });
 document.querySelector('#change-review-back').addEventListener('click', showOwnerTerminal);
+
+function repositoryToolsOwner() {
+  if (!selectedWorkspace || selectedTask?.quickRequest) return null;
+  return selectedTask
+    ? { type: 'task', id: selectedTask.id }
+    : { type: 'workspace', id: selectedWorkspace.id };
+}
+
+function syncRepositoryToolsAvailability() {
+  repoToolsButton.hidden = !repositoryToolsOwner() || selectedOwnerRepositoryCount === 0;
+  if (repoToolsButton.hidden) {
+    repoToolsMenu.hidden = true;
+    repoToolsButton.setAttribute('aria-expanded', 'false');
+  }
+}
+
+async function openRepositoryToolTerminal(repository, kind, name = '', installKey = null) {
+  const owner = repositoryToolsOwner();
+  if (!owner) return;
+  let started = null;
+  let runtime = null;
+  try {
+    started = await startRepositoryTool(invoke, owner.type, owner.id, repository.repositoryId, kind, name);
+    if (installKey) repositoryInstallTerminalKeys.set(started.terminalId, installKey);
+    runtime = await terminalRuntime;
+    if (!runtime) throw new Error('Terminal runtime is unavailable.');
+    const terminalId = started.terminalId;
+    const ownerKey = `${owner.type}:${owner.id}`;
+    const container = document.createElement('div');
+    container.className = 'terminal-surface';
+    container.id = `terminal-${terminalId}`;
+    container.dataset.terminalSession = terminalId;
+    Object.entries(terminalAccessibilityAttributes(terminalId)).forEach(([key, value]) => container.setAttribute(key, value));
+    terminalViews.append(container);
+    sessionOwners.set(terminalId, ownerKey);
+    sessionDirectories.set(terminalId, started.directory);
+    repositoryToolTerminals.add(terminalId);
+    showOwnerTerminal();
+    await runtime.attachExisting(terminalId, container, 'repo_tool_terminal');
+    openSessions.add(terminalId);
+    const item = document.createElement('div'); item.className = 'session-tab-item'; item.setAttribute('role', 'presentation');
+    const tab = document.createElement('button'); tab.type = 'button'; tab.dataset.sessionId = terminalId; tab.dataset.ownerKey = ownerKey;
+    tab.textContent = `${repository.name} · ${started.label}`;
+    Object.entries(sessionTabAttributes(terminalId, true)).forEach(([key, value]) => tab.setAttribute(key, value));
+    tab.addEventListener('click', () => { showOwnerTerminal(); runtime.select(terminalId); syncOwnerSessions(); });
+    const close = document.createElement('button'); close.type = 'button'; close.className = 'session-tab-close'; close.textContent = '×'; close.setAttribute('aria-label', `Close ${tab.textContent}`);
+    close.addEventListener('click', () => void closeWorkbenchSession(terminalId));
+    item.append(tab, close); sessionTabs.append(item);
+    sessionTabs.querySelectorAll(`[data-owner-key="${CSS.escape(ownerKey)}"]`).forEach((entry) => entry.classList.toggle('selected', entry === tab));
+    selectedSessionByOwner.set(ownerKey, terminalId);
+    syncOwnerSessions();
+    return started;
+  } catch (error) {
+    if (started?.terminalId) {
+      try { await repoToolTerminalCommand(invoke, 'cleanup', { terminalId: started.terminalId }); } catch { /* Preserve the startup error; app shutdown remains the final process owner. */ }
+      runtime?.forget(started.terminalId);
+      document.querySelector(`[data-terminal-session="${CSS.escape(started.terminalId)}"]`)?.remove();
+      repositoryToolTerminals.delete(started.terminalId);
+      sessionOwners.delete(started.terminalId);
+      openSessions.delete(started.terminalId);
+    }
+    setSessionStatus(`Could not start ${name || kind}: ${String(error)}`);
+    return false;
+  }
+}
+
+repoToolsButton.addEventListener('click', async () => {
+  if (!repoToolsMenu.hidden) {
+    repoToolsMenu.hidden = true;
+    repoToolsButton.setAttribute('aria-expanded', 'false');
+    return;
+  }
+  const owner = repositoryToolsOwner();
+  if (!owner) return;
+  repoToolsButton.disabled = true;
+  try {
+    const groups = await listRepositoryTools(invoke, owner.type, owner.id);
+    if (repositoryToolsOwner()?.id !== owner.id) return;
+    renderRepositoryTools(repoToolsMenu, groups, {
+      onRun: (repository, kind, name) => void openRepositoryToolTerminal(repository, kind, name),
+      onInstall: async (repository, button, status) => {
+        button.hidden = true;
+        const key = `${owner.type}:${owner.id}:${repository.repositoryId}:${repository.path}`;
+        if (repositoryInstallStarted.has(key)) { status.textContent = 'npm install is already running.'; return; }
+        repositoryInstallStarted.add(key);
+        status.textContent = 'Starting npm install…';
+        const started = await openRepositoryToolTerminal(repository, 'npm_install', '', key);
+        if (!started) repositoryInstallStarted.delete(key);
+        status.textContent = started ? 'npm install opened in an interactive terminal.' : 'Could not start npm install; see the terminal error.';
+      },
+    });
+    repoToolsMenu.hidden = false;
+    repoToolsButton.setAttribute('aria-expanded', 'true');
+  } catch (error) {
+    repoToolsMenu.replaceChildren(Object.assign(document.createElement('p'), { textContent: `Could not load tools: ${String(error)}` }));
+    repoToolsMenu.hidden = false;
+  } finally { repoToolsButton.disabled = false; }
+});
 
 function setModelControls(ready) {
   modelsReady = ready;
@@ -312,6 +420,7 @@ function syncOwnerSessions() {
 
 async function restoreTrackedOwnerSession(owner) {
   const ownerKey = `${owner.type}:${owner.id}`;
+  const preferredToolTerminal = selectedSessionByOwner.get(ownerKey);
   const sessions = (navigationData.sessions || []).filter((session) =>
     session.owner?.owner_type === owner.type && session.owner?.owner_id === owner.id
       && session.lastKnownStatus !== 'missing');
@@ -321,7 +430,11 @@ async function restoreTrackedOwnerSession(owner) {
     || sessions[0];
   try {
     for (const session of sessions) await showSession(session.openCodeSessionId);
-    await showSession(preferred.openCodeSessionId);
+    if (preferredToolTerminal && repositoryToolTerminals.has(preferredToolTerminal)) {
+      sessionTabs.querySelector(`[data-session-id="${CSS.escape(preferredToolTerminal)}"]`)?.click();
+    } else {
+      await showSession(preferred.openCodeSessionId);
+    }
   } catch (error) {
     if (selectedOwnerKey() === ownerKey) {
       workspaceStatus.textContent = formatWorkspaceError('Restore tracked session', error);
@@ -584,6 +697,7 @@ function selectWorkspace(workspace, data = navigationData) {
   selectedOwnerRepositoryCount = (data.workspaceRepositories || []).filter((binding) => binding.workspaceId === workspace.id && binding.verificationStatus === 'verified').length;
   showOwnerTerminal();
   syncChangeReviewAvailability();
+  syncRepositoryToolsAvailability();
   syncOwnerControls();
   noSelection.hidden = true; workbench.hidden = false; selectedOwner.hidden = false; newWork.hidden = true; newWorkReview.hidden = true;
   workspaceTitle.textContent = workspace.name;
@@ -616,6 +730,7 @@ function selectTask(task, workspace, data = navigationData) {
   selectedOwnerRepositoryCount = 0;
   showOwnerTerminal();
   syncChangeReviewAvailability();
+  syncRepositoryToolsAvailability();
   syncOwnerControls();
   noSelection.hidden = true; workbench.hidden = isQuickRequest; selectedOwner.hidden = false; newWork.hidden = true; newWorkReview.hidden = true;
   workspaceTitle.textContent = task.name;
@@ -672,6 +787,7 @@ async function refreshTaskSetup() {
   selectedTask = status.task;
   selectedOwnerRepositoryCount = (status.repositories || []).filter((binding) => binding.setupStatus === 'ready').length;
   syncChangeReviewAvailability();
+  syncRepositoryToolsAvailability();
   const setupNotice = taskSetupStatusNotice(status);
   if (setupNotice) {
     currentTaskSetupNotice = setupNotice;
@@ -1172,7 +1288,11 @@ async function closeProposalSession() {
 async function closeWorkbenchSession(sessionId) {
   if (sessionId === proposalSessionId) return;
   try {
-    await cleanupTerminal(invoke, sessionId);
+    if (repositoryToolTerminals.has(sessionId)) {
+      await repoToolTerminalCommand(invoke, 'cleanup', { terminalId: sessionId });
+    } else {
+      await cleanupTerminal(invoke, sessionId);
+    }
   } catch (error) {
     const message = formatWorkspaceError('Close terminal', error);
     workspaceStatus.textContent = message;
@@ -1186,6 +1306,9 @@ async function closeWorkbenchSession(sessionId) {
     ?.parentElement?.remove();
   openSessions.delete(sessionId);
   sessionOwners.delete(sessionId);
+  repositoryToolTerminals.delete(sessionId);
+  const installKey = repositoryInstallTerminalKeys.get(sessionId);
+  if (installKey) { repositoryInstallStarted.delete(installKey); repositoryInstallTerminalKeys.delete(sessionId); }
   const ownerKey = keyForSessionOwner(selectedTask
     ? { owner_type: 'task', owner_id: selectedTask.id }
     : selectedWorkspace ? { owner_type: 'workspace', owner_id: selectedWorkspace.id } : null);
@@ -1270,7 +1393,8 @@ async function refreshDirectories() {
     item.append(label);
     return item;
   };
-  directoryList.replaceChildren(...(page.directories.length ? page.directories.map((directory) => {
+  const directories = groupRepositoryDirectories(page.directories);
+  directoryList.replaceChildren(...(directories.length ? directories.map((directory) => {
     const group = document.createElement('li');
     const heading = document.createElement('h2'); heading.textContent = directory.path;
     const repositories = document.createElement('ul');

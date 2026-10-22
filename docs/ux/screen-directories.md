@@ -6,11 +6,15 @@ navigation. Keep repository rows off persistent navigation.
 ## Discovered repositories
 
 - **Add directories** opens the native multi-folder picker.
-- Show every saved directory and group discovered repositories beneath it.
+- Show discovered repositories under the shortest shared parent for saved scan
+  directories on the same filesystem root. Keep different filesystem roots in
+  separate groups. If a shared parent contains more than eight repositories,
+  keep the saved scan directories as separate groups instead.
 - Scan every saved directory at startup. Never scan the configured OpenCode
   Projects area.
 - Deduplicate by verified repository identity and canonical path. If saved roots
-  overlap, show each repository once under its most-specific matching root.
+  overlap, show each repository once under its most-specific matching root
+  before applying the display grouping above.
 
 ## Repositories
 

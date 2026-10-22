@@ -4630,5 +4630,26 @@
         "additionalProperties": false
       }
     }
+  },
+  "repo_tools_list": {
+    "payload": { "type": "object", "properties": { "request": { "type": "object", "properties": { "ownerType": { "type": "string" }, "ownerId": { "type": "string" } }, "required": ["ownerType", "ownerId"], "additionalProperties": false } }, "required": ["request"], "additionalProperties": false },
+    "result": { "type": "array", "items": { "type": "object", "properties": { "repositoryId": { "type": "string" }, "name": { "type": "string" }, "path": { "type": "string" }, "packageScripts": { "type": "array", "items": { "type": "string" } }, "makeTargets": { "type": "array", "items": { "type": "string" } }, "npmInstallNeeded": { "type": "boolean" } }, "required": ["repositoryId", "name", "path", "packageScripts", "makeTargets", "npmInstallNeeded"], "additionalProperties": false } }
+  },
+  "repo_tool_terminal_start": {
+    "payload": { "type": "object", "properties": { "request": { "type": "object", "properties": { "ownerType": { "type": "string" }, "ownerId": { "type": "string" }, "repositoryId": { "type": "string" }, "kind": { "type": "string" }, "name": { "type": "string" } }, "required": ["ownerType", "ownerId", "repositoryId", "kind", "name"], "additionalProperties": false } }, "required": ["request"], "additionalProperties": false },
+    "result": { "type": "object", "properties": { "terminalId": { "type": "string" }, "label": { "type": "string" }, "directory": { "type": "string" } }, "required": ["terminalId", "label", "directory"], "additionalProperties": false }
+  },
+  "repo_tool_terminal_write": {
+    "payload": { "type": "object", "properties": { "terminalId": { "type": "string" }, "data": { "type": "string" } }, "required": ["terminalId", "data"], "additionalProperties": false }, "result": { "type": "null" }
+  },
+  "repo_tool_terminal_resize": {
+    "payload": { "type": "object", "properties": { "terminalId": { "type": "string" }, "cols": { "type": "number" }, "rows": { "type": "number" } }, "required": ["terminalId", "cols", "rows"], "additionalProperties": false }, "result": { "type": "null" }
+  },
+  "repo_tool_terminal_replay": {
+    "payload": { "type": "object", "properties": { "terminalId": { "type": "string" } }, "required": ["terminalId"], "additionalProperties": false },
+    "result": { "type": "object", "properties": { "replay": { "type": "array", "items": { "type": "object", "properties": { "kind": { "type": "string" }, "sessionId": { "type": "string" }, "dataBase64": { "type": "string", "nullable": true }, "operation": { "type": "string", "nullable": true }, "message": { "type": "string", "nullable": true } }, "required": ["kind", "sessionId", "dataBase64", "operation", "message"], "additionalProperties": false } } }, "required": ["replay"], "additionalProperties": false }
+  },
+  "repo_tool_terminal_cleanup": {
+    "payload": { "type": "object", "properties": { "terminalId": { "type": "string" } }, "required": ["terminalId"], "additionalProperties": false }, "result": { "type": "null" }
   }
 }

@@ -66,6 +66,21 @@ test('runtime routes input and resize to the exact session and retains hidden vi
   assert.equal(runtime.sessions.get('a').hidden, false);
 });
 
+test('repository tool terminal routes input and resize through its separate process commands', async () => {
+  const calls = [];
+  const runtime = new TerminalRuntime({ invoke: (...args) => { calls.push(args); return nullResult(); } });
+  runtime.sessions.set('repo-tool-1', {
+    terminal: { cols: 91, rows: 27, focus() {} }, fit: { fit() {} },
+    hidden: false, exited: false, commandPrefix: 'repo_tool_terminal',
+  });
+  await runtime.write('repo-tool-1', 'make\n');
+  await runtime.resize('repo-tool-1');
+  assert.deepEqual(calls, [
+    ['repo_tool_terminal_write', { terminalId: 'repo-tool-1', data: 'make\n' }],
+    ['repo_tool_terminal_resize', { terminalId: 'repo-tool-1', cols: 91, rows: 27 }],
+  ]);
+});
+
 test('exit marks only its session unavailable for input', async () => {
   const calls = [];
   const runtime = new TerminalRuntime({ invoke: (...args) => { calls.push(args); return nullResult(); } });

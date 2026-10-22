@@ -6,7 +6,7 @@ use portable_pty::{native_pty_system, Child as PtyChild, CommandBuilder, MasterP
 use serde::Serialize;
 use std::collections::HashMap;
 use std::io::{Read, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -134,6 +134,7 @@ struct Terminal {
     writer: Mutex<Box<dyn Write + Send>>,
     child: Mutex<Box<dyn PtyChild + Send + Sync>>,
     exited: AtomicBool,
+    directory: PathBuf,
 }
 
 #[derive(Default)]
@@ -206,6 +207,17 @@ impl TerminalManager {
             .map(|terminals| terminals.keys().cloned().collect())
             .unwrap_or_default()
     }
+    pub fn active_directories(&self) -> Vec<PathBuf> {
+        self.terminals
+            .lock()
+            .map(|terminals| {
+                terminals
+                    .values()
+                    .map(|terminal| terminal.directory.clone())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
     pub fn is_attached(&self, session_id: &str) -> bool {
         self.terminals
             .lock()
@@ -261,6 +273,29 @@ impl TerminalManager {
                 ));
             }
         }
+        let spec = launch_spec(executable, server_url, password, session_id, directory);
+        self.spawn_command(
+            app, session_id, executable, &spec.args, directory, &spec.env,
+        )
+    }
+
+    /// Starts a repository tool in an app-owned interactive PTY. The id is a
+    /// transient terminal key, not an OpenCode session or persisted record.
+    pub fn spawn_command(
+        &self,
+        app: AppHandle,
+        terminal_id: &str,
+        executable: &Path,
+        args: &[String],
+        directory: &Path,
+        env: &[(String, String)],
+    ) -> Result<(), String> {
+        if terminal_id.is_empty() || !directory.is_absolute() {
+            return Err("Tool terminal requires an id and an absolute directory.".into());
+        }
+        if self.is_attached(terminal_id) {
+            return Err(format!("Terminal is already registered: {terminal_id}"));
+        }
         let pair = native_pty_system()
             .openpty(PtySize {
                 rows: 28,
@@ -268,18 +303,17 @@ impl TerminalManager {
                 pixel_width: 0,
                 pixel_height: 0,
             })
-            .map_err(|e| format!("Could not open a terminal for OpenCode: {e}"))?;
-        let spec = launch_spec(executable, server_url, password, session_id, directory);
+            .map_err(|error| format!("Could not open tool terminal: {error}"))?;
         let mut command = CommandBuilder::new(executable);
-        command.args(&spec.args);
+        command.args(args);
         command.cwd(directory);
-        for (key, value) in &spec.env {
+        for (key, value) in env {
             command.env(key, value);
         }
         let child = pair
             .slave
             .spawn_command(command)
-            .map_err(|e| format!("Could not open OpenCode's terminal: {e}"))?;
+            .map_err(|e| format!("Could not start repository tool: {e}"))?;
         drop(pair.slave);
         let reader = match pair.master.try_clone_reader() {
             Ok(reader) => reader,
@@ -287,7 +321,7 @@ impl TerminalManager {
                 let mut c = child;
                 let cleanup = cleanup_child_errors("terminal reader rollback", c.kill(), c.wait());
                 return Err(format!(
-                    "Could not read the OpenCode terminal: {e}{}",
+                    "Could not read the tool terminal: {e}{}",
                     if cleanup.is_empty() {
                         String::new()
                     } else {
@@ -302,7 +336,7 @@ impl TerminalManager {
                 let mut c = child;
                 let cleanup = cleanup_child_errors("terminal writer rollback", c.kill(), c.wait());
                 return Err(format!(
-                    "Could not write to the OpenCode terminal: {e}{}",
+                    "Could not write to the tool terminal: {e}{}",
                     if cleanup.is_empty() {
                         String::new()
                     } else {
@@ -316,12 +350,13 @@ impl TerminalManager {
             writer: Mutex::new(writer),
             child: Mutex::new(child),
             exited: AtomicBool::new(false),
+            directory: directory.to_path_buf(),
         });
         let mut terminals = self
             .terminals
             .lock()
             .map_err(|_| "The terminal manager is unavailable.".to_owned())?;
-        if terminals.contains_key(session_id) {
+        if terminals.contains_key(terminal_id) {
             if let Ok(mut child) = terminal.child.lock() {
                 for error in
                     cleanup_child_errors("duplicate terminal rollback", child.kill(), child.wait())
@@ -335,17 +370,15 @@ impl TerminalManager {
             } else {
                 eprintln!("{{\"event\":\"child-cleanup-error\",\"message\":\"duplicate terminal rollback: child lock unavailable\"}}");
             }
-            return Err(format!(
-                "An OpenCode terminal is already registered for session {session_id}."
-            ));
+            return Err(format!("A terminal is already registered: {terminal_id}."));
         }
-        terminals.insert(session_id.to_owned(), Arc::clone(&terminal));
+        terminals.insert(terminal_id.to_owned(), Arc::clone(&terminal));
         drop(terminals);
-        let id = session_id.to_owned();
+        let id = terminal_id.to_owned();
         let terminal_for_thread = Arc::clone(&terminal);
         let startup_events = Arc::clone(&self.startup_events);
         thread::Builder::new()
-            .name(format!("opencode-terminal-{id}"))
+            .name(format!("repo-tool-terminal-{id}"))
             .spawn(move || {
                 let mut buffer = [0_u8; 16 * 1024];
                 let mut reader = reader;
@@ -359,7 +392,7 @@ impl TerminalManager {
                                 data_base64: None,
                                 operation: Some("read".into()),
                                 message: Some(format!(
-                                    "Could not read the OpenCode terminal: {error}"
+                                    "Could not read the terminal: {error}"
                                 )),
                             };
                             if let Err(delivery) = app.emit(
@@ -418,14 +451,14 @@ impl TerminalManager {
             })
             .map_err(|e| {
                 if let Ok(mut terminals) = self.terminals.lock() {
-                    terminals.remove(session_id);
+                    terminals.remove(terminal_id);
                 }
                 if let Ok(mut child) = terminal.child.lock() {
                     for error in cleanup_child_errors("terminal reader thread rollback", child.kill(), child.wait()) {
                         eprintln!("{{\"event\":\"child-cleanup-error\",\"message\":{}}}", serde_json::to_string(&error).unwrap_or_else(|_| "\"unserializable\"".into()));
                     }
                 }
-                format!("Could not register terminal output reader: {e}")
+                    format!("Could not register tool terminal output reader: {e}")
             })?;
         Ok(())
     }
@@ -526,7 +559,11 @@ impl TerminalManager {
             .child
             .lock()
             .map_err(|_| "The OpenCode terminal process is unavailable.".to_owned())?;
-        let errors = cleanup_child_errors("terminal cleanup", child.kill(), child.wait());
+        let errors = if terminal.exited.load(Ordering::Acquire) {
+            Vec::new()
+        } else {
+            cleanup_child_errors("terminal cleanup", child.kill(), child.wait())
+        };
         if errors.is_empty() {
             Ok(())
         } else {
@@ -705,6 +742,7 @@ mod tests {
                 waited: Arc::clone(&waited),
             })),
             exited: AtomicBool::new(false),
+            directory: PathBuf::from("/tmp"),
         });
         let manager = TerminalManager::default();
         manager
@@ -727,6 +765,39 @@ mod tests {
     }
 
     #[test]
+    fn closing_an_exited_terminal_does_not_kill_or_wait_it_again() {
+        let pair = native_pty_system()
+            .openpty(PtySize::default())
+            .expect("test PTY");
+        let writer = pair.master.take_writer().expect("test PTY writer");
+        let killed = Arc::new(AtomicBool::new(false));
+        let waited = Arc::new(AtomicBool::new(false));
+        let terminal = Arc::new(Terminal {
+            master: Mutex::new(pair.master),
+            writer: Mutex::new(writer),
+            child: Mutex::new(Box::new(CleanupTestChild {
+                kill_failed: false,
+                wait_failed: false,
+                killed: Arc::clone(&killed),
+                waited: Arc::clone(&waited),
+            })),
+            exited: AtomicBool::new(true),
+            directory: PathBuf::from("/tmp"),
+        });
+        let manager = TerminalManager::default();
+        manager
+            .terminals
+            .lock()
+            .unwrap()
+            .insert("exited".into(), terminal);
+        assert_eq!(manager.active_directories(), [PathBuf::from("/tmp")]);
+        manager.cleanup("exited").unwrap();
+        assert!(manager.active_directories().is_empty());
+        assert!(!killed.load(Ordering::SeqCst));
+        assert!(!waited.load(Ordering::SeqCst));
+    }
+
+    #[test]
     fn restart_releases_only_a_terminal_marked_exited() {
         let pair = native_pty_system()
             .openpty(PtySize::default())
@@ -742,6 +813,7 @@ mod tests {
                 waited: Arc::new(AtomicBool::new(false)),
             })),
             exited: AtomicBool::new(false),
+            directory: PathBuf::from("/tmp"),
         });
         let manager = TerminalManager::default();
         manager
@@ -770,6 +842,7 @@ mod tests {
                 writer: Mutex::new(writer),
                 child: Mutex::new(Box::new(child)),
                 exited: AtomicBool::new(false),
+                directory: PathBuf::from("/tmp"),
             })
         }
 

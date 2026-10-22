@@ -313,7 +313,10 @@ runtime or report a recoverable conflict for the user.
 
 Saved scan roots persist and startup rescans each root. Repository identities
 discovered under overlapping roots are shown only once under the most-specific
-root. Individual repository checkboxes persist enabled/disabled state. Only
+root. The Directories page groups saved roots under their shortest shared parent
+when they are on the same filesystem root and the group contains at most eight
+repositories; groups with more repositories retain their individual scan roots.
+Different filesystem roots remain separate. Individual repository checkboxes persist enabled/disabled state. Only
 enabled repositories are included in the initial New-work proposal context and
 can be selected as a Quick Request working directory; the user's original
 prompt remains unchanged.
@@ -681,6 +684,30 @@ Git status, without a conflict-resolution interface. If no remote or local
 list, report the comparison error, and continue loading other repositories.
 Review is read-only and does not create or consume terminal sessions.
 
+### 12.7 Repository tools
+
+The workbench Tools menu resolves repository paths from the selected owner, not
+from UI-supplied directories. A Workspace uses every verified associated clone;
+a Task uses only ready task-repository bindings and their exact worktrees. Rust
+discovers every named target in the root `GNUmakefile`, `makefile`, or
+`Makefile` (following GNU make's filename precedence) and every entry under
+`package.json`'s `scripts` object without evaluating either file during
+discovery. Repository groups wrap into additional columns as needed.
+
+When Tools is opened, Rust reports whether each `package.json` repository lacks
+`node_modules/`. The GUI automatically starts `npm install` for each such
+repository in its own interactive terminal. Selecting a Makefile target or
+package script starts `make <target>` or `npm run <script>` as separate argv
+elements (`make -- <target>` or `npm run -- <script>`), in a new app-owned PTY
+rooted at that repository checkout/worktree.
+No shell command string is accepted from the WebView. Terminal tabs belong to
+the selected Workspace or Task, remain open when navigating away, and stop only
+when their tab is closed or the application quits. Failures are shown in the
+interactive terminal output. An open tool terminal's exact directory remains in
+active-worktree cleanup protection until its tab closes, although it has no
+OpenCode session or SQLite record; no command output is copied into application
+records.
+
 ## 13. Ownership and Operation Map
 
 | Operation | Initiator | Authority | Mechanism |
@@ -700,6 +727,7 @@ Review is read-only and does not create or consume terminal sessions.
 | Report running/waiting/completed | OpenCode events/API | Rust reconciler | Server events and status API |
 | Delete Quick Request | User/GUI | Rust + terminal runtime + SQLite | Confirmed Tauri command |
 | Load Change Review | User/GUI | Rust + Git, scoped to the selected Workspace/Task associations | Read-only Tauri command |
+| Discover and run repository tools | User/GUI | Rust + verified owner bindings + filesystem + PTY | Typed Tauri commands; targets/scripts run as argv in a new interactive terminal |
 
 ### 13.1 Legacy registration tool contract
 

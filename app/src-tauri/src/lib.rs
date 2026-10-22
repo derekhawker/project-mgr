@@ -15,6 +15,7 @@ use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
 pub mod change_review;
 pub mod management;
 pub mod opencode;
+pub mod repo_tools;
 pub mod safety;
 pub mod session_restore;
 pub mod task_setup;
@@ -245,6 +246,12 @@ pub fn run() {
             quick_request_promote,
             workspace_navigation,
             change_review_load,
+            repo_tools_list,
+            repo_tool_terminal_start,
+            repo_tool_terminal_write,
+            repo_tool_terminal_resize,
+            repo_tool_terminal_replay,
+            repo_tool_terminal_cleanup,
             new_work_proposal_start,
             new_work_proposal_run,
             new_work_proposal_read,
@@ -451,6 +458,110 @@ fn change_review_load(
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RepositoryToolsRequest {
+    owner_type: String,
+    owner_id: String,
+}
+
+#[tauri::command]
+fn repo_tools_list(
+    request: RepositoryToolsRequest,
+    store: State<'_, ManagementStore>,
+) -> Result<Vec<repo_tools::RepositoryToolGroup>, String> {
+    repo_tools::list_for_owner(&store, &request.owner_type, &request.owner_id)
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RepositoryToolStartRequest {
+    owner_type: String,
+    owner_id: String,
+    repository_id: String,
+    kind: String,
+    name: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RepositoryToolTerminal {
+    terminal_id: String,
+    label: String,
+    directory: String,
+}
+
+static NEXT_REPOSITORY_TOOL_TERMINAL: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(1);
+
+#[tauri::command]
+fn repo_tool_terminal_start(
+    app: AppHandle,
+    request: RepositoryToolStartRequest,
+    runtime: State<'_, opencode::Runtime>,
+    store: State<'_, ManagementStore>,
+) -> Result<RepositoryToolTerminal, String> {
+    let launch = repo_tools::launch_for_owner(
+        &store,
+        &request.owner_type,
+        &request.owner_id,
+        &request.repository_id,
+        &request.kind,
+        &request.name,
+    )?;
+    let terminal_id = format!(
+        "repo-tool-{}",
+        NEXT_REPOSITORY_TOOL_TERMINAL.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    );
+    runtime.start_repository_tool(
+        app,
+        &terminal_id,
+        &launch.executable,
+        &launch.args,
+        &launch.directory,
+    )?;
+    Ok(RepositoryToolTerminal {
+        terminal_id,
+        label: launch.label,
+        directory: launch.directory.display().to_string(),
+    })
+}
+
+#[tauri::command]
+fn repo_tool_terminal_write(
+    runtime: State<'_, opencode::Runtime>,
+    terminal_id: String,
+    data: String,
+) -> Result<(), String> {
+    runtime.write_terminal(&terminal_id, &data)
+}
+
+#[tauri::command]
+fn repo_tool_terminal_resize(
+    runtime: State<'_, opencode::Runtime>,
+    terminal_id: String,
+    cols: u16,
+    rows: u16,
+) -> Result<(), String> {
+    runtime.resize_terminal(&terminal_id, cols, rows)
+}
+
+#[tauri::command]
+fn repo_tool_terminal_replay(
+    runtime: State<'_, opencode::Runtime>,
+    terminal_id: String,
+) -> terminal::TerminalAttachResult {
+    runtime.replay_terminal(&terminal_id)
+}
+
+#[tauri::command]
+fn repo_tool_terminal_cleanup(
+    runtime: State<'_, opencode::Runtime>,
+    terminal_id: String,
+) -> Result<(), String> {
+    runtime.cleanup_terminal(&terminal_id)
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct TaskCompletionCommand {
     task_id: String,
 }
@@ -514,13 +625,10 @@ fn start_cleanup_worker(app: AppHandle) {
                     serde_json::json!({"message": error.to_string()}),
                 ) { eprintln!("cleanup-recovery-error delivery failed: {delivery}"); }
             }
-            let active_terminal_ids = runtime.terminals.active_session_ids();
-            let mut active_dirs = Vec::<PathBuf>::new();
-            for id in active_terminal_ids {
-                if let Ok(Some(session)) = store.get_session(&id) {
-                    active_dirs.push(PathBuf::from(session.directory));
-                }
-            }
+            // Interactive tool terminals are transient and have no SQLite
+            // session row, so their owned directories must be supplied by the
+            // terminal manager directly or a Task cleanup could race a script.
+            let mut active_dirs = runtime.terminals.active_directories();
             if let Ok(active) = runtime.active_sessions() {
                 for id in active.keys() {
                     if let Ok(Some(session)) = store.get_session(id) {

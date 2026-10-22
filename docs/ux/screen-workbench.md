@@ -42,7 +42,16 @@ full-size terminal:
   terminals** returns without closing sessions. `READMEs` appears when one or
   more README files are found.
 - `Tools` opens a menu. With at most two repositories, show their tool groups
-  side by side in the menu, not as a vertical sequence of repo submenus.
+  side by side in the menu, not as a vertical sequence of repo submenus. For
+  larger workspaces, wrap repository groups into additional columns. Workspaces
+  show every associated repository; Tasks show only their selected repositories
+  and run tools in the corresponding task worktree.
+- Discover every named Makefile target and every `package.json` script
+  automatically. If a repository has `package.json` but no `node_modules/`,
+  automatically start `npm install` in a new interactive terminal when Tools is
+  opened. Each selected target or script starts in a new terminal in its
+  repository checkout/worktree; closing that tab stops only its process. Show
+  command failures in that terminal.
 - The selected terminal occupies the entire work area below the task/session
   bar. Do not place owner descriptions, repository management, status messages,
   notes, or other unrelated controls around an active terminal.

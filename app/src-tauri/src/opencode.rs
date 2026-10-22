@@ -667,6 +667,28 @@ impl Runtime {
         )
     }
 
+    pub fn start_repository_tool(
+        &self,
+        app: tauri::AppHandle,
+        terminal_id: &str,
+        executable: &Path,
+        args: &[String],
+        directory: &Path,
+    ) -> Result<(), String> {
+        self.ensure_running()?;
+        self.terminals.spawn_command(
+            app,
+            terminal_id,
+            executable,
+            args,
+            directory,
+            &[
+                ("TERM".into(), "xterm-256color".into()),
+                ("COLORTERM".into(), "truecolor".into()),
+            ],
+        )
+    }
+
     pub fn restore_terminal(
         &self,
         app: tauri::AppHandle,
