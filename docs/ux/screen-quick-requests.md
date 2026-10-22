@@ -29,8 +29,13 @@ hours. Each row has an **Open** button on the left, the original prompt as
 non-clickable text truncated with an ellipsis when needed, and one destructive
 action: **Delete**. Ask for confirmation before deleting. Keep spacing compact
 throughout the application; avoid large padding around navigation links, list
-rows, and controls. Search is
-deferred to Deliverable 3. This is the full Quick Requests destination, not a
+rows, and controls. Provide a search field above the rows. Search matches the
+original prompt using a case-insensitive literal substring; leading and
+trailing query whitespace is ignored, and an empty or whitespace-only query
+shows every retained request. Keep matching in the full-list view only. When a
+non-empty query has no matches, show **No Quick Requests match your search.**
+Clearing the field restores all rows. Search does not change or persist records.
+This is the full Quick Requests destination, not a
 separate generic History destination.
 
 The application lists Quick Request records from its management store. It reads
@@ -45,6 +50,7 @@ available for leaving the destination.
 ```text
 ┌ Quick Requests ───────────────────────────────────────────────┐
 │ Quick Requests                         [New Quick Request]   │
+│ [Search Quick Requests…]                                    │
 │ [Open] Chord diagram ideas                         [Delete]   │
 │ [Open] Compare API approaches                      [Delete]   │
 │ [Open] Review dependency update                    [Delete]   │

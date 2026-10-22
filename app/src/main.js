@@ -127,6 +127,7 @@ const errorMessage = document.querySelector('#quick-error');
 const list = document.querySelector('#quick-request-list');
 const fullRequestList = document.querySelector('#quick-request-full-items');
 const fullRequestDestination = document.querySelector('#quick-request-full-list');
+const fullRequestSearch = document.querySelector('#quick-request-search');
 const terminalViews = document.querySelector('#terminal-views');
 const workspaceList = document.querySelector('#workspace-list');
 const workspaceContextMenu = document.querySelector('#workspace-context-menu');
@@ -1453,7 +1454,11 @@ document.querySelector('#show-history').addEventListener('click', () => {
 });
 
 async function refreshRequests(history = false) {
-  const records = await listQuickRequests(invoke, history);
+  const allRecords = await listQuickRequests(invoke, history);
+  const query = history ? fullRequestSearch.value.trim().toLocaleLowerCase() : '';
+  const records = query
+    ? allRecords.filter((record) => (record.prompt ?? 'Prompt unavailable').toLocaleLowerCase().includes(query))
+    : allRecords;
   const target = history ? fullRequestList : list;
   target.replaceChildren(...(records.length ? records.map((record) => {
     const item = document.createElement('li');
@@ -1517,8 +1522,12 @@ async function refreshRequests(history = false) {
       item.append(remove);
     }
     return item;
-  }) : [Object.assign(document.createElement('li'), { textContent: history ? 'No Quick Requests yet.' : 'None yet' })]));
+  }) : [Object.assign(document.createElement('li'), { textContent: history ? (query ? 'No Quick Requests match your search.' : 'No Quick Requests yet.') : 'None yet' })]));
 }
+
+fullRequestSearch.addEventListener('input', () => {
+  void refreshRequests(true).catch((error) => setAppNotice(formatWorkspaceError('Search Quick Requests', error)));
+});
 
 async function showQuickRequestList() {
   await refreshRequests(true);
