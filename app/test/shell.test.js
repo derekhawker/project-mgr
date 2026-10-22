@@ -80,6 +80,7 @@ import {
   createKeyedSingleFlight,
   workspaceProposalRepositoryLocations,
   workspaceStartingPrompt,
+  shouldSubmitWorkspaceStartingPrompt,
   workspaceReviewDetails,
 } from '../src/shell.js';
 import { resultForCommand, completedTask, history, status, reconciliation, task, session, newWorkProposal } from './command-fixtures.js';
@@ -115,6 +116,8 @@ test('workspace review lists repository locations and uses the proposal prompt a
     [{ name: 'Alpha', path: '/work/alpha' }],
   );
   assert.equal(workspaceStartingPrompt({ startingPrompt: 'Revised starting text' }), 'Revised starting text');
+  assert.equal(shouldSubmitWorkspaceStartingPrompt('  '), false);
+  assert.equal(shouldSubmitWorkspaceStartingPrompt('A starting prompt'), true);
   assert.equal(workspaceStartingPrompt({}), '');
   assert.deepEqual(workspaceReviewDetails({
     workspace: { name: 'Edited proposal name' },

@@ -79,6 +79,27 @@ body {
 .workbench-session-tabs { margin: 0; flex: 1; }
 .workbench-session-tabs button { color: #426a59; border-color: #d9e1db; background: #fbfcfa; }
 .workbench-session-tabs button.selected { color: #effcf5; border-color: #176c52; background: #176c52; }
+.change-review-page { min-width: 0; min-height: 0; width: 100%; flex: 1 1 auto; display: flex; flex-direction: column; overflow: hidden; }
+.change-review-heading { display: flex; align-items: center; justify-content: space-between; gap: .5rem; padding: .65rem .75rem; border-bottom: 1px solid #dfe4df; }
+.change-review-heading h1 { margin: 0; font-size: 1.25rem; }
+.change-review-heading p { margin: .15rem 0 0; color: #66736e; font-size: 12px; }
+.change-review-mode { display: flex; gap: .2rem; }
+.change-review-actions { display: flex; align-items: center; gap: .35rem; }
+.change-review-mode button { border: 1px solid #d9e1db; border-radius: 4px; padding: .25rem .4rem; background: #fbfcfa; color: #426a59; cursor: pointer; }
+.change-review-mode button[aria-pressed="true"] { color: #effcf5; background: #176c52; }
+.change-review-content { min-width: 0; min-height: 0; flex: 1; display: grid; grid-template-columns: minmax(14rem, 30%) minmax(0, 1fr); }
+.change-review-files { min-width: 0; overflow: auto; border-right: 1px solid #dfe4df; padding: .5rem; }
+.change-review-repository h2 { margin: .35rem 0 .1rem; font-size: 13px; }
+.change-review-repo-path { margin: 0 0 .25rem; color: #77827d; font-size: 10px; overflow-wrap: anywhere; }
+.change-review-target { margin: 0 0 .25rem; color: #66736e; font-size: 10px; }
+.change-review-repository ul { margin: 0 0 .6rem; padding: 0; list-style: none; }
+.change-review-repository li button { width: 100%; padding: .25rem; border: 0; border-radius: 3px; background: transparent; color: #426a59; text-align: left; overflow-wrap: anywhere; cursor: pointer; font-size: 12px; }
+.change-review-repository li button[aria-current="true"] { color: #103f31; background: #e5eee8; font-weight: 650; }
+.change-review-diff-pane { min-width: 0; min-height: 0; overflow: auto; padding: .5rem; }
+.change-review-diff-pane h2 { margin: 0 0 .4rem; overflow-wrap: anywhere; font-size: 14px; }
+.change-review-unified, .change-review-split { margin: 0; padding: .5rem; overflow: auto; color: #23352e; background: #fbfcfa; font: 12px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre; }
+.change-review-content [data-review-diff]:has(.change-review-split) { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); overflow: auto; }
+.change-review-error { color: #9b3d32; font-size: 12px; }
 .session-tab-item { display: inline-flex; align-items: stretch; }
 .session-tabs .session-tab-close { padding: .35rem .5rem; border-left: 0; border-radius: 0 5px 5px 0; color: #d9f5e7; background: #1b2925; }
 .workbench-session-tabs .session-tab-close { color: #426a59; border-color: #d9e1db; background: #fbfcfa; }
@@ -122,9 +143,13 @@ body {
 .quick-heading { margin-top: 2rem !important; }
 .navigation ul { list-style: none; padding: 0; margin: 0 0 .5rem; }
 .navigation li button { border: 0; background: transparent; padding: .225rem 0; color: #176c52; text-align: left; cursor: pointer; }
+.navigation li button.workspace-navigation-button { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: .35rem; }
+.workspace-repository-indicator { display: inline-flex; flex: 0 0 auto; color: #66736e; }
+.workspace-repository-indicator svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.4; }
 .navigation button:focus-visible, .request-form button:focus-visible, .request-form textarea:focus-visible,
 .request-form select:focus-visible, .compact-input:focus-visible, .session-tabs button:focus-visible,
-.terminal-surface:focus-visible {
+.terminal-surface:focus-visible, .toolbar-tab:focus-visible, .change-review-repository button:focus-visible,
+.change-review-mode button:focus-visible {
   outline: 3px solid #d28b32;
   outline-offset: 2px;
 }

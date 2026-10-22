@@ -4540,4 +4540,95 @@
       "additionalProperties": false
     }
   }
+,
+  "change_review_load": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "request": {
+          "type": "object",
+          "properties": {
+            "ownerType": {
+              "type": "string"
+            },
+            "ownerId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "ownerType",
+            "ownerId"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "request"
+      ],
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "repositoryId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "comparisonTarget": {
+            "type": "string",
+            "nullable": true
+          },
+          "comparisonError": {
+            "type": "string",
+            "nullable": true
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string"
+                },
+                "diff": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "diffError": {
+                  "type": "string",
+                  "nullable": true
+                }
+              },
+              "required": [
+                "path",
+                "status",
+                "diff",
+                "diffError"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "repositoryId",
+          "name",
+          "path",
+          "comparisonTarget",
+          "comparisonError",
+          "files"
+        ],
+        "additionalProperties": false
+      }
+    }
+  }
 }

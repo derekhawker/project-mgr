@@ -14,8 +14,8 @@ and anchored at the bottom.
 The prompt-capture modal is compact and clearly labels the selected work type
 in both its title and prompt instruction. The proposal/review modal grows only
 after Continue, when it must show extracted details and repository choices.
-Workspace review has an editable starting prompt that is sent according to the
-Workspace repository-count rules. Task review has an optional editable revised
+Workspace review has an optional editable starting prompt that is sent according to the
+Workspace repository-count rules when nonblank. Task review has an optional editable revised
 prompt for reference only; it is not sent to Task sessions or persisted. The
 review title repeats the work type so the action being confirmed is never
 ambiguous.
@@ -102,8 +102,9 @@ Confirmation performs one user-visible flow:
 4. The app selects the new workspace and opens all of its interactive terminal
    tabs.
 5. For zero/one selected repository, Rust sends the confirmed starting prompt
-   through the workspace session. For multiple repositories, Rust opens one
-   empty session per clone and sends no prompt automatically.
+   through the workspace session when it is nonblank. If the user clears it,
+   setup succeeds without sending a prompt. For multiple repositories, Rust
+   opens one empty session per clone and sends no prompt automatically.
 
 Keep a visible, ordered progress list in the New-work dialog while this runs.
 Place it immediately after the active prompt field: below the original prompt
@@ -118,7 +119,8 @@ review and setup.
 - **Write workspace instructions** — success or failed when applicable.
 - **Start workspace session(s) and terminal(s)** — success or failed, with one
   terminal for zero/one repository and one per repository for multiple repos.
-- **Submit starting prompt** — shown only for zero/one-repository workspaces.
+- **Submit starting prompt** — shown only for zero/one-repository workspaces;
+  if the optional field is blank, mark it skipped rather than failing setup.
 - **Workspace create** — final success only when required setup and session
   startup succeeded; otherwise show **Workspace create — failed** and the
   individual failed step details. Do not present a partially provisioned

@@ -40,9 +40,14 @@
               </div>
               <div class="workbench-toolbar secondary-toolbar" aria-label="Session and workspace views">
                 <nav id="session-tabs" class="session-tabs workbench-session-tabs" role="tablist" aria-label="Workspace or task sessions"></nav>
+                <button id="show-change-review" type="button" class="toolbar-tab" hidden>Change Review</button>
               </div>
             </div>
              <div id="right-content" class="right-content">
+             <section id="change-review-page" class="change-review-page" hidden aria-labelledby="change-review-heading">
+               <header class="change-review-heading"><div><h1 id="change-review-heading">Change Review</h1><p>Compare with remote main/master, falling back to local main/master · <span data-review-title></span></p></div><div class="change-review-actions"><button type="button" id="change-review-back" class="quiet-button">Back to terminals</button><div class="change-review-mode" role="group" aria-label="Diff presentation"><button type="button" data-review-mode="unified" aria-pressed="true">Unified</button><button type="button" data-review-mode="split" aria-pressed="false">Split</button></div></div></header>
+               <div class="change-review-content"><aside class="change-review-files" aria-label="Changed files grouped by repository" data-review-files></aside><section class="change-review-diff-pane" aria-label="Selected file diff"><h2 data-review-file-title>Select a changed file</h2><div data-review-diff></div></section></div>
+             </section>
              <section id="quick-request-full-list" class="quick-request-full-list" hidden aria-labelledby="quick-request-full-title">
               <div class="quick-request-list-heading"><h1 id="quick-request-full-title">Quick Requests</h1><button id="new-quick-request" type="button" class="primary-button">New Quick Request</button></div>
               <ul id="quick-request-full-items" class="quick-request-full-items"></ul>

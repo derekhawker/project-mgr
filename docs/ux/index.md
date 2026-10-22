@@ -39,7 +39,7 @@ experience; the glossary is the vocabulary reference.
 | Workspace/task workbench | Switch between a workspace and its tasks; work in owner-scoped interactive terminals. | [screen-workbench.md](screen-workbench.md) |
 | Quick Requests | Keep the last 24 hours in navigation and browse all retained requests in a separate destination; open each in a dedicated terminal page. | [screen-quick-requests.md](screen-quick-requests.md) |
 | Directories | Manage saved scan roots and individually enabled repositories; deduplicate overlaps and scan saved roots at startup. | [screen-directories.md](screen-directories.md) |
-| Change Review | Review all repository changes in a conventional file list and diff against `origin/main`. | [screen-change-review.md](screen-change-review.md) |
+| Change Review | Review committed and working-tree changes in a conventional file list against remote or local `main`/`master` refs. | [screen-change-review.md](screen-change-review.md) |
 | READMEs | Browse found README files by full path beside the selected file. | [screen-readmes.md](screen-readmes.md) |
 | No selection | A rare, simple prompt to select work or start something new. | [screen-no-selection.md](screen-no-selection.md) |
 
@@ -100,7 +100,8 @@ experience; the glossary is the vocabulary reference.
   type.** Use **prompt** for text supplied to OpenCode and **Quick Request** for
   the one-off tracked item. Preserve the user's original prompt alongside any
   proposed starting prompt and destination for review. Only Workspace has an
-  editable starting prompt; Task prompt text is not automatically submitted.
+  editable starting prompt; clearing it skips initial prompt submission. Task
+  prompt text is not automatically submitted.
 ## Not in scope for these screens
 
 - Regular work history is deferred. Keep a History menu option disabled.

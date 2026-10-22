@@ -12,6 +12,7 @@ use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
 
+pub mod change_review;
 pub mod management;
 pub mod opencode;
 pub mod safety;
@@ -243,6 +244,7 @@ pub fn run() {
             quick_request_expire,
             quick_request_promote,
             workspace_navigation,
+            change_review_load,
             new_work_proposal_start,
             new_work_proposal_run,
             new_work_proposal_read,
@@ -430,6 +432,21 @@ fn workspace_navigation(store: State<'_, ManagementStore>) -> Result<WorkspaceNa
         workspace_repositories,
         quick_requests,
     })
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ChangeReviewRequest {
+    owner_type: String,
+    owner_id: String,
+}
+
+#[tauri::command]
+fn change_review_load(
+    request: ChangeReviewRequest,
+    store: State<'_, ManagementStore>,
+) -> Result<Vec<change_review::ReviewRepository>, String> {
+    change_review::load_for_owner(&store, &request.owner_type, &request.owner_id)
 }
 
 #[derive(Debug, Deserialize)]

@@ -16,7 +16,7 @@ const html = readFileSync(join(process.cwd(), 'index.html'), 'utf8');
 test('checked-in command inventory has one contract for every registered Rust command', () => {
   assert.deepEqual([...COMMAND_NAMES].sort(), [...rustCommands].sort());
   assert.deepEqual([...COMMAND_NAMES].sort(), [...rustAttributes].sort());
-  assert.equal(COMMAND_NAMES.length, 61);
+  assert.equal(COMMAND_NAMES.length, 62);
 });
 
 test('production main-screen selectors resolve to rendered HTML elements', () => {
@@ -113,7 +113,7 @@ test('Task creation has a Workspace selector for both navigation and Workspace c
   assert.match(html, /id="workspace-context-menu"[^>]*role="menu"[\s\S]*id="workspace-context-new-task"[^>]*role="menuitem"/);
   assert.match(html, /id="task-workspace-field"[^>]*hidden[\s\S]*label for="task-workspace-select"[^>]*>Workspace<\/label><select id="task-workspace-select" required>/);
   assert.match(html, /data-new-work-type="task"/);
-  assert.match(main, /bindWorkspaceContextMenu\(button, workspace, openWorkspaceContextMenu\)/);
+  assert.match(main, /createWorkspaceNavigationButton\(document, workspace, \{[\s\S]*onContextMenu: openWorkspaceContextMenu/);
   assert.match(main, /if \(workspace\) openNewWork\('task', workspace\.id\)/);
   assert.match(main, /if \(workType === 'task'\) populateTaskWorkspace\(workspaceId\)/);
   assert.match(main, /runNewWorkProposal\([\s\S]*requestedType === 'task' \? newWorkWorkspaceContext/);
@@ -148,7 +148,7 @@ test('workspace confirmation sends its reviewed prompt, while optional Task revi
   const main = readFileSync(join(process.cwd(), 'src', 'main.js'), 'utf8');
   assert.match(main, /const task = created\.task;[\s\S]*created\.sessions\[0\]\.openCodeSessionId/);
   assert.doesNotMatch(main, /submitNewWorkStartingPrompt\(invoke, taskPromptAction/);
-  assert.match(main, /for \(const session of workspaceSessions\) await showSession\(session\.openCodeSessionId\);[\s\S]*if \(!multiRepositoryWorkspace\)[\s\S]*await submitNewWorkStartingPrompt\(invoke, workspacePromptAction, startingPrompt\);/);
+  assert.match(main, /for \(const session of workspaceSessions\) await showSession\(session\.openCodeSessionId\);[\s\S]*if \(!multiRepositoryWorkspace && shouldSubmitWorkspaceStartingPrompt\(startingPrompt\)\)[\s\S]*await submitNewWorkStartingPrompt\(invoke, workspacePromptAction, startingPrompt\);[\s\S]*No starting prompt was provided/);
   assert.match(main, /initialized\.sessions \|\| \[\]/);
   assert.match(main, /selectedModel,\s*taskName,\s*taskIntent/);
   assert.match(main, /task-revised-prompt'\)\.value = proposal\.startingPrompt \|\| ''/);

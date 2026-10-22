@@ -25,6 +25,9 @@ full-size terminal:
 - The first row identifies the selected workspace and switches among its tasks.
   The workspace remains visible even when it has tasks. Keep task navigation
   available while a terminal is active.
+- Show a small Git-repository icon beside a Workspace in left navigation when
+  it has one or more associated repositories. Do not repeat the icon on Task
+  entries.
 - Create a workspace or Task from the **New work** dropdown in the persistent
   left navigation. Do not add a standalone **+ Task** toolbar button.
 - Right-clicking a Workspace in navigation offers **New Task**. That action
@@ -35,7 +38,9 @@ full-size terminal:
   available destinations. Keep it compact; do not let wrapping toolbars consume
   the terminal's area.
 - `Change Review` appears only when the selected workspace/task has an associated
-  repository. `READMEs` appears when one or more README files are found.
+  repository. Its toolbar button opens a read-only destination; **Back to
+  terminals** returns without closing sessions. `READMEs` appears when one or
+  more README files are found.
 - `Tools` opens a menu. With at most two repositories, show their tool groups
   side by side in the menu, not as a vertical sequence of repo submenus.
 - The selected terminal occupies the entire work area below the task/session

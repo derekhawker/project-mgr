@@ -3,13 +3,14 @@ import { invokeCommand } from './command-contract.js';
 import { listen } from '@tauri-apps/api/event';
 import { open as openDirectoryPicker } from '@tauri-apps/plugin-dialog';
 import { loadApplicationShell } from './shell.js';
-import { listQuickRequests, restoreQuickRequest, deleteQuickRequest, loadWorkspaceNavigation, createInitializedWorkspace, createWorkspaceTask, submitNewWorkStartingPrompt, getTaskSetupStatus, taskSetupStatusNotice, cancelTaskSetup, resumeTaskSetup, retryTaskSetup, addRepositoryDirectories, scanRepositories, listRepositoryCatalog, loadRepositoryDirectoryPage, setRepositoryEnabled, attachRepository, createWorkspaceSession, formatWorkspaceError, workspaceNavigationModel, selectCreatedWorkspace, listPendingInputs, listAllPendingInputs, getSessionStatus, reconcileSession, createTaskSession, sessionStatusLabel, completeTask, listTaskCleanupJobs, retryTaskCleanup, completeWorkspace, reactivateWorkspace, sessionTabAttributes, terminalAccessibilityAttributes, controlErrorAttributes, startNewWorkProposal, runNewWorkProposal, closeNewWorkProposal, cleanupTerminal, resolveQuickRequestDirectory, submitResolvedQuickRequestFlow, createKeyedSingleFlight, workspaceProposalRepositoryLocations, workspaceStartingPrompt, workspaceReviewDetails, taskWorkspaceOptions } from './shell.js';
+import { listQuickRequests, restoreQuickRequest, deleteQuickRequest, loadWorkspaceNavigation, createInitializedWorkspace, createWorkspaceTask, submitNewWorkStartingPrompt, shouldSubmitWorkspaceStartingPrompt, getTaskSetupStatus, taskSetupStatusNotice, cancelTaskSetup, resumeTaskSetup, retryTaskSetup, addRepositoryDirectories, scanRepositories, listRepositoryCatalog, loadRepositoryDirectoryPage, setRepositoryEnabled, attachRepository, createWorkspaceSession, formatWorkspaceError, workspaceNavigationModel, selectCreatedWorkspace, listPendingInputs, listAllPendingInputs, getSessionStatus, reconcileSession, createTaskSession, sessionStatusLabel, completeTask, listTaskCleanupJobs, retryTaskCleanup, completeWorkspace, reactivateWorkspace, sessionTabAttributes, terminalAccessibilityAttributes, controlErrorAttributes, startNewWorkProposal, runNewWorkProposal, closeNewWorkProposal, cleanupTerminal, resolveQuickRequestDirectory, submitResolvedQuickRequestFlow, createKeyedSingleFlight, workspaceProposalRepositoryLocations, workspaceStartingPrompt, workspaceReviewDetails, taskWorkspaceOptions } from './shell.js';
 import './styles.css';
 import { clearNoticeIfStartsWith, showCleanupError } from './error-events.js';
 import { bindQuickRequestForm } from './quick-request-form.js';
 import { initializeModelSelector } from './model-selector.js';
-import { bindWorkspaceContextMenu, populateTaskWorkspaceSelector } from './task-workspace-ui.js';
+import { createWorkspaceNavigationButton, populateTaskWorkspaceSelector } from './task-workspace-ui.js';
 import { recordSessionReplacement, resolveSessionReplacement } from './session-restore-ui.js';
+import { loadChangeReview, renderChangeReview } from './change-review-ui.js';
 
 // Command-boundary client.  Raw Tauri invoke is intentionally not available
 // in this module or any other production presentation module.
@@ -159,6 +160,9 @@ let currentTaskSetupNotice = null;
 const noSelection = document.querySelector('#no-selection');
 const workbench = document.querySelector('#workbench');
 const selectedOwner = document.querySelector('#selected-owner');
+const changeReviewPage = document.querySelector('#change-review-page');
+const changeReviewButton = document.querySelector('#show-change-review');
+let selectedOwnerRepositoryCount = 0;
 const newWork = document.querySelector('#new-work');
 const newWorkReview = document.querySelector('#new-work-review');
 const newWorkPrompt = document.querySelector('#new-work-prompt');
@@ -170,6 +174,39 @@ function setSessionStatus(message) {
   sessionStatus.textContent = message;
   sessionStatus.hidden = !message;
 }
+
+function showOwnerTerminal() {
+  changeReviewPage.hidden = true;
+  selectedOwner.hidden = false;
+  changeReviewButton.classList.remove('selected');
+}
+
+function syncChangeReviewAvailability() {
+  const available = Boolean(selectedWorkspace && selectedOwnerRepositoryCount > 0 && !selectedTask?.quickRequest);
+  changeReviewButton.hidden = !available;
+  if (!available) showOwnerTerminal();
+}
+
+changeReviewButton.addEventListener('click', async () => {
+  if (!selectedWorkspace || !selectedOwnerRepositoryCount) return;
+  const ownerType = selectedTask ? 'task' : 'workspace';
+  const ownerId = selectedTask?.id || selectedWorkspace.id;
+  changeReviewButton.disabled = true;
+  changeReviewButton.classList.add('selected');
+  selectedOwner.hidden = true;
+  changeReviewPage.hidden = false;
+  changeReviewPage.querySelector('[data-review-title]').textContent = 'Loading changes…';
+  try {
+    const repositories = await loadChangeReview(invoke, ownerType, ownerId);
+    if ((selectedTask?.id || selectedWorkspace?.id) !== ownerId) return;
+    renderChangeReview(changeReviewPage, repositories);
+  } catch (error) {
+    changeReviewPage.querySelector('[data-review-title]').textContent = `Could not load changes: ${String(error)}`;
+    changeReviewPage.querySelector('[data-review-files]').replaceChildren();
+    changeReviewPage.querySelector('[data-review-diff]').replaceChildren();
+  } finally { changeReviewButton.disabled = false; }
+});
+document.querySelector('#change-review-back').addEventListener('click', showOwnerTerminal);
 
 function setModelControls(ready) {
   modelsReady = ready;
@@ -329,6 +366,7 @@ const showSession = createKeyedSingleFlight(async (sessionId, options = {}) => {
       tab.setAttribute('aria-label', `Open ${tab.textContent}`);
      tab.setAttribute('aria-selected', 'true');
       tab.addEventListener('click', () => {
+        showOwnerTerminal();
         runtime.select(sessionId);
         selectedSessionByOwner.set(ownerKey, sessionId);
         sessionTabs.querySelectorAll(`[data-owner-key="${CSS.escape(ownerKey || '')}"]`).forEach((entry) => {
@@ -419,7 +457,7 @@ async function refreshGlobalPendingInputs() {
     pendingInputs.replaceChildren(...records.flatMap((record) => [...(record.permissions || []), ...(record.forms || [])].map((item) => {
       const entry = document.createElement('li'); const button = document.createElement('button'); button.type = 'button';
       button.textContent = `${record.sessionId} · Input required · ${item.id || item.requestID || 'request'}`;
-      button.addEventListener('click', () => void showSession(record.sessionId)); entry.append(button); return entry;
+      button.addEventListener('click', () => { showOwnerTerminal(); void showSession(record.sessionId); }); entry.append(button); return entry;
     })));
   } catch (error) {
     const text = `Pending input status unavailable: ${String(error)}`;
@@ -430,6 +468,11 @@ async function refreshGlobalPendingInputs() {
 
 function renderNavigation(data) {
   navigationData = data;
+  if (selectedWorkspace && !selectedTask) {
+    selectedOwnerRepositoryCount = (data.workspaceRepositories || []).filter((binding) =>
+      binding.workspaceId === selectedWorkspace.id && binding.verificationStatus === 'verified').length;
+    syncChangeReviewAvailability();
+  }
   document.querySelector('#workspaces-unselected').hidden = Boolean(selectedWorkspace);
   const ownerTabs = document.querySelector('#owner-tabs');
   if (ownerTabs) {
@@ -462,14 +505,14 @@ function renderNavigation(data) {
   });
   const renderWorkspace = ({ workspace, tasks }) => {
      const item = document.createElement('li');
-     const button = document.createElement('button');
-     button.type = 'button';
-     button.textContent = workspace.name;
-     button.className = selectedWorkspace?.id === workspace.id ? 'selected' : '';
-     button.setAttribute('aria-haspopup', 'menu');
-     button.setAttribute('aria-expanded', 'false');
-     button.addEventListener('click', () => selectWorkspace(workspace, data));
-     bindWorkspaceContextMenu(button, workspace, openWorkspaceContextMenu);
+     const repositoryCount = (data.workspaceRepositories || []).filter((binding) =>
+       binding.workspaceId === workspace.id && binding.verificationStatus === 'verified').length;
+     const button = createWorkspaceNavigationButton(document, workspace, {
+       repositoryCount,
+       selected: selectedWorkspace?.id === workspace.id,
+       onSelect: () => selectWorkspace(workspace, data),
+       onContextMenu: openWorkspaceContextMenu,
+     });
      item.append(button);
       item.append(...renderTasks({ workspace, tasks }));
      return item;
@@ -538,6 +581,9 @@ function selectWorkspace(workspace, data = navigationData) {
   currentTaskSetupNotice = null;
   selectedWorkspace = workspace;
   selectedTask = null;
+  selectedOwnerRepositoryCount = (data.workspaceRepositories || []).filter((binding) => binding.workspaceId === workspace.id && binding.verificationStatus === 'verified').length;
+  showOwnerTerminal();
+  syncChangeReviewAvailability();
   syncOwnerControls();
   noSelection.hidden = true; workbench.hidden = false; selectedOwner.hidden = false; newWork.hidden = true; newWorkReview.hidden = true;
   workspaceTitle.textContent = workspace.name;
@@ -567,6 +613,9 @@ function selectTask(task, workspace, data = navigationData) {
   currentTaskSetupNotice = null;
   selectedWorkspace = workspace;
   selectedTask = task;
+  selectedOwnerRepositoryCount = 0;
+  showOwnerTerminal();
+  syncChangeReviewAvailability();
   syncOwnerControls();
   noSelection.hidden = true; workbench.hidden = isQuickRequest; selectedOwner.hidden = false; newWork.hidden = true; newWorkReview.hidden = true;
   workspaceTitle.textContent = task.name;
@@ -621,6 +670,8 @@ async function refreshTaskSetup() {
   const status = await getTaskSetupStatus(invoke, requestedTaskId);
   if (selectedTask?.id !== requestedTaskId) return status;
   selectedTask = status.task;
+  selectedOwnerRepositoryCount = (status.repositories || []).filter((binding) => binding.setupStatus === 'ready').length;
+  syncChangeReviewAvailability();
   const setupNotice = taskSetupStatusNotice(status);
   if (setupNotice) {
     currentTaskSetupNotice = setupNotice;
@@ -1017,13 +1068,15 @@ proposalCreate.addEventListener('click', async () => {
       }
       await showSession(workspaceSessions[0].openCodeSessionId);
       const multiRepositoryWorkspace = currentProposal.repositories.length > 1;
-      if (!multiRepositoryWorkspace) {
+       if (!multiRepositoryWorkspace && shouldSubmitWorkspaceStartingPrompt(startingPrompt)) {
         const session = workspaceSessions[0];
         const workspacePromptAction = { type: 'workspace', ownerKey: `workspace:${initialized.workspace.id}`, sessionId: session.openCodeSessionId, model: selectedModel };
         setProgress('starting-prompt', 'Submit starting prompt', 'running');
         await submitNewWorkStartingPrompt(invoke, workspacePromptAction, startingPrompt);
         setProgress('starting-prompt', 'Submit starting prompt', 'success');
-      }
+       } else if (!multiRepositoryWorkspace) {
+        setProgress('starting-prompt', 'Submit starting prompt', 'skipped', 'No starting prompt was provided.');
+       }
       setProgress('workspace-result', 'Workspace create', 'success');
       workspaceStatus.textContent = '';
     }

@@ -365,10 +365,11 @@ For a Workspace, confirmation provisions selected clones before
 creating sessions. With zero repositories, Rust creates one session rooted in
 the workspace home; with one repository, one session rooted in its clone; with
 multiple repositories, one empty session per repository clone. Only the zero-
-and one-repository cases receive the confirmed starting prompt automatically.
-Multi-repository workspaces receive no prompt fan-out. Task confirmation creates
-task worktrees and one empty session per selected repository, rooted in its
-worktree; no prompt is sent automatically.
+and one-repository cases may receive the confirmed starting prompt, and only
+when it is nonblank; an empty optional starting prompt skips submission without
+failing workspace setup. Multi-repository workspaces receive no prompt fan-out.
+Task confirmation creates task worktrees and one empty session per selected
+repository, rooted in its worktree; no prompt is sent automatically.
 
 If workspace setup or session startup fails, keep the durable workspace and show
 the failed step and details in the New-work dialog with an explicit retry.
@@ -659,6 +660,27 @@ the v1 `attach` contract is historical only.
 4. The user answers through the real TUI.
 5. Rust forwards the answer and returns the session to its reconciled state.
 
+### 12.6 Change Review
+
+Change Review is a read-only view of each repository associated with the
+selected Workspace or Task. Rust resolves the selected owner's recorded
+checkout/worktree paths, validates each as the expected Git repository, and
+returns Git status plus the two-way diff against the repository's remote default
+branch when that is `origin/main` or `origin/master`. It prefers a valid
+`origin/HEAD` pointing to either name; otherwise it tries `origin/main`, then
+`origin/master`, then local `main`, then local `master`. The actual target and
+whether it is local or remote are returned per repository. The GUI groups
+results by repository and displays all repositories without a filter.
+Committed divergence from the selected base and Git-reported staged, unstaged,
+and untracked, non-ignored files are included; generated files are not specially
+filtered. Untracked text files
+are represented as additions. Binary or unreadable files remain listed with an
+indication that a text diff is unavailable. Conflicts remain listed with their
+Git status, without a conflict-resolution interface. If no remote or local
+`main`/`master` ref is available for one repository, preserve its status/file
+list, report the comparison error, and continue loading other repositories.
+Review is read-only and does not create or consume terminal sessions.
+
 ## 13. Ownership and Operation Map
 
 | Operation | Initiator | Authority | Mechanism |
@@ -677,6 +699,7 @@ the v1 `attach` contract is historical only.
 | Follow up or answer input | User/TUI | OpenCode | PTY input |
 | Report running/waiting/completed | OpenCode events/API | Rust reconciler | Server events and status API |
 | Delete Quick Request | User/GUI | Rust + terminal runtime + SQLite | Confirmed Tauri command |
+| Load Change Review | User/GUI | Rust + Git, scoped to the selected Workspace/Task associations | Read-only Tauri command |
 
 ### 13.1 Legacy registration tool contract
 

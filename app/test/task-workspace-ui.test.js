@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Window } from 'happy-dom';
-import { bindWorkspaceContextMenu, populateTaskWorkspaceSelector } from '../src/task-workspace-ui.js';
+import { bindWorkspaceContextMenu, createWorkspaceNavigationButton, populateTaskWorkspaceSelector } from '../src/task-workspace-ui.js';
 
 test('Task workspace selector lists eligible workspaces, preselects context, and remains changeable', () => {
   const window = new Window();
@@ -52,5 +52,23 @@ test('Workspace context action opens by right-click and keyboard context-menu ke
     button.getBoundingClientRect().bottom,
     button,
   ]);
+  window.close();
+});
+
+test('workspace navigation indicates associated Git repositories without adding task icons', () => {
+  const window = new Window();
+  const workspace = { id: 'workspace-a', name: 'Alpha', kind: 'regular', status: 'active' };
+  let selected = 0;
+  const withRepository = createWorkspaceNavigationButton(window.document, workspace, {
+    repositoryCount: 2,
+    onSelect: () => selected++,
+  });
+  assert.equal(withRepository.querySelector('.workspace-repository-indicator')?.title, '2 associated Git repositories');
+  assert.equal(withRepository.getAttribute('aria-label'), 'Alpha, 2 repositories');
+  withRepository.click();
+  assert.equal(selected, 1);
+
+  const withoutRepository = createWorkspaceNavigationButton(window.document, workspace);
+  assert.equal(withoutRepository.querySelector('.workspace-repository-indicator'), null);
   window.close();
 });

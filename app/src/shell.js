@@ -32,6 +32,10 @@ export function workspaceStartingPrompt(proposal) {
     : '';
 }
 
+export function shouldSubmitWorkspaceStartingPrompt(prompt) {
+  return typeof prompt === 'string' && prompt.trim().length > 0;
+}
+
 export function workspaceReviewDetails(proposal) {
   return {
     name: proposal?.workspace?.name || '',
