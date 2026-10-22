@@ -331,10 +331,14 @@ fn i02_git_path_fixture_reports_canonical_ownership_and_non_destructive_cleanup(
     );
     println!("workspace bindings: existing_main=ACCEPTED managed_main=ACCEPTED existing_feature=REJECTED managed_feature=REJECTED");
 
-    // Without a symbolic canonical default, even a current `main` branch is
-    // insufficient evidence to create a workspace binding.
+    // Without origin/HEAD, the supported origin/main fallback still identifies
+    // the repository's default branch for workspace setup.
     let repo_without_default = fixture.path().join("external/repos/no-default");
     init_repository(&repo_without_default);
+    git_ok(
+        &repo_without_default,
+        &["update-ref", "refs/remotes/origin/main", "HEAD"],
+    );
     git_ok(
         &repo_without_default,
         &["symbolic-ref", "--delete", "refs/remotes/origin/HEAD"],
@@ -353,7 +357,7 @@ fn i02_git_path_fixture_reports_canonical_ownership_and_non_destructive_cleanup(
             .unwrap()
             .repository
             .default_branch,
-        None
+        Some("main".into())
     );
     assert!(store
         .validate_and_save_workspace_repository_binding(&workspace_binding(
@@ -363,13 +367,24 @@ fn i02_git_path_fixture_reports_canonical_ownership_and_non_destructive_cleanup(
             CheckoutMode::Existing,
             "main",
         ))
-        .is_err());
+        .is_ok());
     assert_eq!(
         store
             .list_workspace_repository_bindings(&workspace.id)
             .unwrap()
             .len(),
-        2
+        3
+    );
+    git_ok(
+        &repo_without_default,
+        &["update-ref", "-d", "refs/remotes/origin/main"],
+    );
+    assert_eq!(
+        inspect_repository(&repo_without_default)
+            .unwrap()
+            .repository
+            .default_branch,
+        None
     );
     assert!(store.inspect_repository_for_use(&repo_a, None).is_err());
     let selected_external = store

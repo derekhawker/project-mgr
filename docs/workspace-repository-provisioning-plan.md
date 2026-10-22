@@ -138,9 +138,11 @@ not create a Task or task worktree as a side effect of workspace creation.
    malformed values, duplicate IDs, disabled IDs, and IDs absent from the
    current catalog.
 3. Rust builds a read-only setup plan for the selected repositories. It
-   canonicalizes and re-inspects each source, records its current HEAD and
-   default branch, rejects dirty sources or ambiguous default branches, and
-   reads upstream and submodule metadata.
+    canonicalizes and re-inspects each source, records its current HEAD and
+    default branch, rejects dirty sources or sources without a supported default
+    branch, and reads upstream and submodule metadata. Default branch resolution
+    prefers `origin/HEAD`, then `origin/main`, then `origin/master`; a fallback
+    requires the matching local branch to exist.
 4. The review shows the extracted workspace name and purpose; each repository's
    catalog name, full source path, and extraction reason; each destination path;
    and any detected `.gitmodules` submodule summary. The user can accept or go

@@ -191,7 +191,20 @@ pub fn inspect_repository_preflight(
         head,
         default_branch,
         default_branch_head,
-        clean: worktree.clean == Some(true),
+        // Ignored build/cache output does not make a source checkout unsuitable
+        // for cloning. Keep the broader safety status intact for cleanup, where
+        // ignored files must still prevent deleting a worktree that contains them.
+        clean: worktree
+            .clean
+            .map(|clean| {
+                clean
+                    || (!worktree.status_entries.is_empty()
+                        && worktree
+                            .status_entries
+                            .iter()
+                            .all(|entry| entry.starts_with("!!")))
+            })
+            .unwrap_or(false),
         upstream_fetch_url,
         submodules,
     })
@@ -948,6 +961,7 @@ mod tests {
             .unwrap();
         assert!(init.status.success());
         std::fs::write(source.join("README.md"), "fixture\n").unwrap();
+        std::fs::write(source.join(".gitignore"), "ignored-cache/\n").unwrap();
         std::fs::write(
             source.join(".gitmodules"),
             "[submodule \"lib\"]\n\tpath = vendor/lib\n\turl = ../lib.git\n",
@@ -1016,6 +1030,9 @@ mod tests {
             }]
         );
         assert_eq!(facts.upstream_fetch_url, None);
+        std::fs::create_dir_all(source.join("ignored-cache")).unwrap();
+        std::fs::write(source.join("ignored-cache/generated"), "ignored\n").unwrap();
+        assert!(inspect_repository_preflight(&record).unwrap().clean);
         std::fs::write(source.join("README.md"), "changed\n").unwrap();
         assert!(!inspect_repository_preflight(&record).unwrap().clean);
     }

@@ -79,6 +79,10 @@ The first-deliverable proposal has this conceptual shape:
 
 Malformed proposals or invalid repository references are rejected before
 confirmation. No workspace is created by the proposal request.
+When validating repositories for workspace setup, Git-ignored files do not count
+as uncommitted changes; tracked changes and non-ignored untracked files still do.
+Default branch resolution prefers `origin/HEAD`, then falls back to `origin/main`
+or `origin/master` when the matching local branch also exists.
 
 Enabled repositories from the Directories page are additional context to every
 New-work proposal; disabled repositories are absent from proposal input and

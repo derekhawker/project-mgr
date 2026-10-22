@@ -331,7 +331,7 @@ replace Rust's verified path or repository identity.
 | Step | Actor | Action | Result |
 |---:|---|---|---|
 | 1 | User | Confirms a catalog repository in a new-work proposal. | Rust receives its verified catalog ID, not an arbitrary path or Git command. |
-| 2 | Rust | Revalidates source identity, clean state, default branch, and configured upstream fetch URL. | Stale or dirty sources are rejected before provisioning. |
+| 2 | Rust | Revalidates source identity, clean state, default branch, and configured upstream fetch URL. Default branch resolution prefers `origin/HEAD`, then `origin/main`, then `origin/master`; fallback branches must exist both locally and on `origin`. | Stale or dirty sources or repositories without a supported default branch are rejected before provisioning. |
 | 3 | Rust/Git | Creates an independent clone at a stable path under `<workspace-home>/repos/`, recursively initializes submodules, and validates the result. | The source checkout remains unchanged; the workspace owns its clone. |
 | 4 | Rust | Persists source and clone identities, exact paths, branch, and setup outcome. | Future operations use recorded paths and validated identities. |
 | 5 | Rust | Sets the workspace clone's `origin` to the source's configured upstream fetch URL, or removes the local-path origin when none exists. | The clone does not retain the source checkout as its parent remote. |
@@ -340,6 +340,9 @@ Cloning uses `git clone --no-hardlinks --recurse-submodules`. Git's standard
 relative submodule URL resolution is used. Recursive submodule failure leaves
 an explicit incomplete setup; do not fetch Git LFS objects. Existing workspace
 bindings are not rewritten by this new-work provisioning behavior.
+
+Repository cleanliness checks include tracked changes and non-ignored untracked
+files. Git-ignored files do not make a source checkout dirty.
 
 ### 7.3 New-work proposal and confirmation
 

@@ -531,6 +531,24 @@ fn inspect_default_branch(path: &Path, branches: &[String]) -> SafetyResult<Opti
     }
 
     if git_text(path, &["rev-parse", "--is-bare-repository"])? != "true" {
+        // Match Change Review's established fallback order when origin/HEAD is
+        // absent. Require both the local branch and its origin tracking ref so
+        // workspace cloning has a verified branch to use.
+        for branch in ["main", "master"] {
+            let remote_ref = format!("refs/remotes/origin/{branch}");
+            let remote_branch_exists = git_quiet(
+                path,
+                &[
+                    OsStr::new("show-ref"),
+                    OsStr::new("--verify"),
+                    OsStr::new("--quiet"),
+                    OsStr::new(&remote_ref),
+                ],
+            )?;
+            if branches.iter().any(|candidate| candidate == branch) && remote_branch_exists {
+                return Ok(Some(branch.to_owned()));
+            }
+        }
         return Ok(None);
     }
     let Some(target) = git_optional_text(path, &["symbolic-ref", "--quiet", "HEAD"])? else {
