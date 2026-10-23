@@ -7,10 +7,12 @@ import { listQuickRequests, restoreQuickRequest, deleteQuickRequest, loadWorkspa
 import './styles.css';
 import { clearNoticeIfStartsWith, showCleanupError } from './error-events.js';
 import { bindQuickRequestForm } from './quick-request-form.js';
+import { filterQuickRequests } from './quick-request-search.js';
 import { initializeModelSelector } from './model-selector.js';
 import { createWorkspaceNavigationButton, populateTaskWorkspaceSelector } from './task-workspace-ui.js';
 import { recordSessionReplacement, resolveSessionReplacement } from './session-restore-ui.js';
 import { loadChangeReview, renderChangeReview } from './change-review-ui.js';
+import { createDocsController } from './docs-controller.js';
 import { listRepositoryTools, renderRepositoryTools, startRepositoryTool, repoToolTerminalCommand } from './repo-tools-ui.js';
 import { groupRepositoryDirectories } from './directory-groups.js';
 import { bindEnterToSubmit } from './form-keyboard.js';
@@ -1487,10 +1489,8 @@ document.querySelector('#show-history').addEventListener('click', () => {
 
 async function refreshRequests(history = false) {
   const allRecords = await listQuickRequests(invoke, history);
-  const query = history ? fullRequestSearch.value.trim().toLocaleLowerCase() : '';
-  const records = query
-    ? allRecords.filter((record) => (record.prompt ?? 'Prompt unavailable').toLocaleLowerCase().includes(query))
-    : allRecords;
+  const query = history ? fullRequestSearch.value.trim() : '';
+  const records = history ? filterQuickRequests(allRecords, query) : allRecords;
   const target = history ? fullRequestList : list;
   target.replaceChildren(...(records.length ? records.map((record) => {
     const item = document.createElement('li');
@@ -1554,7 +1554,7 @@ async function refreshRequests(history = false) {
       item.append(remove);
     }
     return item;
-  }) : [Object.assign(document.createElement('li'), { textContent: history ? (query ? 'No Quick Requests match your search.' : 'No Quick Requests yet.') : 'None yet' })]));
+  }) : [Object.assign(document.createElement('li'), { textContent: history ? (query.trim() ? 'No Quick Requests match your search.' : 'No Quick Requests yet.') : 'None yet' })]));
 }
 
 fullRequestSearch.addEventListener('input', () => {
