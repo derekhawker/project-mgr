@@ -406,8 +406,8 @@ pub struct GitRepositoryInfo {
     /// different local clones of the same remote.
     pub identity: String,
     pub current_branch: Option<String>,
-    /// Canonical default branch from `origin/HEAD`, or a bare repository's
-    /// symbolic `HEAD`. Ordinary checked-out `HEAD` is not treated as a default.
+    /// Canonical default branch from `origin/HEAD`, local `main`/`master`, the
+    /// current local branch, or a bare repository's symbolic `HEAD`.
     pub default_branch: Option<String>,
     pub branches: Vec<String>,
 }
@@ -523,30 +523,26 @@ fn inspect_default_branch(path: &Path, branches: &[String]) -> SafetyResult<Opti
         path,
         &["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"],
     )? {
-        return Ok(branch_from_symbolic_ref(
-            &target,
-            "refs/remotes/origin/",
-            branches,
-        ));
+        if let Some(branch) = branch_from_symbolic_ref(&target, "refs/remotes/origin/", branches) {
+            return Ok(Some(branch));
+        }
     }
 
     if git_text(path, &["rev-parse", "--is-bare-repository"])? != "true" {
-        // Match Change Review's established fallback order when origin/HEAD is
-        // absent. Require both the local branch and its origin tracking ref so
-        // workspace cloning has a verified branch to use.
+        // Prefer conventional local defaults even when this repository has no
+        // remote (common for locally initialized projects).
         for branch in ["main", "master"] {
-            let remote_ref = format!("refs/remotes/origin/{branch}");
-            let remote_branch_exists = git_quiet(
-                path,
-                &[
-                    OsStr::new("show-ref"),
-                    OsStr::new("--verify"),
-                    OsStr::new("--quiet"),
-                    OsStr::new(&remote_ref),
-                ],
-            )?;
-            if branches.iter().any(|candidate| candidate == branch) && remote_branch_exists {
+            if branches.iter().any(|candidate| candidate == branch) {
                 return Ok(Some(branch.to_owned()));
+            }
+        }
+        // If there is no conventional default, a checked-out local branch is
+        // still a usable deterministic base for the managed clone.
+        if let Some(branch) =
+            git_optional_text(path, &["symbolic-ref", "--quiet", "--short", "HEAD"])?
+        {
+            if branches.iter().any(|candidate| candidate == &branch) {
+                return Ok(Some(branch));
             }
         }
         return Ok(None);
@@ -900,6 +896,61 @@ pub(crate) fn remove_empty_managed_home(
 mod tests {
     use super::*;
     use tempfile::tempdir;
+
+    fn git(path: &Path, args: &[&str]) {
+        let output = Command::new("git")
+            .arg("-C")
+            .arg(path)
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "git {args:?} failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    #[test]
+    fn local_only_repository_uses_its_local_default_branch() {
+        let fixture = tempdir().unwrap();
+        let repository = fixture.path().join("local-only");
+        fs::create_dir(&repository).unwrap();
+        let output = Command::new("git")
+            .arg("init")
+            .arg("--initial-branch=main")
+            .arg(&repository)
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        git(&repository, &["config", "user.name", "Test"]);
+        git(
+            &repository,
+            &["config", "user.email", "test@example.invalid"],
+        );
+        fs::write(repository.join("README.md"), "local project\n").unwrap();
+        git(&repository, &["add", "README.md"]);
+        git(&repository, &["commit", "-m", "initial"]);
+
+        let inspection = inspect_repository(&repository).unwrap();
+
+        assert_eq!(
+            inspection.repository.default_branch.as_deref(),
+            Some("main")
+        );
+        assert!(inspection
+            .repository
+            .branches
+            .iter()
+            .any(|branch| branch == "main"));
+
+        git(&repository, &["branch", "-m", "topic"]);
+        let inspection = inspect_repository(&repository).unwrap();
+        assert_eq!(
+            inspection.repository.default_branch.as_deref(),
+            Some("topic")
+        );
+    }
 
     #[test]
     fn slugs_are_stable_safe_and_receive_deterministic_collision_suffixes() {

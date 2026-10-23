@@ -141,8 +141,8 @@ not create a Task or task worktree as a side effect of workspace creation.
     canonicalizes and re-inspects each source, records its current HEAD and
     default branch, rejects dirty sources or sources without a supported default
     branch, and reads upstream and submodule metadata. Default branch resolution
-    prefers `origin/HEAD`, then `origin/main`, then `origin/master`; a fallback
-    requires the matching local branch to exist.
+    prefers valid `origin/HEAD`, then a local `main` or `master`, then the
+    currently checked-out local branch. This supports local-only repositories.
 4. The review shows the extracted workspace name and purpose; each repository's
    catalog name, full source path, and extraction reason; each destination path;
    and any detected `.gitmodules` submodule summary. The user can accept or go

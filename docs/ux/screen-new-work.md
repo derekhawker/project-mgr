@@ -84,8 +84,11 @@ Malformed proposals or invalid repository references are rejected before
 confirmation. No workspace is created by the proposal request.
 When validating repositories for workspace setup, Git-ignored files do not count
 as uncommitted changes; tracked changes and non-ignored untracked files still do.
-Default branch resolution prefers `origin/HEAD`, then falls back to `origin/main`
-or `origin/master` when the matching local branch also exists.
+Default branch resolution prefers a valid `origin/HEAD`, then a local `main` or
+`master` branch, then the currently checked-out local branch. This supports
+repositories without remotes. If no branch can be determined, show a clear error
+explaining that the repository needs a configured `origin/HEAD` or a local
+branch.
 
 Enabled repositories from the Directories page are additional context to every
 New-work proposal; disabled repositories are absent from proposal input and

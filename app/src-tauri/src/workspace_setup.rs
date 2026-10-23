@@ -329,8 +329,8 @@ pub fn plan_workspace_setup(
             .filter(|branch| !branch.trim().is_empty())
             .ok_or_else(|| {
                 format!(
-                    "Repository {} has no unambiguous default branch.",
-                    repository.repository_id
+                    "Could not determine a default branch for repository `{}`. Configure `origin/HEAD`, or create a local `main`, `master`, or other checked-out branch.",
+                    repository.name
                 )
             })?;
         let default_branch_head = repository
