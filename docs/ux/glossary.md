@@ -43,8 +43,9 @@ discussions. For workflow behavior beyond the UX vocabulary, see
 - **Change Review:** The single name for the repository-diff destination. Use it
   in toolbar labels and prose. Change Review is separate from OpenCode's
   interactive terminal.
-- **README reader:** The destination for reading discovered README files by
-  full path. It is not a general file browser or editor.
+- **Docs reader:** The destination for reading discovered Markdown and text
+  files by paths relative to their Workspace or repository source. It is not a
+  general file browser or editor.
 - **Tools menu:** The menu of repository-scoped tools available for the selected
   workspace or task context.
 
@@ -53,4 +54,4 @@ discussions. For workflow behavior beyond the UX vocabulary, see
 - **Request** by itself: ambiguous. Use **Quick Request** for the tracked item
   and **prompt** for text.
 - **View** by itself: too generic to identify a destination. Name the thing:
-  **interactive terminal**, **Change Review**, or **README reader**.
+  **interactive terminal**, **Change Review**, or **Docs reader**.

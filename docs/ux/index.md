@@ -21,7 +21,7 @@ Application shell (fixed to the window)
     ├── Full-size interactive terminal occupying the available work area
     ├── Quick Request page (Back + terminal; no tabs or task/workspace tools)
     ├── Change Review (only when repositories are associated)
-    ├── README reader (when README.md files are found)
+    ├── Docs reader (always shown; disabled when no documents are found)
     └── Tools menu (repo tools grouped side by side; at most two repos)
 
 Modal: New work; leaves the current destination intact
@@ -40,7 +40,7 @@ experience; the glossary is the vocabulary reference.
 | Quick Requests | Keep the last 24 hours in navigation and browse all retained requests in a separate destination; open each in a dedicated terminal page. | [screen-quick-requests.md](screen-quick-requests.md) |
 | Directories | Manage saved scan roots and individually enabled repositories; deduplicate overlaps and scan saved roots at startup. | [screen-directories.md](screen-directories.md) |
 | Change Review | Review committed and working-tree changes in a conventional file list against remote or local `main`/`master` refs. | [screen-change-review.md](screen-change-review.md) |
-| READMEs | Browse found README files by full path beside the selected file. | [screen-readmes.md](screen-readmes.md) |
+| Docs | Browse found Markdown and text files by source-relative path beside the selected file. | [screen-docs.md](screen-docs.md) |
 | No selection | A rare, simple prompt to select work or start something new. | [screen-no-selection.md](screen-no-selection.md) |
 
 ## Overarching goals

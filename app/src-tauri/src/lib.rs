@@ -13,6 +13,7 @@ use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
 
 pub mod change_review;
+pub mod docs_reader;
 pub mod management;
 pub mod opencode;
 pub mod repo_tools;
@@ -246,6 +247,8 @@ pub fn run() {
             quick_request_promote,
             workspace_navigation,
             change_review_load,
+            docs_list,
+            docs_read,
             repo_tools_list,
             repo_tool_terminal_start,
             repo_tool_terminal_write,
@@ -443,17 +446,48 @@ fn workspace_navigation(store: State<'_, ManagementStore>) -> Result<WorkspaceNa
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct ChangeReviewRequest {
+struct OwnerContextRequest {
     owner_type: String,
     owner_id: String,
 }
 
 #[tauri::command]
 fn change_review_load(
-    request: ChangeReviewRequest,
+    request: OwnerContextRequest,
     store: State<'_, ManagementStore>,
 ) -> Result<Vec<change_review::ReviewRepository>, String> {
     change_review::load_for_owner(&store, &request.owner_type, &request.owner_id)
+}
+
+#[tauri::command]
+fn docs_list(
+    request: OwnerContextRequest,
+    store: State<'_, ManagementStore>,
+) -> Result<Vec<docs_reader::DocumentPath>, String> {
+    docs_reader::list_for_owner(&store, &request.owner_type, &request.owner_id)
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct DocsReadRequest {
+    owner_type: String,
+    owner_id: String,
+    path: String,
+    repository_id: Option<String>,
+}
+
+#[tauri::command]
+fn docs_read(
+    request: DocsReadRequest,
+    store: State<'_, ManagementStore>,
+) -> Result<docs_reader::DocumentContent, String> {
+    docs_reader::read_for_owner(
+        &store,
+        &request.owner_type,
+        &request.owner_id,
+        &request.path,
+        request.repository_id.as_deref(),
+    )
 }
 
 #[derive(Debug, Deserialize)]
@@ -4330,6 +4364,40 @@ mod tests {
             json!({"history": false, "unexpected": true}),
         );
         assert!(invalid_list.is_err());
+
+        let docs_owner: OwnerContextRequest =
+            serde_json::from_value(json!({"ownerType":"workspace", "ownerId":"w1"})).unwrap();
+        assert_eq!(docs_owner.owner_type, "workspace");
+        let invalid_docs_owner = serde_json::from_value::<OwnerContextRequest>(
+            json!({"ownerType":"workspace", "ownerId":"w1", "path":"/tmp"}),
+        );
+        assert!(invalid_docs_owner.is_err());
+        let docs_read: DocsReadRequest = serde_json::from_value(json!({
+            "ownerType":"workspace", "ownerId":"w1", "path":"guide.md", "repositoryId":null
+        }))
+        .unwrap();
+        assert_eq!(docs_read.path, "guide.md");
+        let invalid_docs_read = serde_json::from_value::<DocsReadRequest>(json!({
+            "ownerType":"workspace", "ownerId":"w1", "path":"../secret.md", "repositoryId":null, "extra":true
+        }));
+        assert!(invalid_docs_read.is_err());
+        assert_eq!(
+            serde_json::to_value(docs_reader::DocumentPath {
+                path: "guide.md".into(),
+                repository_id: None,
+                repository_name: None,
+            })
+            .unwrap(),
+            json!({"path":"guide.md", "repositoryId":null, "repositoryName":null})
+        );
+        assert_eq!(
+            serde_json::to_value(docs_reader::DocumentContent {
+                path: "guide.md".into(),
+                contents: "guide".into(),
+            })
+            .unwrap(),
+            json!({"path":"guide.md", "contents":"guide"})
+        );
     }
 
     #[test]

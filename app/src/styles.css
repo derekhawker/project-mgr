@@ -80,6 +80,24 @@ body {
 .workbench-session-tabs button { color: #426a59; border-color: #d9e1db; background: #fbfcfa; }
 .workbench-session-tabs button.selected { color: #effcf5; border-color: #176c52; background: #176c52; }
 .change-review-page { min-width: 0; min-height: 0; width: 100%; flex: 1 1 auto; display: flex; flex-direction: column; overflow: hidden; }
+.docs-page { min-width: 0; min-height: 0; width: 100%; flex: 1 1 auto; display: grid; grid-template-columns: minmax(14rem, 30%) minmax(0, 1fr); overflow: hidden; }
+.docs-files { min-width: 0; overflow: auto; border-right: 1px solid #dfe4df; padding: .5rem; }
+.docs-files button { display: block; width: 100%; padding: .35rem; border: 0; border-radius: 3px; background: transparent; color: #426a59; text-align: left; overflow-wrap: anywhere; cursor: pointer; }
+.docs-files button[aria-current="true"] { color: #103f31; background: #e5eee8; font-weight: 650; }
+.docs-content { min-width: 0; min-height: 0; overflow: auto; padding: .75rem; }
+.docs-content h2 { overflow-wrap: anywhere; font-size: 14px; }
+.docs-content pre { white-space: pre-wrap; overflow-wrap: anywhere; font: 13px/1.55 system-ui, sans-serif; }
+.docs-markdown { overflow-wrap: anywhere; line-height: 1.6; }
+.docs-markdown :first-child { margin-top: 0; }
+.docs-markdown pre { overflow: auto; padding: .75rem; border-radius: 4px; background: #f1f4f2; }
+.docs-markdown code { font-family: ui-monospace, monospace; }
+.docs-markdown img { max-width: 100%; }
+.docs-markdown table { border-collapse: collapse; }
+.docs-markdown th, .docs-markdown td { border: 1px solid #dfe4df; padding: .35rem .55rem; }
+.docs-page.message-only { display: flex; align-items: center; justify-content: center; }
+.docs-page.message-only .docs-files { display: none; }
+.docs-page.message-only .docs-content { display: grid; place-items: center; width: 100%; }
+.docs-message { margin: auto; max-width: 36rem; color: #66736e; text-align: center; }
 .change-review-heading { display: flex; align-items: center; justify-content: space-between; gap: .5rem; padding: .65rem .75rem; border-bottom: 1px solid #dfe4df; }
 .change-review-heading h1 { margin: 0; font-size: 1.25rem; }
 .change-review-heading p { margin: .15rem 0 0; color: #66736e; font-size: 12px; }

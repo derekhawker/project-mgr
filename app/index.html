@@ -41,6 +41,7 @@
               <div class="workbench-toolbar secondary-toolbar" aria-label="Session and workspace views">
                 <nav id="session-tabs" class="session-tabs workbench-session-tabs" role="tablist" aria-label="Workspace or task sessions"></nav>
                 <button id="show-change-review" type="button" class="toolbar-tab" hidden>Change Review</button>
+                <button id="show-docs" type="button" class="toolbar-tab" disabled>Docs</button>
                 <div class="repo-tools-control"><button id="show-repo-tools" type="button" class="toolbar-tab" aria-expanded="false" hidden>Tools</button><div id="repo-tools-menu" class="repo-tools-menu" role="menu" aria-label="Repository tools" hidden></div></div>
               </div>
             </div>
@@ -64,7 +65,11 @@
               <section id="workspaces-unselected" hidden aria-labelledby="unselected-title">
                 <h1 id="unselected-title">Select a workspace or task, or choose New work to start.</h1>
               </section>
-            </div>
+             </div>
+             <section id="docs-page" class="docs-page" hidden aria-label="Workspace and task documents">
+               <aside class="docs-files" data-doc-files aria-label="Markdown and text files"></aside>
+               <section class="docs-content" data-doc-content><h2></h2><pre></pre></section>
+             </section>
             <section id="selected-owner" hidden>
               <h1 id="selected-title" class="visually-hidden"></h1><p id="workspace-description" class="visually-hidden"></p>
               <p id="workspace-status" class="workspace-status" role="status" aria-live="polite"></p>

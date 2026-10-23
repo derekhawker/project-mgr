@@ -168,6 +168,21 @@ const workbench = document.querySelector('#workbench');
 const selectedOwner = document.querySelector('#selected-owner');
 const changeReviewPage = document.querySelector('#change-review-page');
 const changeReviewButton = document.querySelector('#show-change-review');
+const docsButton = document.querySelector('#show-docs');
+const docsPage = document.querySelector('#docs-page');
+const docsController = createDocsController({
+  button: docsButton,
+  page: docsPage,
+  invoke,
+  getOwner: () => selectedTask
+    ? { type: 'task', id: selectedTask.id }
+    : selectedWorkspace ? { type: 'workspace', id: selectedWorkspace.id } : null,
+  onOpen: () => {
+    changeReviewPage.hidden = true;
+    changeReviewButton.classList.remove('selected');
+    selectedOwner.hidden = true;
+  },
+});
 const repoToolsButton = document.querySelector('#show-repo-tools');
 const repoToolsMenu = document.querySelector('#repo-tools-menu');
 const repositoryToolTerminals = new Set();
@@ -190,6 +205,7 @@ function setSessionStatus(message) {
 
 function showOwnerTerminal() {
   changeReviewPage.hidden = true;
+  docsController.showTerminal();
   selectedOwner.hidden = false;
   changeReviewButton.classList.remove('selected');
 }
@@ -197,14 +213,23 @@ function showOwnerTerminal() {
 function syncChangeReviewAvailability() {
   const available = Boolean(selectedWorkspace && selectedOwnerRepositoryCount > 0 && !selectedTask?.quickRequest);
   changeReviewButton.hidden = !available;
+  docsButton.classList.remove('selected');
   if (!available) showOwnerTerminal();
   syncRepositoryToolsAvailability();
+}
+
+async function refreshDocsAvailability() {
+  if (!selectedWorkspace || selectedTask?.quickRequest) return;
+  await docsController.refresh(selectedTask
+    ? { type: 'task', id: selectedTask.id }
+    : { type: 'workspace', id: selectedWorkspace.id });
 }
 
 changeReviewButton.addEventListener('click', async () => {
   if (!selectedWorkspace || !selectedOwnerRepositoryCount) return;
   const ownerType = selectedTask ? 'task' : 'workspace';
   const ownerId = selectedTask?.id || selectedWorkspace.id;
+  docsController.showTerminal();
   changeReviewButton.disabled = true;
   changeReviewButton.classList.add('selected');
   selectedOwner.hidden = true;
@@ -715,6 +740,7 @@ function selectWorkspace(workspace, data = navigationData) {
   renderNavigation(data);
   syncOwnerSessions();
   syncPendingPrompt();
+  void refreshDocsAvailability();
   void restoreTrackedOwnerSession({ type: 'workspace', id: workspace.id });
 }
 
@@ -747,6 +773,7 @@ function selectTask(task, workspace, data = navigationData) {
   renderNavigation(data);
   syncOwnerSessions();
   syncPendingPrompt();
+  if (!isQuickRequest) void refreshDocsAvailability();
   void refreshTaskSetup().catch((error) => { workspaceStatus.textContent = formatWorkspaceError('Refresh setup', error); });
   void restoreTrackedOwnerSession({ type: 'task', id: task.id });
 }
@@ -789,6 +816,7 @@ async function refreshTaskSetup() {
   const status = await getTaskSetupStatus(invoke, requestedTaskId);
   if (selectedTask?.id !== requestedTaskId) return status;
   selectedTask = status.task;
+  void refreshDocsAvailability();
   selectedOwnerRepositoryCount = (status.repositories || []).filter((binding) => binding.setupStatus === 'ready').length;
   syncChangeReviewAvailability();
   syncRepositoryToolsAvailability();
@@ -1369,6 +1397,7 @@ document.querySelector('#attach-repository')?.addEventListener('click', async ()
       ? `Attached independent workspace clone of ${repository.name}.`
       : `Repository setup needs attention: ${setup.errorDetail || setup.setupStatus}`;
     await refreshNavigation();
+    void refreshDocsAvailability();
   } catch (error) { workspaceStatus.textContent = formatWorkspaceError('Attach', error); }
 });
 

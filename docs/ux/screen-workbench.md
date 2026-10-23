@@ -15,7 +15,7 @@ full-size terminal:
 
 ```text
 ┌ agentic-frontend ▾ │ Project │ Upgrade tonic-one │ Change Review ┐
-│ test · terminal ▾ │ + Session │ Shell │ READMEs │ Tools               │
+│ test · terminal ▾ │ + Session │ Shell │ Docs │ Tools                   │
 ├───────────────────────────────────────────────────────────────────────────┤
 │                                                                           │
 │                Selected terminal or workbench destination                 │
@@ -39,8 +39,11 @@ full-size terminal:
   the terminal's area.
 - `Change Review` appears only when the selected workspace/task has an associated
   repository. Its toolbar button opens a read-only destination; **Back to
-  terminals** returns without closing sessions. `READMEs` appears when one or
-  more README files are found.
+  terminals** returns without closing sessions. **Docs** is always shown for a
+  selected Workspace or Task and is disabled when no matching files are found.
+  The Docs destination keeps a persistent list of source-relative paths grouped
+  by Workspace or repository beside the selected file's contents; returning to
+  a terminal does not close or replace its session.
 - `Tools` opens a menu. With at most two repositories, show their tool groups
   side by side in the menu, not as a vertical sequence of repo submenus. For
   larger workspaces, wrap repository groups into additional columns. Workspaces
@@ -87,7 +90,7 @@ full-size terminal:
   to a workspace or task opens or restores its exact tracked session.
 - Terminal controls and process lifecycle belong to the interactive terminal.
   Closing a terminal stops its process and closes its tab. Switching to another
-  terminal, Change Review, or READMEs does not itself close a tab.
+  terminal, Change Review, or Docs does not itself close a tab.
 - If the TUI process exits (including Ctrl+D), keep the tracked session tab and
   show **Restart terminal**. Restart the TUI with the same OpenCode session ID
   and exact working directory. Do not create a new conversation or send a prompt

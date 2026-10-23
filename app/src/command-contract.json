@@ -4651,5 +4651,13 @@
   },
   "repo_tool_terminal_cleanup": {
     "payload": { "type": "object", "properties": { "terminalId": { "type": "string" } }, "required": ["terminalId"], "additionalProperties": false }, "result": { "type": "null" }
+  },
+  "docs_list": {
+    "payload": { "type": "object", "properties": { "request": { "type": "object", "properties": { "ownerType": { "type": "string" }, "ownerId": { "type": "string" } }, "required": ["ownerType", "ownerId"], "additionalProperties": false } }, "required": ["request"], "additionalProperties": false },
+    "result": { "type": "array", "items": { "type": "object", "properties": { "path": { "type": "string" }, "repositoryId": { "type": "string", "nullable": true }, "repositoryName": { "type": "string", "nullable": true } }, "required": ["path", "repositoryId", "repositoryName"], "additionalProperties": false } }
+  },
+  "docs_read": {
+    "payload": { "type": "object", "properties": { "request": { "type": "object", "properties": { "ownerType": { "type": "string" }, "ownerId": { "type": "string" }, "path": { "type": "string" }, "repositoryId": { "type": "string", "nullable": true } }, "required": ["ownerType", "ownerId", "path", "repositoryId"], "additionalProperties": false } }, "required": ["request"], "additionalProperties": false },
+    "result": { "type": "object", "properties": { "path": { "type": "string" }, "contents": { "type": "string" } }, "required": ["path", "contents"], "additionalProperties": false }
   }
 }

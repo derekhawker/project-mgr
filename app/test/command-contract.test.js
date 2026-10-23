@@ -16,7 +16,7 @@ const html = readFileSync(join(process.cwd(), 'index.html'), 'utf8');
 test('checked-in command inventory has one contract for every registered Rust command', () => {
   assert.deepEqual([...COMMAND_NAMES].sort(), [...rustCommands].sort());
   assert.deepEqual([...COMMAND_NAMES].sort(), [...rustAttributes].sort());
-  assert.equal(COMMAND_NAMES.length, 68);
+  assert.equal(COMMAND_NAMES.length, 70);
 });
 
 test('production main-screen selectors resolve to rendered HTML elements', () => {

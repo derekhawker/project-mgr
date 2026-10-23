@@ -395,7 +395,32 @@ no repo session or terminal until a supported session can be started.
 
 ## 8. Workspace Workflows
 
-### 8.1 Create a workspace through New
+### 8.1 Read workspace and task documents
+
+The **Docs** tab always appears for a selected Workspace or Task. Rust resolves
+the selected Workspace's own home plus its verified clone directories, or a
+Task's ready repository worktrees, from persisted owner bindings. It recursively
+discovers files with `.md` or `.txt` extensions (case-insensitive), does not
+follow symlinks, skips dot-prefixed directories and common dependency stores
+(`node_modules`, `vendor`, `bower_components`, `third_party`, `Pods`,
+`Carthage`, `venv`, `virtualenv`, and `site-packages`), and skips the managed
+`repos/` and `tasks/` subtrees when scanning the Workspace home. It returns
+source-relative paths: Workspace-home files are relative to the Workspace, and
+repository files are relative to their repository and grouped under its short
+name. The selected UTF-8 file is read separately by repository identity and
+relative path; arbitrary absolute paths are rejected. The tab is disabled only
+after discovery confirms no matching files. The GUI keeps the source-relative
+path list beside the selected contents and selects the first result. A loading
+failure or unexpected empty result shows a brief centered message. Switching
+to Docs or back to a terminal does not stop, replace, or reattach terminal
+processes. The GUI renders `.md` content as sanitized Markdown and `.txt`
+content as plain text; repository HTML is never inserted without sanitization.
+
+The command accepts only an owner type and ID; it never accepts a filesystem
+path from the GUI. Invalid owners, stale repository roots, and unreadable
+documents return errors rather than falling back to arbitrary directories.
+
+### 8.2 Create a workspace through New
 
 | Step | Actor | Action | Result |
 |---:|---|---|---|
@@ -411,7 +436,7 @@ its workspace session(s) automatically; a multi-repository workspace starts
 empty per-repository sessions and receives no automatic starting prompt. It does
 not create a task.
 
-### 8.2 Start or restore a workspace planning session
+### 8.3 Start or restore a workspace planning session
 
 | Step | Actor | Action | Result |
 |---:|---|---|---|
@@ -424,7 +449,7 @@ not create a task.
 Workspace sessions do not implement task changes in task worktrees. A request
 for implementation becomes a task-creation decision.
 
-### 8.3 Complete a workspace
+### 8.4 Complete a workspace
 
 | Step | Actor | Action | Result |
 |---:|---|---|---|
