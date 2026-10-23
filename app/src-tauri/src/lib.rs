@@ -16,6 +16,7 @@ pub mod change_review;
 pub mod docs_reader;
 pub mod management;
 pub mod opencode;
+pub mod os_handoff;
 pub mod repo_tools;
 pub mod safety;
 pub mod session_restore;
@@ -255,6 +256,8 @@ pub fn run() {
             repo_tool_terminal_resize,
             repo_tool_terminal_replay,
             repo_tool_terminal_cleanup,
+            workbench_shell_terminal_start,
+            workbench_os_handoff,
             new_work_proposal_start,
             new_work_proposal_run,
             new_work_proposal_read,
@@ -592,6 +595,77 @@ fn repo_tool_terminal_cleanup(
     terminal_id: String,
 ) -> Result<(), String> {
     runtime.cleanup_terminal(&terminal_id)
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct WorkbenchOwnerRequest {
+    owner_type: String,
+    owner_id: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkbenchShellTerminal {
+    terminal_id: String,
+    label: String,
+    directory: String,
+}
+
+static NEXT_WORKBENCH_SHELL_TERMINAL: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(1);
+
+#[tauri::command]
+fn workbench_shell_terminal_start(
+    app: AppHandle,
+    request: WorkbenchOwnerRequest,
+    runtime: State<'_, opencode::Runtime>,
+    store: State<'_, ManagementStore>,
+) -> Result<WorkbenchShellTerminal, String> {
+    let directory = os_handoff::owner_home(&store, &request.owner_type, &request.owner_id)?;
+    let shell = if cfg!(target_os = "windows") {
+        std::env::var_os("COMSPEC")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| std::path::PathBuf::from("cmd.exe"))
+    } else {
+        std::env::var_os("SHELL")
+            .map(std::path::PathBuf::from)
+            .filter(|path| path.is_absolute() && path.is_file())
+            .unwrap_or_else(|| std::path::PathBuf::from("/bin/sh"))
+    };
+    let terminal_id = format!(
+        "workbench-shell-{}",
+        NEXT_WORKBENCH_SHELL_TERMINAL.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    );
+    runtime.start_repository_tool(app, &terminal_id, &shell, &[], &directory)?;
+    Ok(WorkbenchShellTerminal {
+        terminal_id,
+        label: "Terminal".into(),
+        directory: directory.display().to_string(),
+    })
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct WorkbenchOsHandoffRequest {
+    owner_type: String,
+    owner_id: String,
+    action: String,
+}
+
+#[tauri::command]
+fn workbench_os_handoff(
+    request: WorkbenchOsHandoffRequest,
+    store: State<'_, ManagementStore>,
+) -> Result<(), String> {
+    let directory = os_handoff::owner_home(&store, &request.owner_type, &request.owner_id)?;
+    let launch = os_handoff::external_launch(&request.action, &directory, os_handoff::platform())?;
+    let child = os_handoff::spawn_external(&launch)?;
+    std::thread::spawn(move || {
+        let mut child = child;
+        let _ = child.wait();
+    });
+    Ok(())
 }
 
 #[derive(Debug, Deserialize)]
@@ -4372,6 +4446,22 @@ mod tests {
             json!({"ownerType":"workspace", "ownerId":"w1", "path":"/tmp"}),
         );
         assert!(invalid_docs_owner.is_err());
+        let shell_owner: WorkbenchOwnerRequest =
+            serde_json::from_value(json!({"ownerType":"task", "ownerId":"t1"})).unwrap();
+        assert_eq!(shell_owner.owner_type, "task");
+        let invalid_shell_owner = serde_json::from_value::<WorkbenchOwnerRequest>(json!({
+            "ownerType":"task", "ownerId":"t1", "path":"/tmp"
+        }));
+        assert!(invalid_shell_owner.is_err());
+        let handoff: WorkbenchOsHandoffRequest = serde_json::from_value(json!({
+            "ownerType":"workspace", "ownerId":"w1", "action":"folder"
+        }))
+        .unwrap();
+        assert_eq!(handoff.action, "folder");
+        let invalid_handoff = serde_json::from_value::<WorkbenchOsHandoffRequest>(json!({
+            "ownerType":"workspace", "ownerId":"w1", "action":"folder", "path":"/tmp"
+        }));
+        assert!(invalid_handoff.is_err());
         let docs_read: DocsReadRequest = serde_json::from_value(json!({
             "ownerType":"workspace", "ownerId":"w1", "path":"guide.md", "repositoryId":null
         }))

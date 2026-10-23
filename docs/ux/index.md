@@ -22,7 +22,7 @@ Application shell (fixed to the window)
     ├── Quick Request page (Back + terminal; no tabs or task/workspace tools)
     ├── Change Review (only when repositories are associated)
     ├── Docs reader (always shown; disabled when no documents are found)
-    └── Tools menu (repo tools grouped side by side; at most two repos)
+    └── Tools menu (OS handoff first, then repo tools grouped side by side)
 
 Modal: New work; leaves the current destination intact
 Separate navigation destination: full Quick Requests list (all retained items)

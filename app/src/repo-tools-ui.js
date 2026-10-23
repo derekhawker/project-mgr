@@ -10,6 +10,18 @@ export function startRepositoryTool(invoke, ownerType, ownerId, repositoryId, ki
   });
 }
 
+export function startWorkbenchShell(invoke, ownerType, ownerId) {
+  return invokeCommand(invoke, 'workbench_shell_terminal_start', {
+    request: { ownerType, ownerId },
+  });
+}
+
+export function launchWorkbenchOsHandoff(invoke, ownerType, ownerId, action) {
+  return invokeCommand(invoke, 'workbench_os_handoff', {
+    request: { ownerType, ownerId, action },
+  });
+}
+
 export function repoToolTerminalCommand(invoke, operation, payload) {
   if (operation === 'write') return invokeCommand(invoke, 'repo_tool_terminal_write', payload);
   if (operation === 'resize') return invokeCommand(invoke, 'repo_tool_terminal_resize', payload);
@@ -18,14 +30,34 @@ export function repoToolTerminalCommand(invoke, operation, payload) {
   throw new Error(`Unknown repository terminal operation: ${operation}`);
 }
 
-export function renderRepositoryTools(menu, groups, { onRun, onInstall } = {}) {
+export function renderRepositoryTools(menu, groups, { onRun, onInstall, onHandoff } = {}) {
   menu.replaceChildren();
+  const handoff = document.createElement('section');
+  handoff.className = 'repo-tools-handoff';
+  const heading = document.createElement('h2');
+  heading.textContent = 'Open in…';
+  handoff.append(heading);
+  for (const [action, label] of [['shell', 'Open terminal'], ['idea', 'Open in IntelliJ'], ['folder', 'Show in folder']]) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = label;
+    button.addEventListener('click', () => onHandoff?.(action, button, status));
+    handoff.append(button);
+  }
+  const status = document.createElement('p');
+  status.className = 'repo-tools-handoff-status';
+  status.setAttribute('role', 'status');
+  status.hidden = true;
+  handoff.append(status);
+  menu.append(handoff);
   if (!groups.length) {
     const empty = document.createElement('p');
     empty.textContent = 'No associated repositories.';
     menu.append(empty);
     return;
   }
+  const repositories = document.createElement('div');
+  repositories.className = 'repo-tools-repositories';
   for (const repository of groups) {
     const group = document.createElement('section');
     group.className = 'repo-tools-group';
@@ -54,6 +86,7 @@ export function renderRepositoryTools(menu, groups, { onRun, onInstall } = {}) {
         group.append(button);
       }
     }
-    menu.append(group);
+    repositories.append(group);
   }
+  menu.append(repositories);
 }

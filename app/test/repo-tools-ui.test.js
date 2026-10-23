@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Window } from 'happy-dom';
-import { listRepositoryTools, renderRepositoryTools, repoToolTerminalCommand, startRepositoryTool } from '../src/repo-tools-ui.js';
+import { listRepositoryTools, renderRepositoryTools, repoToolTerminalCommand, startRepositoryTool, startWorkbenchShell, launchWorkbenchOsHandoff } from '../src/repo-tools-ui.js';
 
 const groups = [
   { repositoryId: 'r1', name: 'Alpha', path: '/workspace/repos/alpha', packageScripts: ['build', 'test'], makeTargets: ['check'], npmInstallNeeded: true },
@@ -47,4 +47,38 @@ test('Tools displays repository groups, all named targets/scripts, and starts th
   assert.deepEqual(calls, ['npm_script:test']);
   window.close();
   delete globalThis.document;
+});
+
+test('Tools shows owner handoff actions before repositories, including for repository-free owners', () => {
+  const window = new Window();
+  globalThis.document = window.document;
+  const menu = window.document.createElement('div');
+  const calls = [];
+  renderRepositoryTools(menu, [], { onHandoff: (action) => calls.push(action) });
+  assert.deepEqual([...menu.querySelectorAll('.repo-tools-handoff button')].map((button) => button.textContent), [
+    'Open terminal', 'Open in IntelliJ', 'Show in folder',
+  ]);
+  assert.ok(menu.querySelector('.repo-tools-handoff').compareDocumentPosition(menu.querySelector('p')) & window.Node.DOCUMENT_POSITION_FOLLOWING);
+  menu.querySelector('.repo-tools-handoff button').click();
+  assert.deepEqual(calls, ['shell']);
+  window.close();
+  delete globalThis.document;
+});
+
+test('Workbench handoff commands send owner identity and strictly validate their contracts', async () => {
+  const calls = [];
+  const invoke = async (name, payload) => {
+    calls.push({ name, payload });
+    if (name === 'workbench_shell_terminal_start') return { terminalId: 'workbench-shell-1', label: 'Terminal', directory: '/workspace' };
+    return null;
+  };
+  assert.deepEqual(await startWorkbenchShell(invoke, 'workspace', 'workspace-1'), {
+    terminalId: 'workbench-shell-1', label: 'Terminal', directory: '/workspace',
+  });
+  await launchWorkbenchOsHandoff(invoke, 'task', 'task-1', 'idea');
+  assert.deepEqual(calls, [
+    { name: 'workbench_shell_terminal_start', payload: { request: { ownerType: 'workspace', ownerId: 'workspace-1' } } },
+    { name: 'workbench_os_handoff', payload: { request: { ownerType: 'task', ownerId: 'task-1', action: 'idea' } } },
+  ]);
+  await assert.rejects(() => launchWorkbenchOsHandoff(async () => ({ unexpected: true }), 'workspace', 'workspace-1', 'folder'), /result must be null/);
 });

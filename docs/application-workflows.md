@@ -118,6 +118,20 @@ closing the terminal or stopping its process.
 
 ## 3.4 Navigation and workspace focus
 
+### 3.4.1 Workbench Tools and OS handoff
+
+For an active regular Workspace or Task, the workbench Tools menu starts with
+OS handoff actions, regardless of repository count. Rust resolves the target
+from the selected owner's persisted home path and verifies it before use; the
+GUI does not provide a filesystem path. **Open terminal** starts a new
+app-owned interactive shell PTY in that home and adds a closeable terminal tab
+to the owner without changing or stopping other tabs. **Open in IntelliJ** and
+**Show in folder** launch the platform application with the same home path.
+Linux uses `idea` and `xdg-open`; macOS uses `open -a "IntelliJ IDEA"` and
+`open`. Windows handoff is not part of this delivery. A failed validation or
+launch is returned through the command and shown inline in Tools; existing
+sessions remain untouched.
+
 Keep the Workspace → Task tree prominent in persistent left navigation. Show
 all open workspaces, including idle ones, with tasks nested directly under their
 workspace. Do not require a separate all-workspaces summary screen: selecting a
@@ -712,7 +726,7 @@ Git status, without a conflict-resolution interface. If no remote or local
 list, report the comparison error, and continue loading other repositories.
 Review is read-only and does not create or consume terminal sessions.
 
-### 12.7 Repository tools
+### 12.7 Repository tools and OS handoff
 
 The workbench Tools menu resolves repository paths from the selected owner, not
 from UI-supplied directories. A Workspace uses every verified associated clone;

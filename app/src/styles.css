@@ -121,6 +121,13 @@ body {
 .repo-tools-control { position: relative; flex: 0 0 auto; }
 .repo-tools-menu { position: absolute; z-index: 30; top: calc(100% + .25rem); right: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: .75rem; width: min(64rem, calc(100vw - 18rem)); max-height: min(70vh, 38rem); overflow: auto; padding: .75rem; border: 1px solid #cbd7cf; border-radius: 6px; background: #fff; box-shadow: 0 8px 24px #17251f33; }
 .repo-tools-group { min-width: 0; padding: .35rem; border-right: 1px solid #e3e9e4; }
+.repo-tools-handoff { min-width: 12rem; padding: .35rem; border-right: 1px solid #e3e9e4; }
+.repo-tools-handoff h2 { margin: 0 0 .2rem; font-size: 14px; }
+.repo-tools-handoff > button { display: block; width: 100%; padding: .3rem .4rem; border: 0; border-radius: 3px; background: transparent; color: #176c52; text-align: left; cursor: pointer; }
+.repo-tools-handoff > button:hover { background: #e5eee8; }
+.repo-tools-handoff button:focus-visible { outline: 3px solid #d28b32; outline-offset: 2px; }
+.repo-tools-handoff-status { margin: .25rem .4rem; color: #66736e; font-size: 11px; overflow-wrap: anywhere; }
+.repo-tools-repositories { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: .5rem; }
 .repo-tools-group h2 { margin: 0 0 .2rem; font-size: 14px; }
 .repo-tools-group h3 { margin: .55rem 0 .15rem; color: #66736e; font-size: 11px; }
 .repo-tools-group > button { display: block; width: 100%; padding: .3rem .4rem; border: 0; border-radius: 3px; background: transparent; color: #176c52; text-align: left; cursor: pointer; }

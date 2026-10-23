@@ -44,7 +44,17 @@ full-size terminal:
   The Docs destination keeps a persistent list of source-relative paths grouped
   by Workspace or repository beside the selected file's contents; returning to
   a terminal does not close or replace its session.
-- `Tools` opens a menu. With at most two repositories, show their tool groups
+- `Tools` opens a menu. Put OS handoff actions first: **Open terminal** starts a
+  new app-integrated interactive shell tab owned by the selected Workspace or
+  Task, rooted at that owner's home directory; **Open in IntelliJ** opens that
+  same directory in IntelliJ IDEA; **Show in folder** opens it in the system
+  file manager. Workspace actions use the Workspace home; Task actions use the
+  Task home. These actions are available even when the owner has no repositories.
+  Linux launches IntelliJ with `idea <path>` and the file manager with `xdg-open
+  <path>`; macOS uses `open -a "IntelliJ IDEA" <path>` and `open <path>`.
+  Windows is out of scope. Report launch failures inline in the Tools menu and
+  leave existing sessions and tabs running.
+- Below those actions, with at most two repositories, show their tool groups
   side by side in the menu, not as a vertical sequence of repo submenus. For
   larger workspaces, wrap repository groups into additional columns. Workspaces
   show every associated repository; Tasks show only their selected repositories
