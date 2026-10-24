@@ -237,6 +237,39 @@ pub fn resolve_project_home_root(configured: &str, user_home: &Path) -> SafetyRe
     Ok(canonical_root)
 }
 
+/// Resolves the user-configured repository library location. Unlike managed
+/// Workspace homes, the library may be outside the user's home, but the setting
+/// must be explicit, absolute (or `~/`-rooted), and free of traversal.
+pub fn resolve_repository_library_root(
+    configured: &str,
+    user_home: &Path,
+) -> SafetyResult<PathBuf> {
+    if configured.trim().is_empty() || configured.chars().any(char::is_control) {
+        return Err(SafetyError::InvalidPath(
+            "repository library must be a non-empty path without control characters".into(),
+        ));
+    }
+    let canonical_home = fs::canonicalize(user_home).map_err(|error| {
+        SafetyError::InvalidPath(format!(
+            "user home {} is unavailable: {error}",
+            user_home.display()
+        ))
+    })?;
+    let expanded = if let Some(relative) = configured.strip_prefix("~/") {
+        canonical_home.join(relative)
+    } else {
+        let path = PathBuf::from(configured);
+        if !path.is_absolute() {
+            return Err(SafetyError::InvalidPath(
+                "repository library must be absolute or start with ~/".into(),
+            ));
+        }
+        path
+    };
+    reject_parent_components(&expanded)?;
+    canonicalize_or_resolve_missing(&expanded)
+}
+
 pub fn canonical_descendant(root: &Path, target: &Path) -> SafetyResult<PathBuf> {
     reject_parent_components(target)?;
     let canonical_root = canonicalize_or_resolve_missing(root)?;
@@ -982,6 +1015,25 @@ mod tests {
             assert!(resolve_project_home_root("~/escape/new", &home).is_err());
         }
         assert!(!home.join("OpenCode Projects").exists());
+    }
+
+    #[test]
+    fn repository_library_root_accepts_configurable_absolute_and_home_paths_safely() {
+        let fixture = tempdir().unwrap();
+        let home = fixture.path().join("home");
+        fs::create_dir(&home).unwrap();
+        let external = fixture.path().join("shared-repositories");
+
+        assert_eq!(
+            resolve_repository_library_root("~/OpenCode Projects/Repositories", &home).unwrap(),
+            home.join("OpenCode Projects/Repositories")
+        );
+        assert_eq!(
+            resolve_repository_library_root(external.to_str().unwrap(), &home).unwrap(),
+            external
+        );
+        assert!(resolve_repository_library_root("relative/repos", &home).is_err());
+        assert!(resolve_repository_library_root("~/../escape", &home).is_err());
     }
 
     #[test]

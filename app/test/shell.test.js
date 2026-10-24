@@ -35,13 +35,13 @@ import {
   deleteQuickRequest,
   expireQuickRequest,
   loadWorkspaceNavigation,
+  listLegacyTaskArchives,
+  restoreLegacyTaskArchive,
   startNewWorkProposal,
   runNewWorkProposal,
   readNewWorkProposal,
   closeNewWorkProposal,
   selectWorkspaceTask,
-  taskWorkspaceOptions,
-  preferredTaskWorkspaceId,
   createWorkspace,
   createInitializedWorkspace,
   createWorkspaceTask,
@@ -56,6 +56,8 @@ import {
   addRepositoryDirectories,
   listRepositoryCatalog,
   loadRepositoryDirectoryPage,
+  loadRepositoryLibraryRoot,
+  saveRepositoryLibraryRoot,
   setRepositoryEnabled,
   formatWorkspaceError,
   attachRepository,
@@ -79,7 +81,9 @@ import {
   controlErrorAttributes,
   createKeyedSingleFlight,
   workspaceProposalRepositoryLocations,
+  workspaceSessionTabLabel,
   workspaceStartingPrompt,
+  workspaceStartingPromptSession,
   shouldSubmitWorkspaceStartingPrompt,
   workspaceReviewDetails,
 } from '../src/shell.js';
@@ -426,6 +430,17 @@ test('workspace adapters preserve navigation and setup command boundaries', asyn
   ]);
 });
 
+test('legacy archive adapters list and restore records through explicit commands', async () => {
+  const calls = [];
+  const invoke = (...args) => { calls.push(args); return Promise.resolve(resultForCommand(args[0])); };
+  await listLegacyTaskArchives(invoke);
+  await restoreLegacyTaskArchive(invoke, 'task-legacy');
+  assert.deepEqual(calls, [
+    ['legacy_task_archives_list'],
+    ['legacy_task_archive_restore', { taskId: 'task-legacy' }],
+  ]);
+});
+
 test('repository directory picker scans only the selected folders and handles cancel', async () => {
   const calls = [];
   const result = {
@@ -478,6 +493,21 @@ test('directory page and repository enabled adapter preserve explicit payloads a
     ['repository_enabled_set', { repositoryId: 'repo-1', enabled: false }],
   ]);
   await assert.rejects(setRepositoryEnabled(async () => { throw new Error('denied'); }, 'repo-1', false), /denied/);
+});
+
+test('repository library adapters load and save the configured path with errors preserved', async () => {
+  const calls = [];
+  const invoke = async (name, payload) => {
+    calls.push([name, payload]);
+    return '/repos/library';
+  };
+  assert.equal(await loadRepositoryLibraryRoot(invoke), '/repos/library');
+  assert.equal(await saveRepositoryLibraryRoot(invoke, '/repos/library'), '/repos/library');
+  assert.deepEqual(calls, [
+    ['repository_library_get', undefined],
+    ['repository_library_set', { path: '/repos/library' }],
+  ]);
+  await assert.rejects(saveRepositoryLibraryRoot(async () => { throw new Error('invalid path'); }, 'relative'), /invalid path/);
 });
 
 test('New-work proposal adapters preserve exact session and prompt boundary', async () => {
@@ -628,16 +658,43 @@ test('workspace navigation model nests active and completed tasks beneath their 
   assert.deepEqual(workspaceTasks(navigation, 'w2'), [navigation.tasks[1]]);
 });
 
-test('Task workspace chooser lists active regular workspaces and accepts a contextual preselection', () => {
-  const workspaces = [
-    { id: 'workspace-a', name: 'Alpha', kind: 'regular', status: 'active' },
-    { id: 'workspace-b', name: 'Beta', kind: 'regular', status: 'completed' },
-    { id: 'workspace-quick', name: 'Quick Requests', kind: 'quick_requests', status: 'active' },
+test('Workspace session tabs label sessions from persisted role and repository context', () => {
+  const contexts = [
+    { openCodeSessionId: 'ses-orchestrator', workspaceId: 'w1', role: 'orchestrator', repositoryId: null },
+    { openCodeSessionId: 'ses-worker', workspaceId: 'w1', role: 'worker', repositoryId: 'repo-b' },
+    { openCodeSessionId: 'ses-home', workspaceId: 'w2', role: 'workspace', repositoryId: null },
   ];
-  assert.deepEqual(taskWorkspaceOptions(workspaces), [{ id: 'workspace-a', name: 'Alpha' }]);
-  assert.equal(preferredTaskWorkspaceId(workspaces, 'workspace-a'), 'workspace-a');
-  assert.equal(preferredTaskWorkspaceId(workspaces, 'workspace-b'), '');
-  assert.equal(preferredTaskWorkspaceId(workspaces, null), '');
+  const owner = { owner_type: 'workspace', owner_id: 'w1' };
+  assert.equal(workspaceSessionTabLabel(
+    { openCodeSessionId: 'ses-orchestrator', owner }, contexts,
+  ), 'Orchestrator');
+  assert.equal(workspaceSessionTabLabel(
+    { openCodeSessionId: 'ses-worker', owner },
+    contexts,
+    [{ id: 'repo-b', name: 'Beta' }],
+  ), 'Beta');
+  assert.equal(workspaceSessionTabLabel({
+    openCodeSessionId: 'ses-home',
+    owner: { owner_type: 'workspace', owner_id: 'w2' },
+  }, contexts), 'Workspace');
+  assert.equal(workspaceSessionTabLabel({ openCodeSessionId: 'ses-legacy', owner }, contexts), null);
+  assert.equal(workspaceSessionTabLabel({
+    owner: { owner_type: 'task', owner_id: 't1' },
+    openCodeSessionId: 'ses-task',
+  }, contexts), null);
+});
+
+test('multi-repository starting prompts target the persisted orchestrator, not first-created worker', () => {
+  const sessions = [
+    { openCodeSessionId: 'ses-worker', directory: '/repo/worktree' },
+    { openCodeSessionId: 'ses-orchestrator', directory: '/workspace/home' },
+  ];
+  const contexts = [
+    { openCodeSessionId: 'ses-worker', role: 'worker', repositoryId: 'repo-a' },
+    { openCodeSessionId: 'ses-orchestrator', role: 'orchestrator', repositoryId: null },
+  ];
+  assert.equal(workspaceStartingPromptSession(sessions, contexts).openCodeSessionId, 'ses-orchestrator');
+  assert.equal(workspaceStartingPromptSession(sessions.slice(0, 1), contexts.slice(0, 1)).openCodeSessionId, 'ses-worker');
 });
 
 test('workspace creation selection uses the workspace returned by Rust after refresh', () => {

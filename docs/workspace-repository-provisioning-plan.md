@@ -40,17 +40,21 @@ not create a Task or task worktree as a side effect of workspace creation.
   user-editable in review. The LLM does not rewrite prompts, return operational
   effects, select commands, create a setup plan, or perform Git/setup work. Raw
   original and starting prompts remain transient.
-- Each selected source repository must be clean before provisioning. A clone
-  contains committed Git data, not uncommitted tracked or untracked changes;
-  reject a dirty source instead of silently omitting user work.
-- Create independent local Git clones under the managed workspace's `repos/`.
-  Never move or mutate the source checkout. Do not hard-link Git objects.
+- A selected source may have tracked, untracked, or ignored local changes. The
+  managed base clone is created from the repository's reviewed committed Git
+  state; local source changes stay in place and are not copied. Revalidate the
+  source identity, checked-out and default-branch commits, remote, and committed
+  submodule metadata before provisioning.
+- Create or reuse a shared managed base clone in the configured repository
+  library. Create a Workspace-specific branch/worktree from it, then symlink
+  the Workspace's `repos/` entry to that worktree. Never move or mutate the
+  source checkout or overwrite a managed checkout. Do not hard-link Git objects.
 - Use the source repository's configured upstream fetch URL as the clone's
   `origin` when one exists. If there is no upstream, leave the clone without a
   remote. Never leave a push-capable remote pointing at the source checkout.
 - With zero repositories, create one workspace-home session. With one
-  repository, create one session rooted at its workspace clone. With multiple
-  repositories, create one empty session rooted at each workspace clone; do not
+  repository, create one session rooted at its Workspace worktree. With multiple
+  repositories, create one empty session rooted at each Workspace worktree; do not
   create a generic workspace-home session or submit the prompt automatically.
 - Rust coordinates Task setup. Repository work in a Task uses task-specific
   worktrees derived from the workspace clones.
@@ -70,7 +74,7 @@ not create a Task or task worktree as a side effect of workspace creation.
 - With multiple repositories, write a deterministic Workspace-root `AGENTS.md`
   that names each independent repository and path, explains that each Task has
   a separate session rooted in the corresponding task worktree and that the
-  Workspace has a separate empty session rooted in each clone. Require users
+  Workspace has a separate empty session rooted in each worktree. Require users
   to keep repository changes in that repo's session. No LLM writes this file.
 - Automated package-manager discovery and installation are excluded. The user
   judged a broad manager/lockfile policy too difficult to make deterministic;
@@ -111,8 +115,8 @@ not create a Task or task worktree as a side effect of workspace creation.
   workspace and ready clones. Automatic restart recovery is out of scope; failed
   steps are shown in the creation dialog for user-directed retry.
 - Intended workspace session routing is one workspace-home session for zero
-  repositories, one clone-rooted session for one repository, and one empty
-  clone-rooted session per repository for multiple repositories. Multi-repo
+  repositories, one worktree-rooted session for one repository, and one empty
+  worktree-rooted session per repository for multiple repositories. Multi-repo
   workspaces also receive an app-managed `AGENTS.md` block that preserves
   surrounding user text. Manual testing found the current runtime does not yet
   meet the multi-repo session/prompt behavior.
@@ -139,10 +143,10 @@ not create a Task or task worktree as a side effect of workspace creation.
    current catalog.
 3. Rust builds a read-only setup plan for the selected repositories. It
     canonicalizes and re-inspects each source, records its current HEAD and
-    default branch, rejects dirty sources or sources without a supported default
-    branch, and reads upstream and submodule metadata. Default branch resolution
-    prefers valid `origin/HEAD`, then a local `main` or `master`, then the
-    currently checked-out local branch. This supports local-only repositories.
+    default branch, allows dirty working trees, and reads upstream and committed
+    submodule metadata. Default branch resolution prefers valid `origin/HEAD`,
+    then a local `main` or `master`, then the currently checked-out local branch.
+    This supports local-only repositories.
 4. The review shows the extracted workspace name and purpose; each repository's
    catalog name, full source path, and extraction reason; each destination path;
    and any detected `.gitmodules` submodule summary. The user can accept or go
@@ -156,35 +160,33 @@ not create a Task or task worktree as a side effect of workspace creation.
 
 On confirmation, Rust revalidates all facts from the plan; the renderer is not
 trusted to supply arbitrary paths or commands. If a source HEAD, identity,
-cleanliness, enabled state, default branch, remote, or submodule metadata
-changed since review, require a fresh review rather than silently proceeding.
+enabled state, default branch, remote, or committed submodule metadata changed
+since review, require a fresh review rather than silently proceeding. Changes to
+the source working tree do not invalidate the review and are never copied.
 
 For each selected repository, in stable repository-ID order:
 
-1. Choose a stable, safe destination beneath `<workspace-home>/repos/`, based on
-   a sanitized catalog name plus a stable repository-ID suffix. The path does
-   not depend on selection order and same-name repositories cannot collide.
-2. Clone the canonical source path into an app-owned staging directory with the
-   fixed argument vector `git clone --no-hardlinks --recurse-submodules --
-   <source> <staging>`, explicitly checking out the source's verified default
-   branch. Never invoke a shell and never perform Git mutations in the source.
-3. Verify the clone is a separate Git root/common-dir, is at the expected
-   commit/branch, is contained beneath `repos/`, and has no alternates or
-   hard-linked object dependency on the source. Set `origin` to the validated
-   source upstream fetch URL, or remove the local-path origin when no upstream
-   exists. Do not copy a source `pushurl` pointing to the source checkout.
-4. Verify recursive submodules are checked out at their pinned commits and
-   every submodule path stays under the clone. Do not fetch Git LFS objects.
-5. Atomically rename the verified staging directory to its final path, then
-   persist the workspace binding with both catalog/source identity and the
-   clone's independently verified checkout identity.
+1. Resolve stable, safe shared-base, Workspace-worktree, and Workspace-alias
+   paths. They must not depend on selection order or collide across workspaces.
+2. If the base clone is absent, clone the canonical source path into an
+   app-owned staging directory with fixed Git arguments and check out the
+   reviewed default-branch commit. Git copies committed data only; never invoke
+   a shell or mutate the source checkout.
+3. Verify the base is a separate Git root/common-dir at the expected commit and
+   branch, with no alternates or hard-linked object dependency on the source.
+   Set `origin` to the validated upstream URL, or remove the local-path origin
+   when no upstream exists.
+4. Verify recursive submodules at their pinned commits and initialize the
+   Workspace worktree from the managed base. Do not fetch Git LFS objects.
+5. Persist source/base/worktree identities and exact paths, and create the
+   Workspace symlink only after verifying its target is the canonical worktree.
 6. Generate/update the app-owned multi-repository instruction block in the
    Workspace-root `AGENTS.md`. Preserve user-authored sections; only replace a
    clearly marked app-owned block. With zero or one repository, do not add the
    multi-repository block.
  7. Create and record workspace session(s) only after repository paths are
     stable. Create one workspace-home session for zero repositories, one
-    clone-rooted session for one repository, or one empty clone-rooted session
+     worktree-rooted session for one repository, or one empty worktree-rooted session
     per repository for multiple repositories. Attach each PTY in its persisted
     directory. Submit the starting prompt only for zero/one-repository work.
     OpenCode history remains OpenCode-owned.
@@ -277,7 +279,7 @@ dependency order, not permission to ship an incomplete intermediate behavior.
    command/result/error handling.
 2. **Add setup persistence and planner — implemented:** migrate workspace checkout state;
    implement pure path, branch, and repository preflight planning; test
-   collisions, disabled/stale IDs, dirty sources, submodule metadata, and plan
+   collisions, disabled/stale IDs, dirty-source acceptance, submodule metadata, and plan
    changes between review and confirmation.
 3. **Provision independent clones — implemented:** implement staging, fixed Git arguments,
    source immutability, identity/branch/remote validation, stable paths,
@@ -309,10 +311,12 @@ dependency order, not permission to ship an incomplete intermediate behavior.
   stale repository rejection, duplicates, malformed/extra fields, ambiguous
   matches, and no side effects before confirmation. Raw prompts never enter
   durable app records/logs.
-- **Clone:** source clean/dirty, unknown default branch, source changed after
-  review, destination collision/symlink, clone failure/partial staging,
+- **Clone:** dirty source with tracked and untracked changes (allowed and not
+  copied), unknown default branch, committed source changed after review,
+  destination collision/symlink, clone failure/partial staging,
   separate Git identity/object store, expected branch/commit, upstream and
-  no-upstream remote behavior, two independent workspace clones, source remains
+  no-upstream remote behavior, separate Workspace worktrees from a shared base,
+  dirty source changes are not copied and the source remains
   unchanged.
 - **Submodules:** nested and relative URLs, upstream and no-upstream cases,
   pinned commits, untrusted/out-of-root paths, missing remotes, partial clone,

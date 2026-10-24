@@ -1,4 +1,4 @@
-use crate::management::{ManagementStore, TaskStatus, WorkspaceKind, WorkspaceStatus};
+use crate::management::{ManagementStore, WorkspaceKind, WorkspaceStatus};
 use std::path::{Path, PathBuf};
 
 pub fn owner_home(
@@ -19,17 +19,7 @@ pub fn owner_home(
             }
             workspace.home_path
         }
-        "task" => {
-            let task = store
-                .get_task(owner_id)
-                .map_err(|error| error.to_string())?
-                .ok_or_else(|| "Task was not found.".to_owned())?;
-            if task.status != TaskStatus::Active || task.quick_request.is_some() {
-                return Err("OS handoff requires an active regular Task.".into());
-            }
-            task.home_path
-        }
-        _ => return Err("Owner type must be workspace or task.".into()),
+        _ => return Err("OS handoff owner type must be workspace.".into()),
     };
     let path = Path::new(&raw_path)
         .canonicalize()
@@ -90,7 +80,7 @@ pub fn spawn_external(launch: &Launch) -> Result<std::process::Child, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::management::{NewTask, NewWorkspace, TaskSetupStatus};
+    use crate::management::NewWorkspace;
     use tempfile::tempdir;
 
     fn store(root: &Path) -> ManagementStore {
@@ -159,7 +149,7 @@ mod tests {
     }
 
     #[test]
-    fn owner_home_uses_workspace_or_task_home_and_rejects_quick_requests() {
+    fn owner_home_uses_workspace_home_and_rejects_legacy_task_owners() {
         let root = tempdir().unwrap();
         let store = store(root.path());
         let workspace = store
@@ -172,29 +162,11 @@ mod tests {
                 created_at: 1,
             })
             .unwrap();
-        let task = store
-            .create_task(&NewTask {
-                id: "task-handoff".into(),
-                workspace_id: workspace.id.clone(),
-                name: "Task".into(),
-                slug: "task".into(),
-                description: None,
-                setup_status: TaskSetupStatus::Ready,
-                created_at: 2,
-            })
-            .unwrap();
         assert_eq!(
             owner_home(&store, "workspace", &workspace.id).unwrap(),
             PathBuf::from(workspace.home_path).canonicalize().unwrap()
         );
-        assert_eq!(
-            owner_home(&store, "task", &task.id).unwrap(),
-            PathBuf::from(task.home_path).canonicalize().unwrap()
-        );
-        assert_ne!(
-            owner_home(&store, "workspace", &workspace.id).unwrap(),
-            owner_home(&store, "task", &task.id).unwrap()
-        );
+        assert!(owner_home(&store, "task", "legacy-task").is_err());
         let quick = store
             .create_workspace(&NewWorkspace {
                 id: "quick-workspace".into(),

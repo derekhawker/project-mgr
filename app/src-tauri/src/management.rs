@@ -6,13 +6,14 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
 use std::time::Duration;
 
-use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ValueRef};
-use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
+use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, Value as SqlValue, ValueRef};
+use rusqlite::{params, params_from_iter, Connection, OptionalExtension, TransactionBehavior};
 use serde::{Deserialize, Serialize};
 
 use crate::safety::{self, GitInspection, ManagedHomeGuard, SafetyError};
 
 pub const DEFAULT_PROJECT_HOME_ROOT: &str = "~/OpenCode Projects/";
+pub const DEFAULT_REPOSITORY_LIBRARY_ROOT: &str = "~/OpenCode Projects/Repositories/";
 pub const DEFAULT_MODEL: &str = "openai/gpt-6-luna";
 const QUICK_REQUEST_LIFETIME_MS: i64 = 24 * 60 * 60 * 1_000;
 const CLEANUP_RUNNING_STALE_AFTER_MS: i64 = 10_000;
@@ -33,6 +34,10 @@ const MIGRATION_14: &str = include_str!("migrations/0014_repository_directories.
 const MIGRATION_15: &str = include_str!("migrations/0015_workspace_repository_setup.sql");
 const MIGRATION_16: &str = include_str!("migrations/0016_task_session_repositories.sql");
 const MIGRATION_17: &str = include_str!("migrations/0017_task_repository_selection.sql");
+const MIGRATION_18: &str = include_str!("migrations/0018_workspace_work_contexts.sql");
+const MIGRATION_19: &str = include_str!("migrations/0019_legacy_task_archive.sql");
+const MIGRATION_20: &str = include_str!("migrations/0020_workspace_worktree_base_compat.sql");
+const MIGRATION_21: &str = include_str!("migrations/0021_workspace_link_compat.sql");
 
 fn validate_quick_request_prompt(prompt: &str) -> StoreResult<()> {
     if prompt.trim().is_empty() {
@@ -48,6 +53,86 @@ fn now_millis_for_cleanup() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as i64
+}
+
+fn rows_as_json(
+    connection: &Connection,
+    table: &str,
+    key_column: &str,
+    key: &str,
+) -> StoreResult<serde_json::Value> {
+    let mut columns_statement = connection.prepare(&format!("PRAGMA table_info({table})"))?;
+    let columns = columns_statement
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<Result<Vec<_>, _>>()?;
+    if columns.is_empty() {
+        return Err(ManagementStoreError::InvalidTransition(format!(
+            "archive table {table} is unavailable"
+        )));
+    }
+    let fields = columns
+        .iter()
+        .map(|column| format!("'{}', \"{}\"", column.replace('\'', "''"), column))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let sql = format!(
+        "SELECT COALESCE(json_group_array(json_object({fields})), '[]') FROM {table} WHERE {key_column} = ?1"
+    );
+    let json: String = connection.query_row(&sql, [key], |row| row.get(0))?;
+    serde_json::from_str(&json).map_err(|error| {
+        ManagementStoreError::InvalidTransition(format!(
+            "could not serialize {table} archive rows: {error}"
+        ))
+    })
+}
+
+fn json_value_to_sql(value: &serde_json::Value) -> SqlValue {
+    match value {
+        serde_json::Value::Null => SqlValue::Null,
+        serde_json::Value::Bool(value) => SqlValue::Integer(i64::from(*value)),
+        serde_json::Value::Number(value) => value
+            .as_i64()
+            .map(SqlValue::Integer)
+            .or_else(|| value.as_f64().map(SqlValue::Real))
+            .unwrap_or(SqlValue::Null),
+        serde_json::Value::String(value) => SqlValue::Text(value.clone()),
+        serde_json::Value::Array(_) | serde_json::Value::Object(_) => {
+            SqlValue::Text(value.to_string())
+        }
+    }
+}
+
+fn restore_json_rows(
+    connection: &Connection,
+    table: &str,
+    rows: &serde_json::Value,
+) -> StoreResult<()> {
+    let rows = rows.as_array().ok_or_else(|| {
+        ManagementStoreError::InvalidTransition(format!("archive {table} rows are malformed"))
+    })?;
+    for row in rows {
+        let object = row.as_object().ok_or_else(|| {
+            ManagementStoreError::InvalidTransition(format!("archive {table} row is malformed"))
+        })?;
+        let columns = object.keys().collect::<Vec<_>>();
+        let placeholders = std::iter::repeat_n("?", columns.len())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let sql = format!(
+            "INSERT INTO {table} ({}) VALUES ({placeholders})",
+            columns
+                .iter()
+                .map(|column| format!("\"{column}\""))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+        let values = columns
+            .iter()
+            .map(|column| json_value_to_sql(&object[*column]))
+            .collect::<Vec<_>>();
+        connection.execute(&sql, params_from_iter(values))?;
+    }
+    Ok(())
 }
 
 #[derive(Debug)]
@@ -292,6 +377,15 @@ pub struct Task {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct LegacyTaskArchiveSummary {
+    pub task_id: String,
+    pub workspace_id: String,
+    pub archived_at: i64,
+    pub restored_at: Option<i64>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct NewTask {
     pub id: String,
     pub workspace_id: String,
@@ -385,7 +479,7 @@ pub fn workspace_session_directories(
     if bindings.is_empty() {
         return Ok(vec![(None, workspace_home.to_path_buf())]);
     }
-    Ok(bindings
+    let mut directories = bindings
         .iter()
         .map(|binding| {
             (
@@ -393,7 +487,13 @@ pub fn workspace_session_directories(
                 PathBuf::from(&binding.checkout_path),
             )
         })
-        .collect())
+        .collect::<Vec<_>>();
+    if bindings.len() > 1 {
+        // Start all repo workers before the orchestrator so its local plugin
+        // can be configured with their exact persisted session IDs.
+        directories.push((None, workspace_home.to_path_buf()));
+    }
+    Ok(directories)
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -431,6 +531,59 @@ pub struct WorkspaceRepositorySetupRecord {
     pub error_code: Option<String>,
     pub error_detail: Option<String>,
     pub updated_at: i64,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkspaceWorktreeStatus {
+    Pending,
+    Ready,
+    Failed,
+}
+sqlite_enum!(WorkspaceWorktreeStatus {
+    Pending => "pending",
+    Ready => "ready",
+    Failed => "failed"
+});
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceRepositoryWorktree {
+    pub workspace_id: String,
+    pub repository_id: String,
+    pub source_identity: String,
+    pub checkout_identity: Option<String>,
+    pub branch: String,
+    pub base_checkout_path: String,
+    pub worktree_path: String,
+    pub workspace_link: String,
+    pub setup_status: WorkspaceWorktreeStatus,
+    pub error_code: Option<String>,
+    pub error_detail: Option<String>,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkspaceSessionRole {
+    Workspace,
+    Orchestrator,
+    Worker,
+}
+sqlite_enum!(WorkspaceSessionRole {
+    Workspace => "workspace",
+    Orchestrator => "orchestrator",
+    Worker => "worker"
+});
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceSessionContext {
+    pub open_code_session_id: String,
+    pub workspace_id: String,
+    pub role: WorkspaceSessionRole,
+    pub repository_id: Option<String>,
 }
 
 /// Stable paths available to a workspace planning session. Failed or
@@ -755,7 +908,7 @@ impl ManagementStore {
             [],
             |row| row.get(0),
         )?;
-        if current_version > 17 {
+        if current_version > 21 {
             return Err(ManagementStoreError::UnsupportedSchemaVersion(
                 current_version,
             ));
@@ -879,7 +1032,193 @@ impl ManagementStore {
                 [],
             )?;
         }
+        if current_version < 18 {
+            transaction.execute_batch(MIGRATION_18)?;
+            transaction.execute(
+                "INSERT INTO schema_migrations(version, applied_at) VALUES (18, 0)",
+                [],
+            )?;
+        }
+        if current_version < 19 {
+            transaction.execute_batch(MIGRATION_19)?;
+            Self::archive_legacy_regular_tasks(&transaction, now_millis_for_cleanup())?;
+            transaction.execute(
+                "INSERT INTO schema_migrations(version, applied_at) VALUES (19, 0)",
+                [],
+            )?;
+        }
+        if current_version < 20 {
+            transaction.execute_batch(MIGRATION_20)?;
+            let (has_base_checkout_path, has_workspace_link) = {
+                let mut columns =
+                    transaction.prepare("PRAGMA table_info(workspace_repository_worktrees)")?;
+                let names = columns
+                    .query_map([], |row| row.get::<_, String>(1))?
+                    .collect::<Result<Vec<_>, _>>()?;
+                (
+                    names.iter().any(|column| column == "base_checkout_path"),
+                    names.iter().any(|column| column == "workspace_link"),
+                )
+            };
+            if !has_base_checkout_path {
+                transaction.execute(
+                    "ALTER TABLE workspace_repository_worktrees
+                     ADD COLUMN base_checkout_path TEXT NOT NULL DEFAULT ''",
+                    [],
+                )?;
+            }
+            if !has_workspace_link {
+                transaction.execute(
+                    "ALTER TABLE workspace_repository_worktrees
+                     ADD COLUMN workspace_link TEXT NOT NULL DEFAULT ''",
+                    [],
+                )?;
+            }
+            transaction.execute(
+                "INSERT INTO schema_migrations(version, applied_at) VALUES (20, 0)",
+                [],
+            )?;
+        }
+        if current_version < 21 {
+            transaction.execute_batch(MIGRATION_21)?;
+            let (has_base_checkout_path, has_workspace_link) = {
+                let mut columns =
+                    transaction.prepare("PRAGMA table_info(workspace_repository_worktrees)")?;
+                let names = columns
+                    .query_map([], |row| row.get::<_, String>(1))?
+                    .collect::<Result<Vec<_>, _>>()?;
+                (
+                    names.iter().any(|column| column == "base_checkout_path"),
+                    names.iter().any(|column| column == "workspace_link"),
+                )
+            };
+            if !has_base_checkout_path {
+                transaction.execute(
+                    "ALTER TABLE workspace_repository_worktrees
+                     ADD COLUMN base_checkout_path TEXT NOT NULL DEFAULT ''",
+                    [],
+                )?;
+            }
+            if !has_workspace_link {
+                transaction.execute(
+                    "ALTER TABLE workspace_repository_worktrees
+                     ADD COLUMN workspace_link TEXT NOT NULL DEFAULT ''",
+                    [],
+                )?;
+            }
+            transaction.execute(
+                "INSERT INTO schema_migrations(version, applied_at) VALUES (21, 0)",
+                [],
+            )?;
+        }
         transaction.commit()?;
+        Ok(())
+    }
+
+    fn archive_legacy_regular_tasks(
+        transaction: &rusqlite::Transaction<'_>,
+        archived_at: i64,
+    ) -> StoreResult<()> {
+        let task_ids = transaction
+            .prepare(
+                "SELECT t.id FROM tasks t
+                 JOIN workspaces w ON w.id = t.workspace_id
+                 WHERE w.kind = 'regular' AND t.quick_request_created_at IS NULL
+                 ORDER BY t.id",
+            )?
+            .query_map([], |row| row.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        for task_id in task_ids {
+            let task = Self::get_task_from(transaction, &task_id)?
+                .ok_or_else(|| ManagementStoreError::NotFound(format!("task {task_id}")))?;
+            let workspace =
+                Self::get_workspace_from(transaction, &task.workspace_id)?.ok_or_else(|| {
+                    ManagementStoreError::NotFound(format!("workspace {}", task.workspace_id))
+                })?;
+            let mut snapshot = serde_json::Map::new();
+            snapshot.insert("archiveVersion".into(), serde_json::json!(1));
+            snapshot.insert(
+                "workspace".into(),
+                serde_json::to_value(workspace).map_err(|error| {
+                    ManagementStoreError::InvalidTransition(format!(
+                        "could not serialize workspace archive: {error}"
+                    ))
+                })?,
+            );
+            for (table, key_column) in [
+                ("tasks", "id"),
+                ("task_repositories", "task_id"),
+                ("task_repository_selection", "task_id"),
+                ("sessions", "owner_task_id"),
+                ("task_session_repositories", "task_id"),
+                ("cleanup_jobs", "task_id"),
+                ("setup_operations", "task_id"),
+                ("setup_operation_state", "task_id"),
+                ("setup_events", "task_id"),
+            ] {
+                snapshot.insert(
+                    table.into(),
+                    rows_as_json(transaction, table, key_column, &task_id)?,
+                );
+            }
+            let snapshot_json = serde_json::Value::Object(snapshot).to_string();
+            let verified: serde_json::Value =
+                serde_json::from_str(&snapshot_json).map_err(|error| {
+                    ManagementStoreError::InvalidTransition(format!(
+                        "legacy archive verification failed: {error}"
+                    ))
+                })?;
+            if verified["tasks"]
+                .as_array()
+                .is_none_or(|rows| rows.len() != 1)
+                || verified["tasks"][0]["id"].as_str() != Some(task_id.as_str())
+            {
+                return Err(ManagementStoreError::InvalidTransition(format!(
+                    "legacy archive verification failed for task {task_id}"
+                )));
+            }
+            transaction.execute(
+                "INSERT INTO legacy_task_archives(task_id, workspace_id, archived_at, snapshot_json)
+                 VALUES (?1, ?2, ?3, ?4)",
+                params![task_id, task.workspace_id, archived_at, snapshot_json],
+            )?;
+            let stored_snapshot: String = transaction.query_row(
+                "SELECT snapshot_json FROM legacy_task_archives WHERE task_id = ?1",
+                [&task_id],
+                |row| row.get(0),
+            )?;
+            let stored: serde_json::Value =
+                serde_json::from_str(&stored_snapshot).map_err(|error| {
+                    ManagementStoreError::InvalidTransition(format!(
+                        "stored legacy archive is invalid: {error}"
+                    ))
+                })?;
+            if stored != verified {
+                return Err(ManagementStoreError::InvalidTransition(format!(
+                    "stored legacy archive did not verify for task {task_id}"
+                )));
+            }
+            for (table, key_column) in [
+                ("cleanup_jobs", "task_id"),
+                ("setup_events", "task_id"),
+                ("setup_operation_state", "task_id"),
+                ("setup_operations", "task_id"),
+                ("task_session_repositories", "task_id"),
+                ("task_repository_selection", "task_id"),
+            ] {
+                transaction.execute(
+                    &format!("DELETE FROM {table} WHERE {key_column} = ?1"),
+                    [&task_id],
+                )?;
+            }
+            transaction.execute("DELETE FROM sessions WHERE owner_task_id = ?1", [&task_id])?;
+            transaction.execute(
+                "DELETE FROM task_repositories WHERE task_id = ?1",
+                [&task_id],
+            )?;
+            transaction.execute("DELETE FROM tasks WHERE id = ?1", [&task_id])?;
+        }
         Ok(())
     }
 
@@ -1249,18 +1588,6 @@ impl ManagementStore {
             return Err(ManagementStoreError::InvalidTransition(
                 "the Quick Requests workspace cannot be completed".into(),
             ));
-        }
-        let active_task_ids = transaction
-            .prepare(
-                "SELECT id FROM tasks WHERE workspace_id = ?1 AND status = 'active' ORDER BY id",
-            )?
-            .query_map([id], |row| row.get::<_, String>(0))?
-            .collect::<Result<Vec<_>, _>>()?;
-        if !active_task_ids.is_empty() {
-            return Err(ManagementStoreError::InvalidTransition(format!(
-                "workspace {id} still has active task(s): {}",
-                active_task_ids.join(", ")
-            )));
         }
         transaction.execute(
             "UPDATE workspaces SET status = 'completed', completed_at = ?2 WHERE id = ?1",
@@ -1703,6 +2030,97 @@ impl ManagementStore {
         )?;
         let rows = statement.query_map([workspace_id], task_from_row)?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    pub fn list_legacy_task_archives(&self) -> StoreResult<Vec<LegacyTaskArchiveSummary>> {
+        let connection = self.lock()?;
+        let mut statement = connection.prepare(
+            "SELECT task_id, workspace_id, archived_at, restored_at
+             FROM legacy_task_archives ORDER BY archived_at, task_id",
+        )?;
+        let rows = statement.query_map([], |row| {
+            Ok(LegacyTaskArchiveSummary {
+                task_id: row.get(0)?,
+                workspace_id: row.get(1)?,
+                archived_at: row.get(2)?,
+                restored_at: row.get(3)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    pub fn restore_legacy_task_archive(&self, task_id: &str) -> StoreResult<Task> {
+        let mut connection = self.lock()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let archive: Option<(String, Option<i64>)> = transaction
+            .query_row(
+                "SELECT snapshot_json, restored_at FROM legacy_task_archives WHERE task_id = ?1",
+                [task_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()?;
+        let (snapshot_json, restored_at) = archive.ok_or_else(|| {
+            ManagementStoreError::NotFound(format!("legacy task archive {task_id}"))
+        })?;
+        if restored_at.is_some() {
+            let restored = Self::get_task_from(&transaction, task_id)?.ok_or_else(|| {
+                ManagementStoreError::InvalidTransition(
+                    "archive is marked restored but its Task is missing".into(),
+                )
+            })?;
+            transaction.commit()?;
+            return Ok(restored);
+        }
+        let snapshot: serde_json::Value =
+            serde_json::from_str(&snapshot_json).map_err(|error| {
+                ManagementStoreError::InvalidTransition(format!(
+                    "legacy task archive is malformed: {error}"
+                ))
+            })?;
+        if snapshot["archiveVersion"].as_i64() != Some(1)
+            || snapshot["tasks"][0]["id"].as_str() != Some(task_id)
+        {
+            return Err(ManagementStoreError::InvalidTransition(
+                "legacy task archive has an unsupported or mismatched version".into(),
+            ));
+        }
+        let workspace_id = transaction.query_row(
+            "SELECT workspace_id FROM legacy_task_archives WHERE task_id = ?1",
+            [task_id],
+            |row| row.get::<_, String>(0),
+        )?;
+        if Self::get_workspace_from(&transaction, &workspace_id)?.is_none() {
+            return Err(ManagementStoreError::InvalidTransition(
+                "the archived Task's Workspace is unavailable; source data remains in the archive"
+                    .into(),
+            ));
+        }
+        if Self::get_task_from(&transaction, task_id)?.is_some() {
+            return Err(ManagementStoreError::InvalidTransition(
+                "a Task with this ID already exists".into(),
+            ));
+        }
+        for table in [
+            "tasks",
+            "task_repositories",
+            "sessions",
+            "task_session_repositories",
+            "task_repository_selection",
+            "setup_operations",
+            "setup_events",
+            "setup_operation_state",
+            "cleanup_jobs",
+        ] {
+            restore_json_rows(&transaction, table, &snapshot[table])?;
+        }
+        transaction.execute(
+            "UPDATE legacy_task_archives SET restored_at = ?2 WHERE task_id = ?1",
+            params![task_id, now_millis_for_cleanup()],
+        )?;
+        let restored = Self::get_task_from(&transaction, task_id)?
+            .ok_or_else(|| ManagementStoreError::NotFound(format!("restored Task {task_id}")))?;
+        transaction.commit()?;
+        Ok(restored)
     }
 
     pub fn update_task_details(
@@ -2600,6 +3018,37 @@ impl ManagementStore {
                 "workspace repository bindings require an active regular workspace".into(),
             ));
         }
+        let recorded_worktree = if binding.checkout_mode == CheckoutMode::Clone {
+            connection
+                .query_row(
+                    "SELECT workspace_id, repository_id, source_identity, checkout_identity,
+                            branch, base_checkout_path, worktree_path, workspace_link,
+                            setup_status, error_code, error_detail, created_at, updated_at
+                     FROM workspace_repository_worktrees
+                     WHERE workspace_id = ?1 AND repository_id = ?2",
+                    params![binding.workspace_id, binding.repository_id],
+                    |row| {
+                        Ok(WorkspaceRepositoryWorktree {
+                            workspace_id: row.get(0)?,
+                            repository_id: row.get(1)?,
+                            source_identity: row.get(2)?,
+                            checkout_identity: row.get(3)?,
+                            branch: row.get(4)?,
+                            base_checkout_path: row.get(5)?,
+                            worktree_path: row.get(6)?,
+                            workspace_link: row.get(7)?,
+                            setup_status: row.get(8)?,
+                            error_code: row.get(9)?,
+                            error_detail: row.get(10)?,
+                            created_at: row.get(11)?,
+                            updated_at: row.get(12)?,
+                        })
+                    },
+                )
+                .optional()?
+        } else {
+            None
+        };
         let checkout = safety::inspect_repository(Path::new(&binding.checkout_path))?;
         match binding.checkout_mode {
             CheckoutMode::Existing => verify_catalog_identity(&catalog, &checkout.repository)?,
@@ -2676,15 +3125,28 @@ impl ManagementStore {
                     )));
                 }
                 let repos_root = checked_managed_child_directory(&workspace_home, "repos")?;
-                let canonical_checkout =
-                    safety::canonical_descendant(&repos_root, &checkout.repository.canonical_root)?;
-                if canonical_checkout == repos_root
-                    || canonical_checkout != checkout.repository.canonical_root
-                {
-                    return Err(ManagementStoreError::Safety(SafetyError::InvalidPath(
-                        "managed checkout must be a canonical child of workspace repos/".into(),
-                    )));
-                }
+                let canonical_checkout = if let Some(record) = recorded_worktree.as_ref() {
+                    verify_workspace_library_worktree_binding(
+                        &workspace,
+                        &catalog,
+                        binding,
+                        &checkout,
+                        &branch,
+                        &repos_root,
+                        record,
+                    )?
+                } else {
+                    let canonical = safety::canonical_descendant(
+                        &repos_root,
+                        &checkout.repository.canonical_root,
+                    )?;
+                    if canonical == repos_root || canonical != checkout.repository.canonical_root {
+                        return Err(ManagementStoreError::Safety(SafetyError::InvalidPath(
+                            "managed checkout must be a canonical child of workspace repos/".into(),
+                        )));
+                    }
+                    canonical
+                };
                 if branch.owning_worktrees != [canonical_checkout.clone()] {
                     return Err(ManagementStoreError::Safety(SafetyError::IdentityMismatch(
                         "managed checkout branch ownership is missing or ambiguous".into(),
@@ -2903,6 +3365,220 @@ impl ManagementStore {
                 updated_at: row.get(7)?,
             })
         })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    pub fn save_workspace_repository_worktree(
+        &self,
+        worktree: &WorkspaceRepositoryWorktree,
+    ) -> StoreResult<()> {
+        let paths_are_safe = [
+            worktree.base_checkout_path.as_str(),
+            worktree.worktree_path.as_str(),
+            worktree.workspace_link.as_str(),
+        ]
+        .iter()
+        .all(|path| {
+            let path = Path::new(path);
+            path.is_absolute()
+                && !path.as_os_str().is_empty()
+                && path.components().all(|component| {
+                    !matches!(
+                        component,
+                        std::path::Component::ParentDir | std::path::Component::CurDir
+                    )
+                })
+        });
+        if worktree.workspace_id.is_empty()
+            || worktree.repository_id.is_empty()
+            || worktree.source_identity.is_empty()
+            || worktree.branch.is_empty()
+            || worktree.base_checkout_path.is_empty()
+            || worktree.worktree_path.is_empty()
+            || worktree.workspace_link.is_empty()
+            || !paths_are_safe
+            || worktree.base_checkout_path == worktree.worktree_path
+            || worktree.worktree_path == worktree.workspace_link
+            || (worktree.setup_status == WorkspaceWorktreeStatus::Ready
+                && worktree
+                    .checkout_identity
+                    .as_deref()
+                    .is_none_or(str::is_empty))
+            || (worktree.setup_status == WorkspaceWorktreeStatus::Failed
+                && worktree.error_detail.as_deref().is_none_or(str::is_empty))
+        {
+            return Err(ManagementStoreError::InvalidTransition(
+                "workspace worktree state is incomplete".into(),
+            ));
+        }
+        let connection = self.lock()?;
+        connection.execute(
+            "INSERT INTO workspace_repository_worktrees(
+                workspace_id, repository_id, source_identity, checkout_identity,
+                branch, base_checkout_path, worktree_path, workspace_link,
+                setup_status, error_code, error_detail, created_at, updated_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+             ON CONFLICT(workspace_id, repository_id) DO UPDATE SET
+                source_identity = excluded.source_identity,
+                checkout_identity = excluded.checkout_identity,
+                branch = excluded.branch, base_checkout_path = excluded.base_checkout_path,
+                worktree_path = excluded.worktree_path, workspace_link = excluded.workspace_link,
+                setup_status = excluded.setup_status, error_code = excluded.error_code,
+                error_detail = excluded.error_detail, updated_at = excluded.updated_at",
+            params![
+                worktree.workspace_id,
+                worktree.repository_id,
+                worktree.source_identity,
+                worktree.checkout_identity,
+                worktree.branch,
+                worktree.base_checkout_path,
+                worktree.worktree_path,
+                worktree.workspace_link,
+                worktree.setup_status.as_str(),
+                worktree.error_code,
+                worktree.error_detail,
+                worktree.created_at,
+                worktree.updated_at,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_workspace_repository_worktrees(
+        &self,
+        workspace_id: &str,
+    ) -> StoreResult<Vec<WorkspaceRepositoryWorktree>> {
+        let connection = self.lock()?;
+        let mut statement = connection.prepare(
+            "SELECT workspace_id, repository_id, source_identity, checkout_identity,
+                    branch, base_checkout_path, worktree_path, workspace_link,
+                    setup_status, error_code, error_detail, created_at, updated_at
+             FROM workspace_repository_worktrees WHERE workspace_id = ?1 ORDER BY repository_id",
+        )?;
+        let rows = statement.query_map([workspace_id], |row| {
+            Ok(WorkspaceRepositoryWorktree {
+                workspace_id: row.get(0)?,
+                repository_id: row.get(1)?,
+                source_identity: row.get(2)?,
+                checkout_identity: row.get(3)?,
+                branch: row.get(4)?,
+                base_checkout_path: row.get(5)?,
+                worktree_path: row.get(6)?,
+                workspace_link: row.get(7)?,
+                setup_status: row.get(8)?,
+                error_code: row.get(9)?,
+                error_detail: row.get(10)?,
+                created_at: row.get(11)?,
+                updated_at: row.get(12)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    pub fn save_workspace_session_context(
+        &self,
+        context: &WorkspaceSessionContext,
+    ) -> StoreResult<()> {
+        let repository_is_valid = match context.role {
+            WorkspaceSessionRole::Workspace | WorkspaceSessionRole::Orchestrator => {
+                context.repository_id.is_none()
+            }
+            WorkspaceSessionRole::Worker => context
+                .repository_id
+                .as_deref()
+                .is_some_and(|repository_id| !repository_id.is_empty()),
+        };
+        if !repository_is_valid {
+            return Err(ManagementStoreError::InvalidTransition(
+                "workspace/orchestrator sessions have no repository; worker sessions require one"
+                    .into(),
+            ));
+        }
+        let connection = self.lock()?;
+        connection.execute(
+            "INSERT INTO workspace_session_context(open_code_session_id, workspace_id, role, repository_id)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![
+                context.open_code_session_id,
+                context.workspace_id,
+                context.role.as_str(),
+                context.repository_id,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_workspace_session_context(
+        &self,
+        workspace_id: &str,
+    ) -> StoreResult<Vec<WorkspaceSessionContext>> {
+        let connection = self.lock()?;
+        let mut statement = connection.prepare(
+            "SELECT open_code_session_id, workspace_id, role, repository_id
+             FROM workspace_session_context WHERE workspace_id = ?1
+             ORDER BY CASE role WHEN 'workspace' THEN 0 WHEN 'orchestrator' THEN 1 ELSE 2 END, repository_id",
+        )?;
+        let rows = statement.query_map([workspace_id], |row| {
+            Ok(WorkspaceSessionContext {
+                open_code_session_id: row.get(0)?,
+                workspace_id: row.get(1)?,
+                role: row.get(2)?,
+                repository_id: row.get(3)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    pub fn replace_workspace_tags(
+        &self,
+        workspace_id: &str,
+        tags: &[String],
+        created_at: i64,
+    ) -> StoreResult<Vec<String>> {
+        let mut normalized = tags
+            .iter()
+            .map(|tag| tag.trim().to_owned())
+            .filter(|tag| !tag.is_empty())
+            .collect::<Vec<_>>();
+        normalized.sort_by_key(|tag| tag.to_lowercase());
+        normalized.dedup_by(|left, right| left.eq_ignore_ascii_case(right));
+        if normalized.iter().any(|tag| tag.chars().count() > 80) {
+            return Err(ManagementStoreError::InvalidTransition(
+                "workspace tags must be 80 characters or fewer".into(),
+            ));
+        }
+        let mut connection = self.lock()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let exists: bool = transaction.query_row(
+            "SELECT EXISTS(SELECT 1 FROM workspaces WHERE id = ?1 AND kind = 'regular')",
+            [workspace_id],
+            |row| row.get(0),
+        )?;
+        if !exists {
+            return Err(ManagementStoreError::NotFound(format!(
+                "workspace {workspace_id}"
+            )));
+        }
+        transaction.execute(
+            "DELETE FROM workspace_tags WHERE workspace_id = ?1",
+            [workspace_id],
+        )?;
+        for tag in &normalized {
+            transaction.execute(
+                "INSERT INTO workspace_tags(workspace_id, tag, created_at) VALUES (?1, ?2, ?3)",
+                params![workspace_id, tag, created_at],
+            )?;
+        }
+        transaction.commit()?;
+        Ok(normalized)
+    }
+
+    pub fn list_workspace_tags(&self, workspace_id: &str) -> StoreResult<Vec<String>> {
+        let connection = self.lock()?;
+        let mut statement = connection.prepare(
+            "SELECT tag FROM workspace_tags WHERE workspace_id = ?1 ORDER BY tag COLLATE NOCASE",
+        )?;
+        let rows = statement.query_map([workspace_id], |row| row.get(0))?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
@@ -4594,6 +5270,8 @@ impl ManagementStore {
             // candidate root. Do this before writing so every API path enforces
             // the same containment rule and rejected values are atomic.
             safety::resolve_project_home_root(value, &self.user_home)?;
+        } else if key == "repository_library_root" {
+            safety::resolve_repository_library_root(value, &self.user_home)?;
         }
         let connection = self.lock()?;
         connection.execute(
@@ -4628,6 +5306,31 @@ impl ManagementStore {
 
     pub fn set_project_home_root(&self, value: &str, updated_at: i64) -> StoreResult<String> {
         self.set_setting("project_home_root", value, updated_at)?;
+        Ok(value.to_owned())
+    }
+
+    pub fn repository_library_root(&self) -> StoreResult<String> {
+        let connection = self.lock()?;
+        connection
+            .query_row(
+                "SELECT value FROM settings WHERE key = 'repository_library_root'",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+            .map(|value| value.unwrap_or_else(|| DEFAULT_REPOSITORY_LIBRARY_ROOT.to_owned()))
+            .map_err(Into::into)
+    }
+
+    pub fn resolved_repository_library_root(&self) -> StoreResult<PathBuf> {
+        Ok(safety::resolve_repository_library_root(
+            &self.repository_library_root()?,
+            &self.user_home,
+        )?)
+    }
+
+    pub fn set_repository_library_root(&self, value: &str, updated_at: i64) -> StoreResult<String> {
+        self.set_setting("repository_library_root", value, updated_at)?;
         Ok(value.to_owned())
     }
 
@@ -4885,6 +5588,121 @@ fn checked_task_worktrees_root(task_home: &Path) -> StoreResult<PathBuf> {
     checked_managed_child_directory(task_home, "worktrees")
 }
 
+fn verify_workspace_library_worktree_binding(
+    workspace: &Workspace,
+    catalog: &Repository,
+    binding: &WorkspaceRepositoryBinding,
+    checkout: &GitInspection,
+    branch: &safety::GitBranchInfo,
+    repos_root: &Path,
+    record: &WorkspaceRepositoryWorktree,
+) -> StoreResult<PathBuf> {
+    let invalid =
+        |message: &str| ManagementStoreError::Safety(SafetyError::InvalidPath(message.to_owned()));
+    if record.workspace_id != workspace.id
+        || record.repository_id != catalog.id
+        || record.source_identity != catalog.repository_identity
+        || record.setup_status != WorkspaceWorktreeStatus::Ready
+        || record.branch != binding.branch
+        || record.checkout_identity.as_deref() != Some(checkout.repository.identity.as_str())
+    {
+        return Err(invalid(
+            "Workspace worktree record does not match its verified repository binding",
+        ));
+    }
+
+    let base_path = Path::new(&record.base_checkout_path);
+    let worktree_path = Path::new(&record.worktree_path);
+    let link_path = Path::new(&record.workspace_link);
+    for path in [base_path, worktree_path, link_path] {
+        if !path.is_absolute()
+            || path.components().any(|component| {
+                matches!(
+                    component,
+                    std::path::Component::ParentDir | std::path::Component::CurDir
+                )
+            })
+        {
+            return Err(invalid("Workspace repository path is not normalized"));
+        }
+    }
+    let base_name = base_path
+        .file_name()
+        .ok_or_else(|| invalid("Managed repository base has no name"))?;
+    let base_parent = base_path
+        .parent()
+        .ok_or_else(|| invalid("Managed repository base has no parent"))?;
+    let expected_worktree = base_parent
+        .join(format!("{}.worktrees", base_name.to_string_lossy()))
+        .join(&workspace.id);
+    if worktree_path != expected_worktree
+        || base_path.starts_with(&workspace.home_path)
+        || worktree_path.starts_with(&workspace.home_path)
+    {
+        return Err(invalid(
+            "Managed Workspace worktree is not beside its shared repository base",
+        ));
+    }
+    let canonical_base = fs::canonicalize(base_path)?;
+    let canonical_worktree = fs::canonicalize(worktree_path)?;
+    if canonical_base != base_path
+        || canonical_worktree != worktree_path
+        || checkout.repository.canonical_root != worktree_path
+    {
+        return Err(invalid(
+            "Managed base and Workspace worktree must use their canonical paths",
+        ));
+    }
+    let base = safety::inspect_repository(&canonical_base)?;
+    if base.repository.canonical_root != canonical_base
+        || base.repository.identity != checkout.repository.identity
+        || !base.worktrees.iter().any(|worktree| {
+            worktree.canonical_path == canonical_worktree
+                && worktree.branch.as_deref() == Some(binding.branch.as_str())
+        })
+    {
+        return Err(ManagementStoreError::Safety(SafetyError::IdentityMismatch(
+            "Workspace worktree is not owned by its recorded shared repository base".into(),
+        )));
+    }
+
+    let relative_link = link_path
+        .strip_prefix(repos_root)
+        .map_err(|_| invalid("Workspace repository symlink must be inside workspace repos/"))?;
+    if relative_link.as_os_str().is_empty()
+        || relative_link
+            .components()
+            .any(|component| !matches!(component, std::path::Component::Normal(_)))
+        || link_path.file_name() != Some(base_name)
+    {
+        return Err(invalid(
+            "Workspace repository symlink path is not a valid managed alias",
+        ));
+    }
+    let link_parent = link_path
+        .parent()
+        .ok_or_else(|| invalid("Workspace repository symlink has no parent"))?;
+    let canonical_link_parent = safety::canonical_descendant(repos_root, link_parent)?;
+    if canonical_link_parent != link_parent {
+        return Err(invalid(
+            "Workspace repository symlink parent resolves outside its managed path",
+        ));
+    }
+    let link_metadata = fs::symlink_metadata(link_path)?;
+    if !link_metadata.file_type().is_symlink() || fs::canonicalize(link_path)? != canonical_worktree
+    {
+        return Err(invalid(
+            "Workspace repository symlink does not target its recorded worktree",
+        ));
+    }
+    if branch.owning_worktrees != [canonical_worktree.clone()] {
+        return Err(ManagementStoreError::Safety(SafetyError::IdentityMismatch(
+            "Workspace worktree branch ownership is missing or ambiguous".into(),
+        )));
+    }
+    Ok(canonical_worktree)
+}
+
 fn checked_managed_child_directory(parent: &Path, child: &str) -> StoreResult<PathBuf> {
     safety::validate_slug(child)?;
     let expected = parent.join(child);
@@ -4942,6 +5760,47 @@ mod tests {
     use tempfile::tempdir;
 
     const CREATED: i64 = 1_700_000_000_000;
+
+    fn database_through_version(connection: &Connection, version: usize) {
+        connection
+            .execute_batch(
+                "PRAGMA foreign_keys = ON;
+                 CREATE TABLE schema_migrations (
+                     version INTEGER PRIMARY KEY NOT NULL,
+                     applied_at INTEGER NOT NULL
+                 );",
+            )
+            .unwrap();
+        let migrations = [
+            MIGRATION_1,
+            MIGRATION_2,
+            MIGRATION_3,
+            MIGRATION_4,
+            MIGRATION_5,
+            MIGRATION_6,
+            MIGRATION_7,
+            MIGRATION_8,
+            MIGRATION_9,
+            MIGRATION_10,
+            MIGRATION_11,
+            MIGRATION_12,
+            MIGRATION_13,
+            MIGRATION_14,
+            MIGRATION_15,
+            MIGRATION_16,
+            MIGRATION_17,
+            MIGRATION_18,
+        ];
+        for (index, migration) in migrations.iter().take(version).enumerate() {
+            connection.execute_batch(migration).unwrap();
+            connection
+                .execute(
+                    "INSERT INTO schema_migrations(version, applied_at) VALUES (?1, 0)",
+                    [index as i64 + 1],
+                )
+                .unwrap();
+        }
+    }
 
     fn workspace(id: &str, slug: &str) -> NewWorkspace {
         NewWorkspace {
@@ -5035,27 +5894,28 @@ mod tests {
         fs::create_dir_all(&user_home).unwrap();
         fs::create_dir_all(&system_temp).unwrap();
         let database = directory.path().join("management.sqlite");
-        drop(ManagementStore::open_with_paths(&database, &user_home, &system_temp).unwrap());
         {
             let legacy = Connection::open(&database).unwrap();
-            legacy
-                .execute_batch(
-                    "ALTER TABLE setup_operation_state ADD COLUMN starting_prompt TEXT;
-                     CREATE TABLE workspace_starting_prompts (
-                         session_id TEXT PRIMARY KEY NOT NULL,
-                         prompt TEXT NOT NULL
-                     );
-                      INSERT INTO workspace_starting_prompts(session_id, prompt)
-                          VALUES ('legacy-session', 'legacy prompt to remove');
-                      DROP TABLE quick_request_prompts;
-                      DROP TABLE workspace_repository_setup;
-                      DELETE FROM schema_migrations WHERE version >= 10;",
-                )
-                .unwrap();
+            database_through_version(&legacy, 9);
+            legacy.execute(
+                "INSERT INTO workspaces(id, name, slug, description, home_path, kind, status, created_at)
+                 VALUES ('w-legacy', 'Legacy', 'legacy', NULL, ?1, 'regular', 'active', ?2)",
+                params![user_home.join("legacy").to_string_lossy(), CREATED],
+            ).unwrap();
+            legacy.execute(
+                "INSERT INTO sessions(open_code_session_id, owner_workspace_id, owner_task_id, directory,
+                     last_known_status, created_at, updated_at)
+                 VALUES ('ses-legacy', 'w-legacy', NULL, ?1, 'unknown', ?2, ?2)",
+                params![user_home.join("legacy").to_string_lossy(), CREATED],
+            ).unwrap();
+            legacy.execute(
+                "INSERT INTO workspace_starting_prompts(session_id, prompt) VALUES ('ses-legacy', 'legacy prompt to remove')",
+                [],
+            ).unwrap();
         }
         let migrated =
             ManagementStore::open_with_paths(&database, &user_home, &system_temp).unwrap();
-        assert_eq!(migrated.migration_versions().unwrap().last(), Some(&17));
+        assert_eq!(migrated.migration_versions().unwrap().last(), Some(&21));
         let connection = migrated.lock().unwrap();
         let legacy_table_count: i64 = connection
             .query_row(
@@ -5236,39 +6096,27 @@ mod tests {
         fs::create_dir_all(&user_home).unwrap();
         fs::create_dir_all(&system_temp).unwrap();
         let database = fixture.path().join("management.sqlite");
-        let store = ManagementStore::open_with_paths(&database, &user_home, &system_temp).unwrap();
-        store.create_workspace(&quick_workspace()).unwrap();
-        store
-            .create_workspace(&workspace("w-regular", "regular"))
-            .unwrap();
-        store
-            .create_quick_request(&task("qr-legacy-prompt", "w-quick", "legacy"), "temporary")
-            .unwrap();
-        store
-            .create_task(&task(
-                "regular-with-description",
-                "w-regular",
-                "regular-task",
-            ))
-            .unwrap();
-        drop(store);
-
         {
             let legacy = Connection::open(&database).unwrap();
-            legacy
-                .execute_batch(
-                    "UPDATE tasks SET description = 'legacy Quick Request prompt', name = 'Quick Request: legacy Quick Request prompt' WHERE id = 'qr-legacy-prompt';
-                     DELETE FROM quick_request_prompts WHERE task_id = 'qr-legacy-prompt';
-                     DROP TABLE quick_request_prompts;
-                     DROP TABLE workspace_repository_setup;
-                     DELETE FROM schema_migrations WHERE version >= 11;",
-                )
-                .unwrap();
+            database_through_version(&legacy, 10);
+            legacy.execute_batch(
+                "INSERT INTO workspaces(id, name, slug, description, home_path, kind, status, created_at)
+                   VALUES ('w-quick', 'Quick Requests', 'quick-requests', NULL, '/tmp/quick-requests', 'quick_requests', 'active', 1700000000000),
+                          ('w-regular', 'Regular', 'regular', NULL, '/tmp/regular', 'regular', 'active', 1700000000000);
+                 INSERT INTO tasks(id, workspace_id, name, slug, description, home_path, status, setup_status, created_at,
+                     quick_request_created_at, quick_request_expires_at)
+                   VALUES ('qr-legacy-prompt', 'w-quick', 'Quick Request: legacy Quick Request prompt', 'legacy',
+                     'legacy Quick Request prompt', '/tmp/quick-requests', 'active', 'ready', 1700000000000,
+                     1700000000000, 1700000001000);
+                 INSERT INTO tasks(id, workspace_id, name, slug, description, home_path, status, setup_status, created_at)
+                   VALUES ('regular-with-description', 'w-regular', 'Regular task', 'regular-task',
+                     'A test task', '/tmp/regular/tasks/regular-task', 'active', 'not_started', 1700000000000);",
+            ).unwrap();
         }
 
         let migrated =
             ManagementStore::open_with_paths(&database, &user_home, &system_temp).unwrap();
-        assert_eq!(migrated.migration_versions().unwrap().last(), Some(&17));
+        assert_eq!(migrated.migration_versions().unwrap().last(), Some(&21));
         assert_eq!(
             migrated
                 .quick_request_prompt("qr-legacy-prompt")
@@ -5288,15 +6136,136 @@ mod tests {
             migrated.get_task("qr-legacy-prompt").unwrap().unwrap().name,
             "Quick Request"
         );
+        assert!(migrated
+            .get_task("regular-with-description")
+            .unwrap()
+            .is_none());
+        let archive = migrated
+            .list_legacy_task_archives()
+            .unwrap()
+            .into_iter()
+            .find(|archive| archive.task_id == "regular-with-description")
+            .unwrap();
+        assert_eq!(archive.workspace_id, "w-regular");
         assert_eq!(
             migrated
-                .get_task("regular-with-description")
-                .unwrap()
+                .restore_legacy_task_archive("regular-with-description")
                 .unwrap()
                 .description
                 .as_deref(),
             Some("A test task")
         );
+    }
+
+    #[test]
+    fn historical_task_rows_are_archived_before_conversion_and_can_be_restored_exactly() {
+        let fixture = tempdir().unwrap();
+        let home = fixture.path().join("home");
+        fs::create_dir_all(&home).unwrap();
+        let workspace_home = fixture.path().join("project");
+        let task_home = workspace_home.join("tasks/legacy-task");
+        let worktree = task_home.join("worktrees/repo-legacy");
+        fs::create_dir_all(&worktree).unwrap();
+        fs::write(worktree.join("user-data.txt"), "preserve me").unwrap();
+        let database = fixture.path().join("management.sqlite");
+        {
+            let legacy = Connection::open(&database).unwrap();
+            database_through_version(&legacy, 18);
+            legacy.execute(
+                "INSERT INTO workspaces(id, name, slug, description, home_path, kind, status, created_at)
+                 VALUES ('w-legacy', 'Legacy Workspace', 'legacy-workspace', NULL, ?1, 'regular', 'active', ?2)",
+                params![workspace_home.to_string_lossy(), CREATED],
+            ).unwrap();
+            legacy.execute(
+                "INSERT INTO repository_catalog(id, name, repository_path, repository_identity,
+                    purpose, purpose_status, created_at, updated_at)
+                 VALUES ('repo-legacy', 'Legacy Repo', '/source/repo-legacy', 'identity-legacy', NULL,
+                    'unavailable', ?1, ?1)",
+                [CREATED],
+            ).unwrap();
+            legacy.execute(
+                "INSERT INTO tasks(id, workspace_id, name, slug, description, home_path, status,
+                    setup_status, created_at)
+                 VALUES ('t-legacy', 'w-legacy', 'Legacy Task', 'legacy-task', 'metadata only', ?1,
+                    'active', 'ready', ?2)",
+                params![task_home.to_string_lossy(), CREATED],
+            ).unwrap();
+            legacy
+                .execute(
+                    "INSERT INTO task_repositories(task_id, repository_id, branch, worktree_path,
+                    setup_status, created_at, updated_at)
+                 VALUES ('t-legacy', 'repo-legacy', 'work/legacy-task', ?1, 'ready', ?2, ?2)",
+                    params![worktree.to_string_lossy(), CREATED],
+                )
+                .unwrap();
+            legacy
+                .execute(
+                    "INSERT INTO sessions(open_code_session_id, owner_workspace_id, owner_task_id,
+                    directory, last_known_status, created_at, updated_at)
+                 VALUES ('ses-legacy', NULL, 't-legacy', ?1, 'idle', ?2, ?2)",
+                    params![worktree.to_string_lossy(), CREATED],
+                )
+                .unwrap();
+            legacy.execute(
+                "INSERT INTO task_session_repositories(open_code_session_id, task_id, repository_id)
+                 VALUES ('ses-legacy', 't-legacy', 'repo-legacy')",
+                [],
+            ).unwrap();
+            legacy
+                .execute(
+                    "INSERT INTO cleanup_jobs(id, task_id, repository_id, worktree_path, state,
+                    created_at, updated_at)
+                 VALUES ('cleanup-legacy', 't-legacy', 'repo-legacy', ?1, 'deferred', ?2, ?2)",
+                    params![worktree.to_string_lossy(), CREATED],
+                )
+                .unwrap();
+        }
+
+        let migrated = ManagementStore::open_with_paths(&database, &home, fixture.path()).unwrap();
+        assert!(migrated.get_task("t-legacy").unwrap().is_none());
+        assert!(migrated.list_tasks("w-legacy").unwrap().is_empty());
+        assert_eq!(
+            fs::read_to_string(worktree.join("user-data.txt")).unwrap(),
+            "preserve me"
+        );
+        let archive = migrated
+            .list_legacy_task_archives()
+            .unwrap()
+            .into_iter()
+            .find(|archive| archive.task_id == "t-legacy")
+            .unwrap();
+        assert!(archive.restored_at.is_none());
+
+        let restored = migrated.restore_legacy_task_archive("t-legacy").unwrap();
+        assert_eq!(restored.home_path, task_home.to_string_lossy());
+        assert_eq!(
+            migrated.list_task_repository_bindings("t-legacy").unwrap()[0].worktree_path,
+            worktree.to_string_lossy()
+        );
+        assert_eq!(
+            migrated
+                .list_sessions(&SessionOwner::Task("t-legacy".into()))
+                .unwrap()[0]
+                .directory,
+            worktree.to_string_lossy()
+        );
+        assert_eq!(
+            migrated.list_cleanup_jobs("t-legacy").unwrap()[0].state,
+            CleanupJobState::Deferred
+        );
+        assert_eq!(
+            migrated.restore_legacy_task_archive("t-legacy").unwrap(),
+            restored,
+            "repeated undelete is idempotent"
+        );
+        assert!(migrated
+            .list_legacy_task_archives()
+            .unwrap()
+            .iter()
+            .find(|archive| archive.task_id == "t-legacy")
+            .unwrap()
+            .restored_at
+            .is_some());
     }
 
     fn repository(id: &str) -> NewRepository {
@@ -5457,7 +6426,7 @@ mod tests {
                 .unwrap(),
             vec![failed]
         );
-        assert_eq!(reopened.migration_versions().unwrap().last(), Some(&17));
+        assert_eq!(reopened.migration_versions().unwrap().last(), Some(&21));
     }
 
     #[test]
@@ -5620,6 +6589,7 @@ mod tests {
                     Some("r2".into()),
                     PathBuf::from("/projects/alpha/repos/two")
                 ),
+                (None, home.to_path_buf()),
             ]
         );
     }
@@ -5891,7 +6861,7 @@ mod tests {
                     .unwrap();
             assert_eq!(
                 store.migration_versions().unwrap(),
-                vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]
+                vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]
             );
             assert_eq!(
                 store.project_home_root().unwrap(),
@@ -5918,7 +6888,7 @@ mod tests {
         let reopened = ManagementStore::open_with_paths(&path, user_home, system_temp).unwrap();
         assert_eq!(
             reopened.migration_versions().unwrap(),
-            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]
+            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]
         );
         assert_eq!(
             reopened.get_workspace("w-1").unwrap().unwrap().slug,
@@ -5951,18 +6921,226 @@ mod tests {
     }
 
     #[test]
-    fn migration_15_preserves_existing_workspace_binding_path_and_mode() {
+    fn migration_18_records_workspace_sessions_worktrees_and_non_lifecycle_tags() {
+        let fixture = tempdir().unwrap();
+        let home = fixture.path().join("home");
+        fs::create_dir_all(&home).unwrap();
+        let store = ManagementStore::open_with_paths(
+            fixture.path().join("management.sqlite"),
+            &home,
+            fixture.path(),
+        )
+        .unwrap();
+        store
+            .create_workspace(&workspace("w-context", "context"))
+            .unwrap();
+        store
+            .create_repository(&repository("repo-context"))
+            .unwrap();
+        assert!(store
+            .save_workspace_repository_worktree(&WorkspaceRepositoryWorktree {
+                workspace_id: "w-context".into(),
+                repository_id: "repo-context".into(),
+                source_identity: "source-id".into(),
+                checkout_identity: None,
+                branch: "work/refactor".into(),
+                base_checkout_path: "/tmp/base".into(),
+                worktree_path: "/tmp/../outside".into(),
+                workspace_link: "/tmp/alias".into(),
+                setup_status: WorkspaceWorktreeStatus::Pending,
+                error_code: None,
+                error_detail: None,
+                created_at: CREATED,
+                updated_at: CREATED,
+            })
+            .is_err());
+        store
+            .create_session(&NewSession {
+                open_code_session_id: "ses-workspace".into(),
+                owner: SessionOwner::Workspace("w-context".into()),
+                directory: store.get_workspace("w-context").unwrap().unwrap().home_path,
+                last_known_status: "ready_for_review".into(),
+                created_at: CREATED,
+            })
+            .unwrap();
+        store
+            .create_session(&NewSession {
+                open_code_session_id: "ses-invalid-worker".into(),
+                owner: SessionOwner::Workspace("w-context".into()),
+                directory: store.get_workspace("w-context").unwrap().unwrap().home_path,
+                last_known_status: "ready_for_review".into(),
+                created_at: CREATED + 1,
+            })
+            .unwrap();
+
+        let connection = store.connection.lock().unwrap();
+        connection
+            .execute(
+                "INSERT INTO workspace_session_context(open_code_session_id, workspace_id, role, repository_id)
+                 VALUES ('ses-workspace', 'w-context', 'workspace', NULL)",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO workspace_tags(workspace_id, tag, created_at) VALUES ('w-context', 'Milestone 1', ?1)",
+                [CREATED],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO workspace_repository_worktrees(
+                     workspace_id, repository_id, source_identity, checkout_identity,
+                     branch, base_checkout_path, worktree_path, workspace_link,
+                     setup_status, error_code, error_detail, created_at, updated_at
+                  ) VALUES ('w-context', 'repo-context', 'source-id', NULL, 'work/refactor',
+                     '/tmp/base', '/tmp/worktree', '/tmp/alias', 'pending', NULL, NULL, ?1, ?1)",
+                [CREATED],
+            )
+            .unwrap();
+        assert!(connection
+            .execute(
+                "INSERT INTO workspace_session_context(open_code_session_id, workspace_id, role, repository_id)
+                 VALUES ('ses-invalid-worker', 'w-context', 'worker', 'repo-context')",
+                [],
+            )
+            .is_err());
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT tag FROM workspace_tags WHERE workspace_id = 'w-context'",
+                    [],
+                    |row| row.get::<_, String>(0)
+                )
+                .unwrap(),
+            "Milestone 1"
+        );
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT setup_status FROM workspace_repository_worktrees",
+                    [],
+                    |row| row.get::<_, String>(0)
+                )
+                .unwrap(),
+            "pending"
+        );
+    }
+
+    #[test]
+    fn migration_20_repairs_shipped_v18_worktree_table_without_base_checkout_column() {
+        let fixture = tempdir().unwrap();
+        let home = fixture.path().join("home");
+        fs::create_dir_all(&home).unwrap();
+        let database = fixture.path().join("management.sqlite");
+        {
+            let legacy = Connection::open(&database).unwrap();
+            database_through_version(&legacy, 17);
+            let old_v18 = MIGRATION_18
+                .replace("    base_checkout_path TEXT NOT NULL,\n", "")
+                .replace("    workspace_link TEXT NOT NULL,\n", "");
+            legacy.execute_batch(&old_v18).unwrap();
+            legacy
+                .execute(
+                    "INSERT INTO schema_migrations(version, applied_at) VALUES (18, 0)",
+                    [],
+                )
+                .unwrap();
+            let columns = legacy
+                .prepare("PRAGMA table_info(workspace_repository_worktrees)")
+                .unwrap()
+                .query_map([], |row| row.get::<_, String>(1))
+                .unwrap()
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap();
+            assert!(!columns.iter().any(|column| column == "base_checkout_path"));
+            assert!(!columns.iter().any(|column| column == "workspace_link"));
+        }
+
+        let migrated = ManagementStore::open_with_paths(&database, &home, fixture.path()).unwrap();
+        assert_eq!(migrated.migration_versions().unwrap().last(), Some(&21));
+        assert!(migrated
+            .list_workspace_repository_worktrees("workspace-with-no-worktrees")
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn workspace_tags_are_normalized_labels_and_do_not_change_lifecycle() {
+        let fixture = tempdir().unwrap();
+        let home = fixture.path().join("home");
+        fs::create_dir_all(&home).unwrap();
+        let store = ManagementStore::open_with_paths(
+            fixture.path().join("management.sqlite"),
+            &home,
+            fixture.path(),
+        )
+        .unwrap();
+        store
+            .create_workspace(&workspace("w-tags", "tags"))
+            .unwrap();
+
+        let tags = store
+            .replace_workspace_tags(
+                "w-tags",
+                &[
+                    " Milestone 2 ".into(),
+                    "Milestone 1".into(),
+                    "milestone 1".into(),
+                    "  ".into(),
+                ],
+                CREATED,
+            )
+            .unwrap();
+        assert_eq!(tags, vec!["Milestone 1", "Milestone 2"]);
+        assert_eq!(store.list_workspace_tags("w-tags").unwrap(), tags);
+        assert_eq!(
+            store.get_workspace("w-tags").unwrap().unwrap().status,
+            WorkspaceStatus::Active
+        );
+        assert!(store
+            .replace_workspace_tags("w-tags", &["x".repeat(81)], CREATED + 1)
+            .is_err());
+        assert_eq!(store.list_workspace_tags("w-tags").unwrap(), tags);
+    }
+
+    #[test]
+    fn repository_library_setting_is_configurable_persistent_and_validated_before_write() {
         let fixture = tempdir().unwrap();
         let home = fixture.path().join("home");
         fs::create_dir_all(&home).unwrap();
         let database = fixture.path().join("management.sqlite");
         let store = ManagementStore::open_with_paths(&database, &home, fixture.path()).unwrap();
+        assert_eq!(
+            store.repository_library_root().unwrap(),
+            DEFAULT_REPOSITORY_LIBRARY_ROOT
+        );
+        let external = fixture.path().join("library");
         store
-            .create_workspace(&workspace("w-migration", "migration"))
+            .set_repository_library_root(external.to_str().unwrap(), CREATED)
             .unwrap();
-        store
-            .create_repository(&repository("repo-migration"))
-            .unwrap();
+        assert_eq!(store.resolved_repository_library_root().unwrap(), external);
+        assert!(store
+            .set_repository_library_root("relative/path", CREATED + 1)
+            .is_err());
+        assert_eq!(
+            store.repository_library_root().unwrap(),
+            external.to_string_lossy()
+        );
+        drop(store);
+        let reopened = ManagementStore::open_with_paths(&database, &home, fixture.path()).unwrap();
+        assert_eq!(
+            reopened.resolved_repository_library_root().unwrap(),
+            external
+        );
+    }
+
+    #[test]
+    fn migration_15_preserves_existing_workspace_binding_path_and_mode() {
+        let fixture = tempdir().unwrap();
+        let home = fixture.path().join("home");
+        fs::create_dir_all(&home).unwrap();
+        let database = fixture.path().join("management.sqlite");
         let legacy = WorkspaceRepositoryBinding {
             workspace_id: "w-migration".into(),
             repository_id: "repo-migration".into(),
@@ -5972,31 +7150,39 @@ mod tests {
             verification_status: VerificationStatus::Verified,
             created_at: CREATED,
         };
-        store.save_workspace_repository_binding(&legacy).unwrap();
-        drop(store);
-
-        let connection = Connection::open(&database).unwrap();
-        connection.execute_batch(
-            "DROP TABLE task_session_repositories;
-             DROP TABLE workspace_repository_setup;
-             DROP TABLE workspace_repositories;
-             CREATE TABLE workspace_repositories (
-                workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
-                repository_id TEXT NOT NULL REFERENCES repository_catalog(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
-                checkout_path TEXT NOT NULL,
-                checkout_mode TEXT NOT NULL CHECK (checkout_mode IN ('existing', 'managed')),
-                branch TEXT NOT NULL,
-                verification_status TEXT NOT NULL DEFAULT 'pending'
-                    CHECK (verification_status IN ('pending', 'verified', 'failed')),
-                created_at INTEGER NOT NULL,
-                PRIMARY KEY (workspace_id, repository_id),
-                UNIQUE (workspace_id, checkout_path)
-             );
-             INSERT INTO workspace_repositories VALUES
-                ('w-migration', 'repo-migration', '/original/checkout', 'managed', 'main', 'verified', 1700000000000);
-             DELETE FROM schema_migrations WHERE version >= 15;",
-        ).unwrap();
-        drop(connection);
+        {
+            let connection = Connection::open(&database).unwrap();
+            database_through_version(&connection, 14);
+            connection.execute(
+                "INSERT INTO workspaces(id, name, slug, description, home_path, kind, status, created_at)
+                 VALUES ('w-migration', 'Workspace w-migration', 'migration', 'A test workspace', ?1,
+                    'regular', 'active', ?2)",
+                params![home.join("migration").to_string_lossy(), CREATED],
+            ).unwrap();
+            connection.execute(
+                "INSERT INTO repository_catalog(id, name, repository_path, repository_identity,
+                    purpose, purpose_status, created_at, updated_at)
+                 VALUES ('repo-migration', 'Repository repo-migration', '/fixtures/repos/repo-migration',
+                    'git-identity-repo-migration', 'Fixture repository', 'available', ?1, ?1)",
+                [CREATED],
+            ).unwrap();
+            connection
+                .execute(
+                    "INSERT INTO workspace_repositories(workspace_id, repository_id, checkout_path,
+                    checkout_mode, branch, verification_status, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                    params![
+                        legacy.workspace_id,
+                        legacy.repository_id,
+                        legacy.checkout_path,
+                        "managed",
+                        legacy.branch,
+                        "verified",
+                        legacy.created_at
+                    ],
+                )
+                .unwrap();
+        }
 
         let reopened = ManagementStore::open_with_paths(&database, &home, fixture.path()).unwrap();
         assert_eq!(
@@ -6821,7 +8007,7 @@ mod tests {
     }
 
     #[test]
-    fn completed_tasks_cannot_be_reopened_and_active_tasks_block_workspace_completion() {
+    fn workspace_completion_is_independent_of_retained_legacy_task_lifecycle() {
         let store = ManagementStore::in_memory().unwrap();
         store
             .create_workspace(&workspace("w-lifecycle", "lifecycle"))
@@ -6829,19 +8015,19 @@ mod tests {
         store
             .create_task(&task("t-lifecycle", "w-lifecycle", "task"))
             .unwrap();
-        let blocked = store
+        let completed_workspace = store
             .complete_workspace("w-lifecycle", CREATED + 10)
-            .unwrap_err()
-            .to_string();
-        assert!(blocked.contains("t-lifecycle"), "{blocked}");
+            .unwrap();
+        assert_eq!(completed_workspace.status, WorkspaceStatus::Completed);
         assert_eq!(
-            store.get_workspace("w-lifecycle").unwrap().unwrap().status,
-            WorkspaceStatus::Active
+            store.get_task("t-lifecycle").unwrap().unwrap().status,
+            TaskStatus::Active
         );
+        store.reactivate_workspace("w-lifecycle").unwrap();
 
-        let completed = store.complete_task("t-lifecycle", CREATED + 10).unwrap();
+        let completed = store.complete_task("t-lifecycle", CREATED + 20).unwrap();
         assert_eq!(completed.status, TaskStatus::Completed);
-        assert_eq!(completed.completed_at, Some(CREATED + 10));
+        assert_eq!(completed.completed_at, Some(CREATED + 20));
         assert!(matches!(
             store.reopen_task("t-lifecycle"),
             Err(ManagementStoreError::InvalidTransition(_))
@@ -6852,7 +8038,7 @@ mod tests {
         );
         assert_eq!(
             store
-                .complete_workspace("w-lifecycle", CREATED + 20)
+                .complete_workspace("w-lifecycle", CREATED + 30)
                 .unwrap()
                 .status,
             WorkspaceStatus::Completed

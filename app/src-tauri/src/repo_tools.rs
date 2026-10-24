@@ -30,6 +30,9 @@ fn workspace_paths(
     owner_type: &str,
     owner_id: &str,
 ) -> Result<Vec<(String, String, PathBuf)>, String> {
+    if owner_type != "workspace" {
+        return Err("Repository tools are available only for a Workspace.".into());
+    }
     let (workspace_id, task) = match owner_type {
         "workspace" => {
             let workspace = store
@@ -314,7 +317,7 @@ mod tests {
     }
 
     #[test]
-    fn production_store_routes_workspace_tools_to_checkout_and_task_tools_to_worktree() {
+    fn production_store_routes_workspace_tools_and_rejects_legacy_task_owners() {
         let root = tempdir().unwrap();
         let source = root.path().join("source");
         fs::create_dir_all(&source).unwrap();
@@ -441,18 +444,7 @@ mod tests {
         assert_eq!(workspace_tools[0].package_scripts, ["test"]);
         assert_eq!(workspace_tools[0].make_targets, ["check"]);
         assert!(workspace_tools[0].npm_install_needed);
-        let task_launch = launch_for_owner(
-            &store,
-            "task",
-            &task.id,
-            &repository.id,
-            "npm_script",
-            "test",
-        )
-        .unwrap();
-        assert_eq!(task_launch.directory, worktree.canonicalize().unwrap());
-        assert_eq!(task_launch.executable, PathBuf::from("npm"));
-        assert_eq!(task_launch.args, ["run", "--", "test"]);
+        assert!(list_for_owner(&store, "task", &task.id).is_err());
         assert!(launch_for_owner(
             &store,
             "task",

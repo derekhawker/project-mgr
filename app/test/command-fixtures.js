@@ -37,7 +37,7 @@ export const workspace = {
   homePath: '/tmp/workspace', kind: 'regular', status: 'active', createdAt: 1, completedAt: null,
 };
 
-export const navigation = { workspaces: [workspace], tasks: [task], sessions: [session], workspaceRepositories: [], quickRequests: [] };
+export const navigation = { workspaces: [workspace], tasks: [task], sessions: [session], workspaceRepositories: [], workspaceSessionContexts: [], quickRequests: [] };
 
 export const terminal = { replay: [] };
 
@@ -86,7 +86,11 @@ export function resultForCommand(name) {
     case 'task_cleanup_jobs':
     case 'task_cleanup_retry': return cleanupJobs;
     case 'workspace_navigation': return navigation;
+    case 'legacy_task_archives_list': return [];
+    case 'legacy_task_archive_restore': return null;
     case 'repository_directory_page': return repositoryDirectoryPage;
+    case 'repository_library_get':
+    case 'repository_library_set': return '/repos/library';
     case 'workspace_create':
     case 'workspace_complete':
     case 'workspace_reactivate': return workspace;

@@ -1,19 +1,22 @@
 # UX Glossary
 
+> **Refactor in progress:** The target product model is recorded in
+> [`../workspace-refactor-target.md`](../workspace-refactor-target.md). In that
+> model, Workspace is the only regular work record; Task terminology below is
+> legacy until this glossary is fully updated.
+
 Use these terms consistently in user-facing copy, UX specifications, and product
 discussions. For workflow behavior beyond the UX vocabulary, see
 [`../application-workflows.md`](../application-workflows.md).
 
 ## Work and context
 
-- **Workspace:** A project grouping that knows about zero or more repositories
-  and may contain zero or more tasks. Its repository associations are working
-  context; existing repositories stay where they are unless the user explicitly
-  chooses otherwise.
-- **Task:** An optional, independently progressing unit of work nested under one
-  workspace. A task may use one or more repositories associated with that
-  workspace. Its worktrees belong in the task's defined worktree locations
-  (`<task-home>/worktrees/` for managed task worktrees).
+- **Workspace:** The sole regular work record and a complete unit of work. It
+  may use zero or more repositories and has its own lifecycle. Existing source
+  checkouts stay where they are; Workspace worktrees are separate resources.
+- **Legacy Task record:** A retained pre-refactor database record, not a target
+  product concept or a creation option. Existing rows remain visible until the
+  final archive/conversion stage.
 - **Quick Request:** A named one-off tracked item under the special Quick
   Requests workspace. It is important work with its own status and lifecycle,
   not a generic label for a user's text or an OpenCode interaction.
@@ -21,9 +24,9 @@ discussions. For workflow behavior beyond the UX vocabulary, see
   **original prompt** and text prepared for a new session the **starting
   prompt**. A prompt is not itself a product record; Quick Requests retain their
   original prompt as a field on the tracked request.
-- **Repository context:** The repositories known to a workspace and the subset
-  selected or associated for a task. Show relevant repository context before
-  work begins; it informs setup and worktree placement.
+- **Repository context:** Catalog repositories proposed for a new Workspace and
+  the repositories associated after confirmation. Show relevant repository
+  context before work begins; it determines Workspace worktrees and sessions.
 
 ## OpenCode interaction
 
@@ -35,7 +38,7 @@ discussions. For workflow behavior beyond the UX vocabulary, see
   approvals, input, and changes there. The terminal is not an app-rendered
   transcript or a background-only process.
 - **Terminal tab:** The application entry for an attached interactive terminal.
-  Tabs belong to a workspace, task, or Quick Request. Switching to another
+  Tabs belong to a Workspace, a temporary legacy Task record, or a Quick Request. Switching to another
   destination keeps the tab and process open; closing the tab stops its process.
 
 ## Other workbench destinations
@@ -47,7 +50,7 @@ discussions. For workflow behavior beyond the UX vocabulary, see
   files by paths relative to their Workspace or repository source. It is not a
   general file browser or editor.
 - **Tools menu:** The menu of repository-scoped tools available for the selected
-  workspace or task context.
+  Workspace context. Legacy Task tools are transitional only.
 
 ## Avoid as product vocabulary
 

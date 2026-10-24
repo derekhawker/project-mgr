@@ -62,6 +62,547 @@ pub struct TaskWorktree {
     pub checkout_identity: String,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RepositoryLibraryPaths {
+    pub base_checkout: PathBuf,
+    pub workspace_worktree: PathBuf,
+    pub workspace_link: PathBuf,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RepositoryLibrarySetupPlan {
+    pub repository_id: String,
+    pub source_path: PathBuf,
+    pub source_identity: String,
+    pub source_head: String,
+    pub default_branch: String,
+    pub default_branch_head: String,
+    pub upstream_fetch_url: Option<String>,
+    pub library_relative_path: PathBuf,
+    pub base_checkout_path: PathBuf,
+    pub worktree_path: PathBuf,
+    pub workspace_link: PathBuf,
+    pub base_staging_path: PathBuf,
+    pub workspace_branch: String,
+    pub submodules: Vec<SubmoduleFact>,
+}
+
+pub fn plan_repository_library_setup(
+    library_root: &Path,
+    workspace_home: &Path,
+    workspace_id: &str,
+    repository: &RepositoryPreflight,
+) -> Result<RepositoryLibrarySetupPlan, String> {
+    if !library_root.is_absolute()
+        || !workspace_home.is_absolute()
+        || workspace_id.is_empty()
+        || !workspace_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+        || repository.repository_id.is_empty()
+        || repository.source_identity.is_empty()
+        || !repository.source_path.is_absolute()
+    {
+        return Err("repository library setup identity or source is invalid".into());
+    }
+    if library_root.starts_with(&repository.source_path)
+        || repository.source_path.starts_with(library_root)
+        || library_root.starts_with(workspace_home)
+        || workspace_home.starts_with(library_root)
+    {
+        return Err(
+            "repository library, source checkout, and Workspace home must be separate paths".into(),
+        );
+    }
+    let default_branch = repository
+        .default_branch
+        .clone()
+        .filter(|branch| !branch.trim().is_empty())
+        .ok_or_else(|| {
+            format!(
+                "Repository {} has no resolvable default branch",
+                repository.name
+            )
+        })?;
+    let default_branch_head = repository
+        .default_branch_head
+        .clone()
+        .filter(|head| !head.trim().is_empty())
+        .ok_or_else(|| {
+            format!(
+                "Repository {} has no default-branch commit",
+                repository.name
+            )
+        })?;
+    let library_relative_path = repository_library_relative_path(
+        repository.upstream_fetch_url.as_deref(),
+        &repository.source_identity,
+        &repository.name,
+    )?;
+    let paths = repository_library_paths(
+        library_root,
+        workspace_home,
+        &library_relative_path,
+        workspace_id,
+    )?;
+    let repository_name = paths
+        .base_checkout
+        .file_name()
+        .ok_or_else(|| "Repository library checkout path has no name".to_owned())?
+        .to_string_lossy();
+    let base_staging_path = paths
+        .base_checkout
+        .parent()
+        .unwrap()
+        .join(format!(".{repository_name}.staging-{workspace_id}"));
+    Ok(RepositoryLibrarySetupPlan {
+        repository_id: repository.repository_id.clone(),
+        source_path: repository.source_path.clone(),
+        source_identity: repository.source_identity.clone(),
+        source_head: repository.head.clone(),
+        default_branch,
+        default_branch_head,
+        upstream_fetch_url: repository.upstream_fetch_url.clone(),
+        library_relative_path,
+        base_checkout_path: paths.base_checkout,
+        worktree_path: paths.workspace_worktree,
+        workspace_link: paths.workspace_link,
+        base_staging_path,
+        workspace_branch: format!("work/{workspace_id}"),
+        submodules: repository.submodules.clone(),
+    })
+}
+
+/// Keeps a failed Workspace retry bound to the exact paths already recorded,
+/// even if the user changes the repository-library setting after setup began.
+pub fn use_recorded_workspace_repository_paths(
+    plan: &mut RepositoryLibrarySetupPlan,
+    record: &management::WorkspaceRepositoryWorktree,
+) -> Result<(), String> {
+    if record.base_checkout_path.is_empty() || record.workspace_link.is_empty() {
+        return Err(
+            "This older Workspace worktree record has incomplete repository paths; review repository setup before retrying."
+                .into(),
+        );
+    }
+    if record.repository_id != plan.repository_id
+        || record.source_identity != plan.source_identity
+        || !Path::new(&record.base_checkout_path).is_absolute()
+        || !Path::new(&record.worktree_path).is_absolute()
+        || !Path::new(&record.workspace_link).is_absolute()
+        || record.branch.is_empty()
+    {
+        return Err(
+            "Recorded Workspace repository paths do not match the reviewed repository.".into(),
+        );
+    }
+    for path in [
+        Path::new(&record.base_checkout_path),
+        Path::new(&record.worktree_path),
+        Path::new(&record.workspace_link),
+    ] {
+        if path
+            .components()
+            .any(|component| matches!(component, Component::ParentDir | Component::CurDir))
+        {
+            return Err("Recorded Workspace repository path is not normalized.".into());
+        }
+    }
+    let base_checkout_path = PathBuf::from(&record.base_checkout_path);
+    let base_parent = base_checkout_path
+        .parent()
+        .ok_or_else(|| "Recorded repository base has no parent.".to_owned())?
+        .to_path_buf();
+    let base_name = base_checkout_path
+        .file_name()
+        .ok_or_else(|| "Recorded repository base has no name.".to_owned())?
+        .to_string_lossy()
+        .into_owned();
+    plan.base_checkout_path = base_checkout_path;
+    plan.base_staging_path =
+        base_parent.join(format!(".{base_name}.staging-{}", record.workspace_id));
+    plan.worktree_path = PathBuf::from(&record.worktree_path);
+    plan.workspace_link = PathBuf::from(&record.workspace_link);
+    plan.workspace_branch = record.branch.clone();
+    Ok(())
+}
+
+/// Verifies a previously provisioned Workspace repo without moving or
+/// recreating it. Dirty worktrees remain valid because they contain user work.
+pub fn verify_recorded_workspace_repository(
+    plan: &RepositoryLibrarySetupPlan,
+    expected_checkout_identity: &str,
+) -> Result<WorkspaceRepositoryProvisionResult, String> {
+    let base = verify_library_base(plan)?;
+    if base.checkout_identity != expected_checkout_identity {
+        return Err("Recorded repository base identity no longer matches.".into());
+    }
+    let worktree_path = fs::canonicalize(&plan.worktree_path)
+        .map_err(|error| format!("Recorded Workspace worktree is unavailable: {error}"))?;
+    if worktree_path != plan.worktree_path {
+        return Err("Recorded Workspace worktree resolves through a symlink.".into());
+    }
+    let worktree = safety::inspect_repository(&worktree_path)
+        .map_err(|error| format!("Recorded Workspace worktree is invalid: {error}"))?;
+    if worktree.repository.identity != expected_checkout_identity
+        || worktree.repository.current_branch.as_deref() != Some(plan.workspace_branch.as_str())
+    {
+        return Err("Recorded Workspace worktree identity or branch changed.".into());
+    }
+    verify_submodules(&worktree_path)?;
+    if !fs::symlink_metadata(&plan.workspace_link)
+        .map_err(|error| format!("Workspace repository alias is unavailable: {error}"))?
+        .file_type()
+        .is_symlink()
+    {
+        return Err("Workspace repository alias is not a symbolic link.".into());
+    }
+    let canonical_link = fs::canonicalize(&plan.workspace_link)
+        .map_err(|error| format!("Workspace repository alias is unavailable: {error}"))?;
+    if canonical_link != worktree_path {
+        return Err("Workspace repository alias no longer points to its recorded worktree.".into());
+    }
+    let worktree = TaskWorktree {
+        repository_id: plan.repository_id.clone(),
+        branch: plan.workspace_branch.clone(),
+        path: worktree_path,
+        checkout_identity: worktree.repository.identity,
+    };
+    Ok(WorkspaceRepositoryProvisionResult {
+        base_checkout: base,
+        worktree,
+    })
+}
+
+/// Provisions the shared managed base checkout exactly once. Existing checkout
+/// content is verified and never overwritten. A staging checkout is retained
+/// on failure so an explicit retry can validate and continue it.
+pub fn provision_repository_library_base(
+    plan: &RepositoryLibrarySetupPlan,
+) -> Result<CloneProvisionResult, String> {
+    if !plan.base_checkout_path.is_absolute()
+        || plan.base_staging_path.parent() != plan.base_checkout_path.parent()
+        || plan.base_staging_path == plan.base_checkout_path
+    {
+        return Err("Managed repository base and staging paths are invalid".into());
+    }
+    verify_library_source(plan)?;
+    let parent = plan
+        .base_checkout_path
+        .parent()
+        .ok_or_else(|| "Managed repository base has no parent".to_owned())?;
+    fs::create_dir_all(parent)
+        .map_err(|error| format!("Could not create managed repository parent: {error}"))?;
+    let canonical_parent = fs::canonicalize(parent)
+        .map_err(|error| format!("Could not resolve managed repository parent: {error}"))?;
+    if canonical_parent != parent {
+        return Err("Managed repository parent resolves through a symlink.".into());
+    }
+    if plan.base_checkout_path.exists() {
+        if fs::symlink_metadata(&plan.base_checkout_path)
+            .map_err(|error| error.to_string())?
+            .file_type()
+            .is_symlink()
+        {
+            return Err("Managed repository base path must not be a symbolic link.".into());
+        }
+        return verify_library_base(plan);
+    }
+    if !plan.base_staging_path.exists() {
+        let output = Command::new("git")
+            .args(["clone", "--no-hardlinks", "--branch"])
+            .arg(&plan.default_branch)
+            .arg("--")
+            .arg(&plan.source_path)
+            .arg(&plan.base_staging_path)
+            .env("GIT_LFS_SKIP_SMUDGE", "1")
+            .output()
+            .map_err(|error| format!("Could not start managed repository clone: {error}"))?;
+        if !output.status.success() {
+            return Err(format!(
+                "Could not clone managed repository base: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            ));
+        }
+    } else if fs::symlink_metadata(&plan.base_staging_path)
+        .map_err(|error| error.to_string())?
+        .file_type()
+        .is_symlink()
+    {
+        return Err("Managed repository staging path must not be a symbolic link.".into());
+    }
+    configure_library_base_remote(&plan.base_staging_path, plan)?;
+    run_git(
+        &plan.base_staging_path,
+        &["submodule", "update", "--init", "--recursive"],
+    )?;
+    verify_submodules(&plan.base_staging_path)?;
+    verify_no_object_alternates(&plan.base_staging_path)?;
+    verify_library_checkout(plan, &plan.base_staging_path)?;
+    match fs::rename(&plan.base_staging_path, &plan.base_checkout_path) {
+        Ok(()) => verify_library_base(plan),
+        Err(error) if plan.base_checkout_path.exists() => verify_library_base(plan).map_err(|verify| {
+            format!("Could not finalize shared repository checkout ({error}); existing checkout is invalid: {verify}")
+        }),
+        Err(error) => Err(format!("Could not finalize managed repository checkout: {error}")),
+    }
+}
+
+fn verify_library_source(plan: &RepositoryLibrarySetupPlan) -> Result<(), String> {
+    let inspection = safety::inspect_repository(&plan.source_path)
+        .map_err(|error| format!("Could not revalidate repository source: {error}"))?;
+    if inspection.repository.canonical_root != plan.source_path
+        || inspection.repository.identity != plan.source_identity
+    {
+        return Err("Repository source identity changed after review.".into());
+    }
+    let source_worktree = inspection
+        .worktrees
+        .iter()
+        .find(|worktree| worktree.canonical_path == plan.source_path)
+        .ok_or_else(|| "Could not find the reviewed repository source worktree.".to_owned())?;
+    if source_worktree.head.as_deref() != Some(plan.source_head.as_str()) {
+        return Err("Repository source commit changed after review.".into());
+    }
+    let default_head = git_text(
+        &plan.source_path,
+        &["rev-parse", &format!("refs/heads/{}", plan.default_branch)],
+    )?;
+    if default_head != plan.default_branch_head {
+        return Err("Repository default branch moved after review.".into());
+    }
+    if read_submodule_facts(&plan.source_path)? != plan.submodules {
+        return Err("Repository submodule configuration changed after review.".into());
+    }
+    let remote = git_optional_text(&plan.source_path, &["remote", "get-url", "origin"])?;
+    if remote != plan.upstream_fetch_url {
+        return Err("Repository upstream URL changed after review.".into());
+    }
+    Ok(())
+}
+
+fn configure_library_base_remote(
+    checkout: &Path,
+    plan: &RepositoryLibrarySetupPlan,
+) -> Result<(), String> {
+    match plan.upstream_fetch_url.as_deref() {
+        Some(url) => {
+            let output = Command::new("git")
+                .arg("-C")
+                .arg(checkout)
+                .args(["remote", "set-url", "origin", url])
+                .output()
+                .map_err(|error| {
+                    format!("Could not configure managed repository remote: {error}")
+                })?;
+            if !output.status.success() {
+                run_git(checkout, &["remote", "add", "origin", url])?;
+            }
+        }
+        None => {
+            let result = Command::new("git")
+                .arg("-C")
+                .arg(checkout)
+                .args(["remote", "remove", "origin"])
+                .output()
+                .map_err(|error| format!("Could not remove local source remote: {error}"))?;
+            if !result.status.success() {
+                // A repository without an origin is already in the desired state.
+                let remotes = git_optional_text(checkout, &["remote"])?;
+                if remotes.as_deref().is_some_and(|value| !value.is_empty()) {
+                    return Err("Could not remove unexpected managed repository remote.".into());
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn verify_library_checkout(
+    plan: &RepositoryLibrarySetupPlan,
+    path: &Path,
+) -> Result<CloneProvisionResult, String> {
+    let inspection = safety::inspect_repository(path).map_err(|error| error.to_string())?;
+    if inspection.repository.canonical_root != path
+        || inspection.repository.identity == plan.source_identity
+        || inspection.repository.current_branch.as_deref() != Some(plan.default_branch.as_str())
+    {
+        return Err("Managed repository checkout has unexpected Git identity or branch.".into());
+    }
+    let worktree = inspection
+        .worktrees
+        .iter()
+        .find(|item| item.canonical_path == inspection.repository.canonical_root)
+        .ok_or_else(|| "Managed repository checkout has no root worktree.".to_owned())?;
+    let head = worktree
+        .head
+        .clone()
+        .ok_or_else(|| "Managed repository checkout has no HEAD.".to_owned())?;
+    if head != plan.default_branch_head {
+        return Err("Managed repository checkout differs from the reviewed default branch.".into());
+    }
+    if worktree.clean != Some(true) {
+        return Err("Managed repository base contains changes; it will not be overwritten.".into());
+    }
+    Ok(CloneProvisionResult {
+        checkout_path: inspection.repository.canonical_root,
+        checkout_identity: inspection.repository.identity,
+        branch: plan.default_branch.clone(),
+        head,
+    })
+}
+
+fn verify_library_base(plan: &RepositoryLibrarySetupPlan) -> Result<CloneProvisionResult, String> {
+    let result = verify_library_checkout(plan, &plan.base_checkout_path)?;
+    let remote = git_optional_text(&plan.base_checkout_path, &["remote", "get-url", "origin"])?;
+    match (plan.upstream_fetch_url.as_deref(), remote.as_deref()) {
+        (Some(expected), Some(actual)) if expected == actual => Ok(result),
+        (None, None) => Ok(result),
+        _ => Err("Managed repository base remote differs from the reviewed repository.".into()),
+    }
+}
+
+/// Maps a verified Git remote to a safe, stable host/owner/repository path.
+/// Credentials are deliberately ignored. Repositories without a supported
+/// remote receive a namespace derived from their verified Git identity.
+pub fn repository_library_relative_path(
+    remote: Option<&str>,
+    repository_identity: &str,
+    repository_name: &str,
+) -> Result<PathBuf, String> {
+    if repository_identity.is_empty() {
+        return Err("repository identity is required for library placement".into());
+    }
+    if let Some(remote) = remote {
+        let (host, owners, repository) = parse_remote_location(remote).ok_or_else(|| {
+            "Repository remote cannot be mapped to a safe library path".to_owned()
+        })?;
+        let mut relative = PathBuf::new();
+        relative.push(library_segment(&host));
+        for owner in owners {
+            relative.push(library_segment(&owner));
+        }
+        relative.push(library_segment(&repository));
+        return Ok(relative);
+    }
+    let name = library_segment(repository_name);
+    Ok(PathBuf::from("local").join(format!("{name}-{:016x}", stable_hash(repository_identity))))
+}
+
+/// Produces the managed base checkout, its Workspace-specific sibling
+/// worktree, and the convenience alias inside the Workspace home. The alias
+/// must never be used as the session cwd; callers use `workspace_worktree`.
+pub fn repository_library_paths(
+    library_root: &Path,
+    workspace_home: &Path,
+    relative_repository_path: &Path,
+    workspace_id: &str,
+) -> Result<RepositoryLibraryPaths, String> {
+    if !library_root.is_absolute()
+        || !workspace_home.is_absolute()
+        || relative_repository_path.as_os_str().is_empty()
+        || relative_repository_path
+            .components()
+            .any(|component| !matches!(component, Component::Normal(_)))
+        || workspace_id.is_empty()
+        || !workspace_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+    {
+        return Err("repository library path identity is invalid".into());
+    }
+    let base_checkout = library_root.join(relative_repository_path);
+    let repository_name = relative_repository_path
+        .file_name()
+        .ok_or_else(|| "repository library path has no repository name".to_owned())?;
+    let worktree_area = base_checkout
+        .parent()
+        .ok_or_else(|| "repository library path has no parent".to_owned())?
+        .join(format!("{}.worktrees", repository_name.to_string_lossy()));
+    let workspace_worktree = worktree_area.join(workspace_id);
+    let workspace_link = workspace_home.join("repos").join(relative_repository_path);
+    Ok(RepositoryLibraryPaths {
+        base_checkout,
+        workspace_worktree,
+        workspace_link,
+    })
+}
+
+fn parse_remote_location(remote: &str) -> Option<(String, Vec<String>, String)> {
+    if remote.contains(['?', '#']) {
+        return None;
+    }
+    let (host, path) = if let Some(rest) = remote.strip_prefix("https://") {
+        split_remote_authority(rest)?
+    } else if let Some(rest) = remote.strip_prefix("http://") {
+        split_remote_authority(rest)?
+    } else if let Some(rest) = remote.strip_prefix("ssh://") {
+        split_remote_authority(rest)?
+    } else if let Some((user_host, path)) = remote.split_once(':') {
+        let host = user_host.rsplit('@').next()?;
+        (host, path)
+    } else {
+        return None;
+    };
+    let mut parts = path
+        .trim_matches('/')
+        .split('/')
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    let mut repository = parts.pop()?;
+    if repository.ends_with(".git") {
+        repository.truncate(repository.len() - 4);
+    }
+    if parts.is_empty()
+        || parts
+            .iter()
+            .chain(std::iter::once(&repository))
+            .any(|part| part.is_empty() || part == "." || part == "..")
+    {
+        return None;
+    }
+    Some((host.to_owned(), parts, repository))
+}
+
+fn split_remote_authority(value: &str) -> Option<(&str, &str)> {
+    let (authority, path) = value.split_once('/')?;
+    let host = authority.rsplit('@').next()?;
+    if host.is_empty() {
+        return None;
+    }
+    Some((host, path))
+}
+
+fn library_segment(value: &str) -> String {
+    let mut segment = String::new();
+    let mut separator = false;
+    for character in value.chars() {
+        if character.is_ascii_alphanumeric() || character == '-' || character == '_' {
+            if separator && !segment.is_empty() {
+                segment.push('-');
+            }
+            segment.push(character.to_ascii_lowercase());
+            separator = false;
+        } else {
+            separator = true;
+        }
+    }
+    if separator && !segment.is_empty() {
+        segment.push('-');
+    }
+    if segment.is_empty() || segment == "." || segment == ".." {
+        "repository".into()
+    } else {
+        segment
+    }
+}
+
+fn stable_hash(value: &str) -> u64 {
+    value.bytes().fold(0xcbf29ce484222325_u64, |hash, byte| {
+        (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3)
+    })
+}
+
 /// Creates or verifies the one deterministic task worktree for a workspace checkout.
 pub fn provision_task_worktree(
     workspace_checkout: &Path,
@@ -153,6 +694,172 @@ pub fn provision_task_worktree(
     })
 }
 
+/// Creates or safely reuses a Workspace-specific worktree from a managed base
+/// checkout, then installs the Workspace-local convenience symlink. The caller
+/// must have independently populated and verified the managed base checkout.
+pub fn provision_repository_library_worktree(
+    plan: &RepositoryLibrarySetupPlan,
+    expected_base_identity: &str,
+) -> Result<TaskWorktree, String> {
+    if expected_base_identity.is_empty()
+        || !plan.base_checkout_path.is_absolute()
+        || !plan.worktree_path.is_absolute()
+        || !plan.workspace_link.is_absolute()
+        || !plan.workspace_branch.starts_with("work/")
+    {
+        return Err("Workspace worktree plan is incomplete".into());
+    }
+    let base = safety::inspect_repository(&plan.base_checkout_path)
+        .map_err(|error| format!("Managed repository checkout is unavailable: {error}"))?;
+    if base.repository.identity != expected_base_identity
+        || base.repository.current_branch.as_deref() != Some(plan.default_branch.as_str())
+    {
+        return Err(
+            "Managed base checkout identity or branch changed before worktree setup.".into(),
+        );
+    }
+    let base_head = git_text(&plan.base_checkout_path, &["rev-parse", "HEAD"])?;
+    if base_head != plan.default_branch_head {
+        return Err("Managed base checkout moved from the reviewed default-branch commit.".into());
+    }
+
+    let worktree_parent = plan
+        .worktree_path
+        .parent()
+        .ok_or_else(|| "Workspace worktree has no parent directory.".to_owned())?;
+    fs::create_dir_all(worktree_parent)
+        .map_err(|error| format!("Could not create repository worktree area: {error}"))?;
+    let canonical_parent = fs::canonicalize(worktree_parent)
+        .map_err(|error| format!("Could not resolve repository worktree area: {error}"))?;
+    if canonical_parent != worktree_parent {
+        return Err("Repository worktree area resolves through an unexpected symlink.".into());
+    }
+    if plan.worktree_path.exists() {
+        if fs::symlink_metadata(&plan.worktree_path)
+            .map_err(|error| error.to_string())?
+            .file_type()
+            .is_symlink()
+        {
+            return Err("Workspace worktree path must not be a symbolic link.".into());
+        }
+        let existing = safety::inspect_repository(&plan.worktree_path)
+            .map_err(|_| "Workspace worktree path is occupied by unrecognized data.".to_owned())?;
+        if existing.repository.identity != expected_base_identity
+            || existing.repository.current_branch.as_deref() != Some(plan.workspace_branch.as_str())
+        {
+            return Err(
+                "Existing Workspace worktree has conflicting Git identity or branch.".into(),
+            );
+        }
+    } else {
+        let branch = safety::inspect_branch(&plan.base_checkout_path, &plan.workspace_branch)
+            .map_err(|error| error.to_string())?;
+        if branch.exists {
+            return Err(format!(
+                "Workspace branch {} already exists outside its expected worktree.",
+                plan.workspace_branch
+            ));
+        }
+        let output = Command::new("git")
+            .arg("-C")
+            .arg(&plan.base_checkout_path)
+            .args(["worktree", "add", "-b", plan.workspace_branch.as_str()])
+            .arg(&plan.worktree_path)
+            .arg(&plan.default_branch)
+            .env("GIT_LFS_SKIP_SMUDGE", "1")
+            .output()
+            .map_err(|error| format!("Could not start Git worktree creation: {error}"))?;
+        if !output.status.success() {
+            return Err(format!(
+                "Could not create Workspace worktree: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            ));
+        }
+    }
+    let canonical_worktree = fs::canonicalize(&plan.worktree_path)
+        .map_err(|error| format!("Workspace worktree is unavailable: {error}"))?;
+    if canonical_worktree != plan.worktree_path {
+        return Err("Workspace worktree path resolves through an unexpected symlink.".into());
+    }
+    let worktree =
+        safety::inspect_repository(&canonical_worktree).map_err(|error| error.to_string())?;
+    if worktree.repository.identity != expected_base_identity
+        || worktree.repository.current_branch.as_deref() != Some(plan.workspace_branch.as_str())
+    {
+        return Err("Created Workspace worktree failed identity or branch verification.".into());
+    }
+    run_git(
+        &canonical_worktree,
+        &["submodule", "update", "--init", "--recursive"],
+    )?;
+    verify_submodules(&canonical_worktree)?;
+    ensure_workspace_repository_symlink(&plan.workspace_link, &canonical_worktree)?;
+    Ok(TaskWorktree {
+        repository_id: plan.repository_id.clone(),
+        branch: plan.workspace_branch.clone(),
+        path: canonical_worktree,
+        checkout_identity: worktree.repository.identity,
+    })
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WorkspaceRepositoryProvisionResult {
+    pub base_checkout: CloneProvisionResult,
+    pub worktree: TaskWorktree,
+}
+
+/// Production orchestration boundary for one repository selected into a
+/// Workspace. A verified base checkout is reusable if worktree setup fails;
+/// retries verify and reuse both resources rather than cloning or branching a
+/// second time.
+pub fn provision_workspace_repository(
+    plan: &RepositoryLibrarySetupPlan,
+) -> Result<WorkspaceRepositoryProvisionResult, String> {
+    let base_checkout = provision_repository_library_base(plan)?;
+    let worktree = provision_repository_library_worktree(plan, &base_checkout.checkout_identity)?;
+    Ok(WorkspaceRepositoryProvisionResult {
+        base_checkout,
+        worktree,
+    })
+}
+
+fn ensure_workspace_repository_symlink(link: &Path, target: &Path) -> Result<(), String> {
+    let canonical_target = fs::canonicalize(target)
+        .map_err(|error| format!("Could not resolve Workspace worktree for alias: {error}"))?;
+    if let Some(parent) = link.parent() {
+        fs::create_dir_all(parent).map_err(|error| {
+            format!("Could not create Workspace repository alias parent: {error}")
+        })?;
+        if fs::canonicalize(parent).map_err(|error| error.to_string())? != parent {
+            return Err("Workspace repository alias parent resolves through a symlink.".into());
+        }
+    }
+    match fs::symlink_metadata(link) {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            let existing = fs::canonicalize(link).map_err(|error| {
+                format!("Existing Workspace repository alias is broken: {error}")
+            })?;
+            if existing != canonical_target {
+                return Err("Workspace repository alias points to a different worktree.".into());
+            }
+            Ok(())
+        }
+        Ok(_) => Err("Workspace repository alias path is occupied by non-symlink data.".into()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            #[cfg(unix)]
+            std::os::unix::fs::symlink(&canonical_target, link)
+                .map_err(|error| format!("Could not create Workspace repository alias: {error}"))?;
+            #[cfg(windows)]
+            std::os::windows::fs::symlink_dir(&canonical_target, link)
+                .map_err(|error| format!("Could not create Workspace repository alias: {error}"))?;
+            Ok(())
+        }
+        Err(error) => Err(format!(
+            "Could not inspect Workspace repository alias: {error}"
+        )),
+    }
+}
+
 /// Reads repository facts without mutating the source. Every Git argument is a
 /// fixed argument or a separate value; no shell is involved.
 pub fn inspect_repository_preflight(
@@ -191,9 +898,9 @@ pub fn inspect_repository_preflight(
         head,
         default_branch,
         default_branch_head,
-        // Ignored build/cache output does not make a source checkout unsuitable
-        // for cloning. Keep the broader safety status intact for cleanup, where
-        // ignored files must still prevent deleting a worktree that contains them.
+        // Retain this diagnostic fact for reporting/tests. Workspace setup
+        // clones the reviewed Git commit and does not require a clean source
+        // working tree; cleanup uses separate cleanliness checks.
         clean: worktree
             .clean
             .map(|clean| {
@@ -250,13 +957,14 @@ fn git_optional_text(path: &Path, args: &[&str]) -> Result<Option<String>, Strin
 }
 
 fn read_submodule_facts(root: &Path) -> Result<Vec<SubmoduleFact>, String> {
-    let file = root.join(".gitmodules");
-    if !file.exists() {
+    let tracked_file = git_text(root, &["ls-tree", "-z", "HEAD", "--", ".gitmodules"])?;
+    if tracked_file.is_empty() {
         return Ok(Vec::new());
     }
     let output = Command::new("git")
-        .args(["config", "--file"])
-        .arg(&file)
+        .arg("-C")
+        .arg(root)
+        .args(["config", "--blob=HEAD:.gitmodules"])
         .arg("--get-regexp")
         .arg("^submodule\\..*\\.(path|url)$")
         .output()
@@ -315,13 +1023,6 @@ pub fn plan_workspace_setup(
             return Err(format!(
                 "Repository {} has incomplete source identity.",
                 repository.repository_id
-            ));
-        }
-        if !repository.clean {
-            return Err(format!(
-                "Repository `{}` at `{}` has uncommitted changes.",
-                repository.name,
-                repository.source_path.display()
             ));
         }
         let branch = repository
@@ -399,6 +1100,22 @@ pub fn update_workspace_instructions(
     existing: Option<&str>,
     repositories: &[RepositorySetupPlan],
 ) -> String {
+    let paths = repositories
+        .iter()
+        .map(|repository| {
+            (
+                repository.repository_id.clone(),
+                repository.destination_path.clone(),
+            )
+        })
+        .collect::<Vec<_>>();
+    update_workspace_instructions_for_paths(existing, &paths)
+}
+
+pub fn update_workspace_instructions_for_paths(
+    existing: Option<&str>,
+    repositories: &[(String, PathBuf)],
+) -> String {
     let mut content = existing.unwrap_or_default().to_owned();
     if let (Some(start), Some(end)) = (
         content.find(INSTRUCTIONS_START),
@@ -419,13 +1136,9 @@ pub fn update_workspace_instructions(
     }
     let mut block = String::from(INSTRUCTIONS_START);
     block.push_str("\n## Workspace repositories\n\n");
-    block.push_str("Each repository below is an independent checkout. Each Task creates a separate OpenCode session rooted in that repository's task worktree. Keep repository changes in that repository's session; do not edit another repository from a different session.\n\n");
-    for repository in repositories {
-        block.push_str(&format!(
-            "- `{}`: `{}`\n",
-            repository.repository_id,
-            repository.destination_path.display()
-        ));
+    block.push_str("Each repository below is an independent Git repository with its own Workspace worktree. Use its worker session for repository changes; the orchestrator session stays outside all repositories and coordinates work across workers.\n\n");
+    for (repository_id, path) in repositories {
+        block.push_str(&format!("- `{}`: `{}`\n", repository_id, path.display()));
     }
     block.push_str(INSTRUCTIONS_END);
     if content.is_empty() {
@@ -433,6 +1146,40 @@ pub fn update_workspace_instructions(
     } else {
         format!("{content}\n\n{block}\n")
     }
+}
+
+pub fn write_workspace_library_instructions(
+    workspace_home: &Path,
+    repositories: &[(String, PathBuf)],
+) -> Result<(), String> {
+    let path = workspace_home.join("AGENTS.md");
+    if path.exists()
+        && fs::symlink_metadata(&path)
+            .map_err(|error| error.to_string())?
+            .file_type()
+            .is_symlink()
+    {
+        return Err("Workspace AGENTS.md must not be a symbolic link.".into());
+    }
+    let existing = if path.exists() {
+        Some(
+            fs::read_to_string(&path)
+                .map_err(|error| format!("Could not read workspace AGENTS.md: {error}"))?,
+        )
+    } else {
+        None
+    };
+    let updated = update_workspace_instructions_for_paths(existing.as_deref(), repositories);
+    if updated.is_empty() {
+        return Ok(());
+    }
+    let temporary = workspace_home.join(format!(".AGENTS.md-{}.tmp", std::process::id()));
+    fs::write(&temporary, updated)
+        .map_err(|error| format!("Could not stage workspace instructions: {error}"))?;
+    fs::rename(&temporary, &path).map_err(|error| {
+        let _ = fs::remove_file(&temporary);
+        format!("Could not update workspace instructions: {error}")
+    })
 }
 
 pub fn write_workspace_instructions(
@@ -833,12 +1580,319 @@ mod tests {
             default_branch: Some("main".into()),
             default_branch_head: Some(format!("default-head-{id}")),
             clean: true,
-            upstream_fetch_url: Some(format!("https://example.invalid/{id}.git")),
+            upstream_fetch_url: Some(format!("https://example.invalid/org/{id}.git")),
             submodules: vec![SubmoduleFact {
                 path: "vendor/lib".into(),
                 url: Some("../lib.git".into()),
             }],
         }
+    }
+
+    #[test]
+    fn repository_library_paths_are_remote_grouped_workspace_specific_and_safe() {
+        let relative = repository_library_relative_path(
+            Some("https://token:secret@GitHub.com/Acme/tools.git"),
+            "verified-identity",
+            "Tools",
+        )
+        .unwrap();
+        assert_eq!(relative, PathBuf::from("github-com/acme/tools"));
+        assert!(!relative.to_string_lossy().contains("secret"));
+
+        let scp = repository_library_relative_path(
+            Some("git@gitlab.example:group/subgroup/repo.git"),
+            "another-identity",
+            "repo",
+        )
+        .unwrap();
+        assert_eq!(scp, PathBuf::from("gitlab-example/group/subgroup/repo"));
+        let local_a = repository_library_relative_path(None, "local:/repo/.git", "Repo").unwrap();
+        let local_b = repository_library_relative_path(None, "local:/repo/.git", "Repo").unwrap();
+        assert_eq!(local_a, local_b);
+        assert!(local_a.starts_with("local"));
+        assert!(repository_library_relative_path(
+            Some("https://host-without-owner.example/repo.git"),
+            "identity",
+            "repo"
+        )
+        .is_err());
+
+        let paths = repository_library_paths(
+            Path::new("/library"),
+            Path::new("/workspaces/example"),
+            &relative,
+            "ws-123",
+        )
+        .unwrap();
+        assert_eq!(
+            paths.base_checkout,
+            PathBuf::from("/library/github-com/acme/tools")
+        );
+        assert_eq!(
+            paths.workspace_worktree,
+            PathBuf::from("/library/github-com/acme/tools.worktrees/ws-123")
+        );
+        assert_eq!(
+            paths.workspace_link,
+            PathBuf::from("/workspaces/example/repos/github-com/acme/tools")
+        );
+        assert!(repository_library_paths(
+            Path::new("/library"),
+            Path::new("/workspaces/example"),
+            Path::new("../escape"),
+            "ws-123"
+        )
+        .is_err());
+
+        let setup = plan_repository_library_setup(
+            Path::new("/library"),
+            Path::new("/workspaces/ws-123"),
+            "ws-123",
+            &repository("repo-1", "repo-1"),
+        )
+        .unwrap();
+        assert_eq!(setup.repository_id, "repo-1");
+        assert_eq!(setup.workspace_branch, "work/ws-123");
+        assert_eq!(
+            setup.base_checkout_path,
+            PathBuf::from("/library/example-invalid/org/repo-1")
+        );
+        assert_eq!(
+            setup.worktree_path.parent().unwrap(),
+            setup.base_checkout_path.parent().unwrap().join(format!(
+                "{}.worktrees",
+                setup
+                    .base_checkout_path
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+            ))
+        );
+        assert_eq!(setup.worktree_path.file_name().unwrap(), "ws-123");
+        let mut new_root_plan = plan_repository_library_setup(
+            Path::new("/new-library"),
+            Path::new("/workspaces/ws-123"),
+            "ws-123",
+            &repository("repo-1", "repo-1"),
+        )
+        .unwrap();
+        let recorded = management::WorkspaceRepositoryWorktree {
+            workspace_id: "ws-123".into(),
+            repository_id: "repo-1".into(),
+            source_identity: setup.source_identity.clone(),
+            checkout_identity: None,
+            branch: setup.workspace_branch.clone(),
+            base_checkout_path: setup.base_checkout_path.to_string_lossy().into_owned(),
+            worktree_path: setup.worktree_path.to_string_lossy().into_owned(),
+            workspace_link: setup.workspace_link.to_string_lossy().into_owned(),
+            setup_status: management::WorkspaceWorktreeStatus::Failed,
+            error_code: Some("provision_failed".into()),
+            error_detail: Some("retry fixture".into()),
+            created_at: 1,
+            updated_at: 1,
+        };
+        use_recorded_workspace_repository_paths(&mut new_root_plan, &recorded).unwrap();
+        assert_eq!(new_root_plan.base_checkout_path, setup.base_checkout_path);
+        assert_eq!(new_root_plan.worktree_path, setup.worktree_path);
+        assert_eq!(new_root_plan.workspace_link, setup.workspace_link);
+        assert!(plan_repository_library_setup(
+            Path::new("/sources"),
+            Path::new("/workspaces/ws-123"),
+            "ws-123",
+            &repository("repo-1", "repo-1"),
+        )
+        .unwrap_err()
+        .contains("must be separate"));
+        assert!(plan_repository_library_setup(
+            Path::new("/library"),
+            Path::new("/library/workspaces/ws-123"),
+            "ws-123",
+            &repository("repo-1", "repo-1"),
+        )
+        .unwrap_err()
+        .contains("must be separate"));
+    }
+
+    #[test]
+    fn repository_library_worktree_is_real_repo_root_and_workspace_alias_is_recoverable() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = management::ManagementStore::in_memory_with_paths(
+            temp.path().join("home"),
+            temp.path().join("system-temp"),
+        )
+        .unwrap();
+        let workspace = store
+            .create_workspace(&management::NewWorkspace {
+                id: "ws-library".into(),
+                name: "Library Workspace".into(),
+                slug: "ws-library".into(),
+                description: None,
+                kind: management::WorkspaceKind::Regular,
+                created_at: 1,
+            })
+            .unwrap();
+        let source = temp.path().join("source");
+        std::fs::create_dir_all(&source).unwrap();
+        let run = |directory: &Path, args: &[&str]| {
+            let output = Command::new("git")
+                .arg("-C")
+                .arg(directory)
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "git {args:?}: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        };
+        let init = Command::new("git")
+            .args(["init", "--quiet", "--initial-branch=main"])
+            .arg(&source)
+            .output()
+            .unwrap();
+        assert!(init.status.success());
+        run(&source, &["config", "user.name", "fixture"]);
+        run(
+            &source,
+            &["config", "user.email", "fixture@example.invalid"],
+        );
+        std::fs::write(source.join("AGENTS.md"), "repo instructions\n").unwrap();
+        run(&source, &["add", "AGENTS.md"]);
+        run(&source, &["commit", "--quiet", "-m", "initial"]);
+
+        let source_facts = safety::inspect_repository(&source).unwrap();
+        let record = management::Repository {
+            id: "repo-library-test".into(),
+            name: "Repo Library Test".into(),
+            repository_path: source.to_string_lossy().into_owned(),
+            repository_identity: source_facts.repository.identity,
+            purpose: None,
+            purpose_status: management::PurposeStatus::Unavailable,
+            created_at: 1,
+            updated_at: 1,
+        };
+        store
+            .catalog_selected_repository(&record.id, &record.name, &source, None, 1)
+            .unwrap();
+        let facts = inspect_repository_preflight(&record).unwrap();
+        assert!(facts.clean);
+        let workspace_home = PathBuf::from(&workspace.home_path);
+        let library_root = temp.path().join("library");
+        let plan =
+            plan_repository_library_setup(&library_root, &workspace_home, "ws-library", &facts)
+                .unwrap();
+        // A user edit after review must not block setup or be copied into the
+        // managed base/worktree.
+        std::fs::write(source.join("AGENTS.md"), "uncommitted user changes\n").unwrap();
+        std::fs::write(source.join("local-note.txt"), "untracked user data\n").unwrap();
+        let provisioned = provision_workspace_repository(&plan).unwrap();
+        let base = provisioned.base_checkout;
+        let worktree = provisioned.worktree;
+        assert_eq!(base.checkout_path, plan.base_checkout_path);
+        assert_eq!(worktree.path, plan.worktree_path);
+        assert_eq!(
+            std::fs::canonicalize(&plan.workspace_link).unwrap(),
+            worktree.path
+        );
+        assert!(worktree.path.join("AGENTS.md").is_file());
+        assert_eq!(
+            std::fs::read_to_string(worktree.path.join("AGENTS.md")).unwrap(),
+            "repo instructions\n",
+            "the Workspace worktree must use committed content, not dirty source files"
+        );
+        assert!(!worktree.path.join("local-note.txt").exists());
+        assert_eq!(
+            std::fs::read_to_string(source.join("AGENTS.md")).unwrap(),
+            "uncommitted user changes\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(source.join("local-note.txt")).unwrap(),
+            "untracked user data\n"
+        );
+        assert_eq!(
+            safety::inspect_repository(&source)
+                .unwrap()
+                .repository
+                .current_branch
+                .as_deref(),
+            Some("main")
+        );
+
+        let mut changed_root_plan = plan_repository_library_setup(
+            &temp.path().join("new-library"),
+            &workspace_home,
+            "ws-library",
+            &facts,
+        )
+        .unwrap();
+        let saved_paths = management::WorkspaceRepositoryWorktree {
+            workspace_id: "ws-library".into(),
+            repository_id: record.id.clone(),
+            source_identity: plan.source_identity.clone(),
+            checkout_identity: Some(worktree.checkout_identity.clone()),
+            branch: plan.workspace_branch.clone(),
+            base_checkout_path: plan.base_checkout_path.to_string_lossy().into_owned(),
+            worktree_path: plan.worktree_path.to_string_lossy().into_owned(),
+            workspace_link: plan.workspace_link.to_string_lossy().into_owned(),
+            setup_status: management::WorkspaceWorktreeStatus::Ready,
+            error_code: None,
+            error_detail: None,
+            created_at: 1,
+            updated_at: 1,
+        };
+        store
+            .save_workspace_repository_worktree(&saved_paths)
+            .unwrap();
+        store
+            .validate_and_save_workspace_repository_binding(
+                &management::WorkspaceRepositoryBinding {
+                    workspace_id: workspace.id.clone(),
+                    repository_id: record.id.clone(),
+                    checkout_path: worktree.path.to_string_lossy().into_owned(),
+                    checkout_mode: management::CheckoutMode::Clone,
+                    branch: worktree.branch.clone(),
+                    verification_status: management::VerificationStatus::Verified,
+                    created_at: 1,
+                },
+            )
+            .unwrap();
+        let binding = store
+            .list_workspace_repository_bindings(&workspace.id)
+            .unwrap()
+            .pop()
+            .unwrap();
+        assert_eq!(binding.checkout_path, worktree.path.to_string_lossy());
+        assert!(!Path::new(&binding.checkout_path).starts_with(&workspace_home.join("repos")));
+        assert_eq!(
+            std::fs::canonicalize(&plan.workspace_link).unwrap(),
+            worktree.path
+        );
+        use_recorded_workspace_repository_paths(&mut changed_root_plan, &saved_paths).unwrap();
+        let reused = verify_recorded_workspace_repository(
+            &changed_root_plan,
+            worktree.checkout_identity.as_str(),
+        )
+        .unwrap();
+        assert_eq!(reused.worktree, worktree);
+        assert_eq!(reused.base_checkout, base);
+
+        assert_eq!(
+            provision_workspace_repository(&plan).unwrap().worktree,
+            worktree
+        );
+        std::fs::write(source.join("AGENTS.md"), "changed again after review\n").unwrap();
+        assert!(provision_repository_library_base(&plan).is_ok());
+        assert!(plan.base_checkout_path.join("AGENTS.md").is_file());
+        assert!(plan.worktree_path.join("AGENTS.md").is_file());
+        run(&source, &["add", "AGENTS.md"]);
+        run(
+            &source,
+            &["commit", "--quiet", "-m", "source commit changed"],
+        );
+        assert!(provision_repository_library_base(&plan)
+            .unwrap_err()
+            .contains("source commit changed after review"));
     }
 
     #[test]
@@ -873,14 +1927,17 @@ mod tests {
     }
 
     #[test]
-    fn rejects_dirty_sources_missing_default_branches_and_duplicate_ids() {
+    fn accepts_dirty_sources_but_rejects_missing_default_branches_and_duplicate_ids() {
         let home = Path::new("/projects/workspace");
         let mut dirty = repository("repo-1", "Repo");
         dirty.clean = false;
         dirty.source_path = PathBuf::from("/sources/my-repo");
         assert_eq!(
-            plan_workspace_setup(home, vec![dirty]).unwrap_err(),
-            "Repository `Repo` at `/sources/my-repo` has uncommitted changes."
+            plan_workspace_setup(home, vec![dirty])
+                .unwrap()
+                .repositories
+                .len(),
+            1
         );
         let mut unknown_default = repository("repo-1", "Repo");
         unknown_default.default_branch = None;
@@ -914,6 +1971,10 @@ mod tests {
             let changed = plan_workspace_setup(home, vec![facts]).unwrap();
             assert!(!reviewed_plan_is_current(&reviewed, &changed));
         }
+        let mut dirty_only = repository("repo-1", "Repo");
+        dirty_only.clean = false;
+        let dirty_plan = plan_workspace_setup(home, vec![dirty_only]).unwrap();
+        assert!(reviewed_plan_is_current(&reviewed, &dirty_plan));
         assert_eq!(reviewed.repositories[0].submodules[0].path, "vendor/lib");
     }
 
@@ -926,7 +1987,7 @@ mod tests {
         .unwrap();
         let first = update_workspace_instructions(Some("User guidance."), &plans.repositories);
         assert!(first.starts_with("User guidance.\n\n"));
-        assert!(first.contains("separate OpenCode session"));
+        assert!(first.contains("orchestrator session stays outside all repositories"));
         let second = update_workspace_instructions(Some(&first), &plans.repositories);
         assert_eq!(first, second);
         assert_eq!(
@@ -950,7 +2011,7 @@ mod tests {
     }
 
     #[test]
-    fn repository_preflight_reads_cleanliness_head_default_remote_and_submodule_metadata() {
+    fn repository_preflight_reports_cleanliness_head_default_remote_and_submodule_metadata() {
         let root = tempfile::tempdir().unwrap();
         let source = root.path().join("source");
         std::fs::create_dir_all(&source).unwrap();
@@ -997,6 +2058,11 @@ mod tests {
             .output()
             .unwrap();
         assert!(commit.status.success());
+        std::fs::write(
+            source.join(".gitmodules"),
+            "[submodule \"lib\"]\n\tpath = vendor/dirty-lib\n\turl = ../dirty.git\n",
+        )
+        .unwrap();
         let symref = Command::new("git")
             .arg("-C")
             .arg(&source)
@@ -1019,7 +2085,7 @@ mod tests {
             updated_at: 1,
         };
         let facts = inspect_repository_preflight(&record).unwrap();
-        assert!(facts.clean);
+        assert!(!facts.clean);
         assert_eq!(facts.default_branch.as_deref(), Some("main"));
         assert_eq!(facts.head, facts.default_branch_head.clone().unwrap());
         assert_eq!(
@@ -1032,7 +2098,7 @@ mod tests {
         assert_eq!(facts.upstream_fetch_url, None);
         std::fs::create_dir_all(source.join("ignored-cache")).unwrap();
         std::fs::write(source.join("ignored-cache/generated"), "ignored\n").unwrap();
-        assert!(inspect_repository_preflight(&record).unwrap().clean);
+        assert!(!inspect_repository_preflight(&record).unwrap().clean);
         std::fs::write(source.join("README.md"), "changed\n").unwrap();
         assert!(!inspect_repository_preflight(&record).unwrap().clean);
     }

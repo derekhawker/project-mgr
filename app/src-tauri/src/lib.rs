@@ -22,6 +22,7 @@ pub mod safety;
 pub mod session_restore;
 pub mod task_setup;
 pub mod terminal;
+pub mod workspace_coordinator;
 pub mod workspace_setup;
 
 use management::ManagementStore;
@@ -247,6 +248,8 @@ pub fn run() {
             quick_request_expire,
             quick_request_promote,
             workspace_navigation,
+            legacy_task_archives_list,
+            legacy_task_archive_restore,
             change_review_load,
             docs_list,
             docs_read,
@@ -278,6 +281,8 @@ pub fn run() {
             repository_scan,
             repository_catalog,
             repository_directory_page,
+            repository_library_get,
+            repository_library_set,
             repository_enabled_set,
             repository_attach,
             workspace_session_create,
@@ -405,6 +410,7 @@ struct WorkspaceNavigation {
     tasks: Vec<management::Task>,
     sessions: Vec<management::SessionRecord>,
     workspace_repositories: Vec<management::WorkspaceRepositoryBinding>,
+    workspace_session_contexts: Vec<management::WorkspaceSessionContext>,
     quick_requests: Vec<management::QuickRequestRecord>,
 }
 
@@ -414,6 +420,7 @@ fn workspace_navigation(store: State<'_, ManagementStore>) -> Result<WorkspaceNa
     let mut tasks = Vec::new();
     let mut sessions = Vec::new();
     let mut workspace_repositories = Vec::new();
+    let mut workspace_session_contexts = Vec::new();
     for workspace in &workspaces {
         sessions.extend(
             store
@@ -434,6 +441,11 @@ fn workspace_navigation(store: State<'_, ManagementStore>) -> Result<WorkspaceNa
                 .list_workspace_repository_bindings(&workspace.id)
                 .map_err(|e| e.to_string())?,
         );
+        workspace_session_contexts.extend(
+            store
+                .list_workspace_session_context(&workspace.id)
+                .map_err(|e| e.to_string())?,
+        );
     }
     let quick_requests = store
         .list_quick_requests(false)
@@ -443,8 +455,29 @@ fn workspace_navigation(store: State<'_, ManagementStore>) -> Result<WorkspaceNa
         tasks,
         sessions,
         workspace_repositories,
+        workspace_session_contexts,
         quick_requests,
     })
+}
+
+#[tauri::command]
+fn legacy_task_archives_list(
+    store: State<'_, ManagementStore>,
+) -> Result<Vec<management::LegacyTaskArchiveSummary>, String> {
+    store
+        .list_legacy_task_archives()
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn legacy_task_archive_restore(
+    task_id: String,
+    store: State<'_, ManagementStore>,
+) -> Result<(), String> {
+    store
+        .restore_legacy_task_archive(&task_id)
+        .map(|_| ())
+        .map_err(|error| error.to_string())
 }
 
 #[derive(Debug, Deserialize)]
@@ -1287,13 +1320,6 @@ fn validate_new_work_proposal(
         {
             return Err("Workspace proposal must include a workspace intent.".into());
         }
-        if proposal
-            .starting_prompt
-            .as_deref()
-            .is_none_or(|value| value.trim().is_empty())
-        {
-            return Err("Workspace proposal must include a revised starting prompt.".into());
-        }
     } else if proposal.workspace.is_some() || proposal.task.is_some() {
         return Err("Quick Request proposals must not include a regular workspace or task.".into());
     }
@@ -1691,25 +1717,11 @@ fn workspace_create_initialized(
         None,
     );
     let mut setup = Vec::with_capacity(plan.repositories.len());
-    let previously_saved = store
-        .list_workspace_repository_setups(&workspace.id)
+    let library_root = store
+        .resolved_repository_library_root()
         .map_err(|error| error.to_string())?;
     let mut any_setup_failure = false;
     for item in &plan.repositories {
-        if previously_saved.iter().any(|record| {
-            record.repository_id == item.repository_id
-                && record.setup_status == management::WorkspaceRepositorySetupStatus::Ready
-        }) {
-            emit_workspace_setup_progress(
-                &progress_app,
-                &proposal_session_id,
-                &format!("clone:{}", item.repository_id),
-                &format!("Clone repository {}", item.repository_id),
-                "success",
-                Some("Already provisioned and verified."),
-            );
-            continue;
-        }
         emit_workspace_setup_progress(
             &progress_app,
             &proposal_session_id,
@@ -1736,35 +1748,101 @@ fn workspace_create_initialized(
             .iter()
             .find(|repository| repository.id == item.repository_id)
             .expect("plan candidate was revalidated above");
-        let token = item
-            .repository_id
-            .as_bytes()
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect::<String>();
-        let staging = plan
-            .workspace_home
-            .join("repos")
-            .join(format!(".staging-{}-{token}", workspace.id));
-        let result = workspace_setup::provision_independent_clone(repository, item, &staging)
-            .and_then(|clone| {
-                store
-                    .validate_and_save_workspace_repository_binding(
-                        &management::WorkspaceRepositoryBinding {
-                            workspace_id: workspace.id.clone(),
-                            repository_id: item.repository_id.clone(),
-                            checkout_path: clone.checkout_path.to_string_lossy().into_owned(),
-                            checkout_mode: management::CheckoutMode::Clone,
-                            branch: clone.branch.clone(),
-                            verification_status: management::VerificationStatus::Verified,
-                            created_at: now_millis(),
-                        },
-                    )
-                    .map_err(|error| error.to_string())?;
-                Ok(clone)
-            });
+        let existing_worktree = store
+            .list_workspace_repository_worktrees(&workspace.id)
+            .map_err(|error| error.to_string())?
+            .into_iter()
+            .find(|record| record.repository_id == item.repository_id);
+        let preflight = if existing_worktree
+            .as_ref()
+            .is_some_and(|record| record.setup_status == management::WorkspaceWorktreeStatus::Ready)
+        {
+            Ok(workspace_setup::RepositoryPreflight {
+                repository_id: item.repository_id.clone(),
+                name: repository.name.clone(),
+                source_path: item.source_path.clone(),
+                source_identity: item.source_identity.clone(),
+                head: item.source_head.clone(),
+                default_branch: Some(item.default_branch.clone()),
+                default_branch_head: Some(item.default_branch_head.clone()),
+                clean: true,
+                upstream_fetch_url: item.upstream_fetch_url.clone(),
+                submodules: item.submodules.clone(),
+            })
+        } else {
+            workspace_setup::inspect_repository_preflight(repository)
+        };
+        let result = preflight.and_then(|facts| {
+            let mut library_plan = workspace_setup::plan_repository_library_setup(
+                &library_root,
+                std::path::Path::new(&workspace.home_path),
+                &workspace.id,
+                &facts,
+            )?;
+            if let Some(existing) = existing_worktree.as_ref() {
+                workspace_setup::use_recorded_workspace_repository_paths(
+                    &mut library_plan,
+                    existing,
+                )?;
+            }
+            let pending_worktree = management::WorkspaceRepositoryWorktree {
+                workspace_id: workspace.id.clone(),
+                repository_id: item.repository_id.clone(),
+                source_identity: library_plan.source_identity.clone(),
+                checkout_identity: None,
+                branch: library_plan.workspace_branch.clone(),
+                base_checkout_path: library_plan
+                    .base_checkout_path
+                    .to_string_lossy()
+                    .into_owned(),
+                worktree_path: library_plan.worktree_path.to_string_lossy().into_owned(),
+                workspace_link: library_plan.workspace_link.to_string_lossy().into_owned(),
+                setup_status: management::WorkspaceWorktreeStatus::Pending,
+                error_code: None,
+                error_detail: None,
+                created_at: now_millis(),
+                updated_at: now_millis(),
+            };
+            store
+                .save_workspace_repository_worktree(&pending_worktree)
+                .map_err(|error| error.to_string())?;
+            let provisioned = match existing_worktree.as_ref() {
+                Some(record)
+                    if record.setup_status == management::WorkspaceWorktreeStatus::Ready =>
+                {
+                    let identity = record.checkout_identity.as_deref().ok_or_else(|| {
+                        "Ready Workspace worktree has no verified checkout identity.".to_owned()
+                    })?;
+                    workspace_setup::verify_recorded_workspace_repository(&library_plan, identity)?
+                }
+                _ => workspace_setup::provision_workspace_repository(&library_plan)?,
+            };
+            let ready_worktree = management::WorkspaceRepositoryWorktree {
+                checkout_identity: Some(provisioned.worktree.checkout_identity.clone()),
+                setup_status: management::WorkspaceWorktreeStatus::Ready,
+                updated_at: now_millis(),
+                ..pending_worktree
+            };
+            store
+                .save_workspace_repository_worktree(&ready_worktree)
+                .map_err(|error| error.to_string())?;
+            store
+                .validate_and_save_workspace_repository_binding(
+                    &management::WorkspaceRepositoryBinding {
+                        workspace_id: workspace.id.clone(),
+                        repository_id: item.repository_id.clone(),
+                        checkout_path: provisioned.worktree.path.to_string_lossy().into_owned(),
+                        checkout_mode: management::CheckoutMode::Clone,
+                        branch: provisioned.worktree.branch.clone(),
+                        verification_status: management::VerificationStatus::Verified,
+                        created_at: now_millis(),
+                    },
+                )
+                .map_err(|error| error.to_string())?;
+            Ok(provisioned)
+        });
         let outcome = match result {
-            Ok(clone) => {
+            Ok(provisioned) => {
                 emit_workspace_setup_progress(
                     &progress_app,
                     &proposal_session_id,
@@ -1775,7 +1853,7 @@ fn workspace_create_initialized(
                 );
                 management::WorkspaceRepositorySetupRecord {
                     setup_status: management::WorkspaceRepositorySetupStatus::Ready,
-                    checkout_identity: Some(clone.checkout_identity),
+                    checkout_identity: Some(provisioned.base_checkout.checkout_identity),
                     error_code: None,
                     error_detail: None,
                     updated_at: now_millis(),
@@ -1784,6 +1862,20 @@ fn workspace_create_initialized(
             }
             Err(error) => {
                 any_setup_failure = true;
+                if let Some(mut worktree) = store
+                    .list_workspace_repository_worktrees(&workspace.id)
+                    .map_err(|store_error| store_error.to_string())?
+                    .into_iter()
+                    .find(|record| record.repository_id == item.repository_id)
+                {
+                    worktree.setup_status = management::WorkspaceWorktreeStatus::Failed;
+                    worktree.error_code = Some("provision_failed".into());
+                    worktree.error_detail = Some(error.clone());
+                    worktree.updated_at = now_millis();
+                    store
+                        .save_workspace_repository_worktree(&worktree)
+                        .map_err(|store_error| store_error.to_string())?;
+                }
                 emit_workspace_setup_progress(
                     &progress_app,
                     &proposal_session_id,
@@ -1818,9 +1910,20 @@ fn workspace_create_initialized(
             "running",
             None,
         );
-        if let Err(error) = workspace_setup::write_workspace_instructions(
+        let instruction_repositories = store
+            .list_workspace_repository_bindings(&workspace.id)
+            .map_err(|error| error.to_string())?
+            .into_iter()
+            .map(|binding| {
+                (
+                    binding.repository_id,
+                    std::path::PathBuf::from(binding.checkout_path),
+                )
+            })
+            .collect::<Vec<_>>();
+        if let Err(error) = workspace_setup::write_workspace_library_instructions(
             std::path::Path::new(&workspace.home_path),
-            &plan.repositories,
+            &instruction_repositories,
         ) {
             session_errors.push(error.clone());
             emit_workspace_setup_progress(
@@ -1880,6 +1983,21 @@ fn workspace_create_initialized(
                 "running",
                 None,
             );
+            if repository_id.is_none() && bindings.len() > 1 {
+                if let Err(error) = workspace_coordinator::install_for_workspace(&store, &workspace)
+                {
+                    session_errors.push(format!("Configure multi-repository coordinator: {error}"));
+                    emit_workspace_setup_progress(
+                        &progress_app,
+                        &proposal_session_id,
+                        "coordinator",
+                        "Configure multi-repository coordinator",
+                        "failed",
+                        Some(&error),
+                    );
+                    continue;
+                }
+            }
             let started = if let Some(existing) = existing_sessions
                 .iter()
                 .find(|record| record.directory == directory.to_string_lossy())
@@ -1919,6 +2037,40 @@ fn workspace_create_initialized(
             };
             match started {
                 Ok(record) => {
+                    let contexts = store
+                        .list_workspace_session_context(&workspace.id)
+                        .map_err(|error| error.to_string())?;
+                    if !contexts
+                        .iter()
+                        .any(|context| context.open_code_session_id == record.open_code_session_id)
+                    {
+                        let role = if repository_id.is_some() {
+                            management::WorkspaceSessionRole::Worker
+                        } else if bindings.is_empty() {
+                            management::WorkspaceSessionRole::Workspace
+                        } else {
+                            management::WorkspaceSessionRole::Orchestrator
+                        };
+                        if let Err(error) = store.save_workspace_session_context(
+                            &management::WorkspaceSessionContext {
+                                open_code_session_id: record.open_code_session_id.clone(),
+                                workspace_id: workspace.id.clone(),
+                                role,
+                                repository_id: repository_id.clone(),
+                            },
+                        ) {
+                            session_errors.push(format!("{label}: {}", error));
+                            emit_workspace_setup_progress(
+                                &progress_app,
+                                &proposal_session_id,
+                                &key,
+                                &label,
+                                "failed",
+                                Some(&error.to_string()),
+                            );
+                            continue;
+                        }
+                    }
                     emit_workspace_setup_progress(
                         &progress_app,
                         &proposal_session_id,
@@ -2026,6 +2178,29 @@ fn repository_directory_page(
         .map_err(|error| error.to_string())
 }
 
+#[tauri::command]
+fn repository_library_get(store: State<'_, ManagementStore>) -> Result<String, String> {
+    store
+        .repository_library_root()
+        .map_err(|error| error.to_string())
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RepositoryLibrarySetCommand {
+    path: String,
+}
+
+#[tauri::command]
+fn repository_library_set(
+    store: State<'_, ManagementStore>,
+    request: RepositoryLibrarySetCommand,
+) -> Result<String, String> {
+    store
+        .set_repository_library_root(&request.path, now_millis())
+        .map_err(|error| error.to_string())
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RepositoryEnabledCommand {
@@ -2046,6 +2221,7 @@ fn repository_enabled_set(
 fn scan_repository_dirs(
     root: &std::path::Path,
     project_home: &std::path::Path,
+    repository_library: &std::path::Path,
     found: &mut Vec<std::path::PathBuf>,
 ) -> Result<(), String> {
     if !root.is_dir() {
@@ -2057,6 +2233,12 @@ fn scan_repository_dirs(
         return Err(format!(
             "Cannot scan inside the configured OpenCode Projects directory: {}",
             project_home.display()
+        ));
+    }
+    if canonical_root.starts_with(repository_library) {
+        return Err(format!(
+            "Cannot scan inside the configured repository library: {}",
+            repository_library.display()
         ));
     }
     let mut stack = vec![canonical_root];
@@ -2078,7 +2260,9 @@ fn scan_repository_dirs(
             {
                 let canonical_child = std::fs::canonicalize(&child)
                     .map_err(|error| format!("could not resolve {}: {error}", child.display()))?;
-                if !canonical_child.starts_with(project_home) {
+                if !canonical_child.starts_with(project_home)
+                    && !canonical_child.starts_with(repository_library)
+                {
                     stack.push(canonical_child);
                 }
             }
@@ -2112,12 +2296,18 @@ fn scan_repositories_with_store(
     let project_home = store
         .resolved_project_home_root()
         .map_err(|error| error.to_string())?;
+    let repository_library = store
+        .resolved_repository_library_root()
+        .map_err(|error| error.to_string())?;
     let mut candidates = Vec::new();
     let mut errors = Vec::new();
     for path in request.paths {
-        if let Err(error) =
-            scan_repository_dirs(std::path::Path::new(&path), &project_home, &mut candidates)
-        {
+        if let Err(error) = scan_repository_dirs(
+            std::path::Path::new(&path),
+            &project_home,
+            &repository_library,
+            &mut candidates,
+        ) {
             errors.push(error);
         } else if let Err(error) =
             store.add_repository_scan_directory(std::path::Path::new(&path), now_millis())
@@ -3695,6 +3885,12 @@ mod tests {
         )
         .unwrap();
         let project_home = store.resolved_project_home_root().unwrap();
+        let repository_library = root.path().join("external-library");
+        store
+            .set_repository_library_root(repository_library.to_str().unwrap(), 1)
+            .unwrap();
+        let library_repo = repository_library.join("github-com/org/managed");
+        make_repository_fixture(&library_repo);
         let hidden_repo = project_home.join("workspace/tasks/task/worktrees/hidden-repo");
         make_repository_fixture(&hidden_repo);
 
@@ -3740,6 +3936,11 @@ mod tests {
             .repositories
             .iter()
             .any(|repository| repository.repository_path.contains("hidden-repo")));
+        assert!(!result.repositories.iter().any(|repository| {
+            repository
+                .repository_path
+                .starts_with(repository_library.to_string_lossy().as_ref())
+        }));
         assert!(
             result
                 .errors
@@ -4111,7 +4312,14 @@ mod tests {
             ..proposal.clone()
         };
         assert!(
-            validate_new_work_proposal(&missing_starting_prompt, &store, &HashSet::new()).is_err()
+            validate_new_work_proposal(&missing_starting_prompt, &store, &HashSet::new()).is_ok()
+        );
+        let blank_starting_prompt = NewWorkProposal {
+            starting_prompt: Some(" \t ".into()),
+            ..missing_starting_prompt.clone()
+        };
+        assert!(
+            validate_new_work_proposal(&blank_starting_prompt, &store, &HashSet::new()).is_ok()
         );
 
         let blank_workspace_name = NewWorkProposal {
@@ -4424,6 +4632,16 @@ mod tests {
 
     #[test]
     fn command_dtos_reject_unknown_wire_fields() {
+        let library_path: RepositoryLibrarySetCommand =
+            serde_json::from_value(json!({"path":"/repos/library"})).unwrap();
+        assert_eq!(library_path.path, "/repos/library");
+        assert!(
+            serde_json::from_value::<RepositoryLibrarySetCommand>(json!({
+                "path":"/repos/library", "workspaceId":"w1"
+            }))
+            .is_err()
+        );
+
         let valid: SessionCommand = serde_json::from_value(json!({"sessionId":"ses"})).unwrap();
         assert_eq!(valid.session_id, "ses");
         let invalid = serde_json::from_value::<SessionCommand>(

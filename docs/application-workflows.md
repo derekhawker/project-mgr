@@ -1,5 +1,11 @@
 # Application Workflows
 
+> **Workspace-only contract:** `workspace-refactor-target.md` is authoritative
+> for regular work. Most detailed sequences below document the former
+> Workspace/Task product and are retained as historical implementation context;
+> they are not current UI flows. Task 6/7 delivery and remaining validation are
+> tracked in `workspace-refactor-plan.md`.
+
 This specification defines the actors, state changes, and sequence flows for
 the application. It is the durable reference for application behavior and
 for the boundaries between the GUI, Rust core, OpenCode, Git, SQLite, and the
@@ -91,10 +97,13 @@ A regular workspace uses this conceptual layout:
         └── worktrees/
 ```
 
-Existing source repositories remain at their current locations. New Workspace
-attachments are independent clones under that Workspace's `repos/` directory;
-the catalog continues to identify the source checkout. Existing bindings keep
-their recorded checkout paths and are not rewritten by migration.
+Existing source repositories remain at their current locations. Workspace setup
+creates or reuses a managed base clone in the configured repository library,
+creates a Workspace-specific branch and worktree from its reviewed committed
+state, then symlinks the Workspace's `repos/` entry to that worktree. Dirty
+source files remain untouched and are not copied. The catalog continues to
+identify the source checkout. Existing bindings keep their recorded checkout
+paths and are not rewritten by migration.
 
 ### 3.3 Quick Requests
 
@@ -345,18 +354,19 @@ replace Rust's verified path or repository identity.
 | Step | Actor | Action | Result |
 |---:|---|---|---|
 | 1 | User | Confirms a catalog repository in a new-work proposal. | Rust receives its verified catalog ID, not an arbitrary path or Git command. |
-| 2 | Rust | Revalidates source identity, clean state, default branch, and configured upstream fetch URL. Default branch resolution prefers valid `origin/HEAD`, then a local `main` or `master`, then the currently checked-out local branch. | Stale or dirty sources or repositories with no resolvable branch are rejected before provisioning with an actionable error. |
-| 3 | Rust/Git | Creates an independent clone at a stable path under `<workspace-home>/repos/`, recursively initializes submodules, and validates the result. | The source checkout remains unchanged; the workspace owns its clone. |
-| 4 | Rust | Persists source and clone identities, exact paths, branch, and setup outcome. | Future operations use recorded paths and validated identities. |
-| 5 | Rust | Sets the workspace clone's `origin` to the source's configured upstream fetch URL, or removes the local-path origin when none exists. | The clone does not retain the source checkout as its parent remote. |
+| 2 | Rust | Revalidates source identity, reviewed commits, default branch, and configured upstream fetch URL. Default branch resolution prefers valid `origin/HEAD`, then a local `main` or `master`, then the currently checked-out local branch. | Dirty source working trees are allowed; only committed Git state is cloned. Stale repository facts or repositories with no resolvable branch are rejected before provisioning with an actionable error. |
+| 3 | Rust/Git | Creates or reuses a managed base clone in the repository library, then creates the Workspace-specific branch and worktree and symlinks the Workspace `repos/` entry to that worktree. | The source remains unchanged; dirty working-tree files are not copied. |
+| 4 | Rust | Persists source and base/worktree identities, exact paths, branch, alias, and setup outcome. | Future operations use recorded paths and validated identities. |
+| 5 | Rust | Sets the managed base clone's `origin` to the source's configured upstream fetch URL, or removes the local-path origin when none exists. | The managed clone does not retain the source checkout as its parent remote. |
 
 Cloning uses `git clone --no-hardlinks --recurse-submodules`. Git's standard
 relative submodule URL resolution is used. Recursive submodule failure leaves
 an explicit incomplete setup; do not fetch Git LFS objects. Existing workspace
 bindings are not rewritten by this new-work provisioning behavior.
 
-Repository cleanliness checks include tracked changes and non-ignored untracked
-files. Git-ignored files do not make a source checkout dirty.
+Dirty status in the source checkout does not block Workspace provisioning. The
+managed clone and worktree contain the reviewed committed state only. Separate
+cleanup checks still preserve dirty or in-use Workspace/task worktrees.
 
 ### 7.3 New-work proposal and confirmation
 

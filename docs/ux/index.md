@@ -1,5 +1,10 @@
 # UX Index
 
+> **Refactor in progress:** `../workspace-refactor-target.md` is the accepted
+> product contract. The existing screen specifications below describe the
+> current implementation and are pending replacement as the implementation
+> advances. Follow `../workspace-refactor-plan.md` for delivery order.
+
 This folder records the agreed user experience for the project manager. These
 are screen and interaction decisions, not implementation instructions.
 
@@ -12,12 +17,11 @@ Application shell (fixed to the window)
 │   ├── Quick Requests (top section)
 │   │   ├── See all Quick Requests
 │   │   └── Recent Quick Requests (created in the last 24 hours)
-│   ├── Workspaces
-│   │   └── Tasks (optional; nested under their workspace)
-│   └── New (work-type dropdown; pinned to navigation bottom)
+│   ├── Workspaces (sole regular work record)
+│   └── New (Workspace or Quick Request; pinned to navigation bottom)
 └── Main work area (only this pane scrolls)
     ├── Directories page (saved scan roots and enabled/disabled repositories)
-    ├── Compact workspace/task bar when a workspace/task is selected
+    ├── Compact Workspace/session bar
     ├── Full-size interactive terminal occupying the available work area
     ├── Quick Request page (Back + terminal; no tabs or task/workspace tools)
     ├── Change Review (only when repositories are associated)
@@ -35,8 +39,8 @@ experience; the glossary is the vocabulary reference.
 
 | Screen | Purpose | Specification |
 |---|---|---|
-| New | The navigation dropdown chooses workspace, task, or Quick Request flow; a Workspace context menu also starts a Task. Both Task entry points use a Workspace selector. Task review includes editable details and an optional revised prompt that is not sent or saved. A Quick Request resolves its working directory, then starts its tracked terminal with the original prompt. | [screen-new-work.md](screen-new-work.md) |
-| Workspace/task workbench | Switch between a workspace and its tasks; work in owner-scoped interactive terminals. | [screen-workbench.md](screen-workbench.md) |
+| New | The navigation dropdown starts a Workspace or Quick Request. Workspace creation reviews an editable proposal and optional starting prompt; Quick Request resolves a directory and starts with the original prompt. | [screen-new-work.md](screen-new-work.md) |
+| Workspace workbench | Work in Workspace-owned interactive sessions; multi-repository workspaces have an orchestrator and repo workers. | [screen-workbench.md](screen-workbench.md) |
 | Quick Requests | Keep the last 24 hours in navigation and browse all retained requests in a separate destination; open each in a dedicated terminal page. | [screen-quick-requests.md](screen-quick-requests.md) |
 | Directories | Manage saved scan roots and individually enabled repositories; deduplicate overlaps and scan saved roots at startup. | [screen-directories.md](screen-directories.md) |
 | Change Review | Review committed and working-tree changes in a conventional file list against remote or local `main`/`master` refs. | [screen-change-review.md](screen-change-review.md) |
@@ -51,24 +55,20 @@ experience; the glossary is the vocabulary reference.
   overlapping roots, and exposes one enabled checkbox per repository. Only
   enabled repositories enter the initial New-work proposal context. Never scan
   the configured OpenCode Projects root or its contents.
-- **Workspace is the project grouping.** It is useful with or without tasks and
-  knows about zero or more repositories. New attachments are independent clones
-  in the workspace home; existing repository locations remain untouched. With
-  zero repositories use one workspace-home session; one repository uses one
-  clone-rooted session; multiple repositories use one empty clone-rooted session
-  per repository and receive no automatic prompt.
-- **Task is an optional, independently progressing unit of work.** A task may
-  involve multiple repositories and worktrees. Rust creates one empty
-  repo-rooted OpenCode session per selected repository; users coordinate across
-  terminals and supply prompts manually. Task proposal text is transient and is
-  not automatically sent. Work often happens in tasks, but tasks do not define
-  whether a workspace is active or complete.
-- **Capture intent before creating records.** Workspace flow reviews proposed
-  work and an editable starting prompt. Task flow reviews proposed work and
-  repositories; its prompt is transient proposal input and is not sent to the
-  repo sessions. Quick Request flow resolves and confirms only its working
-  directory, then sends the original prompt. Do not create a record before
-  confirmation.
+- **Workspace is the sole regular work record.** It is useful with or without
+  repositories. New attachments use Workspace-owned branches and worktrees;
+  existing source checkouts remain untouched. Zero repositories use one
+  Workspace-home session; one repository uses one worker; multiple repositories
+  use an outside-repository Orchestrator plus one empty worker per repository.
+  A nonblank starting prompt goes only to the matching Workspace session,
+  single-repository worker, or multi-repository Orchestrator.
+- **Legacy Task rows are compatibility data, not a creation flow.** They remain
+  temporarily visible while archive and conversion work is deferred to the final
+  migration stage. They do not define target Workspace behavior.
+- **Capture intent before creating records.** Workspace flow reviews its
+  proposal and editable starting prompt. Quick Request resolves and confirms
+  only its working directory, then sends the original prompt. Do not create a
+  record before confirmation.
 - **The terminal gets the available work area.** Do not permanently split it
   with lists, notes, or tool panes. Switching destinations does not itself
   close a terminal tab.
@@ -88,20 +88,21 @@ experience; the glossary is the vocabulary reference.
   session in that terminal.
 - **Terminal behavior belongs to the terminal.** Interactive terminals own
   process controls and lifecycle. Closing a terminal stops its process and
-  closes its tab. Workspace/task terminals use a compact task/session bar;
+  closes its tab. Workspace terminals use a compact session bar;
   Quick Requests fill the available work area without tabs or that bar. If a TUI
   exits, offer restart in the same tab using the exact same OpenCode session.
   Do not show fullscreen controls.
 - **Keep navigation visible.** Quick Requests come first in the left navigation;
-  workspaces and their directly nested tasks follow. Navigation stays visible on
+  Workspaces follow. Legacy Task rows remain stored but are not shown as
+  navigation destinations. Navigation stays visible on
   Quick Request terminal pages. Workspace toolbar rows wrap rather than hiding
   tabs behind overflow.
 - **Quick Request is a named product concept; “request” is not a separate work
   type.** Use **prompt** for text supplied to OpenCode and **Quick Request** for
   the one-off tracked item. Preserve the user's original prompt alongside any
   proposed starting prompt and destination for review. Only Workspace has an
-  editable starting prompt; clearing it skips initial prompt submission. Task
-  prompt text is not automatically submitted.
+  editable starting prompt; clearing it skips prompt submission but never skips
+  session startup. New work has no Task creation path.
 ## Not in scope for these screens
 
 - Regular work history is deferred. Keep a History menu option disabled.

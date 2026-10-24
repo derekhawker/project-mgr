@@ -16,7 +16,7 @@ const html = readFileSync(join(process.cwd(), 'index.html'), 'utf8');
 test('checked-in command inventory has one contract for every registered Rust command', () => {
   assert.deepEqual([...COMMAND_NAMES].sort(), [...rustCommands].sort());
   assert.deepEqual([...COMMAND_NAMES].sort(), [...rustAttributes].sort());
-  assert.equal(COMMAND_NAMES.length, 72);
+  assert.equal(COMMAND_NAMES.length, 76);
 });
 
 test('production main-screen selectors resolve to rendered HTML elements', () => {
@@ -41,6 +41,7 @@ test('repository directory management is a page opened from top navigation', () 
   const nav = html.match(/<aside class="navigation"[\s\S]*?<\/aside>/)?.[0] || '';
   assert.match(nav, /id="show-directories"/);
   assert.match(html, /id="directories-page"[\s\S]*id="add-repository-directories"/);
+  assert.match(html, /id="repository-library-form"[\s\S]*id="repository-library-path"[\s\S]*id="choose-repository-library"/);
   assert.match(html, /id="directory-list"/);
   assert.doesNotMatch(html, /id="disallowed-repository-list"|id="repository-list"/);
   assert.doesNotMatch(html, /id="scan-path"|id="scan-repositories"/);
@@ -97,64 +98,46 @@ test('New-work is a modal over the existing workbench, with no standalone worksp
   assert.doesNotMatch(html, /<select id="new-work-type"/);
   assert.match(html, /id="new-work-title">New Workspace</);
   assert.match(html, /id="new-work-prompt-label"[^>]*>Original prompt</);
-  assert.match(main, /workspace: \['Workspace',[\s\S]*task: \['Task',[\s\S]*quick_request: \['Quick Request'/);
+  assert.match(main, /workspace: \['Workspace',[\s\S]*quick_request: \['Quick Request'/);
+  assert.doesNotMatch(main, /task: \['Task'/);
   assert.match(main, /proposalCreate\.textContent = proposal\.workType === 'quick_request'[\s\S]*Create \$\{workTypeName\}/);
   assert.match(main, /requestedType,\s*\n\s*\);/);
   assert.match(html, /id="quick-request-directory"/);
   assert.match(main, /originalPrompt,\s*\n\s*model: selectedModel,\s*\n\s*repositoryId: selectedRepositoryId/);
   assert.match(main, /requestedNewWorkType = workType/);
   assert.doesNotMatch(main, /restoreWorkspacePendingPrompt/, 'selecting a workspace must not restore the unsent starting-prompt editor');
-  assert.match(html, /Select a workspace or task, or choose New work to start\./);
+  assert.match(html, /Select a Workspace, or choose New work to start\./);
   assert.match(html, /class="new-work-dialog-scroll"[\s\S]*class="new-work-dialog-footer"/);
 });
 
-test('Task creation has a Workspace selector for both navigation and Workspace context-menu entry points', () => {
+test('New-work offers only Workspace and Quick Request creation, not legacy Task creation', () => {
   const main = readFileSync(join(process.cwd(), 'src', 'main.js'), 'utf8');
-  assert.match(html, /id="workspace-context-menu"[^>]*role="menu"[\s\S]*id="workspace-context-new-task"[^>]*role="menuitem"/);
-  assert.match(html, /id="task-workspace-field"[^>]*hidden[\s\S]*label for="task-workspace-select"[^>]*>Workspace<\/label><select id="task-workspace-select" required>/);
-  assert.match(html, /data-new-work-type="task"/);
-  assert.match(main, /createWorkspaceNavigationButton\(document, workspace, \{[\s\S]*onContextMenu: openWorkspaceContextMenu/);
-  assert.match(main, /if \(workspace\) openNewWork\('task', workspace\.id\)/);
-  assert.match(main, /if \(workType === 'task'\) populateTaskWorkspace\(workspaceId\)/);
-  assert.match(main, /runNewWorkProposal\([\s\S]*requestedType === 'task' \? newWorkWorkspaceContext/);
+  assert.match(html, /data-new-work-type="workspace"[\s\S]*data-new-work-type="quick_request"/);
+  assert.doesNotMatch(html, /data-new-work-type="task"|workspace-context-new-task|task-workspace-select|task-review-name|task-revised-prompt/);
+  assert.match(main, /if \(!\['workspace', 'quick_request'\]\.includes\(workType\)\) return/);
+  assert.doesNotMatch(main, /createWorkspaceTask|currentProposal\.workType === 'task'/);
 });
 
-test('Task proposal review shows editable creation details and optional revised prompt without sending it', () => {
+test('regular Workspace navigation does not render retained legacy Task records', () => {
   const main = readFileSync(join(process.cwd(), 'src', 'main.js'), 'utf8');
-  assert.match(html, /id="task-review-details"[^>]*class="workspace-review-form"[^>]*hidden/);
-  assert.match(html, /id="task-review-name" type="text" required/);
-  assert.match(html, /id="task-review-intent" rows="3" required/);
-  assert.match(html, /id="task-review-workspace"/);
-  assert.match(html, /id="task-review-directory"/);
-  assert.match(html, /id="task-original-prompt" rows="3" readonly/);
-  assert.match(html, /label for="task-revised-prompt">Revised prompt \(optional\)/);
-  assert.match(html, /not sent to Task sessions or saved/);
-  assert.match(main, /task-review-name'\)\.value = proposal\.task\?\.name/);
-  assert.match(main, /task-revised-prompt'\)\.value = proposal\.startingPrompt \|\| ''/);
-  assert.match(main, /createWorkspaceTask\([\s\S]*taskName,[\s\S]*taskIntent,[\s\S]*currentProposal\.repositories\.map/);
-  assert.doesNotMatch(main.match(/else if \(currentProposal\.workType === 'task'\) \{([\s\S]*?)\n    \} else \{/i)?.[1] || '', /task-revised-prompt|submitNewWorkStartingPrompt/);
+  const renderNavigation = main.match(/function renderNavigation\(data\) \{([\s\S]*?)\n\}/)?.[1] || '';
+  assert.match(renderNavigation, /\(data\.workspaces \|\| \[\]\)\.filter/);
+  assert.doesNotMatch(renderNavigation, /data\.tasks|renderTasks|selectTask/);
+  assert.doesNotMatch(html, /id="owner-tabs"/);
+  assert.doesNotMatch(html, /id="task-setup-|id="new-task-session|id="complete-task|id="retry-cleanup|id="cleanup-history/);
+  assert.doesNotMatch(main, /refreshTaskSetup|createTaskSession|completeTask\(|cancelTaskSetup|resumeTaskSetup|retryTaskSetup/);
 });
 
-test('active Task does not show routine ready status or let it overwrite terminal errors', () => {
+test('Workspace confirmation opens its sessions and sends only the reviewed starting prompt', () => {
   const main = readFileSync(join(process.cwd(), 'src', 'main.js'), 'utf8');
-  assert.match(main, /const setupNotice = taskSetupStatusNotice\(status\)/);
-  assert.match(main, /if \(setupNotice\) \{[\s\S]*workspaceStatus\.textContent = setupNotice/);
-  assert.match(main, /workspaceStatus\.textContent === currentTaskSetupNotice/);
-  assert.doesNotMatch(main, /workspaceStatus\.textContent = formatTaskSetupStatus\(status\)/);
-  assert.match(main, /workspaceStatus\.textContent = failed\.length[\s\S]*: '';/);
-});
-
-test('workspace confirmation sends its reviewed prompt, while optional Task revised prompt stays unsent', () => {
-  const main = readFileSync(join(process.cwd(), 'src', 'main.js'), 'utf8');
-  assert.match(main, /const task = created\.task;[\s\S]*created\.sessions\[0\]\.openCodeSessionId/);
-  assert.doesNotMatch(main, /submitNewWorkStartingPrompt\(invoke, taskPromptAction/);
-  assert.match(main, /for \(const session of workspaceSessions\) await showSession\(session\.openCodeSessionId\);[\s\S]*if \(!multiRepositoryWorkspace && shouldSubmitWorkspaceStartingPrompt\(startingPrompt\)\)[\s\S]*await submitNewWorkStartingPrompt\(invoke, workspacePromptAction, startingPrompt\);[\s\S]*No starting prompt was provided/);
+  assert.match(main, /for \(const session of workspaceSessions\) await showSession\(session\.openCodeSessionId\);[\s\S]*if \(shouldSubmitWorkspaceStartingPrompt\(startingPrompt\)\)[\s\S]*await submitNewWorkStartingPrompt\(invoke, workspacePromptAction, startingPrompt\);[\s\S]*No starting prompt was provided/);
   assert.match(main, /initialized\.sessions \|\| \[\]/);
-  assert.match(main, /selectedModel,\s*taskName,\s*taskIntent/);
-  assert.match(main, /task-revised-prompt'\)\.value = proposal\.startingPrompt \|\| ''/);
-  assert.doesNotMatch(main.match(/else if \(currentProposal\.workType === 'task'\) \{([\s\S]*?)\n    \} else \{/i)?.[1] || '', /task-revised-prompt|submitNewWorkStartingPrompt/);
+  assert.doesNotMatch(main, /task-revised-prompt|taskPromptAction/);
+  assert.doesNotMatch(main, /currentProposal\.workType === 'task'/);
   assert.match(html, /id="proposal-starting-prompt"/);
   assert.match(main, /proposal-starting-prompt'\)\.hidden = proposal\.workType !== 'workspace'/);
+  assert.match(main, /revealWorkspaceCreationRecovery\(\{[\s\S]*actionLabel: 'Retry setup'/);
+  assert.match(main, /actionLabel: 'Retry session'/);
 });
 
 test('terminal card contains only the terminal viewport and has no surrounding inset', () => {
@@ -167,11 +150,14 @@ test('terminal card contains only the terminal viewport and has no surrounding i
   assert.doesNotMatch(main, /setTerminalFullscreen|terminal-fullscreen/);
 });
 
-test('workspace terminal tabs identify their repository while other sessions use OpenCode', () => {
+test('Workspace terminal tabs distinguish orchestrators and repository workers', () => {
   const main = readFileSync(join(process.cwd(), 'src', 'main.js'), 'utf8');
+  const shell = readFileSync(join(process.cwd(), 'src', 'shell.js'), 'utf8');
   assert.match(main, /function sessionTabLabel\(proposal = false, session = null\)/);
-  assert.match(main, /return repository\?\.name \|\| binding\.repositoryId/);
-  assert.match(main, /return 'OpenCode'/);
+  assert.match(main, /workspaceSessionTabLabel\(/);
+  assert.match(shell, /context\?\.role === 'orchestrator'/);
+  assert.match(shell, /return repository\?\.name \|\| context\.repositoryId/);
+  assert.match(main, /\) \|\| 'OpenCode'/);
 });
 
 test('boundary catches the historical flat quick-request payload before Tauri', async () => {

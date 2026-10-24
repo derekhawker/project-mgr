@@ -2350,6 +2350,32 @@
     }
   },
   "new_work_proposal_close": { "payload": { "type": "object", "properties": { "sessionId": { "type": "string" } }, "required": ["sessionId"], "additionalProperties": false }, "result": { "type": "null" } },
+  "legacy_task_archives_list": {
+    "payload": "none",
+    "result": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "taskId": { "type": "string" },
+          "workspaceId": { "type": "string" },
+          "archivedAt": { "type": "number" },
+          "restoredAt": { "type": "number", "nullable": true }
+        },
+        "required": ["taskId", "workspaceId", "archivedAt", "restoredAt"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "legacy_task_archive_restore": {
+    "payload": {
+      "type": "object",
+      "properties": { "taskId": { "type": "string" } },
+      "required": ["taskId"],
+      "additionalProperties": false
+    },
+    "result": { "type": "null" }
+  },
   "workspace_navigation": {
     "payload": "none",
     "result": {
@@ -2557,6 +2583,20 @@
             "additionalProperties": false
           }
         },
+        "workspaceSessionContexts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "openCodeSessionId": { "type": "string" },
+              "workspaceId": { "type": "string" },
+              "role": { "type": "string", "enum": ["workspace", "orchestrator", "worker"] },
+              "repositoryId": { "type": "string", "nullable": true }
+            },
+            "required": ["openCodeSessionId", "workspaceId", "role", "repositoryId"],
+            "additionalProperties": false
+          }
+        },
         "quickRequests": {
           "type": "array",
           "items": {
@@ -2754,6 +2794,7 @@
             "tasks",
             "sessions",
             "workspaceRepositories",
+            "workspaceSessionContexts",
         "quickRequests"
       ],
       "additionalProperties": false
@@ -4256,6 +4297,26 @@
       "required": ["directories"],
       "additionalProperties": false
     }
+  },
+  "repository_library_get": {
+    "payload": "none",
+    "result": { "type": "string" }
+  },
+  "repository_library_set": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "request": {
+          "type": "object",
+          "properties": { "path": { "type": "string" } },
+          "required": ["path"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["request"],
+      "additionalProperties": false
+    },
+    "result": { "type": "string" }
   },
   "repository_enabled_set": {
     "payload": { "type": "object", "properties": { "request": { "type": "object", "properties": { "repositoryId": { "type": "string" }, "enabled": { "type": "boolean" } }, "required": ["repositoryId", "enabled"], "additionalProperties": false } }, "required": ["request"], "additionalProperties": false },

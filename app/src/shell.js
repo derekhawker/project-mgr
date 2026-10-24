@@ -26,6 +26,20 @@ export function workspaceProposalRepositoryLocations(proposalRepositories, repos
   });
 }
 
+export function workspaceSessionTabLabel(session, sessionContexts, repositoryCatalog) {
+  if (session?.owner?.owner_type !== 'workspace') return null;
+  const context = (sessionContexts || []).find((item) =>
+    item.openCodeSessionId === session.openCodeSessionId
+      && item.workspaceId === session.owner.owner_id);
+  if (context?.role === 'orchestrator') return 'Orchestrator';
+  if (context?.role === 'workspace') return 'Workspace';
+  if (context?.role === 'worker' && context.repositoryId) {
+    const repository = (repositoryCatalog || []).find((item) => item.id === context.repositoryId);
+    return repository?.name || context.repositoryId;
+  }
+  return null;
+}
+
 export function workspaceStartingPrompt(proposal) {
   return typeof proposal?.startingPrompt === 'string' && proposal.startingPrompt.trim()
     ? proposal.startingPrompt
@@ -34,6 +48,16 @@ export function workspaceStartingPrompt(proposal) {
 
 export function shouldSubmitWorkspaceStartingPrompt(prompt) {
   return typeof prompt === 'string' && prompt.trim().length > 0;
+}
+
+export function workspaceStartingPromptSession(sessions, sessionContexts) {
+  const sessionById = new Map((sessions || []).map((session) => [session.openCodeSessionId, session]));
+  for (const role of ['orchestrator', 'workspace', 'worker']) {
+    const context = (sessionContexts || []).find((entry) => entry.role === role
+      && sessionById.has(entry.openCodeSessionId));
+    if (context) return sessionById.get(context.openCodeSessionId);
+  }
+  return sessions?.[0] || null;
 }
 
 export function workspaceReviewDetails(proposal) {
@@ -332,6 +356,14 @@ export function loadWorkspaceNavigation(invoke) {
   return invokeCommand(invoke, 'workspace_navigation');
 }
 
+export function listLegacyTaskArchives(invoke) {
+  return invokeCommand(invoke, 'legacy_task_archives_list');
+}
+
+export function restoreLegacyTaskArchive(invoke, taskId) {
+  return invokeCommand(invoke, 'legacy_task_archive_restore', { taskId });
+}
+
 export function startNewWorkProposal(invoke, model) {
   return invokeCommand(invoke, 'new_work_proposal_start', { model });
 }
@@ -355,18 +387,6 @@ export function closeNewWorkProposal(invoke, sessionId) {
 
 export function workspaceTasks(navigation, workspaceId) {
   return (navigation?.tasks || []).filter((task) => task.workspaceId === workspaceId);
-}
-
-export function taskWorkspaceOptions(workspaces) {
-  return (workspaces || [])
-    .filter((workspace) => workspace.kind === 'regular' && workspace.status === 'active')
-    .map(({ id, name }) => ({ id, name }));
-}
-
-export function preferredTaskWorkspaceId(workspaces, preferredId = null) {
-  return taskWorkspaceOptions(workspaces).some((workspace) => workspace.id === preferredId)
-    ? preferredId
-    : '';
 }
 
 export function trackedSessionForOwner(navigation, ownerType, ownerId, preferredId, openSessionIds = []) {
@@ -515,6 +535,14 @@ export function listRepositoryCatalog(invoke) {
 
 export function loadRepositoryDirectoryPage(invoke) {
   return invokeCommand(invoke, 'repository_directory_page');
+}
+
+export function loadRepositoryLibraryRoot(invoke) {
+  return invokeCommand(invoke, 'repository_library_get');
+}
+
+export function saveRepositoryLibraryRoot(invoke, path) {
+  return invokeCommand(invoke, 'repository_library_set', { path });
 }
 
 export function setRepositoryEnabled(invoke, repositoryId, enabled) {

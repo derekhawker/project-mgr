@@ -76,8 +76,7 @@ fn commit(path: &Path, message: &str) {
 }
 
 #[test]
-fn production_task_review_falls_back_to_local_main_or_master_and_includes_committed_and_working_changes(
-) {
+fn change_review_rejects_restored_legacy_task_owners() {
     for base_branch in ["main", "master"] {
         let fixture = tempdir().unwrap();
         let source = fixture.path().join("source");
@@ -214,28 +213,6 @@ fn production_task_review_falls_back_to_local_main_or_master_and_includes_commit
         fs::write(worktree.join("tracked.txt"), "working tree edit\n").unwrap();
         fs::write(worktree.join("untracked.txt"), "new working file\n").unwrap();
 
-        let review = load_for_owner(&store, "task", task_id).unwrap();
-        assert_eq!(review.len(), 1);
-        let repository_review = &review[0];
-        assert_eq!(
-            repository_review.comparison_target.as_deref(),
-            Some(format!("local {base_branch}").as_str())
-        );
-        for (file, expected) in [
-            ("committed.txt", "committed on task branch"),
-            ("tracked.txt", "working tree edit"),
-            ("untracked.txt", "new working file"),
-        ] {
-            let reviewed = repository_review
-                .files
-                .iter()
-                .find(|entry| entry.path == file)
-                .unwrap_or_else(|| panic!("{file} missing for base {base_branch}"));
-            assert!(
-                reviewed.diff.as_deref().unwrap().contains(expected),
-                "{file} diff missing expected content"
-            );
-        }
-        assert!(!repository_review.path.is_empty());
+        assert!(load_for_owner(&store, "task", task_id).is_err());
     }
 }

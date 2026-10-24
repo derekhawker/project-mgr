@@ -379,6 +379,12 @@ fn i02_git_path_fixture_reports_canonical_ownership_and_non_destructive_cleanup(
         &repo_without_default,
         &["update-ref", "-d", "refs/remotes/origin/main"],
     );
+    // The local main fallback is also supported, so remove it to make this a
+    // genuine no-default-branch fixture rather than relying on origin/main only.
+    git_ok(
+        &repo_without_default,
+        &["update-ref", "-d", "refs/heads/main"],
+    );
     assert_eq!(
         inspect_repository(&repo_without_default)
             .unwrap()

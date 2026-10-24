@@ -1,4 +1,4 @@
-use crate::management::{ManagementStore, RepositorySetupStatus, VerificationStatus};
+use crate::management::{ManagementStore, VerificationStatus};
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::fs;
@@ -284,23 +284,7 @@ pub fn load_for_owner(
                 .map(|binding| (binding.repository_id, binding.checkout_path))
                 .collect::<Vec<_>>()
         }
-        "task" => {
-            let task = store
-                .get_task(owner_id)
-                .map_err(|error| error.to_string())?
-                .ok_or_else(|| "Task was not found.".to_owned())?;
-            if task.quick_request.is_some() {
-                return Err("Quick Requests do not have Change Review.".into());
-            }
-            store
-                .list_task_repository_bindings(&task.id)
-                .map_err(|error| error.to_string())?
-                .into_iter()
-                .filter(|binding| binding.setup_status == RepositorySetupStatus::Ready)
-                .map(|binding| (binding.repository_id, binding.worktree_path))
-                .collect::<Vec<_>>()
-        }
-        _ => return Err("Change Review owner type must be workspace or task.".into()),
+        _ => return Err("Change Review owner type must be workspace.".into()),
     };
     let mut reviews = Vec::with_capacity(repositories.len());
     for (repository_id, path) in repositories {
@@ -566,7 +550,7 @@ mod tests {
     }
 
     #[test]
-    fn owner_lookup_uses_management_store_and_rejects_non_workspace_task_types() {
+    fn owner_lookup_uses_management_store_and_rejects_legacy_task_owners() {
         let root = tempfile::tempdir().unwrap();
         fs::create_dir_all(root.path().join("home")).unwrap();
         fs::create_dir_all(root.path().join("tmp")).unwrap();
@@ -590,6 +574,7 @@ mod tests {
             .unwrap()
             .is_empty());
         assert!(load_for_owner(&store, "quick_request", "workspace-review").is_err());
+        assert!(load_for_owner(&store, "task", "legacy-task").is_err());
         assert!(load_for_owner(&store, "workspace", "not-found").is_err());
     }
 }

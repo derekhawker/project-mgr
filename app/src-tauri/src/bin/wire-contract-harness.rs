@@ -78,6 +78,16 @@ fn build_output(root: &std::path::Path) -> Result<Value, String> {
     store
         .create_session_with_model(&workspace_session, "openai/gpt-6-luna")
         .map_err(|error| error.to_string())?;
+    store
+        .save_workspace_session_context(
+            &opencode_project_manager_lib::management::WorkspaceSessionContext {
+                open_code_session_id: workspace_session_id.into(),
+                workspace_id: workspace.id.clone(),
+                role: opencode_project_manager_lib::management::WorkspaceSessionRole::Workspace,
+                repository_id: None,
+            },
+        )
+        .map_err(|error| error.to_string())?;
 
     let task = NewTask {
         id: "wire-quick-request".into(),
@@ -115,6 +125,7 @@ fn build_output(root: &std::path::Path) -> Result<Value, String> {
         .map_err(|error| error.to_string())?;
     let workspaces = store.list_workspaces().map_err(|error| error.to_string())?;
     let mut workspace_repositories = Vec::new();
+    let mut workspace_session_contexts = Vec::new();
     let mut sessions = Vec::new();
     for entry in &workspaces {
         sessions.extend(
@@ -135,6 +146,11 @@ fn build_output(root: &std::path::Path) -> Result<Value, String> {
         workspace_repositories.extend(
             store
                 .list_workspace_repository_bindings(&entry.id)
+                .map_err(|error| error.to_string())?,
+        );
+        workspace_session_contexts.extend(
+            store
+                .list_workspace_session_context(&entry.id)
                 .map_err(|error| error.to_string())?,
         );
     }
@@ -194,6 +210,7 @@ fn build_output(root: &std::path::Path) -> Result<Value, String> {
             "tasks": tasks,
             "sessions": sessions,
             "workspaceRepositories": workspace_repositories,
+            "workspaceSessionContexts": workspace_session_contexts,
             "quickRequests": store.list_quick_requests(false).map_err(|error| error.to_string())?,
         },
         "sessionHistory": history,

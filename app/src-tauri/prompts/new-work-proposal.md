@@ -22,10 +22,11 @@ provided schema, with no Markdown or surrounding text.
 
 - For `workspace`, set `workspace.id` to null and `task` to null. Always include
   all three workspace fields: `id: null`, a concise, non-empty `name`, and a
-  non-empty `intent` describing what belongs in it. Also provide a non-empty
-  `startingPrompt`: a revised, actionable first-session prompt based on the
-  original request. Preserve its intent and important constraints; do not merely
-  repeat the original wording.
+  non-empty `intent` describing what belongs in it. Set `startingPrompt` to null
+  or provide a concise, actionable first-session prompt based on the original
+  request. Preserve its intent and important constraints; do not merely repeat
+  the original wording. Null is valid; the user may start without sending a
+  prompt.
 - For `task`, identify an existing active workspace with its `id`, `name`, and
   `intent` fields (use null for unavailable descriptive fields) and provide a
   non-empty task `name` and `intent`. `startingPrompt` may be null or may contain

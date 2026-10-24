@@ -1,5 +1,5 @@
 use crate::change_review::validate_repo_root;
-use crate::management::{ManagementStore, RepositorySetupStatus, VerificationStatus};
+use crate::management::{ManagementStore, VerificationStatus};
 use serde::Serialize;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -151,30 +151,7 @@ fn roots_for_owner(
             }
             Ok(roots)
         }
-        "task" => {
-            let task = store
-                .get_task(owner_id)
-                .map_err(|e| e.to_string())?
-                .ok_or_else(|| "Task was not found.".to_owned())?;
-            if task.quick_request.is_some() {
-                return Err("Quick Requests do not have Docs.".into());
-            }
-            let mut roots = Vec::new();
-            for binding in store
-                .list_task_repository_bindings(&task.id)
-                .map_err(|e| e.to_string())?
-                .into_iter()
-                .filter(|binding| binding.setup_status == RepositorySetupStatus::Ready)
-            {
-                roots.push(repository_root(
-                    store,
-                    binding.repository_id,
-                    binding.worktree_path,
-                )?);
-            }
-            Ok(roots)
-        }
-        _ => return Err("Docs owner type must be workspace or task.".into()),
+        _ => return Err("Docs owner type must be workspace.".into()),
     }
 }
 
@@ -226,7 +203,7 @@ pub fn read_for_owner(
     if !listed.iter().any(|document| {
         document.path == requested_path && document.repository_id.as_deref() == repository_id
     }) {
-        return Err("Document is not available in this Workspace or Task.".into());
+        return Err("Document is not available in this Workspace.".into());
     }
     let relative = Path::new(requested_path);
     if relative.is_absolute()
@@ -239,7 +216,7 @@ pub fn read_for_owner(
     let root = roots_for_owner(store, owner_type, owner_id)?
         .into_iter()
         .find(|root| root.repository_id.as_deref() == repository_id)
-        .ok_or_else(|| "Document source is not available in this Workspace or Task.".to_owned())?;
+        .ok_or_else(|| "Document source is not available in this Workspace.".to_owned())?;
     let canonical_root = fs::canonicalize(&root.path).map_err(|error| error.to_string())?;
     let requested =
         fs::canonicalize(canonical_root.join(relative)).map_err(|error| error.to_string())?;

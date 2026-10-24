@@ -2,26 +2,21 @@
 
 ## Purpose
 
-**New** opens a compact modal over the current destination and offers work-type
-choices for a workspace, a task when workspace context is available, or a Quick
-Request. Choosing a type starts that flow; there is no separate name-first
-**New workspace** flow.
+**New work** opens a compact modal over the current destination with two choices:
+**Workspace** and **Quick Request**. Workspace is the sole regular work record;
+there is no Task creation or separate name-first Workspace flow.
 
 The dialog is comfortably sized and padded. When its contents exceed the
 available height, only the dialog body scrolls; its action footer stays visible
 and anchored at the bottom.
 
-The prompt-capture modal is compact and clearly labels the selected work type
-in both its title and prompt instruction. The proposal/review modal grows only
-after Continue, when it must show extracted details and repository choices.
-Workspace review has an optional editable starting prompt that is sent according to the
-Workspace repository-count rules when nonblank. Task review has an optional editable revised
-prompt for reference only; it is not sent to Task sessions or persisted. The
-review title repeats the work type so the action being confirmed is never
-ambiguous.
+The prompt-capture modal is compact and clearly labels the selected flow. The
+proposal/review modal grows only after Continue, when it must show extracted
+details and repository choices. Workspace review has an optional editable
+starting prompt; a blank value never skips required session setup.
 
-The modal does not reset the selected workspace, task, or terminal. Cancel
-returns to the unchanged destination.
+The modal does not reset the current destination or terminal. Cancel returns to
+the unchanged destination.
 
 ## Workspace flow
 
@@ -34,11 +29,9 @@ The flow has two prompts:
 
 ### 1. Capture the original prompt
 
-Show a compact modal titled **New Workspace**, **New Task**, or **New Quick
-Request** as appropriate. Label the field **Original prompt** and explain what
-that prompt will start. Preserve the original prompt exactly as entered. For a
-Task, pass the Workspace selected in the separate Workspace selector as context;
-do not prepend Workspace text into the prompt.
+Show a compact modal titled **New Workspace** or **New Quick Request**. Label the
+field **Original prompt** and explain what that prompt will start. Preserve the
+original prompt exactly as entered.
 
 In the multiline Original prompt field, **Enter** continues the form and
 **Shift+Enter** inserts a newline. Enter during IME composition does not submit.
@@ -82,8 +75,11 @@ The first-deliverable proposal has this conceptual shape:
 
 Malformed proposals or invalid repository references are rejected before
 confirmation. No workspace is created by the proposal request.
-When validating repositories for workspace setup, Git-ignored files do not count
-as uncommitted changes; tracked changes and non-ignored untracked files still do.
+Workspace setup uses the repository's reviewed committed Git state. A dirty source
+checkout is allowed: tracked, untracked, and ignored local files stay in the
+original checkout and are not copied into the managed base clone, Workspace
+worktree, or Workspace symlink. Rust still revalidates repository identity, the
+reviewed commits, default branch, remote, and committed submodule metadata.
 Default branch resolution prefers a valid `origin/HEAD`, then a local `main` or
 `master` branch, then the currently checked-out local branch. This supports
 repositories without remotes. If no branch can be determined, show a clear error
@@ -94,11 +90,10 @@ Enabled repositories from the Directories page are additional context to every
 New-work proposal; disabled repositories are absent from proposal input and
 cannot be selected as working directories.
 Users do not have to manually attach a repository before naming it in a
-workspace or task prompt. The proposal maps mentioned repositories to verified
-catalog identities; the review shows the selected repository names and source
-locations as a compact list, and confirmation attaches them to the new workspace
-or task. Do not expand this list with proposal reasons, clone destinations, or
-submodule details.
+Workspace prompt. The proposal maps mentioned repositories to verified catalog
+identities; the review shows the selected repository names and source locations
+as a compact list, and confirmation attaches them to the new Workspace. Do not
+expand this list with proposal reasons, clone destinations, or submodule details.
 
 ### 3. Confirm and start the workspace session
 
@@ -107,14 +102,14 @@ Confirmation performs one user-visible flow:
 1. Rust creates the workspace and its home directories.
 2. Rust clones and validates the confirmed repositories, including recursive
    submodules.
-3. Rust creates and records one session for zero/one repository, or one session
-   per repository clone for multiple repositories.
+3. Rust creates and records one Workspace session for zero repositories, one
+   worker for one repository, or an outside-repository orchestrator plus one
+   worker per repository for multiple repositories.
 4. The app selects the new workspace and opens all of its interactive terminal
    tabs.
-5. For zero/one selected repository, Rust sends the confirmed starting prompt
-   through the workspace session when it is nonblank. If the user clears it,
-   setup succeeds without sending a prompt. For multiple repositories, Rust
-   opens one empty session per clone and sends no prompt automatically.
+5. A nonblank starting prompt goes to the zero-repository Workspace session,
+   single-repository worker, or multi-repository orchestrator, respectively.
+   Workers always start empty.
 
 Keep a visible, ordered progress list in the New-work dialog while this runs.
 Place it immediately after the active prompt field: below the original prompt
@@ -125,7 +120,9 @@ review and setup.
   the error if proposal generation fails.
 - **Create workspace** — success when the Workspace record is created.
 - **Clone _repository name_** — one in-progress/success/failed row per selected
-  repository. A failed row can expand to show the Git/setup error detail.
+  repository, with its source location shown. Never display an internal
+  repository ID in progress labels or failure details. A failed row can expand
+  to show the Git/setup error detail.
 - **Write workspace instructions** — success or failed when applicable.
 - **Start workspace session(s) and terminal(s)** — success or failed, with one
   terminal for zero/one repository and one per repository for multiple repos.
@@ -148,45 +145,14 @@ workspace later opens or restores all of its exact tracked sessions.
 
 If repository setup or session startup fails after the Workspace is created,
 keep the durable Workspace available, leave the failed step and its detail in
-the New-work dialog, and offer the applicable retry action there. Do not leave
-the progress list on the selected Workspace page after its tabs.
+the visible review pane in the New-work dialog, and offer the applicable retry
+action there. Selecting the durable Workspace must not hide the only failure
+details while the modal remains open. Do not leave the progress list on the
+selected Workspace page after its tabs.
 
-## Task flow
+## Legacy Task records
 
-Task creation starts with a prompt scoped to a selected active Workspace. The
-prompt is transient input for extracting and reviewing task metadata; it is not
-a starting prompt for any repo session.
-
-The user can start this flow in either of two ways:
-
-- Select **Task** from the navigation's **New work** dropdown.
-- Right-click a Workspace in navigation and choose **New Task**.
-
-Both entry points show a required **Workspace** selector in the Task prompt
-form. The navigation dropdown starts with no Workspace selected. The Workspace
-context menu preselects the Workspace that was clicked, but the user can change
-the selection before continuing. Only active regular Workspaces are available.
-
-1. The user selects a Workspace and enters the original task prompt.
-2. The internal proposal interprets it using the selected Workspace's repository
-   context; the selected Workspace is passed separately from the prompt.
-3. The user reviews the proposed Task name and intent, selected Workspace and
-   Task home location, original prompt, repository selection, and expected setup.
-   The Task name and intent can be edited. The original prompt is read-only.
-   An optional revised prompt can be edited or left blank; it is only a
-   reference for the user and is not submitted or saved by the application.
-4. After confirmation, Rust creates task worktrees and one empty OpenCode
-   session per selected repository, each rooted at its own worktree, then opens
-   their interactive terminals. No Task prompt is sent automatically.
-
-If setup is incomplete, keep the Task record, show itemized results, and offer
-**Retry repository setup**. The retry uses the same confirmed repository set;
-it does not create another Task or change its selection.
-
-The task tracks each session with its exact repository and directory. Navigating
-to the task restores its tracked repo sessions. The user coordinates work
-between terminals and enters prompts manually. A task with no selected
-repositories has no repo session to open.
+Task is no longer a creation option or product-level work type. Existing Task records remain available during the staged compatibility refactor, but new work starts as a Workspace or Quick Request. Their eventual archive and conversion are specified in `../workspace-refactor-target.md`.
 
 ## Example
 
@@ -203,9 +169,10 @@ Starting prompt (editable)
 [Back]                                      [Create workspace]
 ```
 
-After confirmation, the new workspace is selected. A workspace with two
-repositories opens two repo-rooted OpenCode terminals, both empty; no prompt is
-submitted automatically.
+After confirmation, the new Workspace is selected. A Workspace with two
+repositories opens an outside-repository Orchestrator and two repo-rooted worker
+terminals. Workers start empty; a nonblank starting prompt goes only to the
+Orchestrator.
 
 ## Quick Request flow
 

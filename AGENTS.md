@@ -19,8 +19,11 @@
 
 ## Implementation
 
-- Work on one user-visible vertical feature at a time. If blocked, resolve the blocker or explicitly rescope the feature before switching; do not accumulate partially implemented features.
 - Before implementation, understand how the intended behavior could work end to end within the current architecture. Identify whether the feature extends an existing feature or calls for a different organization of code. Refine this understanding as implementation reveals more.
+
+## Code Indexing
+
+- When using Codesitter in this repository, keep the frontend and Rust indexes separate: index `app/` with `--lang js,ts,tsx`, and `app/src-tauri/` with `--lang rust`. These are distinct project roots, each with its own `.codesitter` index; run queries against the matching root and use file paths relative to that root. `app/` is the frontend root because it includes its source, tests, and HTML entry point; `app/src-tauri/` is the Rust root. Codesitter skips generated `target/` directories.
 
 ## Testing
 

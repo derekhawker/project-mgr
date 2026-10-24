@@ -23,23 +23,20 @@
           </section>
           <div class="navigation-heading"><h2>Workspaces</h2></div>
            <ul id="workspace-list" aria-busy="true"><li class="placeholder">Loading…</li></ul>
-            <div id="workspace-context-menu" class="workspace-context-menu" role="menu" aria-label="Workspace actions" hidden><button id="workspace-context-new-task" type="button" role="menuitem">New Task</button></div>
           <details id="new-work-menu" class="new-work-menu">
             <summary>New work</summary>
             <div class="new-work-menu-options" role="group" aria-label="Choose work type">
               <button type="button" data-new-work-type="workspace">Workspace</button>
-              <button type="button" data-new-work-type="task" disabled>Task</button>
               <button type="button" data-new-work-type="quick_request">Quick Request</button>
             </div>
           </details>
         </aside>
           <section class="quick-view" aria-label="Selected work">
             <div id="workbench" hidden>
-              <div class="workbench-toolbar" aria-label="Workspace and task selection">
-                <div id="owner-tabs" class="owner-tabs"></div>
+              <div class="workbench-toolbar" aria-label="Workspace sessions and tools">
               </div>
               <div class="workbench-toolbar secondary-toolbar" aria-label="Session and workspace views">
-                <nav id="session-tabs" class="session-tabs workbench-session-tabs" role="tablist" aria-label="Workspace or task sessions"></nav>
+                <nav id="session-tabs" class="session-tabs workbench-session-tabs" role="tablist" aria-label="Workspace sessions"></nav>
                 <button id="show-change-review" type="button" class="toolbar-tab" hidden>Change Review</button>
                 <button id="show-docs" type="button" class="toolbar-tab" disabled>Docs</button>
                 <div class="repo-tools-control"><button id="show-repo-tools" type="button" class="toolbar-tab" aria-expanded="false" hidden>Tools</button><div id="repo-tools-menu" class="repo-tools-menu" role="menu" aria-label="Repository tools" hidden></div></div>
@@ -56,17 +53,27 @@
                <ul id="quick-request-full-items" class="quick-request-full-items"></ul>
              </section>
              <section id="directories-page" class="quick-request-full-list" hidden aria-labelledby="directories-title">
-               <div class="quick-request-list-heading"><h1 id="directories-title">Directories</h1><button id="add-repository-directories" type="button" class="primary-button">Add directories</button></div>
-               <p id="repository-status" role="status" aria-live="polite"></p>
+                <div class="quick-request-list-heading"><h1 id="directories-title">Directories</h1><button id="add-repository-directories" type="button" class="primary-button">Add directories</button></div>
+                <form id="repository-library-form" class="request-form">
+                  <label for="repository-library-path">Repository library location</label>
+                  <div class="model-row"><input id="repository-library-path" type="text" required autocomplete="off"><button id="choose-repository-library" type="button" class="quiet-button">Choose folder</button><button type="submit" class="primary-button">Save location</button></div>
+                  <p id="repository-library-status" role="status" aria-live="polite"></p>
+                </form>
+                <p id="repository-status" role="status" aria-live="polite"></p>
+               <section aria-labelledby="legacy-archives-title">
+                 <h2 id="legacy-archives-title">Archived legacy records</h2>
+                 <p>Restore an archived Task's database associations if you need to recover its historical record. Its files and OpenCode history are not changed.</p>
+                 <ul id="legacy-task-archives" aria-label="Archived legacy Task records"><li>Loading…</li></ul>
+               </section>
                <ul id="directory-list" aria-label="Repositories grouped by directory"></ul>
                <button id="directories-back" type="button" class="quiet-button">Back</button>
              </section>
             <div id="no-selection" class="no-selection">
               <section id="workspaces-unselected" hidden aria-labelledby="unselected-title">
-                <h1 id="unselected-title">Select a workspace or task, or choose New work to start.</h1>
+                <h1 id="unselected-title">Select a Workspace, or choose New work to start.</h1>
               </section>
              </div>
-             <section id="docs-page" class="docs-page" hidden aria-label="Workspace and task documents">
+               <section id="docs-page" class="docs-page" hidden aria-label="Workspace documents">
                <aside class="docs-files" data-doc-files aria-label="Markdown and text files"></aside>
                <section class="docs-content" data-doc-content><h2></h2><pre></pre></section>
              </section>
@@ -83,18 +90,12 @@
                  <div id="terminal-views" class="terminal-views"></div>
                </section>
               <details class="owner-management">
-                <summary>Workspace and task options</summary>
+                 <summary>Workspace options</summary>
                 <div class="owner-management-content">
               <div class="workspace-actions">
                 <label for="attach-repository-select">Repository</label>
                 <select id="attach-repository-select" aria-label="Repository to attach"><option value="">Select an enabled repository</option></select>
                 <button id="attach-repository" type="button" class="quiet-button">Attach repository</button>
-                <button id="task-setup-cancel" type="button" class="quiet-button" disabled>Cancel setup</button>
-               <button id="task-setup-resume" type="button" class="quiet-button" disabled>Resume setup</button>
-                <button id="task-setup-refresh" type="button" class="quiet-button" disabled>Refresh setup</button>
-                <button id="new-task-session" type="button" class="quiet-button" disabled>New task session</button>
-                <button id="complete-task" type="button" class="quiet-button" disabled>Complete task</button>
-                 <button id="retry-cleanup" type="button" class="quiet-button" disabled>Retry cleanup</button>
                  <button id="complete-workspace" type="button" class="quiet-button" disabled>Complete workspace</button>
                 <button id="reactivate-workspace" type="button" class="quiet-button" disabled>Reactivate workspace</button>
               </div>
@@ -104,7 +105,6 @@
                <textarea id="workspace-prompt" rows="2" placeholder="Inspect the workspace and plan the next step"></textarea>
                <button id="workspace-session-submit" type="submit">Start workspace session</button>
               </form>
-              <ul id="cleanup-history" aria-label="Task cleanup history"></ul>
                 </div>
               </details>
             <form id="quick-request-form" class="request-form" hidden>
@@ -144,9 +144,9 @@
     <dialog id="new-work-dialog" class="workspace-dialog" aria-label="New work">
       <div id="new-work-dialog-content" class="workspace-dialog-content">
         <section id="new-work" class="new-work" hidden aria-labelledby="new-work-title">
-          <form id="new-work-capture" class="new-work-dialog-layout"><div class="new-work-dialog-scroll"><p id="new-work-kind" class="eyebrow">Workspace</p><h1 id="new-work-title">New Workspace</h1><p id="new-work-guidance">Describe the workspace you want to create.</p><div id="task-workspace-field" hidden><label for="task-workspace-select">Workspace</label><select id="task-workspace-select" required><option value="">Choose a workspace</option></select></div><label id="new-work-prompt-label" for="new-work-prompt">Original prompt</label><textarea id="new-work-prompt" required rows="3" placeholder="Describe the workspace"></textarea><section id="new-work-progress" class="new-work-progress" hidden aria-label="Setup progress" aria-live="polite"><h2>Progress</h2><ol id="new-work-progress-steps"></ol></section></div><div class="new-work-dialog-footer"><p id="new-work-error" class="error-message" role="alert"></p><button type="button" id="new-work-cancel" class="quiet-button">Cancel</button><button type="submit">Continue</button></div></form>
+          <form id="new-work-capture" class="new-work-dialog-layout"><div class="new-work-dialog-scroll"><p id="new-work-kind" class="eyebrow">Workspace</p><h1 id="new-work-title">New Workspace</h1><p id="new-work-guidance">Describe the workspace you want to create.</p><label id="new-work-prompt-label" for="new-work-prompt">Original prompt</label><textarea id="new-work-prompt" required rows="3" placeholder="Describe the workspace"></textarea><section id="new-work-progress" class="new-work-progress" hidden aria-label="Setup progress" aria-live="polite"><h2>Progress</h2><ol id="new-work-progress-steps"></ol></section></div><div class="new-work-dialog-footer"><p id="new-work-error" class="error-message" role="alert"></p><button type="button" id="new-work-cancel" class="quiet-button">Cancel</button><button type="submit">Continue</button></div></form>
         </section>
-        <section id="new-work-review" class="new-work-review new-work-dialog-layout" hidden aria-labelledby="proposal-title"><div class="new-work-dialog-scroll"><p class="eyebrow">Review proposal</p><h1 id="proposal-title">Check the proposed context</h1><div id="workspace-review-form" class="workspace-review-form" hidden><label for="workspace-review-name">Workspace name</label><input id="workspace-review-name" type="text" required maxlength="120"><label>Workspace directory</label><output id="workspace-review-directory" class="workspace-review-directory"></output><label for="workspace-original-prompt">Original prompt</label><textarea id="workspace-original-prompt" rows="3" readonly></textarea></div><div id="task-review-details" class="workspace-review-form" hidden><label for="task-review-name">Task name</label><input id="task-review-name" type="text" required maxlength="120"><label for="task-review-intent">Task intent</label><textarea id="task-review-intent" rows="3" required></textarea><label>Workspace</label><output id="task-review-workspace" class="workspace-review-directory"></output><label>Task home location</label><output id="task-review-directory" class="workspace-review-directory"></output><label for="task-original-prompt">Original prompt</label><textarea id="task-original-prompt" rows="3" readonly></textarea><label for="task-revised-prompt">Revised prompt (optional)</label><textarea id="task-revised-prompt" rows="4"></textarea><p class="field-help">For reference only; it is not sent to Task sessions or saved. Copy it if you want to use it manually.</p></div><blockquote id="proposal-original" hidden></blockquote><section id="proposal-repository-section"><h3>Repositories</h3><ul id="proposal-repositories" class="proposal-repository-list"></ul></section><section id="proposal-starting-prompt" class="proposal-starting-prompt" hidden><label for="proposal-prompt">Starting prompt</label><textarea id="proposal-prompt" rows="4"></textarea></section><div id="quick-request-directory-review" hidden><h2>Confirm working directory</h2><h3>Original prompt</h3><blockquote id="quick-request-original"></blockquote><p>The original prompt will be sent unchanged after confirmation.</p><label for="quick-request-directory">OpenCode working directory</label><select id="quick-request-directory"></select><p id="quick-request-directory-path"></p></div><div class="proposal-model-field"><label for="proposal-model">Model</label><select id="proposal-model" required aria-busy="true"><option>Loading models…</option></select></div></div><div class="new-work-dialog-footer"><button type="button" id="proposal-cancel" class="quiet-button">Cancel</button><button type="button" id="proposal-back" class="quiet-button">Back</button><button type="button" id="proposal-create">Create</button><p id="proposal-error" class="error-message" role="alert"></p></div></section>
+        <section id="new-work-review" class="new-work-review new-work-dialog-layout" hidden aria-labelledby="proposal-title"><div class="new-work-dialog-scroll"><p class="eyebrow">Review proposal</p><h1 id="proposal-title">Check the proposed context</h1><div id="workspace-review-form" class="workspace-review-form" hidden><label for="workspace-review-name">Workspace name</label><input id="workspace-review-name" type="text" required maxlength="120"><label>Workspace directory</label><output id="workspace-review-directory" class="workspace-review-directory"></output><label for="workspace-original-prompt">Original prompt</label><textarea id="workspace-original-prompt" rows="3" readonly></textarea></div><blockquote id="proposal-original" hidden></blockquote><section id="proposal-repository-section"><h3>Repositories</h3><ul id="proposal-repositories" class="proposal-repository-list"></ul></section><section id="proposal-starting-prompt" class="proposal-starting-prompt" hidden><label for="proposal-prompt">Starting prompt</label><textarea id="proposal-prompt" rows="4"></textarea></section><div id="quick-request-directory-review" hidden><h2>Confirm working directory</h2><h3>Original prompt</h3><blockquote id="quick-request-original"></blockquote><p>The original prompt will be sent unchanged after confirmation.</p><label for="quick-request-directory">OpenCode working directory</label><select id="quick-request-directory"></select><p id="quick-request-directory-path"></p></div><div class="proposal-model-field"><label for="proposal-model">Model</label><select id="proposal-model" required aria-busy="true"><option>Loading models…</option></select></div></div><div class="new-work-dialog-footer"><button type="button" id="proposal-cancel" class="quiet-button">Cancel</button><button type="button" id="proposal-back" class="quiet-button">Back</button><button type="button" id="proposal-create">Create</button><p id="proposal-error" class="error-message" role="alert"></p></div></section>
       </div>
     </dialog>
     <script type="module" src="/src/main.js"></script>
