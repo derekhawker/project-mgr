@@ -3,6 +3,10 @@
 Open this page from the hamburger-style **Directories** control at the top of
 navigation. Keep repository rows off persistent navigation.
 
+The page uses the shared gray UI controls, with flat bordered sections for the
+library, archives, and repository groups. Paths remain visible and wrap when
+needed. Native picker behavior is unchanged. Verify appearance on Wayland.
+
 ## Discovered repositories
 
 - **Add directories** opens the native multi-folder picker.

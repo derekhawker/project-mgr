@@ -16,7 +16,14 @@ details and repository choices. Workspace review has an optional editable
 starting prompt; a blank value never skips required session setup.
 
 The modal does not reset the current destination or terminal. Cancel returns to
-the unchanged destination.
+the unchanged destination. Clicking outside does not dismiss it; use Cancel or
+Escape, which runs the same cleanup before closing.
+
+The New-work modal and form controls share the flat gray, C64-inspired theme;
+the primary action is visually distinct from Back and Cancel.
+The modal animates on opening unless the user prefers reduced motion.
+The existing native dialog controller still owns cancellation and cleanup; verify
+the combined appearance, focus, and native behavior manually on Wayland.
 
 ## Workspace flow
 
@@ -114,7 +121,8 @@ Confirmation performs one user-visible flow:
 Keep a visible, ordered progress list in the New-work dialog while this runs.
 Place it immediately after the active prompt field: below the original prompt
 during interpretation, then below the revised starting prompt during Workspace
-review and setup.
+review and setup. During Quick Request review, place it immediately after the
+working-directory review section.
 
 - **Interpret request** — success before the proposal is shown, or failed with
   the error if proposal generation fails.

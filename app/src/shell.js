@@ -83,26 +83,26 @@ export function formatShellResponse(info) {
 
 export async function loadApplicationShell({
   invoke,
-  connectionStatus,
-  connectionIndicator,
-  commandResult,
-  appVersion,
+  view,
 }) {
   try {
     const info = await invokeCommand(invoke, 'app_shell_info');
-    commandResult.textContent = formatShellResponse(info);
-    appVersion.textContent = `Version ${info.version}`;
-    if (info.status === 'error') {
-      connectionStatus.textContent = 'Rust core connected; management storage unavailable';
-      connectionIndicator.classList.add('has-error');
-      return;
-    }
-    connectionStatus.textContent = 'Connected to the Rust core';
-    connectionIndicator.classList.add('is-connected');
+    const storageUnavailable = info.status === 'error';
+    view.setState({
+      result: formatShellResponse(info),
+      version: `Version ${info.version}`,
+      connection: storageUnavailable ? 'storage-error' : 'connected',
+      message: info.status === 'fixture' ? 'Browser fixture; not connected to Rust' : storageUnavailable
+        ? 'Rust core connected; management storage unavailable'
+        : 'Connected to the Rust core',
+    });
   } catch (error) {
-    connectionStatus.textContent = 'Could not connect to the Rust core';
-    commandResult.textContent = String(error);
-    connectionIndicator.classList.add('has-error');
+    view.setState({
+      connection: 'disconnected',
+      message: 'Could not connect to the Rust core',
+      version: 'Version —',
+      result: String(error),
+    });
   }
 }
 
@@ -235,11 +235,11 @@ export function startQuickRequestPrompt(invoke, requestId, model) {
 
 // Keep the submit lifecycle in one testable place. In particular, preserve the
 // prompt and existing UI state until the runtime has attached, shown the exact
-// session, and accepted the initial prompt. Only the prompt field is cleared on
-// full success; a failed step leaves the user's text available for recovery.
+// session, and accepted the initial prompt. Clear through the view only after
+// prompt acceptance, before list refresh; startup failure retains recovery text.
 export async function submitQuickRequestFlow({
   invoke,
-  promptInput,
+  setPrompt,
   promptText,
   model,
   waitForTerminal,
@@ -252,7 +252,7 @@ export async function submitQuickRequestFlow({
   if (!sessionId) throw new Error('Quick Request creation returned no session ID.');
   await showSession(sessionId);
   await startQuickRequestPrompt(invoke, record.task.id, model);
-  promptInput.value = '';
+  setPrompt('');
   await refreshRequests();
   return record;
 }
@@ -316,16 +316,6 @@ export async function loadModelSelector(invoke, { onModels, onError }) {
     onError(error);
     throw error;
   }
-}
-
-export function populateModelSelector(select, models, createOption = (entry) => {
-  const option = document.createElement('option');
-  const providerId = entry.providerId || entry.providerID;
-  option.value = JSON.stringify({ providerId, id: entry.id });
-  option.textContent = entry.name || `${providerId}/${entry.id}`;
-  return option;
-}) {
-  select.replaceChildren(...models.map(createOption));
 }
 
 export function followUpQuickRequest(invoke, requestId, data) {

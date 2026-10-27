@@ -1,16 +1,20 @@
 # Project Principles
 
+- Always use the custom UI library in `app/src/ui/` for base components. DRY guides UI design: extend the library as new uses arise instead of duplicating components or their behavior and styling.
 - Put application behavior, validation, state changes, persistence, and process ownership in Rust. Keep raw HTML/CSS/JavaScript as presentation and a Tauri-command adapter.
-- Keep layout, rendering, terminal, window, tray, and visual lifecycle acceptance manual on Wayland for now. Automate these only when the user reopens that decision.
+- Browser-based DOM and screenshot checks may be automated. Native Wayland layout, rendering, terminal, window, tray, and visual lifecycle acceptance remain manual; Chromium does not establish native acceptance.
 - Preserve Tauri, raw HTML/CSS/JavaScript, and OpenCode-owned conversation history. Read `docs/application-workflows.md` before changing product behavior.
 - Workspace/task prompts are transient inputs, never application database/file records. Log their send failures to Tauri's OS-specific `app_log_dir()/application.log` with session/error metadata only; do not write prompt contents to logs.
 
 ## Bug Discussions
 
-- Whenever a bug is discussed, in any context, confirm assumptions with the user—especially where it occurs (the screen or interaction area for UI bugs), its preconditions, reproduction steps, and expected versus actual behavior—before proceeding with analysis, investigation, planning, or changes. Proceed once the user has confirmed the relevant context.
+- When a bug is discussed, first inspect the reported context and accessible evidence, including relevant logs and errors, without changing user data. Confirm only the material unknowns with the user before relying on assumptions or making changes: for UI bugs, the screen or interaction area, preconditions, reproduction steps, and expected versus actual behavior. Preserve safety and obtain authorization before operations that could affect user data or live services.
+- For native initial-prompt failures, inspect Tauri's `app_log_dir()/application.log`: on Linux, `${XDG_DATA_HOME:-$HOME/.local/share}/dev.opencode.projectmgr/logs/application.log`; on macOS, `~/Library/Logs/dev.opencode.projectmgr/application.log`; on Windows, `%LOCALAPPDATA%\dev.opencode.projectmgr\logs\application.log`. An application directory override changes the location to `<override>/logs/application.log`. The file may not exist until a failure is logged; inspect terminal stderr and the UI error too. Never copy prompts, credentials, or other secrets into reports or logs.
+- For frontend command failures, inspect `window.appDiagnostics()` in the browser/WebView developer console, or `agent-browser console` in the mock browser. These bounded, in-memory records contain command names and categories only and reset on reload; they do not cover failures before frontend startup. UI and other console/stderr messages may contain sensitive details, so review before sharing.
 
 ## UX Terms
 
+- For UI names and locations, consult `docs/ux/glossary.md` and the screen map in `docs/ux/index.md` before asking the user to identify an area.
 - **Workspace:** A project grouping that knows about zero or more repositories and may contain zero or more tasks. Its repository associations are working context; existing repositories stay where they are unless the user explicitly chooses otherwise.
 - **Task:** An optional, independently progressing unit of work nested under one workspace. It may use one or more repositories associated with that workspace; managed worktrees go under `<task-home>/worktrees/`.
 - **Quick Request:** A named one-off tracked item under the special Quick Requests workspace. It is important work with its own status and lifecycle, not a generic label for a user's text or an OpenCode interaction.

@@ -16,6 +16,9 @@
 
 ## Layout
 
+Use compact shared controls and the gray work-area palette. Verify the visual
+layout on Wayland.
+
 Use a conventional changed-file list grouped by repository beside the selected
 file diff:
 

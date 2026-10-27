@@ -1,0 +1,47 @@
+.modal,
+.drawer {
+  color: var(--ui-text, #f2f2f2);
+  background: var(--ui-surface, #515151);
+  border: 1px solid var(--ui-border-light, #929292);
+  border-radius: 0;
+  max-height: calc(100dvh - 2rem);
+  overflow: auto;
+  padding: 1.25rem;
+  opacity: 1;
+  transition: opacity 220ms ease, transform 220ms cubic-bezier(.2, .8, .2, 1);
+}
+
+@starting-style {
+  .drawer.right[open] { opacity: 0; transform: translateX(2rem); }
+  .drawer.left[open] { opacity: 0; transform: translateX(-2rem); }
+}
+
+.modal {
+  width: min(36rem, calc(100vw - 2rem));
+  margin: auto;
+}
+.modal[open] { animation: ui-dialog-enter 220ms cubic-bezier(.2, .8, .2, 1); }
+
+.drawer {
+  position: fixed;
+  inset-block: 0;
+  margin: 0;
+  width: min(28rem, calc(100vw - 2rem));
+  height: 100%;
+  max-height: none;
+  border-radius: 0;
+}
+
+.drawer::backdrop,
+.modal::backdrop { background: rgb(0 0 0 / 55%); }
+.right { inset-inline: auto 0; border-inline-end: 0; }
+.left { inset-inline: 0 auto; border-inline-start: 0; }
+.title { margin: 0 0 1rem; font-size: 1.2rem; }
+.close { margin-block-end: 0.75rem; }
+
+.modal:focus-visible,
+.drawer:focus-visible { outline: 2px solid var(--ui-focus, #fff); outline-offset: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .modal, .drawer { transition: none; animation: none; }
+}

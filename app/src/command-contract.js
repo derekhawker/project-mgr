@@ -2,6 +2,9 @@
 // boring: schemas are data, and every value crossing it is checked.
 import { invoke as tauriInvoke } from '@tauri-apps/api/core';
 import manifest from './command-contract.json' with { type: 'json' };
+import { invokeBrowserFixture } from './browser-fixture.js';
+import { recordCommandFailure } from './diagnostics.js';
+import { isBrowserFixture } from './runtime-mode.js';
 
 const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 const actualType = (value) => Array.isArray(value) ? 'array' : value === null ? 'null' : typeof value;
@@ -66,7 +69,8 @@ export const COMMAND_NAMES = Object.freeze(Object.keys(manifest));
 // through this module (main.js never imports or aliases it).
 export async function invokeCommand(rawOrName, nameOrPayload, maybePayload) {
   const injected = typeof rawOrName === 'function';
-  const rawInvoke = injected ? rawOrName : tauriInvoke;
+  const browserFixture = isBrowserFixture(import.meta.env?.DEV, typeof window === 'undefined' || Boolean(window.__TAURI_INTERNALS__));
+  const rawInvoke = injected ? rawOrName : browserFixture ? invokeBrowserFixture : tauriInvoke;
   const name = injected ? nameOrPayload : rawOrName;
   const suppliedPayload = injected ? maybePayload : nameOrPayload;
   let payload = suppliedPayload;
@@ -98,6 +102,7 @@ export async function invokeCommand(rawOrName, nameOrPayload, maybePayload) {
     check(name, result, spec.result, 'result');
     return result;
   } catch (error) {
+    if (!injected) recordCommandFailure(name, error instanceof TypeError ? 'contract failure' : 'command failure');
     if (error instanceof Error) {
       error.command = name;
       throw error;

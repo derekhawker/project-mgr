@@ -1,0 +1,44 @@
+.root {
+  --tabs-text: var(--ui-text, #252525);
+  --tabs-muted: var(--ui-muted, #626262);
+  --tabs-border: var(--ui-border, #858585);
+  --tabs-surface: var(--ui-background, #c6c6c6);
+  --tabs-active: var(--ui-surface, #e0e0e0);
+  --tabs-focus: var(--ui-focus, #252525);
+  color: var(--tabs-text);
+  min-width: 0;
+}
+
+.list {
+  display: flex;
+  gap: 2px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--tabs-border);
+  background: linear-gradient(to bottom, var(--tabs-surface), var(--tabs-active));
+}
+.vertical { flex-direction: column; }
+
+.tab {
+  flex: 0 0 auto;
+  border: 1px solid var(--tabs-border);
+  border-bottom: 0;
+  padding: .35rem .65rem;
+  color: var(--tabs-muted);
+  background: linear-gradient(to bottom, var(--tabs-surface), var(--tabs-active));
+  font: inherit;
+  cursor: pointer;
+}
+
+.tab[aria-selected="true"] {
+  position: relative;
+  margin-bottom: -1px;
+  border-bottom: 1px solid var(--tabs-active);
+  color: var(--tabs-text);
+  background: var(--tabs-active);
+  font-weight: 700;
+}
+
+.tab:disabled { opacity: .55; cursor: not-allowed; }
+.tab:focus-visible, .panel:focus-visible { outline: 2px solid var(--tabs-focus); outline-offset: 2px; }
+.panel { min-width: 0; padding: .6rem; border: 1px solid var(--tabs-border); border-top: 0; }
+.panel[hidden] { display: none; }

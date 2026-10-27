@@ -1,58 +1,77 @@
+import { createSignal } from 'solid-js';
 import { submitQuickRequestFlow } from './shell.js';
-import { bindEnterToSubmit } from './form-keyboard.js';
 
-// Owns the rendered form's submit lifecycle so browser-level tests exercise the
-// same event handler as production. The app injects only the Tauri transport and
-// terminal/UI collaborators; command names, schemas, and result validation stay
-// in the production adapters.
-export function bindQuickRequestForm({
-  form,
+// Transient presentation state shared by the production JSX and submit adapter.
+// Kept independent of native/DOM APIs for nonvisual production-path tests.
+export function createQuickRequestFormView() {
+  const [getPrompt, setPrompt] = createSignal('');
+  const [isBusy, setBusy] = createSignal(false);
+  return { getPrompt, setPrompt, isBusy, setBusy };
+}
+
+// Production supplies the Solid view. DOM controls are a compatibility fallback
+// for bindQuickRequestForm's legacy event-adapter tests, not the app's view.
+export function createQuickRequestSubmitHandler({
+  view,
   promptInput,
   modelSelect,
+  getSelectedModel,
   submitButton,
   errorMessage,
+  setErrorMessage,
   invoke,
   isReady,
   waitForTerminal,
   showSession,
   refreshRequests,
 }) {
-  let pendingSubmission = Promise.resolve();
-
+  const promptView = view ?? {
+    getPrompt: () => promptInput.value,
+    setPrompt: (text) => { promptInput.value = text; },
+    setBusy: (busy) => { submitButton.disabled = busy || !isReady(); },
+  };
   const onSubmit = async (event) => {
     event.preventDefault();
     if (!isReady()) return;
-    submitButton.disabled = true;
-    errorMessage.textContent = '';
+    promptView.setBusy(true);
+    if (setErrorMessage) setErrorMessage('');
+    else errorMessage.textContent = '';
     try {
-      const model = JSON.parse(modelSelect.value);
-      await submitQuickRequestFlow({
+      const model = JSON.parse(getSelectedModel ? getSelectedModel() : modelSelect.value);
+      return await submitQuickRequestFlow({
         invoke,
-        promptInput,
-        promptText: promptInput.value,
+        setPrompt: promptView.setPrompt,
+        promptText: promptView.getPrompt(),
         model,
         waitForTerminal,
         showSession,
         refreshRequests,
       });
     } catch (error) {
-      errorMessage.textContent = String(error);
+      if (setErrorMessage) setErrorMessage(String(error));
+      else errorMessage.textContent = String(error);
     } finally {
-      submitButton.disabled = !isReady();
+      promptView.setBusy(false);
     }
   };
+
+  return onSubmit;
+}
+
+export function bindQuickRequestForm(options) {
+  const { form } = options;
+  const onSubmit = createQuickRequestSubmitHandler(options);
+  let pendingSubmission = Promise.resolve();
 
   const listener = (event) => {
     pendingSubmission = onSubmit(event);
   };
   form.addEventListener('submit', listener);
-  const unbindEnter = bindEnterToSubmit(form);
 
   return {
     whenSettled: () => pendingSubmission,
     dispose: () => {
       form.removeEventListener('submit', listener);
-      unbindEnter();
     },
   };
 }

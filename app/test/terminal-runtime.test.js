@@ -3,7 +3,7 @@ import test from 'node:test';
 globalThis.self = globalThis;
 const { default: xterm } = await import('@xterm/xterm');
 const { registerXtGetTcapHandler } = await import('../src/terminal-protocol.js');
-const { TerminalEventBuffer, TerminalAttachmentRouter, TerminalRuntime, resolveTerminalConstructor } = await import('../src/terminal-runtime.js');
+const { TerminalEventBuffer, TerminalAttachmentRouter, TerminalRuntime, resolveTerminalConstructor, isWebglRendererTrialEnabled, WEBGL_TRIAL_STORAGE_KEY } = await import('../src/terminal-runtime.js');
 const nullResult = () => Promise.resolve(null);
 
 test('resolves xterm Terminal from the namespace Vite serves for the CommonJS package', () => {
@@ -11,6 +11,83 @@ test('resolves xterm Terminal from the namespace Vite serves for the CommonJS pa
   assert.equal(resolveTerminalConstructor({ default: { Terminal } }), Terminal);
   assert.equal(resolveTerminalConstructor({ Terminal }), Terminal);
   assert.throws(() => resolveTerminalConstructor({ default: {} }), /did not expose its Terminal constructor/);
+});
+
+test('WebGL renderer trial is opt-in through explicit local storage value', () => {
+  const values = new Map();
+  const storage = { getItem: (key) => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: (key) => values.delete(key) };
+  assert.equal(isWebglRendererTrialEnabled(storage), false);
+  storage.setItem(WEBGL_TRIAL_STORAGE_KEY, 'webgl');
+  assert.equal(isWebglRendererTrialEnabled(storage), true);
+  storage.removeItem(WEBGL_TRIAL_STORAGE_KEY);
+  assert.equal(isWebglRendererTrialEnabled(storage), false);
+  assert.equal(isWebglRendererTrialEnabled({ getItem() { throw new Error('storage unavailable'); } }), false);
+});
+
+test('both OpenCode terminal attachment paths load opt-in WebGL after open and teardown it before terminal disposal', async () => {
+  for (const attachPath of ['attach', 'attachExisting']) {
+    const lifecycle = [];
+    let loseContext;
+    const loadedAddons = [];
+    const terminal = {
+      cols: 80, rows: 24,
+      loadAddon(addon) { lifecycle.push(addon.webglTrial ? 'load-webgl' : 'load-fit'); loadedAddons.push(addon); addon.activate?.(this); },
+      parser: { registerDcsHandler() { return { dispose() {} }; } },
+      open() { lifecycle.push('open'); }, onData() {}, write() {}, focus() {},
+      dispose() { lifecycle.push('terminal-dispose'); for (const addon of loadedAddons) addon.dispose(); },
+    };
+    const createWebglAddon = () => {
+      let webglDisposed = false;
+      return {
+        webglTrial: true,
+        activate() { lifecycle.push('webgl-activate'); },
+        onContextLoss(callback) { loseContext = callback; return { dispose() { lifecycle.push('context-listener-dispose'); } }; },
+        dispose() { if (webglDisposed) return; webglDisposed = true; lifecycle.push('webgl-dispose'); },
+      };
+    };
+    const runtime = new TerminalRuntime({
+      invoke: async (command) => /_(?:attach|replay)$/.test(command) ? { replay: [] } : null, rendererTrialEnabled: () => true,
+      terminalFactory: () => terminal, fitAddonFactory: () => ({ fit() {}, dispose() {} }),
+      webglAddonFactory: createWebglAddon,
+    });
+    runtime.listenersReady = true;
+    if (attachPath === 'attach') await runtime.attach('ses_trial', '/workspace/repo', {});
+    else await runtime.attachExisting('ses_trial', {});
+    assert.ok(lifecycle.indexOf('open') < lifecycle.indexOf('load-webgl'), `${attachPath} opens xterm before WebGL`);
+    assert.equal(runtime.sessions.get('ses_trial').terminal, terminal);
+    runtime.dispose();
+    assert.ok(lifecycle.indexOf('terminal-dispose') < lifecycle.indexOf('webgl-dispose'), `${attachPath} lets xterm dispose its loaded addon`);
+    assert.equal(lifecycle.filter((event) => event === 'webgl-dispose').length, 1);
+
+    // Context-loss disposal also has an explicit fallback cleanup path.
+    if (attachPath === 'attachExisting') {
+      const errors = [];
+      const fallbackRuntime = new TerminalRuntime({ invoke: async (command) => /_(?:attach|replay)$/.test(command) ? { replay: [] } : null, rendererTrialEnabled: () => true,
+        onError: (error) => errors.push(error), terminalFactory: () => terminal,
+        fitAddonFactory: () => ({ fit() {}, dispose() {} }), webglAddonFactory: createWebglAddon });
+      fallbackRuntime.listenersReady = true;
+      await fallbackRuntime.attachExisting('ses_loss', {});
+      loseContext();
+      assert.equal(fallbackRuntime.sessions.get('ses_loss').webglAddon, null);
+      assert.equal(errors[0].operation, 'renderer-context-loss');
+      fallbackRuntime.dispose();
+      assert.equal(lifecycle.filter((event) => event === 'webgl-dispose').length, 2);
+    }
+  }
+});
+
+test('WebGL initialization failure leaves the terminal attached and reports DOM fallback', async () => {
+  const errors = [];
+  const terminal = { cols: 80, rows: 24, loadAddon(addon) { if (addon.webglTrial) throw new Error('WebGL2 unavailable'); }, parser: { registerDcsHandler() { return { dispose() {} }; } }, open() {}, onData() {}, write() {}, focus() {}, dispose() {} };
+  const runtime = new TerminalRuntime({ invoke: async (command) => /_(?:attach|replay)$/.test(command) ? { replay: [] } : null, onError: (error) => errors.push(error),
+    rendererTrialEnabled: () => true, terminalFactory: () => terminal, fitAddonFactory: () => ({ fit() {}, dispose() {} }),
+    webglAddonFactory: () => ({ webglTrial: true, dispose() {} }) });
+  runtime.listenersReady = true;
+  await runtime.attachExisting('ses_fallback', {});
+  assert.equal(runtime.sessions.get('ses_fallback').terminal, terminal);
+  assert.equal(errors[0].operation, 'renderer-init');
+  assert.match(errors[0].message, /using the default renderer/);
+  runtime.dispose();
 });
 
 test('buffers output before mount and replays it per session', () => {
@@ -101,9 +178,22 @@ test('real installed xterm parser handles XTGETTCAP DCS +q4d73', async () => {
   assert.deepEqual(writes, ['\x1bP0+r4d73\x1b\\']);
 });
 
-test('listener failure leaves terminal actions disabled', async () => {
-  const runtime = new TerminalRuntime({ listenEvent: () => Promise.reject(new Error('denied')) });
-  await assert.rejects(() => runtime.start(), /Could not register terminal event listeners/);
+test('partial listener failure releases earlier subscriptions and leaves terminal actions disabled without retry duplication', async () => {
+  const listened = [];
+  const unlistened = [];
+  const runtime = new TerminalRuntime({ listenEvent: async (event) => {
+    listened.push(event);
+    if (event === 'terminal-error') throw new Error('denied');
+    return () => unlistened.push(event);
+  } });
+  const ready = runtime.start();
+  assert.equal(runtime.start(), ready);
+  await assert.rejects(ready, /Could not register terminal event listeners/);
+  assert.deepEqual([...unlistened].sort(), ['terminal-exit', 'terminal-output']);
   assert.equal(runtime.listenersReady, false);
   await assert.rejects(() => runtime.attach('a', '/tmp', {}), /listeners are not ready/);
+  await assert.rejects(runtime.start(), /disposed/);
+  runtime.dispose();
+  assert.equal(listened.length, 3);
+  assert.equal(unlistened.length, 2);
 });

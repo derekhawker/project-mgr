@@ -1,5 +1,8 @@
 # Quick Requests
 
+The full-list search field and action buttons use shared UI controls with compact
+gray styling. Filtering behavior is unchanged. Verify appearance on Wayland.
+
 ## Navigation
 
 - Quick Requests are the top section of the persistent left navigation, above
@@ -15,6 +18,9 @@
   pinned button or surrounding navigation content.
 - Show Quick Requests created within the last 24 hours in the recent navigation
   list. Older requests remain available in **See all Quick Requests**.
+- Highlight the selected Quick Request in the recent list. Opening another
+  request moves the highlight even when the list records have not changed;
+  selecting a Workspace or deleting the selected request clears it.
 - Quick Requests are tasks under the special Quick Requests workspace. Each
   uses the directory resolved for that request; when no registered repository
   is identified, use the shared folder named **Quick Requests** directly under
@@ -35,6 +41,8 @@ trailing query whitespace is ignored, and an empty or whitespace-only query
 shows every retained request. Keep matching in the full-list view only. When a
 non-empty query has no matches, show **No Quick Requests match your search.**
 Clearing the field restores all rows. Search does not change or persist records.
+After a confirmed deletion, remove the request from both the full list and
+recent navigation. If it was selected, keep the full-list destination visible.
 This is the full Quick Requests destination, not a
 separate generic History destination.
 

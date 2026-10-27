@@ -1,18 +1,10 @@
-import {
-  loadDocs,
-  readDoc,
-  renderDocContent,
-  renderDocContentMessage,
-  renderDocs,
-  renderDocsMessage,
-  selectDocPath,
-} from './docs-ui.js';
+import { loadDocs, readDoc } from './docs-ui.js';
 
 function ownerKey(owner) {
   return owner ? `${owner.type}:${owner.id}` : null;
 }
 
-export function createDocsController({ button, page, invoke, getOwner, onOpen }) {
+export function createDocsController({ invoke, getOwner, onOpen, view: ui }) {
   const currentOwnerKey = () => ownerKey(getOwner());
   let cached = null;
   let selectionVersion = 0;
@@ -20,36 +12,36 @@ export function createDocsController({ button, page, invoke, getOwner, onOpen })
   async function select(owner, documentPath) {
     const requestedKey = ownerKey(owner);
     const version = ++selectionVersion;
-    selectDocPath(page, documentPath);
-    renderDocContentMessage(page, 'Loading document…');
+    ui.setSelected(documentPath);
+    ui.setContentMessage('Loading document…');
     try {
       const documentRecord = await readDoc(invoke, owner.type, owner.id, documentPath);
       if (currentOwnerKey() !== requestedKey || version !== selectionVersion) return;
-      renderDocContent(page, documentRecord);
+      ui.setContent(documentRecord);
     } catch (error) {
       if (currentOwnerKey() !== requestedKey || version !== selectionVersion) return;
-      renderDocContentMessage(page, `Could not load document: ${String(error)}`);
+      ui.setContentMessage(`Could not load document: ${String(error)}`);
     }
   }
 
   async function refresh(owner = getOwner()) {
     if (!owner) {
-      button.disabled = true;
+      ui.setButtonDisabled(true);
       return;
     }
-    button.disabled = true;
+    ui.setButtonDisabled(true);
     try {
       const files = await loadDocs(invoke, owner.type, owner.id);
       if (currentOwnerKey() === ownerKey(owner)) {
         cached = { ownerKey: ownerKey(owner), files };
-        button.disabled = files.length === 0;
+        ui.setButtonDisabled(files.length === 0);
       }
     } catch {
       // Discovery failure is not evidence that there are no documents. Keep the
       // tab enabled so the user can open the centered error state and retry.
       if (currentOwnerKey() === ownerKey(owner)) {
         cached = null;
-        button.disabled = false;
+        ui.setButtonDisabled(false);
       }
     }
   }
@@ -58,11 +50,11 @@ export function createDocsController({ button, page, invoke, getOwner, onOpen })
     const owner = getOwner();
     if (!owner) return;
     const requestedKey = ownerKey(owner);
-    button.disabled = true;
-    button.classList.add('selected');
+    ui.setButtonDisabled(true);
+    ui.setButtonSelected(true);
     onOpen();
-    page.hidden = false;
-    renderDocsMessage(page, 'Loading documents…');
+    ui.setPageVisible(true);
+    ui.setPageMessage('Loading documents…');
     try {
       const files = cached?.ownerKey === requestedKey
         ? cached.files
@@ -70,22 +62,20 @@ export function createDocsController({ button, page, invoke, getOwner, onOpen })
       if (currentOwnerKey() !== requestedKey) return;
       if (!files.length) {
         cached = { ownerKey: requestedKey, files };
-        renderDocsMessage(page, 'No Markdown or text files were found.');
-        button.disabled = true;
+        ui.setPageMessage('No Markdown or text files were found.');
+        ui.setButtonDisabled(true);
         return;
       }
       cached = { ownerKey: requestedKey, files };
-      renderDocs(page, files, (documentPath) => { void select(owner, documentPath); });
+      ui.setFiles(files);
       await select(owner, files[0]);
-      if (currentOwnerKey() === requestedKey) button.disabled = false;
+      if (currentOwnerKey() === requestedKey) ui.setButtonDisabled(false);
     } catch (error) {
       if (currentOwnerKey() !== requestedKey) return;
-      renderDocsMessage(page, `Could not load documents: ${String(error)}`);
-      button.disabled = false;
+      ui.setPageMessage(`Could not load documents: ${String(error)}`);
+      ui.setButtonDisabled(false);
     }
   }
-
-  button.addEventListener('click', () => { void open(); });
 
   return {
     open,
@@ -96,8 +86,8 @@ export function createDocsController({ button, page, invoke, getOwner, onOpen })
       return select(owner, { path, repositoryId });
     },
     showTerminal() {
-      page.hidden = true;
-      button.classList.remove('selected');
+      ui.setPageVisible(false);
+      ui.setButtonSelected(false);
     },
   };
 }

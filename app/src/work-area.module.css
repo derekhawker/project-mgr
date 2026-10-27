@@ -1,0 +1,37 @@
+.quickRequests, .docs, .review {
+  color: var(--ui-text);
+  background: var(--ui-surface);
+}
+
+.quickRequests :global(.quick-request-row) {
+  border: 1px solid var(--ui-border-light);
+  border-radius: 0;
+  background: var(--ui-surface-raised);
+}
+
+.quickRequests :global(.quick-request-row .quick-request-delete) {
+  border-color: var(--ui-border);
+  color: var(--ui-error);
+  background: var(--ui-surface);
+}
+
+.docs :global(.docs-files), .review :global(.change-review-files) {
+  border-color: var(--ui-border-light);
+  background: var(--ui-background);
+}
+
+.docs :global(.docs-files button), .review :global(.change-review-files button) {
+  border-radius: 0;
+  color: var(--ui-text);
+}
+
+.docs :global(.docs-files button[aria-current="true"]),
+.review :global(.change-review-files button[aria-current="true"]) {
+  color: var(--ui-text);
+  background: var(--ui-surface-pressed);
+}
+
+.review :global(.change-review-mode button[aria-pressed="true"]) {
+  color: var(--ui-primary-text);
+  background: var(--ui-primary);
+}

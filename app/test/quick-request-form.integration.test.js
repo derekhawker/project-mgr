@@ -4,6 +4,9 @@ import { Window } from 'happy-dom';
 import { bindQuickRequestForm } from '../src/quick-request-form.js';
 import { task, session } from './command-fixtures.js';
 
+// Legacy DOM fallback/event binding only. Production uses the Solid signal view;
+// its nonvisual submit coverage lives in quick-request-form.test.js. These tests
+// do not mount WorkspaceOwnerPanel or establish native validation/rendering.
 function createForm(window) {
   window.document.body.innerHTML = `
     <form id="quick-request-form">
@@ -22,7 +25,7 @@ function createForm(window) {
   };
 }
 
-test('rendered Quick Request form submits through the production command boundary without resetting other UI state', async () => {
+test('legacy DOM Quick Request binding submits through the command boundary without resetting other UI state', async () => {
   const window = new Window();
   const controls = createForm(window);
   controls.promptInput.value = 'Keep my request context';
@@ -70,7 +73,7 @@ test('rendered Quick Request form submits through the production command boundar
   window.happyDOM.abort();
 });
 
-test('rendered Quick Request form retains the prompt and shows the boundary error on failed startup', async () => {
+test('legacy DOM Quick Request binding retains the prompt and shows the boundary error on failed startup', async () => {
   const window = new Window();
   const controls = createForm(window);
   controls.promptInput.value = 'Do not lose this on failure';

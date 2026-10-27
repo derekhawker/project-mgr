@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Window } from 'happy-dom';
-import { bindEnterToSubmit } from '../src/form-keyboard.js';
+import { handleEnterToSubmit } from '../src/form-keyboard.js';
 
 function setup() {
   const window = new Window();
@@ -10,13 +10,12 @@ function setup() {
   const textarea = form.querySelector('textarea');
   let submissions = 0;
   form.addEventListener('submit', (event) => { event.preventDefault(); submissions++; });
-  const dispose = bindEnterToSubmit(form);
-  return { window, form, textarea, submissions: () => submissions, dispose };
+  return { window, form, textarea, submissions: () => submissions, dispose() {} };
 }
 
 function keydown(window, textarea, options = {}) {
-  const event = new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true, ...options });
-  textarea.dispatchEvent(event);
+  const event = { key: 'Enter', target: textarea, currentTarget: textarea.form, shiftKey: false, isComposing: false, keyCode: 0, defaultPrevented: false, preventDefault() { this.defaultPrevented = true; }, ...options };
+  handleEnterToSubmit(event);
   return event;
 }
 

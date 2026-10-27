@@ -2670,21 +2670,16 @@ fn now_millis() -> i64 {
 fn append_initial_prompt_failure_log(
     directory: &std::path::Path,
     session_id: &str,
-    prompt: &str,
-    error: &str,
+    _prompt: &str,
+    _error: &str,
 ) -> std::io::Result<()> {
     std::fs::create_dir_all(directory)?;
-    let safe_error = if prompt.is_empty() {
-        error.to_owned()
-    } else {
-        error.replace(prompt, "[prompt redacted]")
-    };
     let entry = serde_json::json!({
         "timestamp": now_millis(),
         "level": "ERROR",
         "event": "initial_prompt_failed",
         "sessionId": session_id,
-        "error": safe_error,
+        "error": "initial prompt delivery failed; details withheld",
     });
     let mut log = OpenOptions::new()
         .create(true)
@@ -3782,7 +3777,7 @@ mod tests {
             directory.path(),
             "ses-failed",
             prompt,
-            &format!("OpenCode rejected {prompt}: connection refused"),
+            &format!("OpenCode rejected {prompt}: token=secret"),
         )
         .unwrap();
         let line = std::fs::read_to_string(directory.path().join("application.log")).unwrap();
@@ -3790,11 +3785,12 @@ mod tests {
         assert_eq!(entry["level"], "ERROR");
         assert_eq!(entry["event"], "initial_prompt_failed");
         assert_eq!(entry["sessionId"], "ses-failed");
-        assert!(entry["error"]
-            .as_str()
-            .unwrap()
-            .contains("[prompt redacted]"));
+        assert_eq!(
+            entry["error"],
+            "initial prompt delivery failed; details withheld"
+        );
         assert!(!line.contains(prompt));
+        assert!(!line.contains("secret"));
     }
 
     #[test]

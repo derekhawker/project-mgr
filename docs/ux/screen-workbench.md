@@ -28,11 +28,18 @@ card, fullscreen control, transcript, or persistent status panel.
 - Tabs belong to the selected Workspace. Restore exact recorded OpenCode session
   IDs and working directories; do not guess from the newest session in a
   directory. Users interact with OpenCode in the attached terminal.
+- Arrow keys move focus and selection through the selected Workspace's visible,
+  enabled session tabs, wrapping at either end; Home/End choose the first/last.
+  Hidden tabs belonging to other owners never participate. Returning to an owner
+  retains its remembered session, including a still-open tool terminal.
 - Change Review appears only when the Workspace has associated repositories.
   Docs lists Workspace-home and verified repository files. Both destinations
   leave terminal sessions available and return without stopping them.
 - Tools presents Workspace OS handoff actions before repository tools. Rust
   resolves and validates Workspace-owned paths; the GUI does not supply paths.
+  Tools uses the same disclosure menu as New work. Clicking outside closes it;
+  Escape closes it and returns focus to Tools. Tool action status remains visible
+  in the menu while an action runs.
   Tool terminals are separate interactive sessions and closing one stops only
   its process.
 - Workspace completion is a lifecycle change, not a commit, merge, or discard.

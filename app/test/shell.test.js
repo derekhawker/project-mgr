@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { repositoryDirectoryPage } from './command-fixtures.js';
+import { createApplicationShellView } from '../src/application-shell-view.js';
 import {
   checkOpenCodeRuntime,
   createSession,
@@ -153,17 +154,6 @@ test('task completion and cleanup adapters preserve command contracts and errors
   await assert.rejects(() => completeTask(() => Promise.reject(new Error('cannot reopen')), 'task-1'), /cannot reopen/);
 });
 
-function createShellView() {
-  const classes = [];
-  return {
-    connectionStatus: { textContent: '' },
-    connectionIndicator: { classList: { add: (name) => classes.push(name) } },
-    commandResult: { textContent: '' },
-    appVersion: { textContent: '' },
-    classes,
-  };
-}
-
 test('formats the app-owned Rust shell response for visible UI output', () => {
   assert.equal(
     formatShellResponse({
@@ -204,7 +194,11 @@ test('rejects responses that do not match the Rust command contract', () => {
 });
 
 test('invokes app_shell_info without a payload and maps a successful response to the visible shell', async () => {
-  const view = createShellView();
+  const view = createApplicationShellView();
+  assert.deepEqual(view.state(), {
+    connection: 'connecting', message: 'Contacting the Rust core…',
+    version: 'Version —', result: 'Waiting for app_shell_info…',
+  });
   const invocations = [];
   const response = {
     appName: 'OpenCode Project Manager',
@@ -218,18 +212,25 @@ test('invokes app_shell_info without a payload and maps a successful response to
       invocations.push(args);
       return Promise.resolve(response);
     },
-    ...view,
+    view,
   });
 
   assert.deepEqual(invocations, [['app_shell_info']]);
-  assert.equal(view.commandResult.textContent, formatShellResponse(response));
-  assert.equal(view.appVersion.textContent, 'Version 0.1.0');
-  assert.equal(view.connectionStatus.textContent, 'Connected to the Rust core');
-  assert.deepEqual(view.classes, ['is-connected']);
+  assert.deepEqual(view.state(), {
+    result: formatShellResponse(response), version: 'Version 0.1.0',
+    message: 'Connected to the Rust core', connection: 'connected',
+  });
+  // Terminal-close feedback uses the same production signal, not another DOM
+  // owner, and must preserve the connection/version fields.
+  view.setResult('Could not close terminal');
+  assert.deepEqual(view.state(), {
+    result: 'Could not close terminal', version: 'Version 0.1.0',
+    message: 'Connected to the Rust core', connection: 'connected',
+  });
 });
 
 test('shows Rust-reported storage unavailability without treating the core as disconnected', async () => {
-  const view = createShellView();
+  const view = createApplicationShellView();
   const invocations = [];
   const response = {
     appName: 'OpenCode Project Manager',
@@ -244,21 +245,18 @@ test('shows Rust-reported storage unavailability without treating the core as di
       invocations.push(args);
       return Promise.resolve(response);
     },
-    ...view,
+    view,
   });
 
   assert.deepEqual(invocations, [['app_shell_info']]);
-  assert.equal(view.commandResult.textContent, formatShellResponse(response));
-  assert.equal(view.appVersion.textContent, 'Version 0.1.0');
-  assert.equal(
-    view.connectionStatus.textContent,
-    'Rust core connected; management storage unavailable',
-  );
-  assert.deepEqual(view.classes, ['has-error']);
+  assert.deepEqual(view.state(), {
+    result: formatShellResponse(response), version: 'Version 0.1.0',
+    message: 'Rust core connected; management storage unavailable', connection: 'storage-error',
+  });
 });
 
 test('maps a rejected app_shell_info invocation to a visible connection error', async () => {
-  const view = createShellView();
+  const view = createApplicationShellView();
   const invocations = [];
   const error = new Error('invoke failed');
 
@@ -267,13 +265,14 @@ test('maps a rejected app_shell_info invocation to a visible connection error', 
       invocations.push(args);
       return Promise.reject(error);
     },
-    ...view,
+    view,
   });
 
   assert.deepEqual(invocations, [['app_shell_info']]);
-  assert.equal(view.connectionStatus.textContent, 'Could not connect to the Rust core');
-  assert.equal(view.commandResult.textContent, String(error));
-  assert.deepEqual(view.classes, ['has-error']);
+  assert.deepEqual(view.state(), {
+    message: 'Could not connect to the Rust core', connection: 'disconnected',
+    version: 'Version —', result: String(error),
+  });
 });
 
 test('checks the lazily-owned OpenCode runtime with the exact no-payload command contract', async () => {
@@ -830,7 +829,7 @@ test('Quick Request submit preserves surrounding UI state and clears only the pr
 
   const result = await submitQuickRequestFlow({
     invoke,
-    promptInput,
+    setPrompt: (text) => { promptInput.value = text; },
     promptText: promptInput.value,
     model: selectedModel,
     waitForTerminal: async () => events.push(['terminal-ready']),
@@ -866,7 +865,7 @@ test('Quick Request submit failure preserves entered prompt for recovery', async
       };
       throw new Error('prompt submission failed');
     },
-    promptInput,
+    setPrompt: (text) => { promptInput.value = text; },
     promptText: promptInput.value,
     model: { providerId: 'openai', id: 'gpt-6-luna' },
     waitForTerminal: async () => {},

@@ -8,6 +8,8 @@ editor.
 
 ## Layout and behavior
 
+- Use the gray work-area palette for the document list and reader; verify the
+  visual layout on Wayland.
 - Always show a **Docs** toolbar tab for a selected Workspace or Task. Disable
   it only after discovery confirms there are no matching files.
 - Find files ending in `.md` or `.txt` (case-insensitive) within the selected

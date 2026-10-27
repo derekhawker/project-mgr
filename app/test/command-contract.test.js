@@ -12,6 +12,47 @@ const handler = rust.match(/generate_handler!\s*\[([\s\S]*?)\]\)/)?.[1] || '';
 const rustCommands = [...handler.matchAll(/\b([a-z][a-z0-9_]*)\s*,?/g)].map((match) => match[1]);
 const rustAttributes = [...rust.matchAll(/#\[tauri::command(?:\([^]]*\))?\]\s*(?:pub\s+)?fn\s+([a-z][a-z0-9_]*)/g)].map((match) => match[1]);
 const html = readFileSync(join(process.cwd(), 'index.html'), 'utf8');
+const newWorkMenu = readFileSync(join(process.cwd(), 'src', 'new-work-menu.jsx'), 'utf8');
+const newWorkDialog = readFileSync(join(process.cwd(), 'src', 'new-work-dialog.jsx'), 'utf8');
+const ownerPanel = readFileSync(join(process.cwd(), 'src', 'workspace-owner-panel.jsx'), 'utf8');
+const appNotice = readFileSync(join(process.cwd(), 'src', 'app-notice.jsx'), 'utf8');
+const proposalRepositories = readFileSync(join(process.cwd(), 'src', 'proposal-repository-list.jsx'), 'utf8');
+const quickRequestHeading = readFileSync(join(process.cwd(), 'src', 'quick-request-heading.jsx'), 'utf8');
+const quickRequestHistoryPage = readFileSync(join(process.cwd(), 'src', 'quick-request-history-page.jsx'), 'utf8');
+const repositoryToolsMenu = readFileSync(join(process.cwd(), 'src', 'repository-tools-menu.jsx'), 'utf8');
+const directoriesPageMarkup = readFileSync(join(process.cwd(), 'src', 'directories-page.jsx'), 'utf8');
+const workbenchShell = readFileSync(join(process.cwd(), 'src', 'workbench-shell.jsx'), 'utf8');
+const rightContentShell = readFileSync(join(process.cwd(), 'src', 'right-content-shell.jsx'), 'utf8');
+const commandResult = readFileSync(join(process.cwd(), 'src', 'command-result.jsx'), 'utf8');
+const applicationShellStatus = readFileSync(join(process.cwd(), 'src', 'application-shell-status.jsx'), 'utf8');
+const applicationShellView = readFileSync(join(process.cwd(), 'src', 'application-shell-view.js'), 'utf8');
+const shell = readFileSync(join(process.cwd(), 'src', 'shell.js'), 'utf8');
+const main = readFileSync(join(process.cwd(), 'src', 'main.js'), 'utf8');
+const directoriesNavigationButton = readFileSync(join(process.cwd(), 'src', 'directories-navigation-button.jsx'), 'utf8');
+const uiMarkup = `${html}\n${workbenchShell}\n${rightContentShell}\n${newWorkMenu}\n${newWorkDialog}\n${ownerPanel}\n${appNotice}\n${proposalRepositories}\n${quickRequestHeading}\n${quickRequestHistoryPage}\n${repositoryToolsMenu}\n${directoriesPageMarkup}\n${directoriesNavigationButton}\n${commandResult}\n${applicationShellStatus}`;
+
+test('startup and command result feedback share the production Solid shell view', () => {
+  assert.match(html, /<div id="application-status-root"><\/div>/);
+  assert.match(applicationShellStatus, /<div class="response-panel" id="response-panel-root">/);
+  assert.match(commandResult, /id="command-result" class="command-result">\{message\(\)\}/);
+  assert.match(applicationShellView, /result: 'Waiting for app_shell_info…'/);
+  assert.match(main, /const shellView = createApplicationShellView\(\)/);
+  assert.match(main, /loadApplicationShell\(\{ invoke, view: shellView \}\)/);
+  assert.match(main, /ApplicationShellStatus\(\{ state: shellView.state \}\)/);
+  assert.match(applicationShellStatus, /<CommandResult message=\{\(\) => state\(\).result\} \/>/);
+  assert.match(main, /const setCommandResultMessage = shellView.setResult/);
+  assert.equal((main.match(/setCommandResultMessage\(message\)/g) || []).length, 2);
+  assert.doesNotMatch(`${main}\n${shell}`, /(?:commandResult|connectionStatus|appVersion)\.textContent\s*=|connectionIndicator\.classList/);
+});
+
+test('production islands, native subscriptions and polling share one page lifetime, not navigation scopes', () => {
+  assert.match(main, /const appLifetime = createApplicationLifetime\(/);
+  assert.match(main, /const renderSolid = appLifetime\.mount/);
+  assert.match(main, /export const terminalRuntime = appLifetime\.start\(/);
+  assert.match(main, /import\.meta\.hot\.dispose\(\(\) => appLifetime\.dispose\(\)\)/);
+  assert.equal((main.match(/appLifetime\.dispose\(/g) || []).length, 1);
+  assert.doesNotMatch(main, /\b(?:render|listen|setInterval)\(/);
+});
 
 test('checked-in command inventory has one contract for every registered Rust command', () => {
   assert.deepEqual([...COMMAND_NAMES].sort(), [...rustCommands].sort());
@@ -19,109 +60,423 @@ test('checked-in command inventory has one contract for every registered Rust co
   assert.equal(COMMAND_NAMES.length, 76);
 });
 
-test('production main-screen selectors resolve to rendered HTML elements', () => {
+test('production main-screen selectors resolve to HTML or Solid-rendered elements', () => {
   const main = readFileSync(join(process.cwd(), 'src', 'main.js'), 'utf8');
+  const controller = readFileSync(join(process.cwd(), 'src', 'workspace-creation-controller.js'), 'utf8');
+  const lifecycle = readFileSync(join(process.cwd(), 'src', 'workspace-lifecycle-controller.js'), 'utf8');
   const referencedIds = [...main.matchAll(/querySelector\(['"]#([a-zA-Z0-9_-]+)/g)].map((match) => match[1]);
-  const renderedIds = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]));
-  assert.deepEqual([...new Set(referencedIds)].filter((id) => !renderedIds.has(id)), []);
+  const renderedIds = new Set([...uiMarkup.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]));
+  assert.deepEqual([...new Set(referencedIds)].filter((id) => !renderedIds.has(id) && id !== 'add-repository-directories'), []);
 });
 
-test('workspace creation reports live setup steps and renders error details as text', () => {
+test('session tab keyboard behavior belongs to the Solid presentation boundary', () => {
   const main = readFileSync(join(process.cwd(), 'src', 'main.js'), 'utf8');
-  assert.match(html, /id="new-work-progress"[\s\S]*id="new-work-progress-steps"/);
-  assert.match(html, /id="new-work-prompt"[\s\S]*id="new-work-progress"/);
-  assert.match(main, /newWorkPrompt\.after\(progressPanel\)/);
-  assert.match(main, /progressAnchor\.after\(progressPanel\)/);
-  assert.match(main, /listen\('workspace-setup-progress'/);
-  assert.match(main, /row\.detail\.querySelector\('pre'\)\.textContent = detail/);
-  assert.match(main, /Workspace create[\s\S]*failed/);
+  const component = readFileSync(join(process.cwd(), 'src', 'session-tab-list.jsx'), 'utf8');
+  const shell = readFileSync(join(process.cwd(), 'src', 'workbench-shell.jsx'), 'utf8');
+  assert.match(shell, /role="tablist"[^>]*onKeyDown=\{props\.onSessionTabKeydown\}/);
+  assert.doesNotMatch(component, /onKeyDown=/);
+  assert.doesNotMatch(main, /sessionTabs\.querySelector|\.classList\.contains\(['"]selected['"]\)/);
+  assert.doesNotMatch(component, /querySelector|\.click\(/);
+});
+
+test('legacy archive restore busy presentation is Solid-owned and callback receives only the record', () => {
+  const main = readFileSync(join(process.cwd(), 'src', 'main.js'), 'utf8');
+  const component = readFileSync(join(process.cwd(), 'src', 'legacy-archives-list.jsx'), 'utf8');
+  assert.match(component, /disabled=\{Boolean\(archive\.restoredAt\) \|\| props\.isRestoring\(archive\.taskId\)\}/);
+  assert.match(component, /onClick=\{\(\) => props\.onRestore\(archive\)\}/);
+  assert.match(main, /isRestoring: \(taskId\) => restoringLegacyArchives\(\)\.has\(taskId\)/);
+  assert.match(main, /onRestore: \(archive\) => void restoreLegacyArchiveRecord\(archive\)/);
+  assert.doesNotMatch(main, /button\.disabled\s*=/);
+});
+
+test('repository tool action status and availability are Solid-owned', () => {
+  const main = readFileSync(join(process.cwd(), 'src', 'main.js'), 'utf8');
+  const controller = readFileSync(join(process.cwd(), 'src', 'repository-tools-controller.js'), 'utf8');
+  assert.match(repositoryToolsMenu, /createSignal\('Dependencies missing · npm install'\)/);
+  assert.match(repositoryToolsMenu, /role="status"[^>]*hidden=\{handoffHidden\(\)\}/);
+  assert.match(repositoryToolsMenu, /disabled=\{handoffDisabled\(\)\}/);
+  assert.match(main, /createRepositoryToolsController\(/);
+  assert.match(main, /\.\.\.createRepositoryToolsActionForwarders\(repositoryToolActions\)/);
+  assert.doesNotMatch(main, /\.\.\.repositoryToolActions\(\)/);
+  assert.match(controller, /onHandoff: async \(action, view\)/);
+  assert.match(controller, /onInstall: async \(repository, view\)/);
+  assert.match(controller, /view\.setStatus\('Starting npm install…'\)/);
+  assert.match(controller, /view\.setDisabled\(true\)/);
+});
+
+test('Directories repository toggle pending and checked state are Solid-owned', () => {
+  const main = readFileSync(join(process.cwd(), 'src', 'main.js'), 'utf8');
+  const controller = readFileSync(join(process.cwd(), 'src', 'repository-tools-controller.js'), 'utf8');
+  const component = readFileSync(join(process.cwd(), 'src', 'repository-directories.jsx'), 'utf8');
+  assert.match(component, /checked=\{entry\.enabled\}/);
+  assert.match(component, /disabled=\{props\.pendingRepositoryId\(\) === entry\.repository\.id\}/);
+  assert.match(component, /onChange=\{\(event\) => props\.onToggle\(entry\.repository, event\.currentTarget\.checked\)\}/);
+  assert.match(main, /setPendingRepositoryId\(repository\.id\)[\s\S]*setRepositoryEnabled\(invoke, repository\.id, enabled\)[\s\S]*await refreshDirectories\(\)[\s\S]*await refreshCatalog\(\)[\s\S]*setRepositoryStatus\(formatWorkspaceError\('Update repository', error\)\)[\s\S]*setPendingRepositoryId\(null\)/);
+  assert.doesNotMatch(main, /checkbox\.(?:disabled|checked)\s*=/);
+});
+
+test('Workspace lifecycle clicks bind through the Solid owner panel to guarded controller callbacks', () => {
+  const main = readFileSync(join(process.cwd(), 'src', 'main.js'), 'utf8');
+  const lifecycle = readFileSync(join(process.cwd(), 'src', 'workspace-lifecycle-controller.js'), 'utf8');
+  assert.match(ownerPanel, /id="complete-workspace"[^>]*onClick=\{props\.onCompleteWorkspace\}/);
+  assert.match(ownerPanel, /id="reactivate-workspace"[^>]*onClick=\{props\.onReactivateWorkspace\}/);
+  assert.match(ownerPanel, /id="complete-workspace"[^>]*disabled=\{props\.completeWorkspaceDisabled\(\)\}/);
+  assert.match(ownerPanel, /id="reactivate-workspace"[^>]*disabled=\{props\.reactivateWorkspaceDisabled\(\)\}/);
+  assert.match(main, /setCompleteWorkspaceDisabled\(workspace\.status !== 'active'\)/);
+  assert.match(main, /setReactivateWorkspaceDisabled\(workspace\.status !== 'completed'\)/);
+  assert.doesNotMatch(main, /#(?:complete|reactivate)-workspace['"]\)\.disabled\s*=/);
+  assert.match(main, /onCompleteWorkspace: \(\) => handleCompleteWorkspace\(\)/);
+  assert.match(main, /onReactivateWorkspace: \(\) => handleReactivateWorkspace\(\)/);
+  assert.doesNotMatch(main, /#(?:complete|reactivate)-workspace['"]\)\.addEventListener/);
+  assert.match(main, /handleCompleteWorkspace, handleReactivateWorkspace/);
+  assert.match(lifecycle, /workspace\.status !== 'active'[\s\S]*completeWorkspace\(invoke, workspace\.id\)[\s\S]*await refreshNavigation\(\)[\s\S]*selectWorkspace\(result, getNavigationData\(\)\)/);
+  assert.match(lifecycle, /workspace\.status !== 'completed'[\s\S]*reactivateWorkspace\(invoke, workspace\.id\)[\s\S]*await refreshNavigation\(\)[\s\S]*selectWorkspace\(result, getNavigationData\(\)\)/);
+});
+
+test('repository attach click binds through the Solid owner panel to its controller workflow', () => {
+  const main = readFileSync(join(process.cwd(), 'src', 'main.js'), 'utf8');
+  const directoriesController = readFileSync(join(process.cwd(), 'src', 'directories-controller.js'), 'utf8');
+  assert.match(ownerPanel, /id="attach-repository"[^>]*hidden=\{props\.quickRequest\(\)\} disabled=\{props\.attachRepositoryDisabled\(\)\} onClick=\{props\.onAttachRepository\}/);
+  assert.match(main, /onAttachRepository: handleAttachRepository/);
+  assert.doesNotMatch(main, /#attach-repository['"]\)\?\.addEventListener/);
+  assert.match(ownerPanel, /id="attach-repository-select"[^>]*value=\{props\.selectedAttachRepository\(\)\} onChange=\{props\.onAttachRepositoryChange\}/);
+  assert.match(ownerPanel, /Select an enabled repository[\s\S]*For each=\{props\.attachRepositoryOptions\(\)\}/);
+  assert.match(main, /async function refreshCatalog\(\) \{ return directoriesController\.refreshCatalog\(\); \}/);
+  assert.match(directoriesController, /repositories\.map\(\(repository\) => \(\{ id: repository\.id, label: `\$\{repository\.name\} — \$\{repository\.repositoryPath\}` \}\)\)[\s\S]*setAttachRepositoryOptions\(options\)[\s\S]*setSelectedAttachRepository\(''\)/);
+  assert.doesNotMatch(main, /#attach-repository-select|repositorySelect\.(?:replaceChildren|value)/);
+  assert.match(main, /async function handleAttachRepository\(\) \{ return directoriesController\.attach\(\); \}/);
+  assert.match(directoriesController, /if \(!workspace\)[\s\S]*Select a workspace first\.[\s\S]*getRepositoryCatalog\(\)[\s\S]*selectedAttachRepository\(\)[\s\S]*Select an enabled repository first\.[\s\S]*Attaching repository…[\s\S]*attachRepository\(invoke, workspace\.id, repository\.id\)[\s\S]*Attached independent workspace clone of \$\{repository\.name\}[\s\S]*Repository setup needs attention[\s\S]*await refreshNavigation\(\)[\s\S]*void refreshDocsAvailability\(\)[\s\S]*formatWorkspaceError\('Attach', error\)/);
+});
+
+test('Workspace action disabled state is presented by owner-panel Solid signals', () => {
+  const main = readFileSync(join(process.cwd(), 'src', 'main.js'), 'utf8');
+  assert.match(ownerPanel, /id="attach-repository"[^>]*disabled=\{props\.attachRepositoryDisabled\(\)\}/);
+  assert.match(ownerPanel, /id="workspace-session-submit"[^>]*disabled=\{props\.workspaceSessionSubmitDisabled\(\) \|\| props\.terminalRuntimeStartupFailed\(\)\}/);
+  assert.match(main, /function syncWorkspaceActionDisabled\(\)[\s\S]*setAttachRepositoryDisabled\(!activeWorkspace\)[\s\S]*setWorkspaceSessionSubmitDisabled\(!modelsReady \|\| !activeWorkspace \|\| workspaceSessionSubmissionBusy\)/);
+  assert.doesNotMatch(main, /(?:#attach-repository|#workspace-session-submit)['"]\)\.disabled\s*=/);
+});
+
+test('Workspace planning prompt is Solid-owned and passed unchanged to session creation', () => {
+  const main = readFileSync(join(process.cwd(), 'src', 'main.js'), 'utf8');
+  assert.match(ownerPanel, /id="workspace-prompt"[^>]*placeholder="Inspect the workspace and plan the next step"[^>]*value=\{props\.workspacePrompt\(\)\} onInput=\{\(event\) => props\.onWorkspacePromptInput\(event\.currentTarget\.value\)\}/);
+  assert.match(main, /const \[workspacePrompt, setWorkspacePrompt\] = createSignal\(''\)/);
+  assert.match(main, /onWorkspacePromptInput: setWorkspacePrompt/);
+  assert.match(main, /createWorkspaceSession, invoke, getSelectedWorkspace: \(\) => selectedWorkspace/);
+  assert.match(readFileSync(new URL('../src/workspace-session-form-controller.js', import.meta.url), 'utf8'), /createWorkspaceSession\(invoke, workspace\.id, getPrompt\(\), selectedModel\)/);
+  assert.doesNotMatch(main, /#workspace-prompt/);
+});
+
+test('proposal owner mode is presented and identified through the Solid signal', () => {
+  const main = readFileSync(join(process.cwd(), 'src', 'main.js'), 'utf8');
+  const controller = readFileSync(join(process.cwd(), 'src', 'new-work-proposal-controller.js'), 'utf8');
+  assert.match(ownerPanel, /classList=\{\{ 'proposal-mode': props\.proposalMode\(\) \}\}/);
+  assert.match(main, /const \[proposalMode, setProposalMode\] = createSignal\(false\)/);
+  assert.match(main, /if \(proposalSessionId && proposalMode\(\)\) return 'proposal'/);
+  assert.match(main, /setProposalSessionId: \(sessionId\) => \{ proposalSessionId = sessionId; \}/);
+  assert.match(controller, /setProposalSessionId\(started\.sessionId\);\s*setProposalMode\(true\)/);
+  assert.doesNotMatch(main, /classList\.(?:add|remove|contains)\(['"]proposal-mode/);
+});
+
+test('Quick Request model and submit disabled/busy attributes are Solid-owned', () => {
+  const main = readFileSync(join(process.cwd(), 'src', 'main.js'), 'utf8');
+  assert.match(ownerPanel, /id="quick-model"[^>]*aria-busy=\{String\(props\.modelBusy\(\)\)\} disabled=\{props\.modelDisabled\(\)\}/);
+  assert.match(ownerPanel, /id="quick-submit"[^>]*disabled=\{props\.quickRequestBusy\(\) \|\| props\.modelDisabled\(\) \|\| props\.modelError\(\) \|\| props\.terminalRuntimeStartupFailed\(\)\}/);
+  assert.match(ownerPanel, /id="quick-request-form"[^>]*hidden aria-busy=\{String\(props\.quickRequestBusy\(\)\)\} onSubmit=\{props\.onQuickRequestSubmit\} onKeyDown=\{props\.onEnterToSubmit\}/);
+  assert.match(ownerPanel, /id="quick-prompt"[^>]*required[^>]*value=\{props\.quickPrompt\(\)\} onInput=\{\(event\) => props\.onQuickPromptInput\(event\.currentTarget\.value\)\}/);
+  assert.match(main, /const quickRequestFormView = createQuickRequestFormView\(\)/);
+  assert.match(main, /quickPrompt: quickRequestFormView\.getPrompt,[\s\S]*onQuickPromptInput: quickRequestFormView\.setPrompt,[\s\S]*quickRequestBusy: quickRequestFormView\.isBusy/);
+  assert.match(main, /createQuickRequestSubmitHandler\(\{\s*view: quickRequestFormView,\s*getSelectedModel: quickSelectedModel/);
+  assert.doesNotMatch(main, /querySelector\(['"]#quick-(?:prompt|submit|request-form)['"]\)/);
+  assert.match(main, /setTerminalRuntimeStartupFailed\(true\)/);
+  assert.doesNotMatch(main, /querySelectorAll\('button'\)/);
+  assert.match(main, /function setModelControls\(ready\)\s*\{\s*modelsReady = ready;\s*syncWorkspaceActionDisabled\(\);\s*\}/);
+  assert.doesNotMatch(main, /\bmodel\.disabled\s*=|\bmodel\.setAttribute\(['"]aria-busy['"]|\bsubmit\.disabled\s*=/);
+});
+
+test('New-work dialog class and accessible name derive from Solid view and proposal state', () => {
+  const main = readFileSync(join(process.cwd(), 'src', 'main.js'), 'utf8');
+  assert.match(newWorkDialog, /classList=\{\{ 'proposal-open': props\.reviewVisible\(\) \}\}/);
+  assert.match(newWorkDialog, /aria-label=\{props\.reviewVisible\(\) \? proposal\(\)\.title : labels\(\)\[2\]\}/);
+  assert.doesNotMatch(main, /newWorkDialog\.(?:classList|setAttribute)/);
+  assert.match(main, /newWorkDialog\.showModal\(\)/);
+  assert.match(main, /newWorkDialog\.close\(\)/);
+});
+
+test('New-work capture alert is rendered from its Solid signal and controller setters', () => {
+  const main = readFileSync(join(process.cwd(), 'src', 'main.js'), 'utf8');
+  const dialogController = readFileSync(join(process.cwd(), 'src', 'new-work-dialog-controller.js'), 'utf8');
+  const controller = readFileSync(join(process.cwd(), 'src', 'new-work-proposal-controller.js'), 'utf8');
+  assert.match(newWorkDialog, /id="new-work-error"[^>]*role="alert">\{props\.captureError\(\)\}<\/p>/);
+  assert.match(main, /const \[newWorkCaptureError, setNewWorkCaptureError\] = createSignal\(''\)/);
+  assert.match(main, /captureError: newWorkCaptureError/);
+  assert.match(main, /setCaptureError: setNewWorkCaptureError/);
+  assert.match(dialogController, /setCaptureError\(''\)/);
+  assert.match(main, /clearError: \(\) => setNewWorkCaptureError\(''\)/);
+  assert.match(controller, /setCaptureError\(formatWorkspaceError\('Prepare proposal', failure\)\)/);
+  assert.doesNotMatch(main, /#new-work-error['"]\)\.textContent\s*=/);
+});
+
+test('New-work proposal-create disabled presentation is Solid-owned', () => {
+  const main = readFileSync(join(process.cwd(), 'src', 'main.js'), 'utf8');
+  const controller = readFileSync(join(process.cwd(), 'src', 'quick-request-creation-controller.js'), 'utf8');
+  assert.match(newWorkDialog, /id="proposal-create" disabled=\{props\.proposalCreateDisabled\(\)\} onClick=\{props\.onConfirm\}/);
+  assert.match(main, /proposalCreateDisabled, /);
+  assert.doesNotMatch(main, /proposalCreate\.disabled\s*=/);
+  assert.match(controller, /finally\s*\{[\s\S]*setCreateDisabled\(ownerCreated[\s\S]*quickRequestDirectoryReady\(\)/);
+});
+
+test('New-work proposal model selector disabled state is Solid-owned', () => {
+  const main = readFileSync(join(process.cwd(), 'src', 'main.js'), 'utf8');
+  assert.match(newWorkDialog, /id="proposal-model" required disabled=\{props\.proposalModelDisabled\(\)\} aria-busy=\{props\.proposalModelDisabled\(\) \? 'true' : undefined\} value=\{props\.proposalSelectedModel\(\)\}/);
+  assert.match(main, /const \[proposalModelDisabled, setProposalModelDisabled\] = createSignal\(true\)/);
+  assert.match(main, /proposalModelDisabled,/);
+  assert.match(main, /setProposalModelDisabled\(true\)/);
+  assert.match(main, /view: \{[\s\S]*setProposalModels\(options\); setProposalSelectedModel\(selected\); setProposalModelDisabled\(false\)/);
+  assert.doesNotMatch(main, /proposalModel\.(?:replaceChildren|value)|proposalModel\.options/);
+  assert.doesNotMatch(main, /proposalModel\.disabled\s*=/);
+});
+
+test('New-work capture Continue busy state is Solid-owned by controller setters', () => {
+  const main = readFileSync(join(process.cwd(), 'src', 'main.js'), 'utf8');
+  const controller = readFileSync(join(process.cwd(), 'src', 'new-work-proposal-controller.js'), 'utf8');
+  const quickRequestController = readFileSync(join(process.cwd(), 'src', 'quick-request-creation-controller.js'), 'utf8');
+  assert.match(newWorkDialog, /type="submit" disabled=\{props\.captureDisabled\(\)\}>Continue/);
+  assert.match(main, /const \[newWorkCaptureDisabled, setNewWorkCaptureDisabled\] = createSignal\(false\)/);
+  assert.match(main, /captureDisabled: newWorkCaptureDisabled/);
+  assert.match(controller, /const originalPrompt = getOriginalPrompt\(\);[\s\S]*if \(!originalPrompt\.trim\(\)\) return;[\s\S]*setBusy\(true\)[\s\S]*finally \{[\s\S]*setBusy\(false\)/);
+  assert.doesNotMatch(main, /#new-work-capture button\[type="submit"\]|continueButton\.disabled/);
+});
+
+test('New-work original prompt is Solid-owned and passed unchanged through capture and Quick Request confirmation', () => {
+  const main = readFileSync(join(process.cwd(), 'src', 'main.js'), 'utf8');
+  const controller = readFileSync(join(process.cwd(), 'src', 'new-work-proposal-controller.js'), 'utf8');
+  const quickRequestController = readFileSync(join(process.cwd(), 'src', 'quick-request-creation-controller.js'), 'utf8');
+  const dialogController = readFileSync(join(process.cwd(), 'src', 'new-work-dialog-controller.js'), 'utf8');
+  assert.match(newWorkDialog, /id="new-work-prompt" required rows="3" placeholder="Describe the workspace" value=\{props\.prompt\(\)\} onInput=\{\(event\) => props\.setPrompt\(event\.currentTarget\.value\)\}/);
+  assert.match(main, /const \[newWorkPromptValue, setNewWorkPromptValue\] = createSignal\(''\)/);
+  assert.match(main, /prompt: newWorkPromptValue,[\s\S]*setPrompt: setNewWorkPromptValue/);
+  assert.match(main, /const \{ open: openNewWork[\s\S]*\} = newWorkDialogController/);
+  assert.match(main, /setPrompt: setNewWorkPromptValue/);
+  assert.match(dialogController, /setPrompt\(''\)/);
+  assert.match(controller, /runNewWorkProposal\([\s\S]*originalPrompt[\s\S]*renderProposal\(proposal, originalPrompt\)/);
+  assert.match(quickRequestController, /originalPrompt: getOriginalPrompt\(\)/);
+  assert.doesNotMatch(main, /newWorkPrompt\.value/);
+});
+
+test('Change Review toolbar availability and selection are WorkbenchShell state', () => {
+  const main = readFileSync(join(process.cwd(), 'src', 'main.js'), 'utf8');
+  const controller = readFileSync(join(process.cwd(), 'src', 'change-review-controller.js'), 'utf8');
+  assert.match(workbenchShell, /hidden=\{!props\.changeReviewAvailable\(\)\}/);
+  assert.match(workbenchShell, /props\.changeReviewSelected\(\)/);
+  assert.match(workbenchShell, /onClick=\{props\.onOpenChangeReview\}/);
+  assert.match(main, /onOpenChangeReview: \(event\) => handleChangeReviewClick\(event\)/);
+  assert.match(controller, /async function handleChangeReviewClick\(event\)[\s\S]*if \(!workspace \|\| !getSelectedOwnerRepositoryCount\(\)\) return;[\s\S]*setChangeReviewDisabled\(true\)[\s\S]*await loadChangeReview\(invoke, ownerType, ownerId\)[\s\S]*getSelectedWorkspace\(\)\?\.id !== ownerId[\s\S]*setChangeReviewDisabled\(false\)/);
+  assert.doesNotMatch(main, /changeReviewButton\.addEventListener/);
+  assert.match(controller, /setChangeReviewAvailable\(available\)/);
+  assert.doesNotMatch(main, /changeReviewButton\.(?:hidden|classList)/);
+});
+
+test('Docs toolbar disabled state is presented by WorkbenchShell from its Solid signal', () => {
+  const main = readFileSync(join(process.cwd(), 'src', 'main.js'), 'utf8');
+  assert.match(workbenchShell, /disabled=\{props\.docsDisabled\(\)\}/);
+  assert.match(workbenchShell, /disabled=\{props\.changeReviewDisabled\(\)\}/);
+  assert.doesNotMatch(main, /changeReviewButton\.disabled/);
+  assert.match(main, /const \[changeReviewDisabled, setChangeReviewDisabled\] = createSignal\(false\)/);
+  assert.match(main, /const docsView = createDocsView\(\)/);
+  assert.match(main, /buttonDisabled: docsDisabled/);
+  assert.match(main, /view: docsView/);
+  assert.match(main, /DocsPane\(\{\s*\.\.\.docsView/);
+  const pane = readFileSync(join(process.cwd(), 'src', 'docs-pane.jsx'), 'utf8');
+  assert.match(pane, /createDocContentAdapter\(document\.defaultView\)/);
+  assert.doesNotMatch(readFileSync(join(process.cwd(), 'src', 'docs-controller.js'), 'utf8'), /button\.disabled\s*=\s*(?:true|false|files\.length)/);
+});
+
+test('Tools toolbar disabled state is presented by the repository-tools component from a Solid signal', () => {
+  const main = readFileSync(join(process.cwd(), 'src', 'main.js'), 'utf8');
+  const controller = readFileSync(join(process.cwd(), 'src', 'repository-tools-controller.js'), 'utf8');
+  assert.match(repositoryToolsMenu, /triggerId="show-repo-tools"[\s\S]*disabled=\{props\.disabled\(\)\} hidden=\{!props\.available\(\)\} open=\{props\.open\(\)\}/);
+  assert.match(main, /const \[repositoryToolsDisabled, setRepositoryToolsDisabled\] = createSignal\(false\)/);
+  assert.match(main, /disabled: repositoryToolsDisabled/);
+  assert.match(controller, /setDisabled\(true\)[\s\S]*finally \{ setDisabled\(false\); \}/);
+  assert.doesNotMatch(main, /repoToolsButton\.disabled/);
+});
+
+test('New-work progress is composed by Solid with shared rows, not a reparented child root', () => {
+  const main = readFileSync(join(process.cwd(), 'src', 'main.js'), 'utf8');
+  const controller = readFileSync(join(process.cwd(), 'src', 'workspace-creation-controller.js'), 'utf8');
+  const progress = readFileSync(join(process.cwd(), 'src', 'setup-progress-list.jsx'), 'utf8');
+  assert.match(progress, /id="new-work-progress"[^>]*hidden=\{!props\.visible\(\)\}[^>]*aria-label="Setup progress" aria-live="polite"/);
+  assert.match(progress, /id="new-work-progress-steps"><SetupProgressList rows=\{props\.rows\} \/>/);
+  assert.match(newWorkDialog, /newWorkProgressDestination\(\s*props\.captureVisible\(\), props\.reviewVisible\(\), proposal\(\)\.workType/);
+  for (const destination of ['capture', 'workspace', 'quick_request']) {
+    assert.ok(newWorkDialog.includes(`<Show when={progressDestination() === '${destination}'}>`));
+  }
+  assert.equal((newWorkDialog.match(/<SetupProgressPanel visible=\{props\.progressVisible\} rows=\{props\.progressRows\} \/>/g) || []).length, 3);
+  assert.match(main, /progressRows,[\s\S]*captureError: newWorkCaptureError/);
+  assert.match(main, /setProgressVisible\(true\)/);
+  assert.doesNotMatch(main, /progressPanel|progressSteps|progressAnchor|renderSolid\(\(\) => SetupProgressList/);
+  assert.match(main, /\['workspace-setup-progress',/);
+  assert.match(main, /setProgressRows\(\(rows\) => new Map\(rows\)\.set\(key, \{ label, status, detail \}\)\)/);
+  assert.match(progress, /<pre>\{row\.detail \|\| ''\}<\/pre>/);
+  assert.match(controller, /Workspace create[\s\S]*failed/);
+});
+
+test('Workspace navigation owns its list and busy attribute through Solid', () => {
+  const main = readFileSync(join(process.cwd(), 'src', 'main.js'), 'utf8');
+  const navigation = readFileSync(join(process.cwd(), 'src', 'workspace-navigation.jsx'), 'utf8');
+  assert.match(html, /id="workspace-navigation-root"/);
+  assert.doesNotMatch(html, /id="workspace-list"/);
+  assert.match(navigation, /<ul id="workspace-list" aria-busy=\{String\(props\.busy\(\)\)\}>/);
+  assert.match(main, /const \[navigationBusy, setNavigationBusy\] = createSignal\(true\)/);
+  assert.match(main, /busy: navigationBusy/);
+  assert.match(main, /setNavigationBusy,/);
+  assert.doesNotMatch(main, /workspaceList|querySelector\(['"]#workspace-list['"]\)/);
 });
 
 test('repository directory management is a page opened from top navigation', () => {
   const nav = html.match(/<aside class="navigation"[\s\S]*?<\/aside>/)?.[0] || '';
-  assert.match(nav, /id="show-directories"/);
-  assert.match(html, /id="directories-page"[\s\S]*id="add-repository-directories"/);
-  assert.match(html, /id="repository-library-form"[\s\S]*id="repository-library-path"[\s\S]*id="choose-repository-library"/);
-  assert.match(html, /id="directory-list"/);
+  assert.match(nav, /id="show-directories-root"/);
+  assert.match(directoriesNavigationButton, /id="show-directories"[^>]*aria-label="Open directories"[^>]*onClick=\{props\.onOpen\}>☰ Directories/);
+  assert.match(rightContentShell, /id="directories-page-root"/);
+  const directoriesPage = readFileSync(join(process.cwd(), 'src', 'directories-page.jsx'), 'utf8');
+  const main = readFileSync(join(process.cwd(), 'src', 'main.js'), 'utf8');
+  const controller = readFileSync(join(process.cwd(), 'src', 'directories-controller.js'), 'utf8');
+  assert.match(directoriesPage, /id="directories-page"[\s\S]*id="directories-library-form-root"[\s\S]*id="directory-list"[\s\S]*id="directories-back"/);
+  assert.match(directoriesPage, /hidden={!props\.visible\(\)}/);
+  assert.match(directoriesPage, /id="repository-status" role="status" aria-live="polite">\{props\.status\(\)\}/);
+  assert.match(main, /const \[repositoryStatus, setRepositoryStatus\] = createSignal\(''\)/);
+  assert.match(main, /DirectoriesPage\(\{ visible: directoriesVisible, status: repositoryStatus/);
+  assert.doesNotMatch(main, /querySelector\(['"]#repository-status['"]\)[^;\n]*textContent\s*=/);
+  assert.match(main, /const \[directoriesVisible, setDirectoriesVisible\] = createSignal\(false\)/);
+  assert.match(main, /directoriesController\.showPage\(\)/);
+  assert.match(controller, /setFullRequestVisible\(false\); setDirectoriesVisible\(true\)/);
+  assert.match(main, /DirectoriesNavigationButton\(\{ onOpen:/);
+  assert.match(main, /directoriesController\.returnFromPage\(\)/);
+  assert.match(controller, /function returnFromPage\(\) \{ setDirectoriesVisible\(false\);/);
+  assert.doesNotMatch(main, /#directories-page['"]\)\.hidden/);
+  assert.match(directoriesPage, /id="directories-library-form-root"/);
+  const directoriesForm = readFileSync(join(process.cwd(), 'src', 'directories-library-form.jsx'), 'utf8');
+  assert.match(directoriesForm, /id="repository-library-form"[\s\S]*id="repository-library-path"[\s\S]*id="choose-repository-library"/);
+  assert.match(directoriesForm, /id="add-repository-directories"[^>]*disabled=\{props\.addingDirectories\(\)\}/);
+  assert.match(main, /const \[repositoryDirectoriesBusy, setRepositoryDirectoriesBusy\] = createSignal\(false\)/);
+  assert.match(main, /addingDirectories: repositoryDirectoriesBusy/);
+  assert.doesNotMatch(main, /add-repository-directories['"]\)\.disabled/);
+  assert.match(directoriesPage, /id="directory-list"/);
   assert.doesNotMatch(html, /id="disallowed-repository-list"|id="repository-list"/);
   assert.doesNotMatch(html, /id="scan-path"|id="scan-repositories"/);
 });
 
 test('proposal review uses a compact repository path list and has one starting prompt field', () => {
-  assert.match(html, /<ul id="proposal-repositories" class="proposal-repository-list"><\/ul>/);
-  assert.match(html, /id="workspace-review-name" type="text" required/);
-  assert.match(html, /id="workspace-review-directory"/);
-  assert.match(html, /<textarea id="workspace-original-prompt" rows="3" readonly><\/textarea>/);
-  assert.match(html, /<label for="proposal-prompt">Starting prompt<\/label>/);
+  assert.match(newWorkDialog, /<ul id="proposal-repositories" class="proposal-repository-list" \/>/);
+  assert.match(newWorkDialog, /id="workspace-review-name" type="text" required maxlength="120" value=\{props\.workspaceName\(\)\} onInput=\{\(event\) => props\.setWorkspaceName\(event\.currentTarget\.value\)\}/);
+  assert.match(newWorkDialog, /id="workspace-review-directory"/);
+  assert.match(newWorkDialog, /<TextArea id="workspace-original-prompt" rows="3" readOnly value=\{proposal\(\)\.originalPrompt\} \/>/);
+  assert.match(newWorkDialog, /<label for="proposal-prompt">Starting prompt<\/label>/);
+  assert.match(newWorkDialog, /<TextArea id="proposal-prompt" rows="4" value=\{props\.startingPrompt\(\)\} onInput=\{\(event\) => props\.setStartingPrompt\(event\.currentTarget\.value\)\} \/>/);
+  const main = readFileSync(join(process.cwd(), 'src', 'main.js'), 'utf8');
+  const controller = readFileSync(join(process.cwd(), 'src', 'workspace-creation-controller.js'), 'utf8');
+  assert.match(main, /setReviewWorkspaceName\(review\.workspaceName\)/);
+  assert.match(main, /setReviewStartingPrompt\(review\.startingPrompt\)/);
+  assert.match(controller, /const startingPrompt = getStartingPrompt\(\)/);
+  assert.match(controller, /const workspaceName = getWorkspaceName\(\)\.trim\(\)/);
+  assert.doesNotMatch(main, /querySelector\('#(?:proposal-prompt|workspace-review-name)'\)\.value/);
   assert.doesNotMatch(html, /proposal-grid/);
   assert.doesNotMatch(html, /Pinned submodules|Workspace clone:/);
 });
 
 test('Quick Requests use a dedicated available-height page with a visible way back and no owner controls', () => {
   const main = readFileSync(join(process.cwd(), 'src', 'main.js'), 'utf8');
+  const quickLists = readFileSync(join(process.cwd(), 'src', 'quick-request-list.jsx'), 'utf8');
+  const quickHistoryController = readFileSync(join(process.cwd(), 'src', 'quick-request-history-controller.js'), 'utf8');
   assert.match(html, /id="quick-request-list"/);
-  assert.match(html, /id="quick-request-full-list"[^>]*hidden/);
-  assert.match(html, /id="quick-request-full-items"/);
-  assert.match(html, /id="quick-request-back"[^>]*>Back to Quick Requests</);
-  assert.match(main, /await listQuickRequests\(invoke, history\)/);
+  assert.match(quickRequestHistoryPage, /<section id="quick-request-full-list"[^>]*hidden=\{!props\.visible\(\)\}/);
+  assert.match(quickRequestHistoryPage, /id="quick-request-search"[^>]*onInput=/);
+  assert.match(quickRequestHistoryPage, /class="quick-request-full-items"/);
+  assert.match(ownerPanel, /id="quick-request-back"[^>]*>Back to Quick Requests</);
+  assert.match(ownerPanel, /id="quick-request-terminal-actions"[^>]*hidden=\{!props\.quickRequestTerminalActions\(\)\}/);
+  assert.match(main, /quickRequestTerminalActions: quickRequestTerminalActionsVisible/);
+  assert.match(quickHistoryController, /await listQuickRequests\(invoke, history\)/);
   assert.match(management, /request\.created_at >= recent_cutoff/);
-  assert.match(main, /classList\.toggle\('quick-request-terminal-page', isQuickRequest\)/);
-  assert.match(main, /workbench\.hidden = isQuickRequest/);
+  assert.match(rightContentShell, /'quick-request-terminal-page': props\.quickRequestTerminalPage\(\)/);
+  assert.match(main, /setQuickRequestTerminalPage\(isQuickRequest\)/);
+  assert.doesNotMatch(main, /classList\.(?:add|remove|toggle)\(['"](?:owner-active|quick-request-terminal-page)/);
+  assert.match(main, /setWorkbenchVisible\(!isQuickRequest\)/);
+  assert.match(ownerPanel, /id="selected-owner" hidden=\{!props\.visible\(\)\}/);
+  assert.match(main, /visible: selectedOwnerVisible/);
+  assert.doesNotMatch(main, /selectedOwner\.hidden\s*=|querySelector\('#selected-owner'\)\.hidden\s*=/);
   assert.doesNotMatch(main, /setTerminalFullscreen\(true\)/);
   assert.doesNotMatch(html, /id="new-task"/);
   assert.doesNotMatch(html, /id="new-work-type"/);
-  assert.match(html, /id="new-work-menu"[\s\S]*data-new-work-type="quick_request"/);
-  assert.match(html, /id="new-quick-request"[^>]*>New Quick Request</);
-  assert.match(main, /window\.confirm\('Delete this Quick Request from the app\?/);
-  assert.match(main, /item\.append\(button\);\s*if \(history\)[\s\S]*?item\.append\(remove\)/);
-  assert.doesNotMatch(main, /item\.append\(.*dismiss|item\.append\(.*promote|item\.append\(.*retry/);
+   assert.match(newWorkMenu, /id="new-work-menu"[\s\S]*data-new-work-type="quick_request"/);
+  assert.match(quickRequestHeading, /id="new-quick-request"[^>]*onClick=\{props\.onNew\}>New Quick Request/);
+  assert.match(quickHistoryController, /Delete this Quick Request from the app\?/);
+  assert.match(quickLists, /<Show when=\{props\.history\(\)\}><span class="quick-request-prompt">/);
+  assert.match(quickLists, /class="quick-request-delete"[\s\S]*onDelete/);
+  assert.match(main, /deleteQuickRequestRecord\(record, true\)/);
+  assert.doesNotMatch(quickLists, /dismiss|promote|retry/);
 });
 
 test('Quick Request navigation aligns its compact All button with the heading and omits Delete', () => {
   const main = readFileSync(join(process.cwd(), 'src', 'main.js'), 'utf8');
-  assert.match(html, /<div class="quick-section-heading">\s*<h3>Quick Requests<\/h3>\s*<button id="show-history"/);
-  assert.match(html, /id="show-history"[^>]*aria-label="See all Quick Requests"[^>]*>[\s\S]*?<span>All<\/span>/);
-  assert.match(html, /id="quick-request-full-list"[\s\S]*<h1 id="quick-request-full-title"[\s\S]*id="new-quick-request"/);
+  const quickLists = readFileSync(join(process.cwd(), 'src', 'quick-request-list.jsx'), 'utf8');
+  assert.match(html, /<div class="quick-section-heading">\s*<h3>Quick Requests<\/h3>\s*<div id="show-history-root"><\/div>/);
+  const historyButton = readFileSync(new URL('../src/quick-request-history-button.jsx', import.meta.url), 'utf8');
+  assert.match(historyButton, /id="show-history"[^>]*aria-label="See all Quick Requests"[^>]*title="See all Quick Requests"/);
+  assert.match(historyButton, /<svg aria-hidden="true" viewBox="0 0 16 16" focusable="false"><path d="M2\.5 3\.5h11m-11 4h6m-6 4h6m2 0h2\.5m-2-2 2 2-2 2" \/><\/svg>\s*<span>All<\/span>/);
+  assert.match(historyButton, /onClick=\{props\.onShow\}/);
+  assert.match(readFileSync(new URL('../src/main.js', import.meta.url), 'utf8'), /QuickRequestHistoryButton\(\{ onShow:[\s\S]*?showQuickRequestList\(\)\.catch/);
+  assert.match(rightContentShell, /id="quick-request-history-root"/);
+  assert.match(quickRequestHistoryPage, /<QuickRequestHeading onNew=\{props\.onNew\} \/>/);
+  assert.match(quickRequestHeading, /id="quick-request-full-title"[\s\S]*id="new-quick-request"/);
   assert.doesNotMatch(html, /id="back-from-quick-requests"/);
   assert.doesNotMatch(html, /id="history-disabled"/);
-  assert.match(main, /item\.append\(button\);\s*if \(history\)[\s\S]*?item\.append\(remove\)/);
-  assert.doesNotMatch(main, /item\.append\(button, remove\)/);
-  assert.match(main, /item\.className = 'quick-request-navigation-item'/);
+  assert.match(quickLists, /'quick-request-navigation-item': !props\.history\(\)/);
+  assert.match(quickLists, /<Show when=\{props\.history\(\)\}>[\s\S]*quick-request-delete/);
+  assert.match(main, /records: recentQuickRequests/);
+  assert.doesNotMatch(quickLists, /item\.append\(button, remove\)/);
 });
 
 test('New-work is a modal over the existing workbench, with no standalone workspace creation path', () => {
   const main = readFileSync(join(process.cwd(), 'src', 'main.js'), 'utf8');
-  assert.match(html, /<dialog id="new-work-dialog"[\s\S]*id="new-work"[\s\S]*id="new-work-review"[\s\S]*<\/dialog>/);
+  const controller = readFileSync(join(process.cwd(), 'src', 'new-work-proposal-controller.js'), 'utf8');
+  const quickRequestController = readFileSync(join(process.cwd(), 'src', 'quick-request-creation-controller.js'), 'utf8');
+  assert.match(newWorkDialog, /<dialog id="new-work-dialog"[\s\S]*id="new-work"[\s\S]*id="new-work-review"[\s\S]*<\/dialog>/);
   assert.doesNotMatch(html, /id="new-workspace"|id="workspace-create-form"|id="empty-workspaces"/);
   assert.match(main, /newWorkDialog\.showModal\(\)/);
-  assert.match(html, /id="new-work-menu"[\s\S]*data-new-work-type="workspace"[\s\S]*data-new-work-type="quick_request"/);
+   assert.match(newWorkMenu, /id="new-work-menu"[\s\S]*data-new-work-type="workspace"[\s\S]*data-new-work-type="quick_request"/);
+  assert.match(newWorkMenu, /props\.onChoose\(type\)/);
   assert.doesNotMatch(html, /<select id="new-work-type"/);
-  assert.match(html, /id="new-work-title">New Workspace</);
-  assert.match(html, /id="new-work-prompt-label"[^>]*>Original prompt</);
-  assert.match(main, /workspace: \['Workspace',[\s\S]*quick_request: \['Quick Request'/);
-  assert.doesNotMatch(main, /task: \['Task'/);
-  assert.match(main, /proposalCreate\.textContent = proposal\.workType === 'quick_request'[\s\S]*Create \$\{workTypeName\}/);
-  assert.match(main, /requestedType,\s*\n\s*\);/);
-  assert.match(html, /id="quick-request-directory"/);
-  assert.match(main, /originalPrompt,\s*\n\s*model: selectedModel,\s*\n\s*repositoryId: selectedRepositoryId/);
-  assert.match(main, /requestedNewWorkType = workType/);
+  assert.match(newWorkDialog, /\['Workspace', 'Describe the workspace you want to create\.', 'New Workspace'\]/);
+  assert.match(newWorkDialog, /id="new-work-prompt-label"[^>]*>Original prompt</);
+  assert.match(newWorkDialog, /props\.workType\(\) === 'quick_request'[\s\S]*\['Quick Request', 'What do you want OpenCode to do\?'/);
+  assert.doesNotMatch(newWorkDialog, /\['Task'/);
+  const proposalReview = readFileSync(join(process.cwd(), 'src', 'new-work-proposal-review.js'), 'utf8');
+  assert.match(proposalReview, /createLabel: isQuickRequest \? 'Confirm directory and start Quick Request' : 'Create Workspace'/);
+  assert.match(newWorkDialog, /id="proposal-create" disabled=\{props\.proposalCreateDisabled\(\)\} onClick=\{props\.onConfirm\}>\{proposal\(\)\.createLabel\}/);
+  assert.match(controller, /undefined, requestedType,/);
+  assert.match(newWorkDialog, /id="quick-request-directory"/);
+  assert.match(quickRequestController, /originalPrompt: getOriginalPrompt\(\),[\s\S]*model,[\s\S]*repositoryId: getRepositoryId\(\) \|\| null/);
+  assert.match(main, /setRequestedType: \(value\) => \{ requestedNewWorkType = value; \}/);
   assert.doesNotMatch(main, /restoreWorkspacePendingPrompt/, 'selecting a workspace must not restore the unsent starting-prompt editor');
-  assert.match(html, /Select a Workspace, or choose New work to start\./);
-  assert.match(html, /class="new-work-dialog-scroll"[\s\S]*class="new-work-dialog-footer"/);
+  assert.match(readFileSync(join(process.cwd(), 'src', 'no-selection.jsx'), 'utf8'), /Select a Workspace, or choose New work to start\./);
+  assert.match(newWorkDialog, /class="new-work-dialog-scroll"[\s\S]*class="new-work-dialog-footer"/);
 });
 
 test('New-work offers only Workspace and Quick Request creation, not legacy Task creation', () => {
   const main = readFileSync(join(process.cwd(), 'src', 'main.js'), 'utf8');
-  assert.match(html, /data-new-work-type="workspace"[\s\S]*data-new-work-type="quick_request"/);
-  assert.doesNotMatch(html, /data-new-work-type="task"|workspace-context-new-task|task-workspace-select|task-review-name|task-revised-prompt/);
-  assert.match(main, /if \(!\['workspace', 'quick_request'\]\.includes\(workType\)\) return/);
+  assert.match(newWorkMenu, /data-new-work-type="workspace"[\s\S]*data-new-work-type="quick_request"/);
+  assert.doesNotMatch(`${newWorkMenu}\n${html}`, /data-new-work-type="task"|workspace-context-new-task|task-workspace-select|task-review-name|task-revised-prompt/);
+  const dialogController = readFileSync(new URL('../src/new-work-dialog-controller.js', import.meta.url), 'utf8');
+  assert.match(dialogController, /new Set\(\['workspace', 'quick_request'\]\)/);
   assert.doesNotMatch(main, /createWorkspaceTask|currentProposal\.workType === 'task'/);
 });
 
 test('regular Workspace navigation does not render retained legacy Task records', () => {
   const main = readFileSync(join(process.cwd(), 'src', 'main.js'), 'utf8');
+  const navigation = readFileSync(join(process.cwd(), 'src', 'workspace-navigation.jsx'), 'utf8');
   const renderNavigation = main.match(/function renderNavigation\(data\) \{([\s\S]*?)\n\}/)?.[1] || '';
-  assert.match(renderNavigation, /\(data\.workspaces \|\| \[\]\)\.filter/);
+  assert.match(navigation, /\(props\.data\(\)\?\.workspaces \|\| \[\]\)\.filter/);
+  assert.match(main, /renderSolid\(\(\) => WorkspaceNavigation/);
   assert.doesNotMatch(renderNavigation, /data\.tasks|renderTasks|selectTask/);
   assert.doesNotMatch(html, /id="owner-tabs"/);
   assert.doesNotMatch(html, /id="task-setup-|id="new-task-session|id="complete-task|id="retry-cleanup|id="cleanup-history/);
@@ -130,22 +485,39 @@ test('regular Workspace navigation does not render retained legacy Task records'
 
 test('Workspace confirmation opens its sessions and sends only the reviewed starting prompt', () => {
   const main = readFileSync(join(process.cwd(), 'src', 'main.js'), 'utf8');
-  assert.match(main, /for \(const session of workspaceSessions\) await showSession\(session\.openCodeSessionId\);[\s\S]*if \(shouldSubmitWorkspaceStartingPrompt\(startingPrompt\)\)[\s\S]*await submitNewWorkStartingPrompt\(invoke, workspacePromptAction, startingPrompt\);[\s\S]*No starting prompt was provided/);
-  assert.match(main, /initialized\.sessions \|\| \[\]/);
+  const controller = readFileSync(join(process.cwd(), 'src', 'workspace-creation-controller.js'), 'utf8');
+  assert.match(main, /if \(currentProposal\.workType === 'workspace'\) \{\s*await workspaceCreationController\.createWorkspace\(\);\s*return;/);
+  assert.match(controller, /for \(const session of workspaceSessions\) await showSession\(session\.openCodeSessionId\);[\s\S]*if \(shouldSubmitWorkspaceStartingPrompt\(startingPrompt\)\)[\s\S]*await submitNewWorkStartingPrompt\(invoke, action, startingPrompt\);[\s\S]*No starting prompt was provided/);
+  assert.match(controller, /initialized\.sessions \|\| \[\]/);
   assert.doesNotMatch(main, /task-revised-prompt|taskPromptAction/);
   assert.doesNotMatch(main, /currentProposal\.workType === 'task'/);
-  assert.match(html, /id="proposal-starting-prompt"/);
-  assert.match(main, /proposal-starting-prompt'\)\.hidden = proposal\.workType !== 'workspace'/);
-  assert.match(main, /revealWorkspaceCreationRecovery\(\{[\s\S]*actionLabel: 'Retry setup'/);
-  assert.match(main, /actionLabel: 'Retry session'/);
+  assert.match(newWorkDialog, /id="proposal-starting-prompt"/);
+  assert.match(newWorkDialog, /id="proposal-starting-prompt"[^>]*hidden=\{proposal\(\)\.workType !== 'workspace'\}/);
+  assert.match(controller, /Retry setup/);
+  assert.match(controller, /Retry session/);
+});
+
+test('pending starting-prompt editor and submit busy state are WorkspaceOwnerPanel signals', () => {
+  const main = readFileSync(join(process.cwd(), 'src', 'main.js'), 'utf8');
+  const controller = readFileSync(join(process.cwd(), 'src', 'pending-starting-prompt-controller.js'), 'utf8');
+  assert.match(main, /const \[pendingPromptText, setPendingPromptText\] = createSignal\(''\)/);
+  assert.match(ownerPanel, /id="pending-prompt-text"[^>]*value=\{props\.pendingPromptText\(\)\} onInput=/);
+  assert.match(main, /createPendingStartingPromptController\(/);
+  assert.match(controller, /const promptText = getPromptText\(\);[\s\S]*if \(!promptText\.trim\(\)\)/);
+  assert.match(controller, /setDisabled\(true\);[\s\S]*await showSession\(action\.sessionId\);[\s\S]*submitStartingPrompt\(invoke, action, promptText\)[\s\S]*clearPendingAction\(\);[\s\S]*setPromptVisible\(false\);[\s\S]*setPromptText\(''\);[\s\S]*finally \{\s*setDisabled\(false\);/);
+  assert.doesNotMatch(main, /querySelector\('#pending-prompt-text'\)|querySelector\('#submit-starting-prompt'\)/);
+  assert.doesNotMatch(main, /querySelector\('#pending-prompt-text'\)|querySelector\('#submit-starting-prompt'\)/);
 });
 
 test('terminal card contains only the terminal viewport and has no surrounding inset', () => {
   const main = readFileSync(join(process.cwd(), 'src', 'main.js'), 'utf8');
-  const terminalCard = html.match(/<section class="terminal-card"[^>]*>([\s\S]*?)<\/section>/)?.[1] || '';
-  assert.match(terminalCard, /^\s*<div id="terminal-views" class="terminal-views"><\/div>\s*$/);
-  assert.match(main, /const sessionStatus\s*=\s*document\.querySelector\('#session-status'\)/);
-  assert.match(main, /const pendingInputs\s*=\s*document\.querySelector\('#pending-inputs'\)/);
+  const pendingList = readFileSync(join(process.cwd(), 'src', 'pending-input-list.jsx'), 'utf8');
+  const terminalCard = ownerPanel.match(/<section class="terminal-card"[^>]*>([\s\S]*?)<\/section>/)?.[1] || '';
+  assert.match(terminalCard, /<div id="terminal-views" class="terminal-views" \/>/);
+  assert.match(main, /const \[sessionStatusMessage, setSessionStatusMessage\] = createSignal\(''\)/);
+  assert.match(ownerPanel, /id="session-status" class="visually-hidden" role="status" aria-live="polite">\{props\.sessionStatus\(\)\}/);
+  assert.match(main, /const \[pendingInputRows, setPendingInputRows\] = createSignal\(\[\]\)/);
+  assert.match(pendingList, /onClick=\{\(\) => props\.onOpen\(item\.sessionId\)\}/);
   assert.doesNotMatch(html, /fullscreen/i);
   assert.doesNotMatch(main, /setTerminalFullscreen|terminal-fullscreen/);
 });

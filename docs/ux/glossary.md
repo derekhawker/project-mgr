@@ -43,14 +43,21 @@ discussions. For workflow behavior beyond the UX vocabulary, see
 
 ## Other workbench destinations
 
+- **New Work menu:** The dropdown at the bottom of the left navigation that
+  offers Workspace and Quick Request. Selecting either opens the New Work modal.
+- **New Work modal:** The dialog over the current destination used to capture
+  and review a new Workspace or Quick Request. It is distinct from the New Work
+  menu that opens it.
+- **Workspace workbench:** The main work area for a selected Workspace,
+  including its session tabs, terminal, and toolbar.
 - **Change Review:** The single name for the repository-diff destination. Use it
   in toolbar labels and prose. Change Review is separate from OpenCode's
   interactive terminal.
 - **Docs reader:** The destination for reading discovered Markdown and text
   files by paths relative to their Workspace or repository source. It is not a
   general file browser or editor.
-- **Tools menu:** The menu of repository-scoped tools available for the selected
-  Workspace context. Legacy Task tools are transitional only.
+- **Tools menu:** The menu opened by **Tools** in the Workspace workbench
+  toolbar. It offers OS handoff actions and tools for associated repositories.
 
 ## Avoid as product vocabulary
 

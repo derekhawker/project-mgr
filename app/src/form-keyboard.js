@@ -1,7 +1,7 @@
 // Submit multiline form prompts with Enter while preserving Shift+Enter for
 // newline insertion. Keep submission on the form's native validation path.
-export function bindEnterToSubmit(form) {
-  const onKeyDown = (event) => {
+export function handleEnterToSubmit(event) {
+    const form = event.currentTarget;
     if (event.key !== 'Enter' || event.shiftKey || event.isComposing || event.keyCode === 229) return;
     if (!(event.target instanceof form.ownerDocument.defaultView.HTMLTextAreaElement)) return;
     if (!form.contains(event.target) || event.target.readOnly || event.target.disabled) return;
@@ -10,8 +10,4 @@ export function bindEnterToSubmit(form) {
 
     event.preventDefault();
     form.requestSubmit();
-  };
-
-  form.addEventListener('keydown', onKeyDown);
-  return () => form.removeEventListener('keydown', onKeyDown);
 }

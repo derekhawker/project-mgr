@@ -10,145 +10,32 @@
     <main class="shell">
       <div class="workspace-layout">
         <aside class="navigation" aria-label="Workspace navigation">
-          <button id="show-directories" type="button" class="quiet-button" aria-label="Open directories">☰ Directories</button>
+          <div id="show-directories-root"></div>
           <section class="quick-section">
             <div class="quick-section-heading">
               <h3>Quick Requests</h3>
-              <button id="show-history" type="button" class="quick-request-all-button" aria-label="See all Quick Requests" title="See all Quick Requests">
-                <svg aria-hidden="true" viewBox="0 0 16 16" focusable="false"><path d="M2.5 3.5h11m-11 4h6m-6 4h6m2 0h2.5m-2-2 2 2-2 2" /></svg>
-                <span>All</span>
-              </button>
+              <div id="show-history-root"></div>
             </div>
              <ul id="quick-request-list"><li>None yet</li></ul>
           </section>
           <div class="navigation-heading"><h2>Workspaces</h2></div>
-           <ul id="workspace-list" aria-busy="true"><li class="placeholder">Loading…</li></ul>
-          <details id="new-work-menu" class="new-work-menu">
-            <summary>New work</summary>
-            <div class="new-work-menu-options" role="group" aria-label="Choose work type">
-              <button type="button" data-new-work-type="workspace">Workspace</button>
-              <button type="button" data-new-work-type="quick_request">Quick Request</button>
-            </div>
-          </details>
+           <div id="workspace-navigation-root"></div>
+          <div id="new-work-menu-root"></div>
         </aside>
           <section class="quick-view" aria-label="Selected work">
-            <div id="workbench" hidden>
-              <div class="workbench-toolbar" aria-label="Workspace sessions and tools">
-              </div>
-              <div class="workbench-toolbar secondary-toolbar" aria-label="Session and workspace views">
-                <nav id="session-tabs" class="session-tabs workbench-session-tabs" role="tablist" aria-label="Workspace sessions"></nav>
-                <button id="show-change-review" type="button" class="toolbar-tab" hidden>Change Review</button>
-                <button id="show-docs" type="button" class="toolbar-tab" disabled>Docs</button>
-                <div class="repo-tools-control"><button id="show-repo-tools" type="button" class="toolbar-tab" aria-expanded="false" hidden>Tools</button><div id="repo-tools-menu" class="repo-tools-menu" role="menu" aria-label="Repository tools" hidden></div></div>
-              </div>
-            </div>
-             <div id="right-content" class="right-content">
-             <section id="change-review-page" class="change-review-page" hidden aria-labelledby="change-review-heading">
-               <header class="change-review-heading"><div><h1 id="change-review-heading">Change Review</h1><p>Compare with remote main/master, falling back to local main/master · <span data-review-title></span></p></div><div class="change-review-actions"><button type="button" id="change-review-back" class="quiet-button">Back to terminals</button><div class="change-review-mode" role="group" aria-label="Diff presentation"><button type="button" data-review-mode="unified" aria-pressed="true">Unified</button><button type="button" data-review-mode="split" aria-pressed="false">Split</button></div></div></header>
-               <div class="change-review-content"><aside class="change-review-files" aria-label="Changed files grouped by repository" data-review-files></aside><section class="change-review-diff-pane" aria-label="Selected file diff"><h2 data-review-file-title>Select a changed file</h2><div data-review-diff></div></section></div>
-             </section>
-              <section id="quick-request-full-list" class="quick-request-full-list" hidden aria-labelledby="quick-request-full-title">
-               <div class="quick-request-list-heading"><h1 id="quick-request-full-title">Quick Requests</h1><button id="new-quick-request" type="button" class="primary-button">New Quick Request</button></div>
-               <label class="visually-hidden" for="quick-request-search">Search Quick Requests</label><input id="quick-request-search" type="search" placeholder="Search Quick Requests…" autocomplete="off">
-               <ul id="quick-request-full-items" class="quick-request-full-items"></ul>
-             </section>
-             <section id="directories-page" class="quick-request-full-list" hidden aria-labelledby="directories-title">
-                <div class="quick-request-list-heading"><h1 id="directories-title">Directories</h1><button id="add-repository-directories" type="button" class="primary-button">Add directories</button></div>
-                <form id="repository-library-form" class="request-form">
-                  <label for="repository-library-path">Repository library location</label>
-                  <div class="model-row"><input id="repository-library-path" type="text" required autocomplete="off"><button id="choose-repository-library" type="button" class="quiet-button">Choose folder</button><button type="submit" class="primary-button">Save location</button></div>
-                  <p id="repository-library-status" role="status" aria-live="polite"></p>
-                </form>
-                <p id="repository-status" role="status" aria-live="polite"></p>
-               <section aria-labelledby="legacy-archives-title">
-                 <h2 id="legacy-archives-title">Archived legacy records</h2>
-                 <p>Restore an archived Task's database associations if you need to recover its historical record. Its files and OpenCode history are not changed.</p>
-                 <ul id="legacy-task-archives" aria-label="Archived legacy Task records"><li>Loading…</li></ul>
-               </section>
-               <ul id="directory-list" aria-label="Repositories grouped by directory"></ul>
-               <button id="directories-back" type="button" class="quiet-button">Back</button>
-             </section>
-            <div id="no-selection" class="no-selection">
-              <section id="workspaces-unselected" hidden aria-labelledby="unselected-title">
-                <h1 id="unselected-title">Select a Workspace, or choose New work to start.</h1>
-              </section>
-             </div>
-               <section id="docs-page" class="docs-page" hidden aria-label="Workspace documents">
-               <aside class="docs-files" data-doc-files aria-label="Markdown and text files"></aside>
-               <section class="docs-content" data-doc-content><h2></h2><pre></pre></section>
-             </section>
-            <section id="selected-owner" hidden>
-              <h1 id="selected-title" class="visually-hidden"></h1><p id="workspace-description" class="visually-hidden"></p>
-              <p id="workspace-status" class="workspace-status" role="status" aria-live="polite"></p>
-              <section id="pending-starting-prompt" hidden class="pending-starting-prompt"><label for="pending-prompt-text">Starting prompt · not sent</label><textarea id="pending-prompt-text" rows="3"></textarea><button id="submit-starting-prompt" type="button">Start Quick Request</button></section>
-              <p id="session-status" class="visually-hidden" role="status" aria-live="polite"></p>
-              <ul id="pending-inputs" class="visually-hidden" aria-label="Pending input"></ul>
-               <div id="quick-request-terminal-actions" class="quick-request-terminal-actions" hidden>
-                 <button id="quick-request-back" type="button" class="quiet-button">Back to Quick Requests</button>
-               </div>
-               <section class="terminal-card" aria-label="OpenCode terminal">
-                 <div id="terminal-views" class="terminal-views"></div>
-               </section>
-              <details class="owner-management">
-                 <summary>Workspace options</summary>
-                <div class="owner-management-content">
-              <div class="workspace-actions">
-                <label for="attach-repository-select">Repository</label>
-                <select id="attach-repository-select" aria-label="Repository to attach"><option value="">Select an enabled repository</option></select>
-                <button id="attach-repository" type="button" class="quiet-button">Attach repository</button>
-                 <button id="complete-workspace" type="button" class="quiet-button" disabled>Complete workspace</button>
-                <button id="reactivate-workspace" type="button" class="quiet-button" disabled>Reactivate workspace</button>
-              </div>
-              <div id="owner-repository-context" class="owner-repository-context"><span>Workspace repositories</span><ul id="attached-repositories" aria-label="Repositories attached to workspace"><li>None</li></ul></div>
-              <form id="workspace-session-form" class="request-form">
-               <label for="workspace-prompt">Workspace planning prompt</label>
-               <textarea id="workspace-prompt" rows="2" placeholder="Inspect the workspace and plan the next step"></textarea>
-               <button id="workspace-session-submit" type="submit">Start workspace session</button>
-              </form>
-                </div>
-              </details>
-            <form id="quick-request-form" class="request-form" hidden>
-            <label for="quick-prompt">Prompt</label>
-             <textarea id="quick-prompt" required rows="4" aria-describedby="quick-error" placeholder="What should OpenCode help with?"></textarea>
-             <div class="model-row"><label for="quick-model">Model</label><select id="quick-model" required aria-describedby="quick-error" aria-busy="true"><option>Loading models…</option></select></div>
-            <button id="quick-submit" type="submit">Start Quick Request</button>
-             <p id="quick-error" class="error-message" role="alert"></p>
-           </form>
-            </section>
-            </div>
+            <div id="workbench-root"></div>
+              <div id="right-content-root"></div>
         </section>
       </div>
 
       <section class="visually-hidden" aria-labelledby="connection-title">
-        <span id="app-version">Version —</span>
-        <div class="card-heading">
-          <div>
-            <p class="eyebrow">Application status</p>
-            <h2 id="connection-title">Rust core connection</h2>
-          </div>
-          <span id="connection-indicator" class="status-indicator" aria-hidden="true"></span>
-        </div>
-
-        <p id="connection-status" class="connection-status" role="status" aria-live="polite">
-          Contacting the Rust core…
-        </p>
-        <div class="response-panel">
-          <p class="response-label">Startup command response</p>
-          <p id="command-result" class="command-result">Waiting for app_shell_info…</p>
-        </div>
+        <div id="application-status-root"></div>
       </section>
 
-      <p id="app-notice" class="app-notice" role="status" aria-live="polite" hidden></p>
+      <div id="app-notice-root"></div>
     </main>
 
-    <dialog id="new-work-dialog" class="workspace-dialog" aria-label="New work">
-      <div id="new-work-dialog-content" class="workspace-dialog-content">
-        <section id="new-work" class="new-work" hidden aria-labelledby="new-work-title">
-          <form id="new-work-capture" class="new-work-dialog-layout"><div class="new-work-dialog-scroll"><p id="new-work-kind" class="eyebrow">Workspace</p><h1 id="new-work-title">New Workspace</h1><p id="new-work-guidance">Describe the workspace you want to create.</p><label id="new-work-prompt-label" for="new-work-prompt">Original prompt</label><textarea id="new-work-prompt" required rows="3" placeholder="Describe the workspace"></textarea><section id="new-work-progress" class="new-work-progress" hidden aria-label="Setup progress" aria-live="polite"><h2>Progress</h2><ol id="new-work-progress-steps"></ol></section></div><div class="new-work-dialog-footer"><p id="new-work-error" class="error-message" role="alert"></p><button type="button" id="new-work-cancel" class="quiet-button">Cancel</button><button type="submit">Continue</button></div></form>
-        </section>
-        <section id="new-work-review" class="new-work-review new-work-dialog-layout" hidden aria-labelledby="proposal-title"><div class="new-work-dialog-scroll"><p class="eyebrow">Review proposal</p><h1 id="proposal-title">Check the proposed context</h1><div id="workspace-review-form" class="workspace-review-form" hidden><label for="workspace-review-name">Workspace name</label><input id="workspace-review-name" type="text" required maxlength="120"><label>Workspace directory</label><output id="workspace-review-directory" class="workspace-review-directory"></output><label for="workspace-original-prompt">Original prompt</label><textarea id="workspace-original-prompt" rows="3" readonly></textarea></div><blockquote id="proposal-original" hidden></blockquote><section id="proposal-repository-section"><h3>Repositories</h3><ul id="proposal-repositories" class="proposal-repository-list"></ul></section><section id="proposal-starting-prompt" class="proposal-starting-prompt" hidden><label for="proposal-prompt">Starting prompt</label><textarea id="proposal-prompt" rows="4"></textarea></section><div id="quick-request-directory-review" hidden><h2>Confirm working directory</h2><h3>Original prompt</h3><blockquote id="quick-request-original"></blockquote><p>The original prompt will be sent unchanged after confirmation.</p><label for="quick-request-directory">OpenCode working directory</label><select id="quick-request-directory"></select><p id="quick-request-directory-path"></p></div><div class="proposal-model-field"><label for="proposal-model">Model</label><select id="proposal-model" required aria-busy="true"><option>Loading models…</option></select></div></div><div class="new-work-dialog-footer"><button type="button" id="proposal-cancel" class="quiet-button">Cancel</button><button type="button" id="proposal-back" class="quiet-button">Back</button><button type="button" id="proposal-create">Create</button><p id="proposal-error" class="error-message" role="alert"></p></div></section>
-      </div>
-    </dialog>
+    <div id="new-work-dialog-root"></div>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

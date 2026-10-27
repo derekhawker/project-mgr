@@ -1,17 +1,31 @@
-import { getDefaultModel, listAvailableModels, populateModelSelector } from './shell.js';
+import { getDefaultModel, listAvailableModels } from './shell.js';
 
-// Connects the production model command to the actual selector and startup
-// controls. The error transition clears stale options and keeps every dependent
-// submit action disabled.
+export function modelSelectorChoices(models, defaultModel) {
+  const options = models.map((model) => {
+    const providerId = model.providerId ?? model.providerID;
+    return {
+      value: JSON.stringify({ providerId, id: model.id }),
+      label: model.name ?? `${providerId}/${model.id}`,
+    };
+  });
+  const defaultValue = JSON.stringify({ providerId: defaultModel.providerId, id: defaultModel.id });
+  const configuredDefaultIsAvailable = options.some((option) => option.value === defaultValue);
+  return {
+    options,
+    selected: configuredDefaultIsAvailable ? defaultValue : options[0]?.value ?? '',
+    configuredDefaultIsAvailable,
+  };
+}
+
+// Commands and transient view callbacks only; JSX owns selector presentation.
 export async function initializeModelSelector({
   invoke,
-  select,
   onReady,
   onError,
   onDefaultUnavailable = () => {},
+  view,
 }) {
-  select.disabled = true;
-  select.setAttribute('aria-busy', 'true');
+  view?.loading?.();
 
   try {
     const [defaultModel, models] = await Promise.all([
@@ -20,24 +34,14 @@ export async function initializeModelSelector({
     ]);
     if (!models.length) throw new Error('No enabled OpenCode models are available.');
 
-    populateModelSelector(select, models);
-    const defaultValue = JSON.stringify({
-      providerId: defaultModel.providerId,
-      id: defaultModel.id,
-    });
-    const configuredDefaultIsAvailable = Array.from(select.options)
-      .some((option) => option.value === defaultValue);
-    if (configuredDefaultIsAvailable) select.value = defaultValue;
-    select.disabled = false;
-    select.setAttribute('aria-busy', 'false');
+    const { configuredDefaultIsAvailable } = modelSelectorChoices(models, defaultModel);
     onReady(models);
+    view?.ready?.(models, defaultModel, configuredDefaultIsAvailable);
     if (!configuredDefaultIsAvailable) onDefaultUnavailable(defaultModel);
     return models;
   } catch (error) {
-    select.replaceChildren();
-    select.disabled = true;
-    select.setAttribute('aria-busy', 'false');
     onError(error);
+    view?.error?.(error);
     return null;
   }
 }
