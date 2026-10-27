@@ -9,7 +9,7 @@ export function WorkspaceNavigation(props) {
 
   return (
     <ul id="workspace-list" aria-busy={String(props.busy())}>
-      <Show when={workspaces().length > 0} fallback={<li class="placeholder">No workspaces yet</li>}>
+      <Show when={workspaces().length > 0} fallback={<li class="workspace-empty-state">No workspaces yet. Use <strong>New</strong> below to create one.</li>}>
         <For each={workspaces()}>{(workspace) => {
           const repositoryCount = () => (props.data()?.workspaceRepositories || []).filter((binding) =>
             binding.workspaceId === workspace.id && binding.verificationStatus === 'verified').length;
@@ -22,7 +22,7 @@ export function WorkspaceNavigation(props) {
                 aria-current={props.selected()?.id === workspace.id ? 'page' : undefined}
                 onClick={() => props.onSelect(workspace)}
               >
-                <span>{workspace.name}</span>
+                 <span class={styles.workspaceName}>{workspace.name}</span>
                 <Show when={repositoryCount() > 0}>
                   <span class="workspace-repository-indicator" aria-hidden="true" title={`${repositoryCount()} associated Git ${repositoryCount() === 1 ? 'repository' : 'repositories'}`}>
                     <svg viewBox="0 0 16 16" focusable="false"><path d="M5 3v10m6-10v3a2 2 0 0 1-2 2H7a2 2 0 0 0-2 2m6-4a2 2 0 1 0 0-4 2 2 0 0 0 0 4ZM5 15a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z" /></svg>

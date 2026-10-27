@@ -28,12 +28,15 @@
 .newWork .newWorkDisclosure > div > button { justify-content: flex-start; border-radius: 0; }
 
 :global(.navigation li) .workspaceButton {
+  width: 100%;
   justify-content: space-between;
   min-height: 0;
-  border-radius: 0;
+  border-radius: 5px;
   font-size: inherit;
   font-weight: 400;
 }
-:global(.navigation li) .workspaceButton:hover { background: var(--ui-surface-pressed); }
-:global(.navigation li) .workspaceButton[aria-current='page'] { background: var(--ui-surface-pressed); font-weight: 700; }
+:global(.navigation li) .workspaceButton:hover:not([aria-current='page']) { background: var(--ui-surface-pressed); }
+:global(.navigation li) .workspaceButton[aria-current='page'] { color: var(--ui-primary-text); background: var(--ui-primary); font-weight: 700; }
+:global(.navigation li) .workspaceButton[aria-current='page'] .workspace-repository-indicator { color: var(--ui-primary-text); }
+.workspaceName { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .directoriesButton { min-height: 0; padding: .225rem .3rem; background: var(--ui-surface); }

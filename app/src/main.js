@@ -6,10 +6,11 @@ import { loadApplicationShell } from './shell.js';
 import { hideWorkspaceRepositoryIds, workspaceProgressPresentation, workspaceSetupFailureDetails } from './workspace-setup-progress.js';
 import { listQuickRequests, restoreQuickRequest, deleteQuickRequest, loadWorkspaceNavigation, listLegacyTaskArchives, restoreLegacyTaskArchive, createInitializedWorkspace, createWorkspaceSession, submitNewWorkStartingPrompt, shouldSubmitWorkspaceStartingPrompt, workspaceStartingPromptSession, addRepositoryDirectories, scanRepositories, listRepositoryCatalog, loadRepositoryDirectoryPage, loadRepositoryLibraryRoot, saveRepositoryLibraryRoot, setRepositoryEnabled, attachRepository, formatWorkspaceError, selectCreatedWorkspace, listPendingInputs, listAllPendingInputs, getSessionStatus, reconcileSession, sessionStatusLabel, completeWorkspace, reactivateWorkspace, terminalAccessibilityAttributes, controlErrorAttributes, startNewWorkProposal, runNewWorkProposal, closeNewWorkProposal, cleanupTerminal, resolveQuickRequestDirectory, submitResolvedQuickRequestFlow, createKeyedSingleFlight, workspaceProposalRepositoryLocations, workspaceSessionTabLabel } from './shell.js';
 import './styles.css';
-import { showCleanupError } from './error-events.js';
+import { cleanupErrorText } from './error-events.js';
 import { createQuickRequestFormView, createQuickRequestSubmitHandler } from './quick-request-form.js';
 import { createQuickRequestHistoryController } from './quick-request-history-controller.js';
 import { createQuickRequestSelection } from './quick-request-selection.js';
+import { createTerminalSurfaceRegistry } from './terminal-surface-registry.js';
 import { createWorkspaceNavigationController } from './workspace-navigation-controller.js';
 import { createPendingStartingPromptController } from './pending-starting-prompt-controller.js';
 import { createNewWorkProposalController } from './new-work-proposal-controller.js';
@@ -290,6 +291,7 @@ function setProgress(key, label, status, detail = null) {
 
 const list = document.querySelector('#quick-request-list');
 const terminalViews = document.querySelector('#terminal-views');
+const terminalSurfaces = createTerminalSurfaceRegistry();
 let selectedWorkspace = null;
 const { selectedQuickRequest, setSelectedQuickRequest, selectedId: selectedQuickRequestId } = createQuickRequestSelection();
 let navigationData = { workspaces: [], tasks: [], sessions: [], workspaceRepositories: [], workspaceSessionContexts: [] };
@@ -503,6 +505,7 @@ async function attachManagedTerminal(started, owner, tabLabel) {
     container.dataset.terminalSession = terminalId;
     Object.entries(terminalAccessibilityAttributes(terminalId)).forEach(([key, value]) => container.setAttribute(key, value));
     terminalViews.append(container);
+    terminalSurfaces.register(terminalId, container);
     sessionOwners.set(terminalId, ownerKey);
     sessionDirectories.set(terminalId, started.directory);
     repositoryToolTerminals.add(terminalId);
@@ -528,7 +531,7 @@ async function attachManagedTerminal(started, owner, tabLabel) {
     if (started?.terminalId) {
       try { await repoToolTerminalCommand(invoke, 'cleanup', { terminalId: started.terminalId }); } catch { /* Preserve the startup error; app shutdown remains the final process owner. */ }
       runtime?.forget(started.terminalId);
-      document.querySelector(`[data-terminal-session="${CSS.escape(started.terminalId)}"]`)?.remove();
+      terminalSurfaces.remove(started.terminalId);
       repositoryToolTerminals.delete(started.terminalId);
       repositoryInstallTerminalKeys.delete(started.terminalId);
       sessionOwners.delete(started.terminalId);
@@ -625,16 +628,15 @@ function syncOwnerSessions() {
     void terminalRuntime.then((runtime) => { if (!appLifetime.disposed) runtime?.select(selectedId); });
   }
   setSessionTabEntries(state.entries);
-  terminalViews.querySelectorAll('[data-terminal-session]').forEach((view) => {
-    const sessionId = view.dataset.terminalSession;
-    view.hidden = sessionOwners.get(sessionId) !== ownerKey
-      || sessionId !== selectedId;
-  });
+  if (selectedId && sessionOwners.get(selectedId) === ownerKey) terminalSurfaces.show(selectedId);
+  else terminalSurfaces.hide();
   return selectedId;
 }
 
 async function restoreTrackedOwnerSession(owner) {
   const ownerKey = `${owner.type}:${owner.id}`;
+  const loadingMessage = owner.type === 'workspace' ? 'Loading workspace…' : 'Loading Quick Request…';
+  setOwnerStatus(loadingMessage);
   try {
     await restoreOwnerSessionTabs({
       owner, sessions: navigationData.sessions, selectedSessionByOwner, openSessions,
@@ -645,7 +647,9 @@ async function restoreTrackedOwnerSession(owner) {
     if (selectedOwnerKey() === ownerKey) {
       setOwnerStatus( formatWorkspaceError('Restore tracked session', error));
     }
+    return;
   }
+  if (selectedOwnerKey() === ownerKey && ownerStatus() === loadingMessage) setOwnerStatus('');
 }
 
 const showSession = createKeyedSingleFlight(async (sessionId, options = {}) => {
@@ -669,7 +673,7 @@ const showSession = createKeyedSingleFlight(async (sessionId, options = {}) => {
       || navigationData.tasks?.some((task) => task.id === restoredSession.owner.owner_id && task.quickRequest));
   if (ownerKey) sessionOwners.set(sessionId, ownerKey);
   if (restoredSession?.directory) sessionDirectories.set(sessionId, restoredSession.directory);
-  let terminalContainer = document.querySelector(`[data-terminal-session="${CSS.escape(sessionId)}"]`);
+  let terminalContainer = terminalSurfaces.get(sessionId);
   if (!openSessions.has(sessionId)) {
     terminalContainer = document.createElement('div');
     terminalContainer.className = 'terminal-surface';
@@ -677,6 +681,7 @@ const showSession = createKeyedSingleFlight(async (sessionId, options = {}) => {
     terminalContainer.id = `terminal-${sessionId}`;
     terminalContainer.dataset.terminalSession = sessionId;
     terminalViews.append(terminalContainer);
+    terminalSurfaces.register(sessionId, terminalContainer);
     await runtime.attachExisting(sessionId, terminalContainer);
     if (appLifetime.disposed) return;
     openSessions.add(sessionId);
@@ -698,7 +703,7 @@ const showSession = createKeyedSingleFlight(async (sessionId, options = {}) => {
       });
     }
   } else runtime.select(sessionId);
-  terminalViews.querySelectorAll('.terminal-surface').forEach((view) => { view.hidden = view !== terminalContainer; });
+  terminalSurfaces.show(sessionId);
   if (ownerKey) selectedSessionByOwner.set(ownerKey, sessionId);
   if (proposal) setSessionStatus('Proposal session · interactive');
   else await refreshSessionEvidence(sessionId);
@@ -708,7 +713,7 @@ const showSession = createKeyedSingleFlight(async (sessionId, options = {}) => {
 async function restartSessionTerminal(sessionId) {
   updateSessionTab(sessionId, { restartBusy: true });
   try {
-    const container = document.querySelector(`[data-terminal-session="${CSS.escape(sessionId)}"]`);
+    const container = terminalSurfaces.get(sessionId);
     const directory = sessionDirectories.get(sessionId);
     if (!container || !directory) throw new Error('The saved session directory is unavailable.');
     const runtime = await terminalRuntime;
@@ -780,6 +785,9 @@ const directoriesController = createDirectoriesController({
 });
 
 function selectWorkspace(workspace, data = navigationData) {
+  // Commit the destination first. The browser cannot paint Solid's updates until
+  // this click handler returns, so keep the pre-paint path to selection and pane
+  // visibility; terminal/repository setup can follow on the next task.
   setDirectoriesVisible(false);
   setFullRequestVisible(false);
   setWorkbenchVisible(true);
@@ -787,27 +795,31 @@ function selectWorkspace(workspace, data = navigationData) {
   setQuickRequestTerminalActionsVisible(false);
   setProposalMode(false);
   setRightContentOwnerActive(true);
-  setOwnerStatus( '');
   selectedWorkspace = workspace;
   setSelectedQuickRequest(null);
   setWorkspaceNavigation({ data, selected: workspace });
-  selectedOwnerRepositoryCount = (data.workspaceRepositories || []).filter((binding) => binding.workspaceId === workspace.id && binding.verificationStatus === 'verified').length;
-  showOwnerTerminal();
-  syncChangeReviewAvailability();
-  syncRepositoryToolsAvailability();
-  syncOwnerControls();
   setNoSelectionVisible(false); setWorkspaceSelected(true); setWorkbenchVisible(true); setSelectedOwnerVisible(true); setNewWorkView('closed');
   setOwnerTitle(workspace.name);
   setOwnerDescription(`${workspace.description || 'Workspace'} · ${workspace.status}`);
   const disabled = workspace.status !== 'active';
-  syncWorkspaceActionDisabled();
   setCompleteWorkspaceDisabled(disabled);
   setReactivateWorkspaceDisabled(workspace.status !== 'completed');
-  renderNavigation(data);
-  syncOwnerSessions();
-  syncPendingPrompt();
-  void refreshDocsAvailability();
-  void restoreTrackedOwnerSession({ type: 'workspace', id: workspace.id });
+  setOwnerStatus('Loading workspace…');
+  terminalSurfaces.hide();
+  setTimeout(() => {
+    if (selectedWorkspace?.id !== workspace.id || selectedQuickRequest()) return;
+    selectedOwnerRepositoryCount = (data.workspaceRepositories || []).filter((binding) => binding.workspaceId === workspace.id && binding.verificationStatus === 'verified').length;
+    showOwnerTerminal();
+    syncChangeReviewAvailability();
+    syncRepositoryToolsAvailability();
+    syncOwnerControls();
+    syncWorkspaceActionDisabled();
+    renderNavigation(data);
+    syncOwnerSessions();
+    syncPendingPrompt();
+    void refreshDocsAvailability();
+    void restoreTrackedOwnerSession({ type: 'workspace', id: workspace.id });
+  }, 0);
 }
 
 function selectQuickRequest(task, workspace, data = navigationData) {
@@ -981,7 +993,7 @@ async function closeProposalSession() {
   const runtime = await terminalRuntime;
   if (appLifetime.disposed) return;
   runtime?.forget(sessionId);
-  document.querySelector(`[data-terminal-session="${CSS.escape(sessionId)}"]`)?.remove();
+  terminalSurfaces.remove(sessionId);
   removeSessionTab(sessionId);
   openSessions.delete(sessionId);
   sessionOwners.delete(sessionId);
@@ -1009,7 +1021,7 @@ async function closeWorkbenchSession(sessionId) {
   const runtime = await terminalRuntime;
   if (appLifetime.disposed) return;
   runtime?.forget(sessionId);
-  document.querySelector(`[data-terminal-session="${CSS.escape(sessionId)}"]`)?.remove();
+  terminalSurfaces.remove(sessionId);
   const ownerKey = sessionOwners.get(sessionId);
   removeSessionTab(sessionId);
   openSessions.delete(sessionId);
@@ -1039,7 +1051,7 @@ async function forgetDeletedQuickRequestTerminal(sessionId) {
   const runtime = await terminalRuntime;
   if (appLifetime.disposed) return;
   runtime?.forget(sessionId);
-  document.querySelector(`[data-terminal-session="${CSS.escape(sessionId)}"]`)?.remove();
+  terminalSurfaces.remove(sessionId);
   removeSessionTab(sessionId);
   openSessions.delete(sessionId);
   sessionOwners.delete(sessionId);
@@ -1141,13 +1153,13 @@ export const terminalRuntime = appLifetime.start({
       setAppNotice(`Startup recovery failed: ${payload?.message || 'unknown error'}`);
     }],
     ['cleanup-recovery-error', ({ payload }) => {
-      setAppNotice(showCleanupError('cleanup-recovery-error', payload));
+      setAppNotice(cleanupErrorText('cleanup-recovery-error', payload));
     }],
     ['cleanup-job-error', ({ payload }) => {
-      setAppNotice(showCleanupError('cleanup-job-error', payload));
+      setAppNotice(cleanupErrorText('cleanup-job-error', payload));
     }],
     ['cleanup-worker-error', ({ payload }) => {
-      setAppNotice(showCleanupError('cleanup-worker-error', payload));
+      setAppNotice(cleanupErrorText('cleanup-worker-error', payload));
     }],
   ],
   poll: () => { void refreshGlobalPendingInputs(); if (openSessions.size) void refreshSessionEvidence([...openSessions][0]); },

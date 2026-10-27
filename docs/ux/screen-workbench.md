@@ -17,6 +17,14 @@ The compact Workspace/session toolbar sits above a full-size interactive
 terminal. The terminal viewport fills the available work area without an inset
 card, fullscreen control, transcript, or persistent status panel.
 
+The Workspace navigation uses quiet section labels and a high-contrast selected
+row. Long Workspace names stay on one line and truncate visually in navigation
+while retaining their full accessible name. When empty, explain that New below
+creates a Workspace. Keep session tabs, destination actions, and repository
+tools aligned in one compact toolbar that wraps when needed. Use a distinct
+navigation surface and a restrained workbench surface to separate shell roles;
+do not reserve an empty toolbar row, so terminal area takes priority.
+
 ## Workspace behavior
 
 - The New work menu offers Workspace and Quick Request. Workspace confirmation
@@ -27,7 +35,9 @@ card, fullscreen control, transcript, or persistent status panel.
   worker, and **Orchestrator** for the multi-repository coordinator.
 - Tabs belong to the selected Workspace. Restore exact recorded OpenCode session
   IDs and working directories; do not guess from the newest session in a
-  directory. Users interact with OpenCode in the attached terminal.
+  directory. Navigate to the Workspace immediately, show loading status in its
+  work area while sessions attach, and keep restore failures visible there.
+  Users interact with OpenCode in the attached terminal.
 - Arrow keys move focus and selection through the selected Workspace's visible,
   enabled session tabs, wrapping at either end; Home/End choose the first/last.
   Hidden tabs belonging to other owners never participate. Returning to an owner
