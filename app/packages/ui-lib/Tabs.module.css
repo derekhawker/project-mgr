@@ -1,0 +1,18 @@
+.root {
+  color: var(--ui-text);
+  min-width: 0;
+}
+
+.panel {
+  min-width: 0;
+  padding: var(--ui-space-10);
+}
+
+.panel:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: -2px;
+}
+
+.panel[hidden] {
+  display: none;
+}

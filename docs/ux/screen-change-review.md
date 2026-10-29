@@ -16,8 +16,13 @@
 
 ## Layout
 
-Use compact shared controls and the gray work-area palette. Verify the visual
-layout on Wayland.
+Use compact shared controls and the neutral gray workbench. Reserve C64-inspired
+color for selected file rows and focus indicators. Let the selected tab name the
+page; keep toolbar actions grouped without crowding, and the changed-file list
+visually distinct from the diff surface.
+Use the shared whole-CSS-pixel [spacing weights](../../app/packages/ui-lib/spacing.md)
+for file rows, toolbar gaps, and diff-pane insets.
+Verify the visual layout on Wayland.
 
 Use a conventional changed-file list grouped by repository beside the selected
 file diff:
@@ -37,11 +42,29 @@ file diff:
 
 - Keep every repo and changed file discoverable in the list; do not require
   switching a repo filter to reveal other changes.
+- Group each repository's paths in an initially expanded, collapsible folder
+  tree with a folder icon beside each folder name. Show the file's Git status
+  beside its name. For multiple repositories,
+  label each group; for a single repository, the toolbar identifies the group.
+  The toolbar shows the selected repository, file count, and comparison target;
+  its repository path is available without repeating it in the list.
 - Selecting a file updates the diff pane.
-- Keep the session tabs available and provide **Back to terminals**; switching
-  destinations never closes or stops a terminal.
+- The file navigator has a draggable, keyboard-adjustable divider. Its width is
+  shared with Docs and restored when the app restarts.
+- Name the selected file once above its diff, without a second diff-library
+  file header.
+- Keep the session tabs available; switching destinations never closes or stops
+  a terminal. Do not add a Back button.
 - Make each repository's comparison target visible and allow a conventional
-  unified/split presentation.
+  unified/split presentation. Remember the selected presentation across tab
+  switches and application restarts; use unified by default.
+- Use the light workbench palette for the diff, color additions and removals
+  distinctly, show line numbers and align split changes. Automatically load full
+  file context for the selected tracked text file. Untracked text already appears in full.
+  Wrap long lines to the available width; line-number gutters scroll and resize
+  with their rows, and split rows stay aligned when either side wraps.
+  If the file or patch exceeds 1 MiB or the patch exceeds 20,000 lines, show the
+  error and retain the compact diff rather than loading an oversized view.
 - Change Review is an app destination, not a terminal. It does not consume a terminal
   tab or take over terminal lifecycle.
 

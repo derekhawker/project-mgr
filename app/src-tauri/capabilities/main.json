@@ -3,5 +3,9 @@
   "identifier": "main-capability",
   "description": "The main window uses the app command boundary and may open native directory pickers.",
   "windows": ["main"],
-  "permissions": ["core:event:allow-listen", "core:event:allow-unlisten", "dialog:allow-open"]
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "dialog:allow-open"
+  ]
 }

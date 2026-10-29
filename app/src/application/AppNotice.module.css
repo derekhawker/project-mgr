@@ -1,0 +1,15 @@
+.notice {
+  position: fixed;
+  z-index: 1200;
+  right: var(--ui-space-16);
+  bottom: var(--ui-space-16);
+  max-width: min(34rem, calc(100vw - var(--ui-space-32)));
+  margin: 0;
+  padding: var(--ui-space-10) var(--ui-space-12);
+  border: 1px solid var(--ui-lavender);
+  border-radius: 0;
+  color: var(--ui-text);
+  background: var(--ui-surface-raised);
+  box-shadow: 0 8px 24px rgb(25 20 55 / 14%);
+  font-size: 13px;
+}

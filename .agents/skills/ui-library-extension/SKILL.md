@@ -7,7 +7,13 @@ description: Use when creating or extending a component, primitive, or styling c
 
 Create a library component when it improves ergonomics and code reuse. Start with an actual app use case; keep application workflows and business logic outside the library.
 
+For the boundary between shared primitives, app-specific components, and screen styling, read [UI component design](../ui-component-design/SKILL.md).
+
 ## Design direction
+
+For padding, margins, gaps, overlay offsets, or responsive spacing, read the
+[spacing weights reference](../../../app/packages/ui-lib/spacing.md). It defines
+the shared whole-CSS-pixel scale for the library and its consumers.
 
 - Maintain one theme: gray, C64-inspired, flat UI with gradient backgrounds.
 - Favor crisp geometry, clear borders, compact spacing, and restrained gradients over rounded, raised, or glossy controls. Keep text and interaction states legible.
@@ -21,8 +27,8 @@ Create a library component when it improves ergonomics and code reuse. Start wit
 
 ## Existing patterns to inspect
 
-- Dialog and form: `app/src/new-work-dialog.jsx`.
-- Disclosure menu: `app/src/new-work-menu.jsx`; controlled tools panel: `app/src/repository-tools-menu.jsx`.
-- Session tabs: `app/src/session-tab-list.jsx` and `app/src/session-tab-keyboard.js`.
-- Status and errors: `app/src/app-notice.jsx`, `app/src/command-result.jsx`, and `app/src/setup-progress-list.jsx`.
-- Current shared styling: `app/src/styles.css`; Vite configuration: `app/vite.config.js`.
+- Dialog and form: `app/src/views/new-work/NewWorkDialog.jsx`.
+- Disclosure menu: `app/src/views/new-work/NewWorkMenu.jsx`; controlled tools panel: `app/src/views/repository-tools/RepositoryToolsMenu.jsx`.
+- Tabs: shared `app/packages/ui-lib/TabList.jsx`, `Tab.jsx`, and `test/tabList.test.js`; Workspace composition: `app/src/views/workbench/SessionTabList.jsx` and `WorkbenchShell.jsx`.
+- Status and errors: `app/src/application/AppNotice.jsx`, `app/src/application/CommandResult.jsx`, and `app/src/views/new-work/SetupProgressPanel.jsx`.
+- Shared UI styling and conventions: `app/packages/ui-lib/README.md`, `app/packages/ui-lib/theme.css`, and the component CSS Modules beside each primitive; import from `@ui-lib`. Vite configuration: `app/vite.config.js`; editor paths: `app/jsconfig.json`.

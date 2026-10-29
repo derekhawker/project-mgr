@@ -1,0 +1,28 @@
+.group {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  min-width: 0;
+}
+
+.group[hidden] {
+  display: none;
+}
+
+.group > .heading {
+  padding: var(--ui-control-padding);
+  color: var(--ui-menu-heading, var(--ui-text));
+  overflow-wrap: anywhere;
+}
+
+.items {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  min-width: 0;
+  margin-inline-start: var(--ui-space-12);
+}
+
+.items .group > .heading {
+  color: var(--ui-menu-subheading, var(--ui-muted));
+}

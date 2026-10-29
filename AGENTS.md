@@ -1,6 +1,7 @@
 # Project Principles
 
-- Always use the custom UI library in `app/src/ui/` for base components. DRY guides UI design: extend the library as new uses arise instead of duplicating components or their behavior and styling.
+- For UI component boundaries, app-specific abstractions, and component styling, follow [UI component design](.agents/skills/ui-component-design/SKILL.md). When extending the presentation library in `app/packages/ui-lib/` (imported as `@ui-lib`), also follow [UI library extension](.agents/skills/ui-library-extension/SKILL.md).
+- **Aggressively identify and extract components.** When building or changing UI, actively look for distinct presentation, interaction, and reuse boundaries; do not leave component opportunities buried in screen markup. Reuse an existing component when it fits. Put product-neutral components in `app/packages/ui-lib/` and application-specific components in the application, colocated with their screen or shared in `app/src/components/` as appropriate. Keep product behavior out of the UI library.
 - Put application behavior, validation, state changes, persistence, and process ownership in Rust. Keep raw HTML/CSS/JavaScript as presentation and a Tauri-command adapter.
 - Browser-based DOM and screenshot checks may be automated. Native Wayland layout, rendering, terminal, window, tray, and visual lifecycle acceptance remain manual; Chromium does not establish native acceptance.
 - Preserve Tauri, raw HTML/CSS/JavaScript, and OpenCode-owned conversation history. Read `docs/application-workflows.md` before changing product behavior.
@@ -23,6 +24,8 @@
 
 ## Implementation
 
+- Treat `npm run live --prefix app` as a persistent, user-owned development runtime: reuse it and let frontend changes hot-reload. Preserve its launch script and running process; restart or change either only when the work requires it, and explain why first.
+- When adding or moving frontend files, follow [frontend organization and naming](app/README.md#frontend-organization): colocate screen code in `app/src/views/<area>/`, use exact-name PascalCase component files, and keep plain JavaScript modules camelCase.
 - Before implementation, understand how the intended behavior could work end to end within the current architecture. Identify whether the feature extends an existing feature or calls for a different organization of code. Refine this understanding as implementation reveals more.
 
 ## Code Indexing
@@ -31,13 +34,15 @@
 
 ## Testing
 
+- For behavioral fixes, build and run a regression test that reproduces the reported behavior before changing production code; confirm it fails for that behavior, then apply the fix and confirm it passes. Prefer the real production seam over source-text checks. For visual or configuration-only changes, follow the configuration testing rule below instead.
 - **Cover risks, not functions.** Before adding tests, identify the changed rule and the regression an existing test would miss. Extend an existing scenario when it can prove the rule clearly. Add another layer only for a distinct risk; neither test counts nor coverage percentages justify duplicate assertions.
 - **Choose the cheapest convincing test.** Use input/output tables for pure Rust rules, the production store with isolated SQLite for persistence, and temporary real Git/filesystem fixtures for Git/path safety. Use file-backed SQLite for reopen and migration tests. A selection-persistence test should not provision a clone or start a process.
 - **Test both ends of every Tauri command without mirroring business logic.** Rust covers behavior and serialized results; frontend tests cover command names, payloads, and result/error handling. Reuse shared contract checks and, where practical, Rust-produced values in frontend validation. Add command-specific cases for distinct contract risks, not another backend scenario matrix.
 - **Make setup reusable and optional.** Reuse small record constructors and fixture helpers; show only scenario-specific differences in each test. Keep database, repository, worktree, and session setup composable rather than building the whole application by default. Each test owns its mutable state and temporary-resource cleanup. Share setup, never the production calculation of an expected answer.
 - **Exercise production orchestration.** When a workflow is trapped behind Tauri setup, extract the needed Rust service boundary and keep the handler thin. Substitute only external operations needed to control failures; keep real store/Git integration coverage. Do not rebuild the workflow in the test or introduce a trait/mock for every internal call. Scope testability changes to the feature.
 - **Spend extra cases on side effects.** Cover relevant success, rejection before mutation, partial failure, and retry/reopen recovery paths. Check persisted ownership, retained user files, atomicity, and absence of duplicate work. Inject failure where the side effect can fail, then assert recovery through the production entry point. Keep independent failure scenarios independently runnable.
-- **Assert behavior, not source spelling.** Use production functions or DOM events for frontend behavior; reserve source-text checks for command inventories and architecture rules. Assert ordering only when correctness requires it. Do not test CSS declarations, classes, or layout in unit tests; keep visual/native acceptance manual on Wayland.
+- **Configuration is not a test oracle.** Treat CSS, theme values, and other configuration as deliberately changeable inputs, not behavior to lock down. Do not write tests at any layer that merely assert a configured property, exact value, class, computed style, or visual preference. Test configuration parsing, validation, or meaningful behavior at its consumer boundary when there is a distinct risk; use manual visual acceptance for appearance, including native Wayland layout. A visual-only value change does not require a regression test.
+- **Assert behavior, not source spelling.** Use production functions or DOM events for frontend behavior; reserve source-text checks for command inventories and architecture rules. Assert ordering only when correctness requires it.
 - **Contain boundary-fixture costs.** Reuse a scripted local HTTP server with the real client instead of writing socket parsing per test. Give waits deadlines and reap fixture children on failure. Keep installed OpenCode CLI/server checks explicit and separate from fast deterministic tests; mocks do not replace those integration checks. Provider-dependent acceptance remains manual when automation cannot validate it.
 - **Keep migration tests historical.** Build the database using schema/migrations through version N, seed representative data, then run the production upgrade. Do not manufacture an old database by dismantling the latest schema: a new migration should not force repairs to old test setup.
 

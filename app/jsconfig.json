@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "preserve",
+    "jsxImportSource": "solid-js",
+    "checkJs": false,
+    "paths": {
+      "@ui-lib": ["./packages/ui-lib/index.js"]
+    }
+  },
+  "include": ["src/**/*", "packages/ui-lib/**/*", "test/**/*", "vite.config.js"]
+}

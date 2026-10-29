@@ -1,0 +1,31 @@
+.progress {
+  margin-top: var(--ui-space-8);
+  border-top: 1px solid var(--ui-border-light);
+  padding-top: var(--ui-space-8);
+}
+.progress h2 {
+  margin: 0 0 var(--ui-space-4);
+  font-size: 14px;
+}
+.progress ol {
+  display: grid;
+  gap: var(--ui-space-4);
+  margin: 0;
+  padding-left: var(--ui-space-20);
+  font-size: 13px;
+}
+.progress li[data-status="success"] {
+  color: var(--ui-success);
+}
+.progress li[data-status="failed"] {
+  color: var(--ui-error);
+}
+.progress li[data-status="running"] {
+  color: var(--ui-warning);
+}
+.progress details pre {
+  max-width: 100%;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

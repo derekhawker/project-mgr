@@ -1,0 +1,106 @@
+.strip {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  border: 1px solid var(--ui-border-light);
+  border-radius: var(--ui-control-radius) 0 0 var(--ui-control-radius);
+  color: var(--ui-text);
+  background: var(--ui-surface-pressed);
+  box-shadow:
+    inset 0 1px 2px 1px rgb(0 0 0 / 16%),
+    0 1px 0 rgb(255 255 255 / 40%);
+}
+
+/* The visible tabs are ARIA-owned from here; adjacent actions remain buttons. */
+.semantics {
+  position: absolute;
+}
+
+.list {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: stretch;
+  min-width: 0;
+}
+
+.strip[hidden] {
+  display: none;
+}
+
+.list[data-orientation="vertical"] {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.item {
+  display: inline-flex;
+  align-items: stretch;
+  max-width: 100%;
+  min-width: 0;
+  border-inline-end: 1px solid var(--ui-border-light);
+}
+
+.item[hidden] {
+  display: none;
+}
+
+.tab {
+  flex: 1 1 auto;
+  max-width: 100%;
+  min-width: 0;
+  border: 0;
+  border-radius: 0;
+  text-align: start;
+  overflow-wrap: anywhere;
+}
+
+/* Hidden owner tabs must not consume the group's rounded left end. */
+.item:not([hidden]) .tab {
+  border-start-start-radius: calc(var(--ui-control-radius) - 1px);
+  border-end-start-radius: calc(var(--ui-control-radius) - 1px);
+}
+
+.item:not([hidden]) ~ .item .tab {
+  border-radius: 0;
+}
+
+.list[data-orientation="vertical"] .item {
+  width: 100%;
+  border-inline-end: 0;
+  border-block-end: 1px solid var(--ui-border-light);
+}
+
+.item .close {
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 0;
+}
+
+.item:not([data-selected]) .close {
+  background: var(--ui-background);
+}
+
+.tab:not([aria-selected="true"]) {
+  background: var(--ui-background);
+}
+
+.tab:focus-visible,
+.close:focus-visible {
+  outline-offset: -2px;
+}
+
+.actions {
+  flex: 0 0 auto;
+}
+
+.actions[hidden] {
+  display: none;
+}
+
+.actionContent {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ui-space-2);
+}

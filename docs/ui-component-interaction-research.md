@@ -1,6 +1,6 @@
 # UI component interaction research
 
-Scope: `app/src/ui` interaction semantics and defaults, checked against W3C APG patterns and MDN's native-element references. This is a findings note, not a claim of full conformance; user-agent behavior and actual labels/content supplied by callers matter.
+Scope: `app/packages/ui-lib/` interaction semantics and defaults, checked against W3C APG patterns and MDN's native-element references. This is a findings note, not a claim of full conformance; user-agent behavior and actual labels/content supplied by callers matter.
 
 ## Findings
 

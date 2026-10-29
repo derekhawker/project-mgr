@@ -1,0 +1,26 @@
+.heading {
+  max-width: none;
+  margin: 0;
+  color: var(--ui-text);
+  font-family: inherit;
+  font-weight: 650;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+}
+
+.page {
+  font-size: 1.25rem;
+}
+.section {
+  font-size: 1.125rem;
+}
+.subsection {
+  font-size: 1rem;
+}
+.compact {
+  font-size: 0.8125rem;
+}
+.hero {
+  font-size: clamp(1.35rem, 2.4vw, 1.9rem);
+  line-height: 1.2;
+}

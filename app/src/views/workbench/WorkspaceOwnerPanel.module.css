@@ -1,0 +1,25 @@
+.requestForm {
+  display: grid;
+  gap: var(--ui-space-8);
+  margin-top: var(--ui-space-24);
+}
+
+.requestForm label {
+  color: var(--ui-text);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.requestForm > button[type="submit"] {
+  justify-self: start;
+}
+
+.workspaceSessionForm {
+  gap: var(--ui-space-6);
+  margin-top: var(--ui-space-6);
+}
+
+.modelRow {
+  display: grid;
+  gap: var(--ui-space-6);
+}

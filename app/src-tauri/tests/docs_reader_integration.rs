@@ -32,15 +32,59 @@ fn production_reader_loads_workspace_home_document_relative_to_workspace() {
         .unwrap();
     let readme = std::path::Path::new(&workspace.home_path).join("README.md");
     fs::write(&readme, "# Workspace guide\n").unwrap();
+    fs::write(
+        std::path::Path::new(&workspace.home_path).join(".gitignore"),
+        "generated/\n*.draft.txt\n",
+    )
+    .unwrap();
+    fs::create_dir_all(std::path::Path::new(&workspace.home_path).join("generated")).unwrap();
+    fs::write(
+        std::path::Path::new(&workspace.home_path).join("generated/output.md"),
+        "generated",
+    )
+    .unwrap();
+    fs::write(
+        std::path::Path::new(&workspace.home_path).join("notes.draft.txt"),
+        "draft",
+    )
+    .unwrap();
+    fs::create_dir_all(std::path::Path::new(&workspace.home_path).join("nested/private")).unwrap();
+    fs::write(
+        std::path::Path::new(&workspace.home_path).join("nested/.gitignore"),
+        "private/\n",
+    )
+    .unwrap();
+    fs::write(
+        std::path::Path::new(&workspace.home_path).join("nested/private/secret.md"),
+        "secret",
+    )
+    .unwrap();
+    fs::write(
+        std::path::Path::new(&workspace.home_path).join("nested/guide.md"),
+        "guide",
+    )
+    .unwrap();
 
     let files = list_for_owner(&store, "workspace", &workspace.id).unwrap();
 
-    assert_eq!(files.len(), 1);
-    assert_eq!(files[0].path, "README.md");
-    assert_eq!(files[0].repository_id, None);
-    let document =
-        read_for_owner(&store, "workspace", &workspace.id, &files[0].path, None).unwrap();
+    assert_eq!(
+        files
+            .iter()
+            .map(|file| file.path.as_str())
+            .collect::<Vec<_>>(),
+        ["README.md", "nested/guide.md"]
+    );
+    assert!(files.iter().all(|file| file.repository_id.is_none()));
+    let document = read_for_owner(&store, "workspace", &workspace.id, "README.md", None).unwrap();
     assert_eq!(document.contents, "# Workspace guide\n");
+    assert!(read_for_owner(
+        &store,
+        "workspace",
+        &workspace.id,
+        "generated/output.md",
+        None,
+    )
+    .is_err());
 }
 
 #[test]
@@ -57,6 +101,18 @@ fn production_reader_resolves_verified_repository_paths_from_workspace_bindings(
         .unwrap();
     assert!(output.status.success());
     fs::write(repository_path.join("guide.TXT"), "Repository guide\n").unwrap();
+    fs::write(repository_path.join(".gitignore"), "build/\n*.local.txt\n").unwrap();
+    fs::create_dir_all(repository_path.join("build/generated")).unwrap();
+    fs::write(
+        repository_path.join("build/generated/output.md"),
+        "build output",
+    )
+    .unwrap();
+    fs::write(repository_path.join("notes.local.txt"), "local docs").unwrap();
+    fs::create_dir_all(repository_path.join("docs/private")).unwrap();
+    fs::write(repository_path.join("docs/.gitignore"), "private/\n").unwrap();
+    fs::write(repository_path.join("docs/private/secret.md"), "secret").unwrap();
+    fs::write(repository_path.join("docs/guide.md"), "public docs").unwrap();
     fs::create_dir_all(repository_path.join("node_modules/dependency")).unwrap();
     fs::write(
         repository_path.join("node_modules/dependency/README.md"),
@@ -152,9 +208,14 @@ fn production_reader_resolves_verified_repository_paths_from_workspace_bindings(
     assert!(files.iter().any(|file| {
         file.path == "guide.TXT" && file.repository_id.as_deref() == Some(repository_id.as_str())
     }));
-    assert!(!files
-        .iter()
-        .any(|file| { file.path.contains("node_modules") || file.path.contains("vendor") }));
+    assert!(!files.iter().any(|file| {
+        file.path.contains("node_modules")
+            || file.path.contains("vendor")
+            || file.path.starts_with("build/")
+            || file.path.ends_with(".local.txt")
+            || file.path.contains("private/")
+    }));
+    assert!(files.iter().any(|file| file.path == "docs/guide.md"));
     let document = read_for_owner(
         &store,
         "workspace",

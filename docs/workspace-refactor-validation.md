@@ -34,9 +34,9 @@ Tauri rendering, PTY behavior, window/tray lifecycle, or OpenCode plugin loading
 - Create, open, follow up, search, and delete a Quick Request. Confirm its
   dedicated terminal page, back navigation, original prompt behavior, and
   deletion semantics remain unchanged.
-- Open Directories and restore a legacy archive fixture. Confirm the archive is
-  marked restored, the compatibility record does not become a regular
-  navigation destination, and no filesystem or OpenCode history changes.
+- Open Directories and confirm archived legacy records are not exposed as a
+  list or restore action. Migration tests verify their metadata snapshots remain
+  internal and filesystem data is untouched.
 
 ## Native lifecycle
 

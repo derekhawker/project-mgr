@@ -1,7 +1,7 @@
 use std::{fs, path::Path, process::Command};
 
 use opencode_project_manager_lib::{
-    change_review::load_for_owner,
+    change_review::{full_diff_for_owner, load_for_owner},
     management::{
         CheckoutMode, ManagementStore, NewWorkspace, VerificationStatus, WorkspaceKind,
         WorkspaceRepositoryBinding,
@@ -76,7 +76,7 @@ fn commit(path: &Path, message: &str) {
 }
 
 #[test]
-fn change_review_rejects_restored_legacy_task_owners() {
+fn full_context_is_bounded_and_scoped_to_verified_workspace_repositories() {
     for base_branch in ["main", "master"] {
         let fixture = tempdir().unwrap();
         let source = fixture.path().join("source");
@@ -182,6 +182,85 @@ fn change_review_rejects_restored_legacy_task_owners() {
         store
             .validate_and_save_workspace_repository_binding(&binding)
             .unwrap();
+        let long_file = (0..40).map(|n| format!("line {n}\n")).collect::<String>();
+        fs::write(clone.checkout_path.join("tracked.txt"), &long_file).unwrap();
+        git(&clone.checkout_path, &["add", "tracked.txt"]);
+        commit(&clone.checkout_path, "long file");
+        git(
+            &clone.checkout_path,
+            &["update-ref", &format!("refs/heads/{base_branch}"), "HEAD"],
+        );
+        // The selected comparison ref must continue to point to the baseline.
+        git(
+            &clone.checkout_path,
+            &[
+                "update-ref",
+                &format!("refs/remotes/origin/{base_branch}"),
+                "HEAD",
+            ],
+        );
+        fs::write(
+            clone.checkout_path.join("tracked.txt"),
+            long_file.replace("line 20\n", "changed\n"),
+        )
+        .unwrap();
+        let full = full_diff_for_owner(
+            &store,
+            "workspace",
+            &workspace.id,
+            &repository.id,
+            "tracked.txt",
+        )
+        .unwrap();
+        assert!(full.contains(" line 0") && full.contains(" line 39") && full.contains("+changed"));
+        assert!(
+            full_diff_for_owner(&store, "task", &workspace.id, &repository.id, "tracked.txt")
+                .is_err()
+        );
+        assert!(full_diff_for_owner(
+            &store,
+            "workspace",
+            &workspace.id,
+            "other-repository",
+            "tracked.txt"
+        )
+        .is_err());
+        assert!(full_diff_for_owner(
+            &store,
+            "workspace",
+            &workspace.id,
+            &repository.id,
+            "../tracked.txt"
+        )
+        .is_err());
+        fs::write(
+            clone.checkout_path.join("tracked.txt"),
+            format!("changed\n{}", "x".repeat(1_100_000)),
+        )
+        .unwrap();
+        assert!(full_diff_for_owner(
+            &store,
+            "workspace",
+            &workspace.id,
+            &repository.id,
+            "tracked.txt"
+        )
+        .unwrap_err()
+        .contains("limit"));
+        fs::write(
+            clone.checkout_path.join("tracked.txt"),
+            "many\n".repeat(20_100),
+        )
+        .unwrap();
+        assert!(full_diff_for_owner(
+            &store,
+            "workspace",
+            &workspace.id,
+            &repository.id,
+            "tracked.txt"
+        )
+        .unwrap_err()
+        .contains("limit"));
         let model = ModelReference {
             provider_id: "test-provider".into(),
             id: "test-model".into(),

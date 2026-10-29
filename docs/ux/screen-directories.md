@@ -1,23 +1,55 @@
-# Directories
+# Repositories
 
-Open this page from the hamburger-style **Directories** control at the top of
-navigation. Keep repository rows off persistent navigation.
+Open this page from the **Repositories** control in top navigation. Keep
+repository rows off persistent navigation.
+Use persistent navigation to leave the page; do not add a Back button.
+The navigation control keeps its visible **Repositories** label and uses the
+shared decorative SVG folder, not a Unicode menu symbol.
 
-The page uses the shared gray UI controls, with flat bordered sections for the
-library, archives, and repository groups. Paths remain visible and wrap when
-needed. Native picker behavior is unchanged. Verify appearance on Wayland.
+The page uses the neutral gray workbench and a Docs-style directory tree in a
+crisp bordered section. For scan roots sharing a filesystem-level path
+component, combine them at their shortest shared parent when they contain at
+most five repositories. Keep them separate above five; a lone scan root keeps
+its own path. Within each displayed group, collapse child folders with at most
+five repositories into their parent; retain folders with more than five. Apply
+that rule independently to each branch, and do not promote empty ancestors such
+as `/home` or `/tmp` above the data-bearing directory. Render actual folders
+with folder icons, but repository rows without icons. Bold repo names and keep
+their paths visible, wrapping when needed. Reserve
+C64-inspired lavender/cyan for selected and focus states. Native picker
+behavior is unchanged. Verify appearance on Wayland.
+
+Each repository row has an enable checkbox and delete icon. The delete icon
+enters multi-select mode with that repository selected; users can select more,
+cancel, or confirm **Delete selected (n)**. Deletion soft-deletes catalog
+entries only: repository files and existing workspace associations remain
+untouched, and scans must not rediscover a soft-deleted repository.
+
+Page, form, and repository-group insets and gaps use the shared whole-CSS-pixel
+[spacing weights](../../app/packages/ui-lib/spacing.md).
+
+Show operation failures in one prominent error banner beneath the page heading.
+Keep errors tied to the Repository library location inline beside that form;
+loading, progress, and successful completion remain neutral status messages.
+Opening Repositories must still show the page if loading its contents fails, with
+the failure in the page banner so the user can recover or navigate away.
 
 ## Discovered repositories
 
 - **Add directories** opens the native multi-folder picker.
 - Show the configurable **Repository library location** on this page. The user
-  can type an absolute path or choose a folder; Rust validates and persists it.
+  can type an absolute path or choose a folder; save edits after five seconds
+  without changes and immediately when the field loses focus. Rust validates
+  and persists each saved value.
   This is where the app keeps managed base checkouts, not a replacement for the
   existing source checkouts shown below.
-- Show discovered repositories under the shortest shared parent for saved scan
-  directories on the same filesystem root. Keep different filesystem roots in
-  separate groups. If a shared parent contains more than eight repositories,
-  keep the saved scan directories as separate groups instead.
+- Combine scan roots sharing a filesystem-level path component at their
+  shortest common parent when their combined repository count is at most five.
+  Keep the roots separate above five. A single root stays at its own path, so
+  empty ancestors such as `/home` and `/tmp` are not shown as directory groups.
+- Within a displayed group, collapse child folders containing at most five
+  repositories into the parent. Keep larger child folders as groups and apply
+  the rule independently through the tree.
 - Scan every saved directory at startup. Never scan the configured OpenCode
   Projects area or the configured repository-library root, including when a
   saved scan root is one of their ancestors.
@@ -37,12 +69,3 @@ The enabled repository list is supplied to the initial New-work proposal as
 verified working-directory context. The original user prompt remains unchanged.
 Adding a directory never automatically attaches every discovered repository
 to a workspace.
-
-## Archived legacy records
-
-Migration 19 archives legacy regular Task records after verifying a versioned
-snapshot of their metadata, associations, setup/cleanup state, exact paths, and
-session IDs. Quick Requests are not included. This section lists archived
-records and offers **Restore record**, which restores the database associations
-without moving files or changing OpenCode history. Restored records remain
-compatibility data and do not reappear as Workspace navigation destinations.

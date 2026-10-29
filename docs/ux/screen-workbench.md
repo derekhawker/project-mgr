@@ -1,8 +1,8 @@
 # Workspace Workbench
 
 > **Workspace-only refactor in progress:** Workspace is the sole regular work
-> record. Legacy Task data remains stored for the final archive/restore
-> migration, but Task selection and controls are not part of the UI. See
+> record. Legacy Task metadata is retained internally for compatibility, but
+> archived records are not listed or restored in the UI. See
 > [`../workspace-refactor-target.md`](../workspace-refactor-target.md).
 
 ## Purpose and layout
@@ -13,17 +13,59 @@ Workspaces directly; legacy Task rows are not shown as work destinations.
 Quick Requests remain a separate tracked flow above the Workspace list.
 
 Keep the app shell anchored to the window. Only the selected main pane scrolls.
-The compact Workspace/session toolbar sits above a full-size interactive
-terminal. The terminal viewport fills the available work area without an inset
-card, fullscreen control, transcript, or persistent status panel.
+The workbench shell starts with a compact heading showing the selected
+Workspace's full name. It stays visible across terminal, Docs, and Change Review
+views and updates when another Workspace is selected. Long names wrap rather
+than widening the work area. The compact Workspace/session toolbar sits below
+the heading and above compact, collapsed Workspace
+options at the top of the work area, followed by the full-size interactive
+terminal. The terminal viewport reaches the work-area edges without an extra
+title strip or inset padding. C64-inspired color is reserved for navigation selection
+and focused controls. It remains the primary work area without an app transcript
+or persistent status panel.
+Workspace options use the shared Collapsible and its decorative SVG chevron,
+not the browser's default disclosure marker.
 
-The Workspace navigation uses quiet section labels and a high-contrast selected
-row. Long Workspace names stay on one line and truncate visually in navigation
-while retaining their full accessible name. When empty, explain that New below
-creates a Workspace. Keep session tabs, destination actions, and repository
-tools aligned in one compact toolbar that wraps when needed. Use a distinct
-navigation surface and a restrained workbench surface to separate shell roles;
-do not reserve an empty toolbar row, so terminal area takes priority.
+The navigation is a quiet gray rail with a subtle divider. Quick Requests and
+Workspaces form a continuous list, without section cards or hard rules. Labels
+use normal case and restrained weight. Selected destinations use C64 purple;
+primary actions use a muted terracotta accent. Keep the full-width Directories
+and New work controls together at the bottom of the rail, with Directories
+immediately above New work. Directories uses the default shared button
+treatment with a decorative SVG folder beside its label; New work uses the
+shared SVG disclosure chevron rather than a browser-rendered triangle. Both
+keep their visible labels. New work is a full-width disclosure action with a C64-colored menu
+surface and readable contrasting items. Use compact outlined controls with
+near-square corners. Long Workspace names
+stay on one line and truncate visually while retaining their full accessible
+name. When empty, explain that New below creates a Workspace. OpenCode sessions,
+open terminals, Change Review, and Docs share one rounded, recessed tab strip.
+The tab surfaces sit flush with the surrounding gray page, not above it. The
+selected tab uses the theme's primary background and contrasting text instead
+of a border or inset marker. Tabs wrap when needed.
+Tabs form a joined button group without strip padding or gaps. Use one divider
+between tabs and rounding only at the group's left end, even when earlier
+owner tabs are hidden. Label typography and padding match Tools; selection does
+not enlarge or embolden a label. Unused strip space keeps the solid darker gray
+background and inset shadow, not a gradient.
+Each closeable session has an × beside its own label, including inactive tabs.
+Docs and Change Review have no close button. Closing an inactive session does
+not select it first. Restart remains a separate action for the selected
+terminal. These controls are never nested inside tab buttons. Tools stays outside the tablist in
+the same compact toolbar. Use a restrained monospace face for navigation labels and
+controls, with one shared button height and padding. Ghost buttons stay flat
+until hovered; then use only a slight lift and soft shadow. Pressing a button
+should feel gently inset. Keep menu rows flat. The empty state is simple and
+centered, without console-style labels.
+
+Navigation, toolbars, menus, and inline panels use the shared whole-CSS-pixel
+[spacing weights](../../app/packages/ui-lib/spacing.md). The terminal itself
+remains edge-to-edge; consistent spacing must not add an inset around it.
+
+Keep the selected session identity in the session tab and let that tab own the
+primary selection fill. The Workspace heading belongs to the shell,
+not the terminal surface; do not add another terminal title strip or reserve an
+empty toolbar row. Quick Request and other destinations do not show the heading.
 
 ## Workspace behavior
 
@@ -38,15 +80,33 @@ do not reserve an empty toolbar row, so terminal area takes priority.
   directory. Navigate to the Workspace immediately, show loading status in its
   work area while sessions attach, and keep restore failures visible there.
   Users interact with OpenCode in the attached terminal.
-- Arrow keys move focus and selection through the selected Workspace's visible,
-  enabled session tabs, wrapping at either end; Home/End choose the first/last.
+- Left/Right arrows move focus and selection through the selected Workspace's
+  visible, enabled session and document/review tabs, wrapping at either end;
+  Home/End choose the first/last. Focus stays on the activated tab so repeated
+  navigation works; Tab reaches the per-tab close buttons and selected terminal's
+  Restart action. If closing removes the focused ×, focus returns to the selected
+  tab rather than a hidden terminal.
+  Loading a reader keeps its selected tab focusable while duplicate opens are
+  blocked.
   Hidden tabs belonging to other owners never participate. Returning to an owner
   retains its remembered session, including a still-open tool terminal.
 - Change Review appears only when the Workspace has associated repositories.
-  Docs lists Workspace-home and verified repository files. Both destinations
+  Docs is always listed, disabled after discovery confirms no documents. It
+  lists Workspace-home and verified repository files. Both destinations
   leave terminal sessions available and return without stopping them.
-- Tools presents Workspace OS handoff actions before repository tools. Rust
-  resolves and validates Workspace-owned paths; the GUI does not supply paths.
+- Tools presents Workspace OS handoff actions before repository tools.
+  The **Open in…** section sits above the repository scripts, separated by a
+  horizontal divider. Its buttons stack vertically, one full-width button per row.
+  Repository script groups may sit side by side below it. When there are no
+  associated repositories, omit the repository section and its divider.
+  The menu sizes to its contents with a modest minimum width, not the work area's
+  width; it stays within the viewport and wraps repository groups when needed.
+  Tools and New work share the purple menu surface and flat, left-aligned action
+  rows, not outlined buttons. Light-cyan section headings and light-lavender
+  script subheadings distinguish the hierarchy; each group's items are indented
+  beneath its heading. Shared menu items, groups, and dividers own this treatment
+  in the UI library. Items retain native Tab and Enter/Space behavior.
+  Rust resolves and validates Workspace-owned paths; the GUI does not supply paths.
   Tools uses the same disclosure menu as New work. Clicking outside closes it;
   Escape closes it and returns focus to Tools. Tool action status remains visible
   in the menu while an action runs.
@@ -60,14 +120,14 @@ do not reserve an empty toolbar row, so terminal area takes priority.
 
 Quick Requests keep their existing separate destination and lifecycle. Opening
 one shows its exact tracked OpenCode session in a dedicated terminal page, with
-navigation still visible and a **Back to Quick Requests** action. It has no
+navigation still visible. It has no
 Workspace tabs, repository controls, or Workspace lifecycle actions.
 
 ## Compatibility boundary
 
 Legacy Task records and backend commands remain during the staged refactor, but
 the regular workbench does not select or operate on those records. Their
-eventual archive, conversion, and undelete behavior is specified in
+legacy-data compatibility behavior is specified in
 [`../workspace-refactor-target.md`](../workspace-refactor-target.md) and is
 deferred to the final migration stage.
 

@@ -16,6 +16,7 @@ pub mod change_review;
 pub mod docs_reader;
 pub mod management;
 pub mod opencode;
+pub mod presentation_preferences;
 pub mod os_handoff;
 pub mod repo_tools;
 pub mod safety;
@@ -248,9 +249,11 @@ pub fn run() {
             quick_request_expire,
             quick_request_promote,
             workspace_navigation,
-            legacy_task_archives_list,
-            legacy_task_archive_restore,
             change_review_load,
+            change_review_full_diff,
+            presentation_preferences_get,
+            presentation_preferences_set_navigator_width,
+            presentation_preferences_set_change_review_mode,
             docs_list,
             docs_read,
             repo_tools_list,
@@ -262,6 +265,7 @@ pub fn run() {
             workbench_shell_terminal_start,
             workbench_os_handoff,
             new_work_proposal_start,
+            new_work_proposal_preview,
             new_work_proposal_run,
             new_work_proposal_read,
             new_work_proposal_close,
@@ -284,6 +288,7 @@ pub fn run() {
             repository_library_get,
             repository_library_set,
             repository_enabled_set,
+            repository_soft_delete_many,
             repository_attach,
             workspace_session_create,
             task_session_create
@@ -460,26 +465,6 @@ fn workspace_navigation(store: State<'_, ManagementStore>) -> Result<WorkspaceNa
     })
 }
 
-#[tauri::command]
-fn legacy_task_archives_list(
-    store: State<'_, ManagementStore>,
-) -> Result<Vec<management::LegacyTaskArchiveSummary>, String> {
-    store
-        .list_legacy_task_archives()
-        .map_err(|error| error.to_string())
-}
-
-#[tauri::command]
-fn legacy_task_archive_restore(
-    task_id: String,
-    store: State<'_, ManagementStore>,
-) -> Result<(), String> {
-    store
-        .restore_legacy_task_archive(&task_id)
-        .map(|_| ())
-        .map_err(|error| error.to_string())
-}
-
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct OwnerContextRequest {
@@ -488,11 +473,48 @@ struct OwnerContextRequest {
 }
 
 #[tauri::command]
+fn presentation_preferences_get(store: State<'_, ManagementStore>) -> Result<presentation_preferences::PresentationPreferences, String> {
+    presentation_preferences::load(&store)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct NavigatorWidthRequest { width: u32 }
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ChangeReviewModeRequest { mode: presentation_preferences::ChangeReviewMode }
+
+#[tauri::command]
+fn presentation_preferences_set_change_review_mode(request: ChangeReviewModeRequest, store: State<'_, ManagementStore>) -> Result<presentation_preferences::PresentationPreferences, String> {
+    presentation_preferences::set_change_review_mode(&store, request.mode)
+}
+
+#[tauri::command]
+fn presentation_preferences_set_navigator_width(request: NavigatorWidthRequest, store: State<'_, ManagementStore>) -> Result<presentation_preferences::PresentationPreferences, String> {
+    presentation_preferences::set_navigator_width(&store, request.width)
+}
+
+#[tauri::command]
 fn change_review_load(
     request: OwnerContextRequest,
     store: State<'_, ManagementStore>,
 ) -> Result<Vec<change_review::ReviewRepository>, String> {
     change_review::load_for_owner(&store, &request.owner_type, &request.owner_id)
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ChangeReviewFullDiffRequest {
+    owner_type: String,
+    owner_id: String,
+    repository_id: String,
+    path: String,
+}
+
+#[tauri::command]
+fn change_review_full_diff(request: ChangeReviewFullDiffRequest, store: State<'_, ManagementStore>) -> Result<String, String> {
+    change_review::full_diff_for_owner(&store, &request.owner_type, &request.owner_id, &request.repository_id, &request.path)
 }
 
 #[tauri::command]
@@ -832,6 +854,15 @@ struct NewWorkProposalRunCommand {
     preferred_workspace_id: Option<String>,
 }
 
+#[tauri::command]
+fn new_work_proposal_preview(
+    store: State<'_, ManagementStore>,
+    original_prompt: String,
+) -> Result<String, String> {
+    let (context, _) = new_work_proposal_context(&store, "workspace", None)?;
+    render_new_work_proposal_prompt(&original_prompt, &context)
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ProposalWorkspace {
@@ -977,53 +1008,7 @@ fn new_work_proposal_run(
     if !["workspace", "task", "quick_request"].contains(&requested_work_type) {
         return Err("Unsupported New-work type.".into());
     }
-    let workspaces = store.list_workspaces().map_err(|error| error.to_string())?;
-    let mut workspace_context = Vec::with_capacity(workspaces.len());
-    for workspace in workspaces {
-        let bindings = store
-            .list_workspace_repository_bindings(&workspace.id)
-            .map_err(|error| error.to_string())?;
-        workspace_context.push(serde_json::json!({
-            "id": workspace.id,
-            "name": workspace.name,
-            "status": workspace.status,
-            "kind": workspace.kind,
-            "repositories": bindings.into_iter().map(|binding| serde_json::json!({
-                "repositoryId": binding.repository_id,
-                "checkoutPath": binding.checkout_path,
-                "verificationStatus": binding.verification_status,
-            })).collect::<Vec<_>>(),
-        }));
-    }
-    let mut repositories = store
-        .list_repositories()
-        .map_err(|error| error.to_string())?;
-    if requested_work_type == "task" {
-        let workspace = preferred_workspace
-            .as_ref()
-            .ok_or_else(|| "Task proposals require the selected workspace context.".to_owned())?;
-        let bindings = store
-            .list_workspace_repository_bindings(&workspace.id)
-            .map_err(|error| error.to_string())?;
-        repositories.retain(|repository| {
-            bindings.iter().any(|binding| {
-                binding.repository_id == repository.id
-                    && binding.verification_status == management::VerificationStatus::Verified
-            })
-        });
-    }
-    let candidate_ids = repositories
-        .iter()
-        .map(|repository| repository.id.clone())
-        .collect::<HashSet<_>>();
-    let context = serde_json::json!({
-        "requestedWorkType": requested_work_type,
-        "workspaces": workspace_context,
-        "repositoryCatalog": repositories,
-        "preferredTaskWorkspace": preferred_workspace.as_ref().map(|workspace| {
-            serde_json::json!({"id": workspace.id, "name": workspace.name})
-        }),
-    });
+    let (context, candidate_ids) = new_work_proposal_context(&store, requested_work_type, preferred_workspace.as_ref())?;
     let prompt = render_new_work_proposal_prompt(&original_prompt, &context)?;
     let raw = runtime.generate_session_text(&request.session_id, &prompt)?;
     let extraction: NewWorkProposalExtraction = serde_json::from_str(&raw)
@@ -1087,6 +1072,61 @@ fn new_work_proposal_run(
     }
     validate_preferred_workspace(&parsed, request.preferred_workspace_id.as_deref())?;
     Ok(parsed)
+}
+
+fn new_work_proposal_context(
+    store: &ManagementStore,
+    requested_work_type: &str,
+    preferred_workspace: Option<&management::Workspace>,
+) -> Result<(serde_json::Value, HashSet<String>), String> {
+    let workspaces = store.list_workspaces().map_err(|error| error.to_string())?;
+    let mut workspace_context = Vec::with_capacity(workspaces.len());
+    for workspace in workspaces {
+        let bindings = store
+            .list_workspace_repository_bindings(&workspace.id)
+            .map_err(|error| error.to_string())?;
+        workspace_context.push(serde_json::json!({
+            "id": workspace.id,
+            "name": workspace.name,
+            "status": workspace.status,
+            "kind": workspace.kind,
+            "repositories": bindings.into_iter().map(|binding| serde_json::json!({
+                "repositoryId": binding.repository_id,
+                "checkoutPath": binding.checkout_path,
+                "verificationStatus": binding.verification_status,
+            })).collect::<Vec<_>>(),
+        }));
+    }
+    let mut repositories = store
+        .list_repositories()
+        .map_err(|error| error.to_string())?;
+    if requested_work_type == "task" {
+        let workspace = preferred_workspace
+            .as_ref()
+            .ok_or_else(|| "Task proposals require the selected workspace context.".to_owned())?;
+        let bindings = store
+            .list_workspace_repository_bindings(&workspace.id)
+            .map_err(|error| error.to_string())?;
+        repositories.retain(|repository| {
+            bindings.iter().any(|binding| {
+                binding.repository_id == repository.id
+                    && binding.verification_status == management::VerificationStatus::Verified
+            })
+        });
+    }
+    let candidate_ids = repositories
+        .iter()
+        .map(|repository| repository.id.clone())
+        .collect::<HashSet<_>>();
+    let context = serde_json::json!({
+        "requestedWorkType": requested_work_type,
+        "workspaces": workspace_context,
+        "repositoryCatalog": repositories,
+        "preferredTaskWorkspace": preferred_workspace.as_ref().map(|workspace| {
+            serde_json::json!({"id": workspace.id, "name": workspace.name})
+        }),
+    });
+    Ok((context, candidate_ids))
 }
 
 #[tauri::command]
@@ -2218,6 +2258,22 @@ fn repository_enabled_set(
         .map_err(|error| error.to_string())
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RepositorySoftDeleteManyCommand {
+    repository_ids: Vec<String>,
+}
+
+#[tauri::command]
+fn repository_soft_delete_many(
+    store: State<'_, ManagementStore>,
+    request: RepositorySoftDeleteManyCommand,
+) -> Result<(), String> {
+    store
+        .soft_delete_repositories(&request.repository_ids, now_millis())
+        .map_err(|error| error.to_string())
+}
+
 fn scan_repository_dirs(
     root: &std::path::Path,
     project_home: &std::path::Path,
@@ -2348,6 +2404,12 @@ fn scan_repositories_with_store(
         };
         if store
             .repository_is_disallowed(&inspection.repository.identity)
+            .map_err(|error| error.to_string())?
+        {
+            continue;
+        }
+        if store
+            .repository_is_soft_deleted(&inspection.repository.identity)
             .map_err(|error| error.to_string())?
         {
             continue;
@@ -3961,6 +4023,51 @@ mod tests {
             .any(|error| error.contains("OpenCode Projects")));
     }
 
+    #[test]
+    fn repository_soft_delete_prevents_rediscovery_without_removing_source_files() {
+        let root = tempfile::tempdir().unwrap();
+        let home = root.path().join("home");
+        std::fs::create_dir_all(&home).unwrap();
+        let store = ManagementStore::open_with_paths(
+            root.path().join("state.sqlite"),
+            &home,
+            root.path().join("tmp"),
+        )
+        .unwrap();
+        let scan_root = root.path().join("source");
+        let repository_path = scan_root.join("repo");
+        make_repository_fixture(&repository_path);
+
+        let initial = scan_repositories_with_store(
+            &store,
+            RepositoryScanCommand {
+                paths: vec![scan_root.to_string_lossy().into_owned()],
+                purpose_proposals: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(initial.repositories.len(), 1);
+        let repository_id = initial.repositories[0].id.clone();
+
+        store
+            .soft_delete_repositories(&[repository_id.clone()], now_millis())
+            .unwrap();
+        let rescanned = scan_repositories_with_store(
+            &store,
+            RepositoryScanCommand {
+                paths: vec![scan_root.to_string_lossy().into_owned()],
+                purpose_proposals: None,
+            },
+        )
+        .unwrap();
+
+        assert!(rescanned.repositories.is_empty());
+        assert!(store.list_repositories().unwrap().is_empty());
+        assert!(store.get_repository(&repository_id).unwrap().is_some());
+        assert!(repository_path.join(".git").exists());
+        assert!(repository_path.join("README.md").is_file());
+    }
+
     fn make_repository_fixture(path: &std::path::Path) {
         std::fs::create_dir_all(path).unwrap();
         let init = std::process::Command::new("git")
@@ -4660,6 +4767,14 @@ mod tests {
             json!({"ownerType":"workspace", "ownerId":"w1", "path":"/tmp"}),
         );
         assert!(invalid_docs_owner.is_err());
+        let review: ChangeReviewFullDiffRequest = serde_json::from_value(json!({
+            "ownerType":"workspace", "ownerId":"w1", "repositoryId":"r1", "path":"src/a.js"
+        })).unwrap();
+        assert_eq!(review.repository_id, "r1");
+        assert!(serde_json::from_value::<ChangeReviewFullDiffRequest>(json!({
+            "ownerType":"workspace", "ownerId":"w1", "repositoryId":"r1", "path":"a", "checkoutPath":"/tmp"
+        })).is_err());
+        assert_eq!(serde_json::to_value("diff").unwrap(), json!("diff"));
         let shell_owner: WorkbenchOwnerRequest =
             serde_json::from_value(json!({"ownerType":"task", "ownerId":"t1"})).unwrap();
         assert_eq!(shell_owner.owner_type, "task");

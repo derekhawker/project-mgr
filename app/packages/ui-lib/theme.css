@@ -1,0 +1,54 @@
+:root {
+  /* Neutral work surfaces; C64 colors are reserved for deliberate accents and overlays. */
+  --ui-blue: #40318d;
+  --ui-blue-deep: #352879;
+  --ui-lavender: #6c5eb5;
+  --ui-cyan: #70a4b2;
+  --ui-background: #c7c7c5;
+  --ui-surface: #d2d2d0;
+  --ui-surface-raised: #dededb;
+  --ui-surface-pressed: #b8b8b5;
+  --ui-field: #f1f1ed;
+  --ui-border: #88847f;
+  --ui-border-light: #aaa9a4;
+  --ui-text: #242423;
+  --ui-muted: #5d5d59;
+  --ui-focus: #40318d;
+  --ui-error: #843d38;
+  --ui-success: #236447;
+  --ui-warning: #765214;
+  --ui-primary: #a85a4f;
+  --ui-primary-hover: #9b5147;
+  --ui-primary-pressed: #88473f;
+  --ui-primary-text: #ffffff;
+  /* Whole-CSS-pixel spacing weights. See spacing.md for usage and exceptions. */
+  --ui-space-2: 2px;
+  --ui-space-4: 4px;
+  --ui-space-6: 6px;
+  --ui-space-8: 8px;
+  --ui-space-10: 10px;
+  --ui-space-12: 12px;
+  --ui-space-16: 16px;
+  --ui-space-20: 20px;
+  --ui-space-24: 24px;
+  --ui-space-32: 32px;
+  --ui-space-48: 48px;
+  --ui-space-64: 64px;
+  --ui-space-96: 96px;
+  --ui-control-padding: var(--ui-space-6) var(--ui-space-12);
+  --ui-control-radius: 0.25rem;
+  --ui-control-font: ui-monospace, "SFMono-Regular", "Courier New", monospace;
+  --ui-gradient: linear-gradient(180deg, #f5f5f2, #e1e1dd);
+  --ui-gradient-hover: linear-gradient(180deg, #ffffff, #ebebe7);
+}
+
+@keyframes ui-dialog-enter {
+  from {
+    opacity: 0;
+    transform: translateY(1rem) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}

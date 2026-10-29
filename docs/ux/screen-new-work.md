@@ -5,24 +5,44 @@
 **New work** opens a compact modal over the current destination with two choices:
 **Workspace** and **Quick Request**. Workspace is the sole regular work record;
 there is no Task creation or separate name-first Workspace flow.
+The New work disclosure keeps its visible label and uses the shared decorative
+SVG chevron instead of a native text marker. The menu opens upward from the
+bottom of navigation: its chevron points up when closed and rotates down when
+open. Opening and closing animate the rotation unless reduced motion is requested.
+Direction, placement, and animation belong to the shared ActionMenu component.
+Its choices use the library's flat, left-aligned ActionMenuItem rows on the same
+purple surface as Tools, without ordinary button borders or rounding. Native
+Tab navigation and Enter/Space activation remain available.
 
-The dialog is comfortably sized and padded. When its contents exceed the
-available height, only the dialog body scrolls; its action footer stays visible
-and anchored at the bottom.
+The dialog uses the shared [spacing weights](../../app/packages/ui-lib/spacing.md)
+for its frame, fields, and review groups. It sizes to its content with compact,
+consistent padding; it never
+stretches to fill the window or leaves a blank panel below its actions. When its
+contents exceed the available height, only the dialog body scrolls. Its title
+header and action footer stay visible, including in short windows. Long prompt
+text and paths wrap rather than widening the dialog.
 
 The prompt-capture modal is compact and clearly labels the selected flow. The
-proposal/review modal grows only after Continue, when it must show extracted
-details and repository choices. Workspace review has an optional editable
+proposal/review modal uses a wider content-fitting layout only after Continue,
+when it must show extracted details and repository choices. Neither step has a
+fixed height. Workspace review has an optional editable
 starting prompt; a blank value never skips required session setup.
 
 The modal does not reset the current destination or terminal. Cancel returns to
 the unchanged destination. Clicking outside does not dismiss it; use Cancel or
-Escape, which runs the same cleanup before closing.
+Escape, which runs the same cleanup before closing. A labelled close icon in the
+header requests that same cancellation; failed cleanup keeps the dialog open.
+Opening focuses Original prompt. Review focuses Workspace name or the working
+directory selector; Back returns focus to Original prompt and resets body
+scroll. Tab and Shift+Tab stay within the dialog's visible enabled controls.
+Closing returns focus to the New work menu trigger.
 
-The New-work modal and form controls share the flat gray, C64-inspired theme;
-the primary action is visually distinct from Back and Cancel.
+Keep the surrounding workbench gray. The New-work popup may use a concentrated
+C64-inspired blue/lavender surface, with readable light labels, dark text fields,
+and a distinct primary action. Back and Cancel remain secondary.
 The modal animates on opening unless the user prefers reduced motion.
-The existing native dialog controller still owns cancellation and cleanup; verify
+The shared Modal supplies the frame and keyboard interactions; the existing
+native dialog controller still owns cancellation and cleanup. Verify
 the combined appearance, focus, and native behavior manually on Wayland.
 
 ## Workspace flow
@@ -40,8 +60,16 @@ Show a compact modal titled **New Workspace** or **New Quick Request**. Label th
 field **Original prompt** and explain what that prompt will start. Preserve the
 original prompt exactly as entered.
 
+The Workspace capture form includes a collapsed **Proposal prompt preview**
+disclosure. Expanding it shows the read-only rendered proposal prompt, including
+the current original prompt, schema, and verified context. The preview uses the
+same Rust rendering path as proposal generation; context can change before submission.
+The prompt is indented on a darker surface, with its own scroll area capped at
+20% of the viewport height.
+
 In the multiline Original prompt field, **Enter** continues the form and
 **Shift+Enter** inserts a newline. Enter during IME composition does not submit.
+The field initially displays nine rows for both Workspace and Quick Request.
 
 ### 2. Review the interpretation
 
@@ -57,7 +85,7 @@ uses a simple vertical form instead of a card grid. It shows:
 - The full workspace directory path that confirmation will create.
 - The original prompt in a read-only field.
 - Relevant repository locations, if any, as a compact list of repository names
-  and source paths.
+  and source paths. Show **None** when no repositories are proposed.
 - One editable starting-prompt field, prefilled with the revised prompt returned
   by OpenCode, not the original prompt the user entered.
 
@@ -93,7 +121,7 @@ repositories without remotes. If no branch can be determined, show a clear error
 explaining that the repository needs a configured `origin/HEAD` or a local
 branch.
 
-Enabled repositories from the Directories page are additional context to every
+Enabled repositories from the Repositories page are additional context to every
 New-work proposal; disabled repositories are absent from proposal input and
 cannot be selected as working directories.
 Users do not have to manually attach a repository before naming it in a
@@ -160,7 +188,7 @@ selected Workspace page after its tabs.
 
 ## Legacy Task records
 
-Task is no longer a creation option or product-level work type. Existing Task records remain available during the staged compatibility refactor, but new work starts as a Workspace or Quick Request. Their eventual archive and conversion are specified in `../workspace-refactor-target.md`.
+Task is no longer a creation option or product-level work type. Existing Task records remain compatibility data, but new work starts as a Workspace or Quick Request. Archived legacy records are not listed or restored in the app; migration snapshots remain internal for data preservation.
 
 ## Example
 

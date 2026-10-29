@@ -1,0 +1,52 @@
+.page {
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+  padding: var(--ui-space-12);
+  color: var(--ui-text);
+  background: var(--ui-background);
+}
+.heading {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-8);
+  flex-wrap: wrap;
+}
+.heading h1 {
+  flex: 1;
+}
+.form {
+  display: grid;
+  gap: var(--ui-space-8);
+  margin-top: var(--ui-space-16);
+  border: 1px solid var(--ui-border);
+  padding: var(--ui-space-12);
+  background: var(--ui-surface);
+}
+.form label {
+  font-weight: 600;
+}
+.formRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ui-space-8);
+  align-items: center;
+}
+.formRow input {
+  flex: 1 1 18rem;
+}
+.form p {
+  margin: 0;
+  color: var(--ui-muted);
+}
+.form p:empty {
+  display: none;
+}
+.directoryList {
+  list-style: none;
+  padding: 0;
+}
+.directoryList {
+  margin: var(--ui-space-16) 0;
+}

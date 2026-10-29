@@ -1,0 +1,68 @@
+.newWork {
+  position: sticky;
+  z-index: 2;
+  bottom: 0;
+  margin: 0;
+  padding-top: var(--ui-space-4);
+}
+
+.newWorkDisclosure {
+  display: block;
+}
+
+.newWorkTrigger {
+  width: 100%;
+  text-align: center;
+}
+
+.newWorkActions {
+  right: 0;
+  min-width: 0;
+}
+
+:global(.navigation li) .workspaceButton {
+  display: flex;
+  width: 100%;
+  justify-content: space-between;
+  gap: var(--ui-space-6);
+  border-radius: var(--ui-control-radius, 0.25rem);
+  font-weight: 400;
+}
+:global(.navigation li) .workspaceButton:hover:not([aria-current="page"]) {
+  background: var(--ui-surface-pressed);
+}
+:global(.navigation li) .workspaceButton[aria-current="page"] {
+  color: #fff;
+  background: var(--ui-blue);
+  box-shadow: inset 4px 0 var(--ui-cyan);
+  font-weight: 700;
+}
+:global(.navigation li) .workspaceButton[aria-current="page"]:hover {
+  color: #fff;
+  background: var(--ui-blue);
+}
+.workspaceName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.emptyState {
+  margin: var(--ui-space-2) 0 var(--ui-space-6);
+  padding: var(--ui-space-6);
+  color: var(--ui-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.repositoryIndicator {
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+.directoriesSlot {
+  width:100%;
+  margin-top: auto;
+}
+
+.directoriesButton {
+  width: 100%;
+}

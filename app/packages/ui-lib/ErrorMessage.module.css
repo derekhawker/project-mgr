@@ -1,0 +1,21 @@
+.error {
+  color: var(--ui-error);
+  border: 0;
+  background: transparent;
+}
+
+.banner {
+  margin: var(--ui-space-8) 0;
+  padding: var(--ui-space-10) var(--ui-space-12);
+  color: #fff;
+  background: var(--ui-error);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.inline {
+  margin: var(--ui-space-4) 0;
+  padding: 0;
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}

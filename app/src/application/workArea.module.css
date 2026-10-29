@@ -1,0 +1,220 @@
+.quickRequests {
+  color: var(--ui-text);
+  background: var(--ui-surface);
+}
+
+.docs,
+.review {
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  flex: 1 1 auto;
+  color: var(--ui-text);
+  background: var(--ui-background);
+  overflow: hidden;
+}
+
+.docs {
+  display: grid;
+  grid-template-columns: minmax(0, min(var(--navigator-width, 300px), 60%)) 6px minmax(0, 1fr);
+}
+
+.docs :global(.docs-files),
+.review :global(.change-review-files) {
+  min-width: 0;
+  overflow: auto;
+  padding: var(--ui-space-8);
+  background: var(--ui-surface);
+}
+
+.docs :global(.docs-source h2) {
+  margin: var(--ui-space-6) 0 var(--ui-space-2);
+}
+
+.review :global(.change-review-files button) {
+  display: block;
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  color: var(--ui-text);
+  background: transparent;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.review :global(.change-review-files button) {
+  padding: var(--ui-space-4);
+}
+
+.review :global(.change-review-files button[aria-current="true"]) {
+  color: var(--ui-text);
+  background: var(--ui-surface-pressed);
+  font-weight: 650;
+}
+
+.docs :global(.docs-content) {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--ui-space-12);
+}
+
+.docs :global(.docs-content h2) {
+  overflow-wrap: anywhere;
+}
+
+.docs :global(.docs-content pre) {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font:
+    13px/1.55 system-ui,
+    sans-serif;
+}
+
+.docs :global(.docs-markdown) {
+  overflow-wrap: anywhere;
+  line-height: 1.6;
+}
+
+.docs :global(.docs-markdown :first-child) {
+  margin-top: 0;
+}
+
+.docs :global(.docs-markdown pre) {
+  overflow: auto;
+  padding: var(--ui-space-12);
+  border-radius: 0;
+  color: #f6f6f3;
+  background: #242423;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.docs :global(.docs-markdown code) {
+  font-family: ui-monospace, monospace;
+}
+
+.docs :global(.docs-markdown img) {
+  max-width: 100%;
+}
+
+.docs :global(.docs-markdown table) {
+  border-collapse: collapse;
+}
+
+.docs :global(.docs-markdown table:has(tr:first-child > :nth-child(5))) {
+  width: 100%;
+  table-layout: fixed;
+}
+
+.docs :global(.docs-markdown th),
+.docs :global(.docs-markdown td) {
+  border: 1px solid var(--ui-border-light);
+  padding: var(--ui-space-6) var(--ui-space-8);
+}
+
+.docs:has([data-page-message]) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.docs:has([data-page-message]) :global(.docs-files) {
+  display: none;
+}
+
+.docs:has([data-page-message]) [role="separator"] {
+  display: none;
+}
+
+.docs:has([data-page-message]) :global(.docs-content) {
+  display: grid;
+  place-items: center;
+  width: 100%;
+}
+
+.docs :global(.docs-message) {
+  max-width: 36rem;
+  margin: auto;
+  color: var(--ui-muted);
+  text-align: center;
+}
+
+.review {
+  display: flex;
+  flex-direction: column;
+}
+
+.review :global(.change-review-heading) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ui-space-8);
+  border-bottom: 1px solid var(--ui-border-light);
+  padding: var(--ui-space-10) var(--ui-space-12);
+  background: var(--ui-surface);
+}
+
+.review :global(.change-review-heading p) {
+  margin: var(--ui-space-2) 0 0;
+  color: var(--ui-muted);
+  font-size: 12px;
+}
+
+.review :global(.change-review-actions) {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-6);
+  margin-left: auto;
+}
+
+.review :global(.change-review-current-repository) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--ui-space-8);
+  min-width: 0;
+  font-size: 12px;
+}
+
+.review :global(.change-review-current-repository span) {
+  color: var(--ui-muted);
+}
+
+.review :global(.change-review-mode) {
+  display: flex;
+  gap: var(--ui-space-4);
+}
+
+.review :global(.change-review-content) {
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, min(var(--navigator-width, 300px), 60%)) 6px minmax(0, 1fr);
+  background: var(--ui-background);
+}
+
+.review :global(.change-review-repository h2) {
+  margin: var(--ui-space-6) 0 var(--ui-space-2);
+  font-size: 13px;
+}
+
+.review :global(.change-review-diff-pane) {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--ui-space-8);
+}
+
+.review :global(.change-review-diff-pane h2) {
+  margin: 0 0 var(--ui-space-6);
+  overflow-wrap: anywhere;
+  font-size: 14px;
+}
+
+.review :global(.change-review-error) {
+  color: var(--ui-error);
+  font-size: 12px;
+}

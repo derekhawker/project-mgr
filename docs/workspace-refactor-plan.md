@@ -54,14 +54,13 @@ each slice buildable and validate it before moving on.
    task-specific controls. Present Workspace repo/session tabs, restore exact
    sessions, and adapt Change Review, Docs, Tools, and OS handoff to Workspace
    contexts. Preserve Quick Request screens and terminal lifecycle behavior.
-7. **Migrate legacy records at the end.** After the new model works, archive a
-   versioned document containing all relevant legacy Workspace/Task metadata,
-   associations, resource paths, cleanup/setup state, and session IDs in a
-   deleted-records table. Verify the archive, then convert supported records to
-   the new model. Implement and test an explicit undelete/restore path. Quick
-   Request records and prompt behavior remain preserved. Never delete worktrees,
-   branches, files, or OpenCode history. Conversion failure must leave the
-   archive and source data intact and actionable.
+7. **Migrate legacy records at the end.** After the new model works, retain a
+   versioned internal snapshot of legacy Workspace/Task metadata, associations,
+   resource paths, cleanup/setup state, and session IDs before converting
+   supported records. Do not expose an archived-record list or restore action in
+   the app. Quick Request records and prompt behavior remain preserved. Never
+   delete worktrees, branches, files, or OpenCode history; keep source snapshots
+   intact for data preservation.
 8. **Final validation and documentation closeout.** Run focused and broad
    Rust/frontend suites, migration and real-Git tests, and installed OpenCode
    integration checks. Update the integration matrix and all affected docs.
@@ -149,9 +148,9 @@ each slice buildable and validate it before moving on.
   resolution is also used by `change_review.rs`, `docs_reader.rs`,
   `repo_tools.rs`, and `os_handoff.rs`.
 - The renderer's owner selection, proposals, tabs, Quick Requests, and workspace
-  flows are mainly in `app/src/main.js`, with markup in `app/index.html` and
-  command adapters/contracts in `app/src/command-contract.js` and
-  `command-contract.json`.
+  composition starts in `app/src/main.js`, with screen code under `app/src/views/`
+  and shell composition under `app/src/application/`. Command adapters/contracts
+  live in `app/src/services/commandContract.js` and `commandContract.json`.
 - Current UX and workflow documentation describes the old Task hierarchy. The
   accepted target and compatibility contract is now in
   `workspace-refactor-target.md`; existing specs are labeled as legacy during

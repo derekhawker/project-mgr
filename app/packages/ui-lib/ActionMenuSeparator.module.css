@@ -1,0 +1,6 @@
+.separator {
+  width: 100%;
+  margin: var(--ui-space-4) 0;
+  border: 0;
+  border-top: 1px solid var(--ui-menu-separator, var(--ui-border-light));
+}

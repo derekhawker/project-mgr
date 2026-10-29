@@ -1,5 +1,6 @@
 use crate::change_review::validate_repo_root;
 use crate::management::{ManagementStore, VerificationStatus};
+use ignore::WalkBuilder;
 use serde::Serialize;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -48,47 +49,46 @@ fn is_dependency_directory(path: &Path) -> bool {
     )
 }
 
-fn discover_in(root: &Path, found: &mut Vec<PathBuf>) -> Result<(), String> {
-    let root = validate_repo_root(root)?;
-    let mut pending = vec![root.clone()];
-    while let Some(directory) = pending.pop() {
-        let entries = fs::read_dir(&directory).map_err(|error| error.to_string())?;
-        for entry in entries {
-            let entry = entry.map_err(|error| error.to_string())?;
-            let path = entry.path();
-            let kind = entry.file_type().map_err(|error| error.to_string())?;
-            if kind.is_dir() {
-                if !is_hidden_directory(&path) && !is_dependency_directory(&path) {
-                    pending.push(path);
-                }
-            } else if kind.is_file() && is_document(&path) {
-                found.push(path);
+fn discover_documents(
+    root: &Path,
+    workspace_home: bool,
+    found: &mut Vec<PathBuf>,
+) -> Result<(), String> {
+    let root = if workspace_home {
+        fs::canonicalize(root).map_err(|error| error.to_string())?
+    } else {
+        validate_repo_root(root)?
+    };
+    let walker = WalkBuilder::new(&root)
+        .hidden(false)
+        .ignore(false)
+        .git_ignore(true)
+        .git_exclude(false)
+        .git_global(false)
+        .parents(false)
+        .require_git(false)
+        .filter_entry(move |entry| {
+            if entry.depth() == 0 {
+                return true;
             }
-        }
-    }
-    Ok(())
-}
+            let path = entry.path();
+            if entry.file_type().is_some_and(|kind| kind.is_dir()) {
+                !is_hidden_directory(path)
+                    && !is_dependency_directory(path)
+                    && (!workspace_home
+                        || path
+                            .file_name()
+                            .is_some_and(|name| name != "repos" && name != "tasks"))
+            } else {
+                true
+            }
+        })
+        .build();
 
-fn discover_workspace_home(root: &Path, found: &mut Vec<PathBuf>) -> Result<(), String> {
-    let root = fs::canonicalize(root).map_err(|error| error.to_string())?;
-    let mut pending = vec![root];
-    while let Some(directory) = pending.pop() {
-        for entry in fs::read_dir(&directory).map_err(|error| error.to_string())? {
-            let entry = entry.map_err(|error| error.to_string())?;
-            let path = entry.path();
-            let kind = entry.file_type().map_err(|error| error.to_string())?;
-            if kind.is_dir() {
-                if !is_hidden_directory(&path)
-                    && !is_dependency_directory(&path)
-                    && path
-                        .file_name()
-                        .is_some_and(|name| name != "repos" && name != "tasks")
-                {
-                    pending.push(path);
-                }
-            } else if kind.is_file() && is_document(&path) {
-                found.push(path);
-            }
+    for entry in walker {
+        let entry = entry.map_err(|error| error.to_string())?;
+        if entry.file_type().is_some_and(|kind| kind.is_file()) && is_document(entry.path()) {
+            found.push(entry.into_path());
         }
     }
     Ok(())
@@ -164,11 +164,7 @@ pub fn list_for_owner(
     let mut documents = Vec::new();
     for root in roots {
         let mut found = Vec::new();
-        if root.workspace_home {
-            discover_workspace_home(&root.path, &mut found)?;
-        } else {
-            discover_in(&root.path, &mut found)?;
-        }
+        discover_documents(&root.path, root.workspace_home, &mut found)?;
         let canonical_root = fs::canonicalize(&root.path).map_err(|error| error.to_string())?;
         for file in found {
             let relative = file
@@ -257,7 +253,7 @@ mod tests {
         fs::write(root.path().join(".git/secret.md"), "not content").unwrap();
         fs::write(root.path().join(".hidden/private.txt"), "not content").unwrap();
         let mut found = Vec::new();
-        discover_in(root.path(), &mut found).unwrap();
+        discover_documents(root.path(), false, &mut found).unwrap();
         assert_eq!(found.len(), 2);
         assert!(found
             .iter()

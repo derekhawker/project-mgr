@@ -1,0 +1,46 @@
+.navigationItem {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.navigationItem[aria-current="page"],
+.navigationItem[aria-current="page"]:hover:not(:disabled) {
+  color: #fff;
+  background: var(--ui-blue);
+  font-weight: 700;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-6);
+  min-width: 0;
+  padding: var(--ui-space-6);
+  border: 1px solid var(--ui-border-light);
+  border-radius: 0;
+  background: var(--ui-surface-raised);
+}
+
+.prompt {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+}
+
+.select {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-6);
+  cursor: pointer;
+}

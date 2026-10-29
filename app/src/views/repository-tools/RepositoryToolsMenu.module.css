@@ -1,0 +1,40 @@
+.control {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.menu .content {
+  z-index: 30;
+  top: calc(100% + var(--ui-space-4));
+  right: 0;
+  left: auto;
+  width: max-content;
+  min-width: min(12rem, calc(100vw - var(--ui-space-32)));
+  max-width: calc(100vw - var(--ui-space-32));
+  max-height: min(70vh, 38rem);
+  overflow: auto;
+}
+
+.group {
+  flex: 1 1 auto;
+}
+
+.handoffStatus {
+  margin: var(--ui-space-4) var(--ui-space-12);
+  color: var(--ui-muted);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.repositories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ui-space-8);
+}
+
+.group :global(p) {
+  margin: var(--ui-space-4) var(--ui-space-12);
+  color: var(--ui-muted);
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}

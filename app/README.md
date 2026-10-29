@@ -6,13 +6,14 @@ From the repository root, `npm run dev --prefix app` starts the mock Vite
 server on `http://127.0.0.1:1420/`. Open it in Chromium or with `agent-browser
 open http://127.0.0.1:1420/`. `npm run tauri:dev --prefix app` is an alias for
 this same browser-only mock; neither starts Tauri. If the port is occupied, use
-`cd app && npx vite --host 127.0.0.1 --port 1439 --strictPort` and open port
-1439. Do not attach a live Tauri process to the mock server.
+`cd app && npx vite --host 127.0.0.1 --port 1439 --strictPort` and open port 1439. Do not attach a live Tauri process to the mock server.
 
 The actual app shell uses deterministic in-memory fixtures for navigation,
 Workspace creation, simulated session output, Docs, Change Review and repository
 Tools, plus Quick Request directory selection, creation, listing, reopening and
-deletion. Tool execution creates a simulated terminal; it never runs a program.
+deletion. The full Quick Requests list starts with one seeded long-prompt item
+for exercising wrapping and bulk-selection controls. Tool execution creates a
+simulated terminal; it never runs a program.
 Unsupported commands fail closed, including native picker and OS handoffs.
 Reload resets all fixture state. Fixture paths are labels, not real directories.
 Quick Request prompts remain only in page memory and are never sent to a
@@ -22,6 +23,11 @@ a fixed timestamp and treats its requests as recent for the lifetime of the page
 OpenCode test. It still runs Node, Vite and Rust test harness processes and uses
 isolated temporary files. `npm run test:all --prefix app` also runs the
 installed-OpenCode model-loader integration and starts a real OpenCode server.
+
+`npm run test:browser --prefix app` uses isolated agent-browser sessions and
+temporary Vite mock servers to check icons, control typography, and New Work
+modal sizing, scrolling, validation, dismissal, and keyboard focus. It does not
+launch Tauri or use application data; native Wayland acceptance remains separate.
 
 **Live data:** `npm run live --prefix app` launches the current native Tauri
 build in development mode. It opens the normal application database and may
@@ -67,8 +73,16 @@ prompt-driven Git provisioning is used. The accepted product contract is
 The SolidJS UI refactor is tracked in
 [`../docs/solidjs-refactor-progress.md`](../docs/solidjs-refactor-progress.md).
 Rust remains authoritative for application behavior and state changes; the
-frontend invokes Rust only through `src/command-contract.js`. Keep xterm terminal
+frontend invokes Rust only through `src/services/commandContract.js`. Keep xterm terminal
 surfaces stable while Solid updates surrounding presentation.
+
+`TerminalRuntime` attempts xterm's WebGL2 addon by default after opening each
+terminal. If WebGL initialization fails or its context is lost, xterm returns to
+its built-in DOM renderer without changing PTY/session ownership. This does not
+promise a performance gain: browser WebGL smoke checks do not establish native
+WebKitGTK availability or acceleration. See
+[`../docs/terminal-rendering-research.md`](../docs/terminal-rendering-research.md)
+for the decision and manual Wayland comparison protocol.
 
 Startup connection, version, and command-result feedback share a Solid signal
 view. Nonvisual tests execute that production adapter for ready, storage-error,
@@ -114,14 +128,92 @@ reports zero vulnerabilities. See the progress ledger for exact provenance and
 command results. This dependency fix does not close the manual Wayland/native,
 rendering, terminal, window/tray, provider, or coordinator-plugin acceptance gates.
 
+The 27 October 2026 terminal-renderer follow-up passed `npm test --prefix app`
+(237 tests), `npm run build --prefix app` (Vite 6.4.4, 113 modules),
+`npm run tauri:build --prefix app`, `npm audit --prefix app` (zero
+vulnerabilities), and `git diff --check`. A Chromium 153 browser fixture opened a
+Workspace terminal, observed an active WebGL2 canvas, forced context loss, and
+confirmed xterm remained mounted with rendered output after DOM-renderer fallback.
+The refreshed artifact at `app/src-tauri/target/release/opencode-project-manager`
+embeds the default-WebGL change. No native Wayland/WebKitGTK terminal comparison
+or performance benchmark ran; that acceptance gate remains open.
+
 ### Frontend resource lifetime
 
-`main.js` mounts deliberate page-lifetime Solid islands through one
-`createApplicationLifetime` owner. Parents mount before child roots; teardown
-releases the terminal adapter before disposing roots in reverse order. The same
-owner starts app event subscriptions, terminal startup, and the three-second
-status poll once. Late listener registrations are unlistened even after teardown;
-a late terminal import cannot create another runtime.
+#### Frontend organization
+
+`src/main.js` connects the selected Workspace/Quick Request, destinations, shared
+model loading, and page lifetime. Only this entry and global `styles.css` live
+directly under `src/`:
+
+| Directory | Owns |
+|---|---|
+| `application/` | Application root, shell/status/empty-state components, lifetime, and shared shell styles |
+| `views/<area>/` | Screen components, local controllers, presentation state, helpers, and CSS Modules |
+| `components/` | Reusable application-specific controls such as `DeleteButton` and `PageError` |
+| `services/` | Tauri command contract, manifest, and command adapters |
+| `terminal/` | xterm runtime, terminal protocol, and stable surface registry |
+| `fixtures/` | In-memory browser command fixture |
+| `lib/` | Shared keyboard, diagnostics, runtime-mode, error, and model-selector helpers |
+
+The presentation component library lives separately in
+[`packages/ui-lib/`](packages/ui-lib/README.md), outside `src/`. Import its public
+entry as `@ui-lib`:
+
+```js
+import { Button, Modal } from "@ui-lib";
+```
+
+It is a private npm workspace package with Solid as a peer dependency. Run
+`npm ci` from `app/` to install the application and link the library. Vite's
+`presentationAliases` provides runtime/build resolution and is reused by the
+test bundles; `jsconfig.json` provides the matching editor path. A paths entry
+alone would not configure Vite. The package owns primitives, theme, and generic
+interactions; application-specific controls remain in `src/components/`.
+Component-owned tab interaction and accessibility tests live under
+`packages/ui-lib/test/`; run them with `npm test --workspace ui-lib`. The default
+application test command includes that workspace suite. Screen tests retain
+only application wiring and terminal-preservation scenarios.
+
+View areas are `new-work`, `directories`, `quick-requests`, `workbench`, `docs`,
+`change-review`, and `repository-tools`. Keep each area's components and helpers
+together rather than creating parallel global component/controller directories.
+The `createNewWork.js`, `createDirectories.js`, `createQuickRequests.js`, and
+`createWorkbenchSessions.js` modules return named views/actions to compose under
+`ApplicationRoot`; no feature mounts a separate DOM root. Cross-area dependencies
+remain explicit callbacks, and the catalog stays local rather than on `window`.
+Rust still owns validation, durable state, Git, and processes.
+
+**Naming:** each named Solid component has its own exact-name PascalCase file,
+such as `WorkspaceOwnerPanel.jsx` or `SetupProgressPanel.jsx`. Its dedicated CSS
+Module uses the same stem (`WorkspaceOwnerPanel.module.css`). Shared style
+modules and plain JavaScript/JSON files use camelCase (`sessionTabState.js`,
+`commandContract.json`); directories use lowercase kebab-case. Import screen
+files directly and library components through `@ui-lib`. The architecture checks
+in `test/frontend-organization.test.js` guard placement, casing, matching alias
+targets, package resolution, and the library's separation from application code.
+
+`test/application-composition.test.js` builds the real entry with Vite and drives
+the composed Solid tree in Happy DOM using the in-memory command fixture and a
+terminal-renderer double. It covers navigation, terminal retention, restart/tool
+close wiring, and both creation paths. It does not establish native IPC, actual
+xterm/PTY operation, layout, focus, or Wayland acceptance. Screen hierarchy and
+workflows are unchanged; proposal review now correctly mounts its repository
+list, including **None** when empty.
+
+The directory/casing cleanup changes source locations only. UX index and screen
+specifications were reviewed; no screen hierarchy, interaction, or workflow
+changed, so those specifications need no update. Historical validation notes may
+refer to paths used at the time; the organization above describes current paths.
+
+#### Lifetime ownership
+
+`main.js` mounts one Solid application tree at `#app-root`, owned by one
+`createApplicationLifetime`. Feature components are nested in that tree; they do
+not mount into separate DOM roots. The same owner starts app event subscriptions,
+terminal startup, and the three-second status poll once. Late listener
+registrations are unlistened even after teardown; a late terminal import cannot
+create another runtime.
 
 `pagehide` (page unload), Vite HMR disposal, and explicit test teardown release
 frontend resources. Navigation, terminal hiding, and Tauri's hide-to-tray window
@@ -153,6 +245,7 @@ terminal operation, or hide/show/tray behavior. Those remain manual Wayland chec
 
   Other Linux distributions should use the package names from Tauri's
   prerequisites for that distribution.
+
 - A Wayland graphical session for manual GUI acceptance.
 - An installed OpenCode **v2 CLI**. The production Rust boundary starts
   this executable itself; it does not use a shared OpenCode service.
@@ -209,8 +302,8 @@ the child without sending a model prompt.
 
 ### Tauri command boundary
 
-All production WebView calls go through `src/command-contract.js`. Its checked-in
-`command-contract.json` is the canonical inventory and validates command names,
+All production WebView calls go through `src/services/commandContract.js`. Its checked-in
+`commandContract.json` is the canonical inventory and validates command names,
 payload fields/types, serialized result shape, and errors before the call reaches
 Tauri. Rust's `generate_handler!` list and every `#[tauri::command]` attribute
 are compared with that inventory by frontend tests; frontend adapter command

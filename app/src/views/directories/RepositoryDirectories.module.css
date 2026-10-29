@@ -1,0 +1,57 @@
+.navigator {
+  margin-top: var(--ui-space-12);
+  border: 1px solid var(--ui-border-light);
+  padding: var(--ui-space-8);
+  background: var(--ui-surface);
+}
+
+.bulkActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--ui-space-6);
+  padding-bottom: var(--ui-space-6);
+}
+
+.rootList,
+.children {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.root + .root {
+  margin-top: var(--ui-space-4);
+}
+
+.children {
+  margin-left: var(--ui-space-12);
+  border-left: 1px solid var(--ui-border-light);
+  padding-left: var(--ui-space-4);
+}
+
+.repositoryRow {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-6);
+  min-width: 0;
+  padding: var(--ui-space-2) var(--ui-space-6);
+}
+
+.repositoryLabel {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  gap: var(--ui-space-6);
+  min-width: 0;
+  cursor: pointer;
+}
+
+.repositoryPath {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.empty {
+  padding: var(--ui-space-6);
+  color: var(--ui-muted);
+}

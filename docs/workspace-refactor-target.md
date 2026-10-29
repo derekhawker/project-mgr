@@ -142,10 +142,9 @@ cleanup state, exact paths, and session IDs/directories. It excludes Quick
 Requests, OpenCode conversation content, and regular prompt contents. The
 snapshot is verified within the same transaction before source rows are
 removed. Files, branches, worktrees, and OpenCode conversations are never
-deleted. The Directories page lists archived records and offers an idempotent
-restore of their Task metadata and associations; restored legacy Tasks remain
-compatibility data and are not shown as regular work destinations. The
-migration and restore are covered by historical file-backed SQLite tests.
+deleted. Archived snapshots remain internal compatibility data; the application
+does not list or restore archived legacy records. Historical file-backed SQLite
+tests verify that snapshots preserve the metadata without touching files.
 Migration 20 repairs databases created by a development build that recorded
 schema version 18 before `base_checkout_path` and `workspace_link` were added;
 it adds missing columns without rewriting existing paths.

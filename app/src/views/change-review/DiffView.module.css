@@ -1,0 +1,102 @@
+.diff {
+  --d2h-bg-color: var(--ui-field);
+  --d2h-border-color: var(--ui-border-light);
+  --d2h-dim-color: var(--ui-muted);
+  --d2h-line-border-color: var(--ui-border-light);
+  --d2h-file-header-bg-color: var(--ui-surface-raised);
+  --d2h-file-header-border-color: var(--ui-border-light);
+  --d2h-empty-placeholder-bg-color: var(--ui-surface);
+  --d2h-empty-placeholder-border-color: var(--ui-border-light);
+  --d2h-ins-bg-color: color-mix(
+    in srgb,
+    var(--ui-success) 15%,
+    var(--ui-field)
+  );
+  --d2h-ins-border-color: color-mix(
+    in srgb,
+    var(--ui-success) 40%,
+    var(--ui-field)
+  );
+  --d2h-ins-highlight-bg-color: color-mix(
+    in srgb,
+    var(--ui-success) 30%,
+    var(--ui-field)
+  );
+  --d2h-ins-label-color: var(--ui-success);
+  --d2h-del-bg-color: color-mix(in srgb, var(--ui-error) 15%, var(--ui-field));
+  --d2h-del-border-color: color-mix(
+    in srgb,
+    var(--ui-error) 40%,
+    var(--ui-field)
+  );
+  --d2h-del-highlight-bg-color: color-mix(
+    in srgb,
+    var(--ui-error) 30%,
+    var(--ui-field)
+  );
+  --d2h-del-label-color: var(--ui-error);
+  --d2h-change-del-color: var(--d2h-del-bg-color);
+  --d2h-change-ins-color: var(--d2h-ins-bg-color);
+  --d2h-info-bg-color: var(--ui-surface);
+  --d2h-info-border-color: var(--ui-border-light);
+  --d2h-change-label-color: var(--ui-warning);
+  --d2h-moved-label-color: var(--ui-blue);
+  background: var(--ui-field);
+  color: var(--ui-text);
+}
+
+/* The pane heading already names the selected file. */
+.diff :global(.d2h-file-header) {
+  display: none;
+}
+
+.diff :global(.d2h-diff-table) {
+  table-layout: fixed;
+}
+
+.diff :global(.d2h-code-linenumber),
+.diff :global(.d2h-code-side-linenumber) {
+  position: static;
+  display: table-cell;
+  vertical-align: top;
+}
+
+.diff :global(.d2h-code-linenumber) {
+  width: 7.5em;
+}
+
+.diff :global(.d2h-code-side-linenumber) {
+  width: 4em;
+}
+
+.diff :global(.d2h-code-line),
+.diff :global(.d2h-code-side-line) {
+  display: flex;
+  width: auto;
+  padding: 0;
+  white-space: normal;
+}
+
+.diff :global(.d2h-code-line-ctn) {
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.diff :global(.d2h-code-line ins),
+.diff :global(.d2h-code-line del),
+.diff :global(.d2h-code-side-line ins),
+.diff :global(.d2h-code-side-line del) {
+  display: inline;
+}
+
+.diff :global(.d2h-aligned-split) {
+  display: block;
+  width: 100%;
+  overflow: visible;
+}
+
+.diff :global(.d2h-aligned-split td:nth-child(2)),
+.diff :global(.d2h-aligned-split td:nth-child(4)) {
+  width: calc(50% - 4em);
+}

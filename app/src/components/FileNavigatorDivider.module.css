@@ -1,0 +1,12 @@
+.divider {
+  cursor: col-resize;
+  touch-action: none;
+  background: var(--ui-surface);
+  border-left: 1px solid var(--ui-border-light);
+}
+
+.divider:hover,
+.divider:focus-visible {
+  background: var(--ui-lavender);
+  outline: none;
+}

@@ -122,7 +122,7 @@ older items. Each row has an **Open** button beside non-clickable prompt text an
 one **Delete** action with confirmation. Opening one
 shows its dedicated page: the terminal fills the available main work area, the
 app shell/navigation remain visible, and there are no session tabs or
-workspace/task controls. **Back to Quick Requests** returns to the list without
+workspace/task controls. Persistent navigation returns to the list without
 closing the terminal or stopping its process.
 
 ## 3.4 Navigation and workspace focus
@@ -140,6 +140,15 @@ Linux uses `idea` and `xdg-open`; macOS uses `open -a "IntelliJ IDEA"` and
 `open`. Windows handoff is not part of this delivery. A failed validation or
 launch is returned through the command and shown inline in Tools; existing
 sessions remain untouched.
+
+The Workspace renders OpenCode sessions, open tool terminals, Docs, and Change
+Review in one shared tablist. Selection changes presentation only; readers do
+not recreate terminal surfaces or stop their processes. Each closeable session
+has its own close button; Docs and Change Review are not closeable. Closing an
+inactive session does not activate it. Restart remains a separate action for
+the selected terminal. Keyboard tab
+activation preserves focus on the tab rather than moving it into xterm; direct
+terminal input remains available by focusing the terminal.
 
 Keep the Workspace → Task tree prominent in persistent left navigation. Show
 all open workspaces, including idle ones, with tasks nested directly under their
@@ -326,7 +335,7 @@ runtime or report a recoverable conflict for the user.
 
 | Step | Actor | Action | Result |
 |---:|---|---|---|
-| 1 | User | Opens **Directories** from top navigation and uses **Add directories** to select one or more folders with the native folder picker. | The GUI sends only those explicit paths to Rust. |
+| 1 | User | Opens **Repositories** from top navigation and uses **Add directories** to select one or more folders with the native folder picker. | The GUI sends only those explicit paths to Rust. |
 | 2 | Rust | Canonicalizes and validates readable directories; discovers Git repositories while excluding the configured OpenCode Projects root. | Candidate Git repositories are identified without changing them; the managed project tree is never scanned. |
 | 3 | Git | Reports repository roots, remotes, branches, and identity data. | Rust has verifiable repository facts. |
 | 4 | Rust | De-duplicates candidates against the repository catalog by verified identity and canonical path; linked worktrees do not become separate catalog entries. | Existing repository identities are reused rather than duplicated. |
@@ -336,13 +345,28 @@ runtime or report a recoverable conflict for the user.
 
 Saved scan roots persist and startup rescans each root. Repository identities
 discovered under overlapping roots are shown only once under the most-specific
-root. The Directories page groups saved roots under their shortest shared parent
-when they are on the same filesystem root and the group contains at most eight
-repositories; groups with more repositories retain their individual scan roots.
-Different filesystem roots remain separate. Individual repository checkboxes persist enabled/disabled state. Only
+root. The Repositories page groups saved roots under their shortest shared
+parent when their filesystem-level path component matches and the group
+contains at most five repositories. Larger groups retain their separate saved
+scan roots; a lone scan root keeps its own path. Within a displayed root,
+child folders containing at most five repositories collapse into the parent;
+larger child folders remain separate. Apply that rule independently per branch.
+Different filesystem-level branches remain separate. Individual
+repository checkboxes persist enabled/disabled state. Only
 enabled repositories are included in the initial New-work proposal context and
 can be selected as a Quick Request working directory; the user's original
 prompt remains unchanged.
+
+The repository library location is loaded when Repositories opens. Typing or
+choosing a new location saves it after five seconds without further changes, or
+immediately when the text field loses focus. Rust validates and persists each
+saved value.
+
+Deleting repository entries is a confirmed bulk operation. Rust soft-deletes
+the selected catalog rows in one transaction; repository files and existing
+workspace associations are retained. Active catalog and directory listings
+hide deleted entries, and rescans suppress matches by the retained Git
+repository identity so deleted repositories do not reappear.
 
 The configured project-home root is a hard scan exclusion: Rust rejects a
 selected path inside it and prunes it when a selected ancestor contains it.
@@ -424,8 +448,10 @@ no repo session or terminal until a supported session can be started.
 The **Docs** tab always appears for a selected Workspace or Task. Rust resolves
 the selected Workspace's own home plus its verified clone directories, or a
 Task's ready repository worktrees, from persisted owner bindings. It recursively
-discovers files with `.md` or `.txt` extensions (case-insensitive), does not
-follow symlinks, skips dot-prefixed directories and common dependency stores
+discovers files with `.md` or `.txt` extensions (case-insensitive), honors
+`.gitignore` rules at each search root and nested directories, does not apply
+parent-repository or global Git excludes or other ignore files, does not follow
+symlinks, skips dot-prefixed directories and common dependency stores
 (`node_modules`, `vendor`, `bower_components`, `third_party`, `Pods`,
 `Carthage`, `venv`, `virtualenv`, and `site-packages`), and skips the managed
 `repos/` and `tasks/` subtrees when scanning the Workspace home. It returns
@@ -735,6 +761,11 @@ Git status, without a conflict-resolution interface. If no remote or local
 `main`/`master` ref is available for one repository, preserve its status/file
 list, report the comparison error, and continue loading other repositories.
 Review is read-only and does not create or consume terminal sessions.
+For a selected tracked text file, the user may request full context. Rust
+resolves the verified repository from the Workspace owner and generates one
+full-context Git patch, limiting each input and the output to 1 MiB and the
+output to 20,000 lines. Oversized or unavailable content reports an error and
+leaves the compact diff visible; untracked text is already shown in full.
 
 ### 12.7 Repository tools and OS handoff
 

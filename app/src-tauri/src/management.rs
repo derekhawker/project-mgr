@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
 use std::time::Duration;
 
-use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, Value as SqlValue, ValueRef};
-use rusqlite::{params, params_from_iter, Connection, OptionalExtension, TransactionBehavior};
+use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ValueRef};
+use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 use serde::{Deserialize, Serialize};
 
 use crate::safety::{self, GitInspection, ManagedHomeGuard, SafetyError};
@@ -38,6 +38,7 @@ const MIGRATION_18: &str = include_str!("migrations/0018_workspace_work_contexts
 const MIGRATION_19: &str = include_str!("migrations/0019_legacy_task_archive.sql");
 const MIGRATION_20: &str = include_str!("migrations/0020_workspace_worktree_base_compat.sql");
 const MIGRATION_21: &str = include_str!("migrations/0021_workspace_link_compat.sql");
+const MIGRATION_22: &str = include_str!("migrations/0022_repository_soft_delete.sql");
 
 fn validate_quick_request_prompt(prompt: &str) -> StoreResult<()> {
     if prompt.trim().is_empty() {
@@ -84,55 +85,6 @@ fn rows_as_json(
             "could not serialize {table} archive rows: {error}"
         ))
     })
-}
-
-fn json_value_to_sql(value: &serde_json::Value) -> SqlValue {
-    match value {
-        serde_json::Value::Null => SqlValue::Null,
-        serde_json::Value::Bool(value) => SqlValue::Integer(i64::from(*value)),
-        serde_json::Value::Number(value) => value
-            .as_i64()
-            .map(SqlValue::Integer)
-            .or_else(|| value.as_f64().map(SqlValue::Real))
-            .unwrap_or(SqlValue::Null),
-        serde_json::Value::String(value) => SqlValue::Text(value.clone()),
-        serde_json::Value::Array(_) | serde_json::Value::Object(_) => {
-            SqlValue::Text(value.to_string())
-        }
-    }
-}
-
-fn restore_json_rows(
-    connection: &Connection,
-    table: &str,
-    rows: &serde_json::Value,
-) -> StoreResult<()> {
-    let rows = rows.as_array().ok_or_else(|| {
-        ManagementStoreError::InvalidTransition(format!("archive {table} rows are malformed"))
-    })?;
-    for row in rows {
-        let object = row.as_object().ok_or_else(|| {
-            ManagementStoreError::InvalidTransition(format!("archive {table} row is malformed"))
-        })?;
-        let columns = object.keys().collect::<Vec<_>>();
-        let placeholders = std::iter::repeat_n("?", columns.len())
-            .collect::<Vec<_>>()
-            .join(", ");
-        let sql = format!(
-            "INSERT INTO {table} ({}) VALUES ({placeholders})",
-            columns
-                .iter()
-                .map(|column| format!("\"{column}\""))
-                .collect::<Vec<_>>()
-                .join(", ")
-        );
-        let values = columns
-            .iter()
-            .map(|column| json_value_to_sql(&object[*column]))
-            .collect::<Vec<_>>();
-        connection.execute(&sql, params_from_iter(values))?;
-    }
-    Ok(())
 }
 
 #[derive(Debug)]
@@ -373,15 +325,6 @@ pub struct Task {
     pub setup_session_id: Option<String>,
     pub setup_cancelled_at: Option<i64>,
     pub setup_cancellation_detail: Option<String>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LegacyTaskArchiveSummary {
-    pub task_id: String,
-    pub workspace_id: String,
-    pub archived_at: i64,
-    pub restored_at: Option<i64>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -908,7 +851,7 @@ impl ManagementStore {
             [],
             |row| row.get(0),
         )?;
-        if current_version > 21 {
+        if current_version > 22 {
             return Err(ManagementStoreError::UnsupportedSchemaVersion(
                 current_version,
             ));
@@ -1108,6 +1051,13 @@ impl ManagementStore {
             }
             transaction.execute(
                 "INSERT INTO schema_migrations(version, applied_at) VALUES (21, 0)",
+                [],
+            )?;
+        }
+        if current_version < 22 {
+            transaction.execute_batch(MIGRATION_22)?;
+            transaction.execute(
+                "INSERT INTO schema_migrations(version, applied_at) VALUES (22, 0)",
                 [],
             )?;
         }
@@ -2032,97 +1982,6 @@ impl ManagementStore {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
-    pub fn list_legacy_task_archives(&self) -> StoreResult<Vec<LegacyTaskArchiveSummary>> {
-        let connection = self.lock()?;
-        let mut statement = connection.prepare(
-            "SELECT task_id, workspace_id, archived_at, restored_at
-             FROM legacy_task_archives ORDER BY archived_at, task_id",
-        )?;
-        let rows = statement.query_map([], |row| {
-            Ok(LegacyTaskArchiveSummary {
-                task_id: row.get(0)?,
-                workspace_id: row.get(1)?,
-                archived_at: row.get(2)?,
-                restored_at: row.get(3)?,
-            })
-        })?;
-        Ok(rows.collect::<Result<Vec<_>, _>>()?)
-    }
-
-    pub fn restore_legacy_task_archive(&self, task_id: &str) -> StoreResult<Task> {
-        let mut connection = self.lock()?;
-        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let archive: Option<(String, Option<i64>)> = transaction
-            .query_row(
-                "SELECT snapshot_json, restored_at FROM legacy_task_archives WHERE task_id = ?1",
-                [task_id],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .optional()?;
-        let (snapshot_json, restored_at) = archive.ok_or_else(|| {
-            ManagementStoreError::NotFound(format!("legacy task archive {task_id}"))
-        })?;
-        if restored_at.is_some() {
-            let restored = Self::get_task_from(&transaction, task_id)?.ok_or_else(|| {
-                ManagementStoreError::InvalidTransition(
-                    "archive is marked restored but its Task is missing".into(),
-                )
-            })?;
-            transaction.commit()?;
-            return Ok(restored);
-        }
-        let snapshot: serde_json::Value =
-            serde_json::from_str(&snapshot_json).map_err(|error| {
-                ManagementStoreError::InvalidTransition(format!(
-                    "legacy task archive is malformed: {error}"
-                ))
-            })?;
-        if snapshot["archiveVersion"].as_i64() != Some(1)
-            || snapshot["tasks"][0]["id"].as_str() != Some(task_id)
-        {
-            return Err(ManagementStoreError::InvalidTransition(
-                "legacy task archive has an unsupported or mismatched version".into(),
-            ));
-        }
-        let workspace_id = transaction.query_row(
-            "SELECT workspace_id FROM legacy_task_archives WHERE task_id = ?1",
-            [task_id],
-            |row| row.get::<_, String>(0),
-        )?;
-        if Self::get_workspace_from(&transaction, &workspace_id)?.is_none() {
-            return Err(ManagementStoreError::InvalidTransition(
-                "the archived Task's Workspace is unavailable; source data remains in the archive"
-                    .into(),
-            ));
-        }
-        if Self::get_task_from(&transaction, task_id)?.is_some() {
-            return Err(ManagementStoreError::InvalidTransition(
-                "a Task with this ID already exists".into(),
-            ));
-        }
-        for table in [
-            "tasks",
-            "task_repositories",
-            "sessions",
-            "task_session_repositories",
-            "task_repository_selection",
-            "setup_operations",
-            "setup_events",
-            "setup_operation_state",
-            "cleanup_jobs",
-        ] {
-            restore_json_rows(&transaction, table, &snapshot[table])?;
-        }
-        transaction.execute(
-            "UPDATE legacy_task_archives SET restored_at = ?2 WHERE task_id = ?1",
-            params![task_id, now_millis_for_cleanup()],
-        )?;
-        let restored = Self::get_task_from(&transaction, task_id)?
-            .ok_or_else(|| ManagementStoreError::NotFound(format!("restored Task {task_id}")))?;
-        transaction.commit()?;
-        Ok(restored)
-    }
-
     pub fn update_task_details(
         &self,
         id: &str,
@@ -2752,7 +2611,8 @@ impl ManagementStore {
     fn list_all_repositories_from(connection: &Connection) -> StoreResult<Vec<Repository>> {
         let mut statement = connection.prepare(
             "SELECT id, name, repository_path, repository_identity, purpose, purpose_status,
-                    created_at, updated_at FROM repository_catalog ORDER BY name, id",
+                    created_at, updated_at FROM repository_catalog
+             WHERE deleted_at IS NULL ORDER BY name, id",
         )?;
         let rows = statement.query_map([], repository_from_row)?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -2802,6 +2662,52 @@ impl ManagementStore {
             }
         }
         Ok(RepositoryDirectoryPage { directories })
+    }
+
+    pub fn soft_delete_repositories(
+        &self,
+        repository_ids: &[String],
+        deleted_at: i64,
+    ) -> StoreResult<()> {
+        let repository_ids = repository_ids
+            .iter()
+            .collect::<std::collections::BTreeSet<_>>();
+        if repository_ids.is_empty() {
+            return Err(ManagementStoreError::InvalidTransition(
+                "select at least one repository to delete".into(),
+            ));
+        }
+        let mut connection = self.lock()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        for repository_id in repository_ids {
+            let exists: bool = transaction.query_row(
+                "SELECT EXISTS(SELECT 1 FROM repository_catalog WHERE id = ?1)",
+                [repository_id],
+                |row| row.get(0),
+            )?;
+            if !exists {
+                return Err(ManagementStoreError::NotFound(format!(
+                    "repository {repository_id}"
+                )));
+            }
+            transaction.execute(
+                "UPDATE repository_catalog SET deleted_at = ?2
+                 WHERE id = ?1 AND deleted_at IS NULL",
+                params![repository_id, deleted_at],
+            )?;
+        }
+        transaction.commit()?;
+        Ok(())
+    }
+
+    pub fn repository_is_soft_deleted(&self, repository_identity: &str) -> StoreResult<bool> {
+        let connection = self.lock()?;
+        Ok(connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM repository_catalog
+             WHERE repository_identity = ?1 AND deleted_at IS NOT NULL)",
+            [repository_identity],
+            |row| row.get(0),
+        )?)
     }
 
     pub fn add_repository_scan_directory(
@@ -5915,7 +5821,7 @@ mod tests {
         }
         let migrated =
             ManagementStore::open_with_paths(&database, &user_home, &system_temp).unwrap();
-        assert_eq!(migrated.migration_versions().unwrap().last(), Some(&21));
+        assert_eq!(migrated.migration_versions().unwrap().last(), Some(&22));
         let connection = migrated.lock().unwrap();
         let legacy_table_count: i64 = connection
             .query_row(
@@ -6116,7 +6022,7 @@ mod tests {
 
         let migrated =
             ManagementStore::open_with_paths(&database, &user_home, &system_temp).unwrap();
-        assert_eq!(migrated.migration_versions().unwrap().last(), Some(&21));
+        assert_eq!(migrated.migration_versions().unwrap().last(), Some(&22));
         assert_eq!(
             migrated
                 .quick_request_prompt("qr-legacy-prompt")
@@ -6140,25 +6046,21 @@ mod tests {
             .get_task("regular-with-description")
             .unwrap()
             .is_none());
-        let archive = migrated
-            .list_legacy_task_archives()
-            .unwrap()
-            .into_iter()
-            .find(|archive| archive.task_id == "regular-with-description")
+        let connection = migrated.lock().unwrap();
+        let (workspace_id, snapshot_json): (String, String) = connection
+            .query_row(
+                "SELECT workspace_id, snapshot_json FROM legacy_task_archives WHERE task_id = ?1",
+                ["regular-with-description"],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
             .unwrap();
-        assert_eq!(archive.workspace_id, "w-regular");
-        assert_eq!(
-            migrated
-                .restore_legacy_task_archive("regular-with-description")
-                .unwrap()
-                .description
-                .as_deref(),
-            Some("A test task")
-        );
+        assert_eq!(workspace_id, "w-regular");
+        let snapshot: serde_json::Value = serde_json::from_str(&snapshot_json).unwrap();
+        assert_eq!(snapshot["tasks"][0]["description"], "A test task");
     }
 
     #[test]
-    fn historical_task_rows_are_archived_before_conversion_and_can_be_restored_exactly() {
+    fn historical_task_rows_are_archived_before_conversion_without_touching_files() {
         let fixture = tempdir().unwrap();
         let home = fixture.path().join("home");
         fs::create_dir_all(&home).unwrap();
@@ -6228,44 +6130,29 @@ mod tests {
             fs::read_to_string(worktree.join("user-data.txt")).unwrap(),
             "preserve me"
         );
-        let archive = migrated
-            .list_legacy_task_archives()
-            .unwrap()
-            .into_iter()
-            .find(|archive| archive.task_id == "t-legacy")
+        let connection = migrated.lock().unwrap();
+        let (snapshot_json, restored_at): (String, Option<i64>) = connection
+            .query_row(
+                "SELECT snapshot_json, restored_at FROM legacy_task_archives WHERE task_id = ?1",
+                ["t-legacy"],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
             .unwrap();
-        assert!(archive.restored_at.is_none());
-
-        let restored = migrated.restore_legacy_task_archive("t-legacy").unwrap();
-        assert_eq!(restored.home_path, task_home.to_string_lossy());
+        let snapshot: serde_json::Value = serde_json::from_str(&snapshot_json).unwrap();
         assert_eq!(
-            migrated.list_task_repository_bindings("t-legacy").unwrap()[0].worktree_path,
-            worktree.to_string_lossy()
+            snapshot["tasks"][0]["home_path"],
+            task_home.to_string_lossy().as_ref()
         );
         assert_eq!(
-            migrated
-                .list_sessions(&SessionOwner::Task("t-legacy".into()))
-                .unwrap()[0]
-                .directory,
-            worktree.to_string_lossy()
+            snapshot["task_repositories"][0]["worktree_path"],
+            worktree.to_string_lossy().as_ref()
         );
         assert_eq!(
-            migrated.list_cleanup_jobs("t-legacy").unwrap()[0].state,
-            CleanupJobState::Deferred
+            snapshot["sessions"][0]["directory"],
+            worktree.to_string_lossy().as_ref()
         );
-        assert_eq!(
-            migrated.restore_legacy_task_archive("t-legacy").unwrap(),
-            restored,
-            "repeated undelete is idempotent"
-        );
-        assert!(migrated
-            .list_legacy_task_archives()
-            .unwrap()
-            .iter()
-            .find(|archive| archive.task_id == "t-legacy")
-            .unwrap()
-            .restored_at
-            .is_some());
+        assert_eq!(snapshot["cleanup_jobs"][0]["state"], "deferred");
+        assert_eq!(restored_at, None);
     }
 
     fn repository(id: &str) -> NewRepository {
@@ -6377,6 +6264,108 @@ mod tests {
     }
 
     #[test]
+    fn soft_deleted_repositories_stay_hidden_but_remain_tracked_after_reopen() {
+        let fixture = tempdir().unwrap();
+        let user_home = fixture.path().join("home");
+        let scan_root = fixture.path().join("source");
+        let repository_path = scan_root.join("repo");
+        fs::create_dir_all(&repository_path).unwrap();
+        fs::create_dir_all(&user_home).unwrap();
+        let db_path = fixture.path().join("management.sqlite");
+        let store = ManagementStore::open_with_paths(&db_path, &user_home, fixture.path()).unwrap();
+        store
+            .create_workspace(&workspace("w-soft-delete", "soft-delete"))
+            .unwrap();
+        store
+            .add_repository_scan_directory(&scan_root, CREATED)
+            .unwrap();
+        let mut new_record = repository("repo-soft-deleted");
+        new_record.repository_path = repository_path.to_string_lossy().into_owned();
+        let record = store.create_repository(&new_record).unwrap();
+        let binding = WorkspaceRepositoryBinding {
+            workspace_id: "w-soft-delete".into(),
+            repository_id: record.id.clone(),
+            checkout_path: "/fixtures/retained-checkout".into(),
+            checkout_mode: CheckoutMode::Managed,
+            branch: "main".into(),
+            verification_status: VerificationStatus::Verified,
+            created_at: CREATED,
+        };
+        store.save_workspace_repository_binding(&binding).unwrap();
+
+        store
+            .soft_delete_repositories(&[record.id.clone()], CREATED + 1)
+            .unwrap();
+
+        assert!(store.list_repositories().unwrap().is_empty());
+        assert!(store.repository_directory_page().unwrap().directories[0]
+            .repositories
+            .is_empty());
+        assert_eq!(
+            store.get_repository(&record.id).unwrap(),
+            Some(record.clone())
+        );
+        assert_eq!(
+            store
+                .list_workspace_repository_bindings("w-soft-delete")
+                .unwrap(),
+            vec![binding.clone()]
+        );
+
+        drop(store);
+        let reopened =
+            ManagementStore::open_with_paths(&db_path, &user_home, fixture.path()).unwrap();
+        assert!(reopened.list_repositories().unwrap().is_empty());
+        assert_eq!(reopened.get_repository(&record.id).unwrap(), Some(record));
+        assert_eq!(
+            reopened
+                .list_workspace_repository_bindings("w-soft-delete")
+                .unwrap(),
+            vec![binding]
+        );
+        assert!(repository_path.is_dir());
+    }
+
+    #[test]
+    fn repository_soft_delete_batch_is_atomic_when_an_id_is_missing() {
+        let store = ManagementStore::in_memory().unwrap();
+        store.create_repository(&repository("repo-atomic")).unwrap();
+        store.create_repository(&repository("repo-atomic-second")).unwrap();
+
+        let result = store
+            .soft_delete_repositories(
+                &[
+                    "repo-atomic".into(),
+                    "repo-atomic-second".into(),
+                    "repo-missing".into(),
+                ],
+                CREATED + 1,
+            );
+
+        assert!(matches!(result, Err(ManagementStoreError::NotFound(_))));
+        assert_eq!(store.list_repositories().unwrap().len(), 2);
+        assert!(
+            !store
+                .repository_is_soft_deleted("git-identity-repo-atomic")
+                .unwrap()
+        );
+
+        store
+            .soft_delete_repositories(
+                &["repo-atomic".into(), "repo-atomic-second".into()],
+                CREATED + 2,
+            )
+            .unwrap();
+        assert!(store.list_repositories().unwrap().is_empty());
+        assert!(store
+            .repository_is_soft_deleted("git-identity-repo-atomic")
+            .unwrap());
+        assert!(store
+            .repository_is_soft_deleted("git-identity-repo-atomic-second")
+            .unwrap());
+    }
+
+    #[test]
     fn workspace_repository_setup_outcomes_survive_reopen_and_enforce_status_data() {
         let fixture = tempdir().unwrap();
         let home = fixture.path().join("home");
@@ -6426,7 +6415,7 @@ mod tests {
                 .unwrap(),
             vec![failed]
         );
-        assert_eq!(reopened.migration_versions().unwrap().last(), Some(&21));
+        assert_eq!(reopened.migration_versions().unwrap().last(), Some(&22));
     }
 
     #[test]
@@ -6861,7 +6850,7 @@ mod tests {
                     .unwrap();
             assert_eq!(
                 store.migration_versions().unwrap(),
-                vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]
+                vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22]
             );
             assert_eq!(
                 store.project_home_root().unwrap(),
@@ -6888,7 +6877,7 @@ mod tests {
         let reopened = ManagementStore::open_with_paths(&path, user_home, system_temp).unwrap();
         assert_eq!(
             reopened.migration_versions().unwrap(),
-            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]
+            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22]
         );
         assert_eq!(
             reopened.get_workspace("w-1").unwrap().unwrap().slug,
@@ -7058,7 +7047,7 @@ mod tests {
         }
 
         let migrated = ManagementStore::open_with_paths(&database, &home, fixture.path()).unwrap();
-        assert_eq!(migrated.migration_versions().unwrap().last(), Some(&21));
+        assert_eq!(migrated.migration_versions().unwrap().last(), Some(&22));
         assert!(migrated
             .list_workspace_repository_worktrees("workspace-with-no-worktrees")
             .unwrap()

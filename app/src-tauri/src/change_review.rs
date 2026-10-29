@@ -2,8 +2,9 @@ use crate::management::{ManagementStore, VerificationStatus};
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -260,6 +261,128 @@ pub fn validate_repo_root(path: &Path) -> Result<PathBuf, String> {
         return Err("Recorded path is not the repository root.".into());
     }
     Ok(canonical)
+}
+
+/// Load a single full-context patch without accepting a checkout path from the UI.
+/// The cap applies both to inputs and to the generated patch before rendering.
+pub fn full_diff_for_owner(
+    store: &ManagementStore,
+    owner_type: &str,
+    owner_id: &str,
+    repository_id: &str,
+    file: &str,
+) -> Result<String, String> {
+    const LIMIT: u64 = 1024 * 1024;
+    if owner_type != "workspace" {
+        return Err("Change Review owner type must be workspace.".into());
+    }
+    if file.is_empty()
+        || file.len() > 4096
+        || file.contains('\0')
+        || !Path::new(file)
+            .components()
+            .all(|part| matches!(part, std::path::Component::Normal(_)))
+    {
+        return Err("Invalid repository-relative file path.".into());
+    }
+    let workspace = store
+        .get_workspace(owner_id)
+        .map_err(|e| e.to_string())?
+        .ok_or("Workspace was not found.")?;
+    let binding = store
+        .list_workspace_repository_bindings(&workspace.id)
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .find(|binding| {
+            binding.repository_id == repository_id
+                && binding.verification_status == VerificationStatus::Verified
+        })
+        .ok_or("Repository is not associated with this workspace.")?;
+    let root = validate_repo_root(Path::new(&binding.checkout_path))?;
+    let target = resolve_comparison_target(&root)?.0;
+    let file_path = root.join(file);
+    let mut ancestor = root.clone();
+    for part in Path::new(file).components() {
+        ancestor.push(part);
+        if fs::symlink_metadata(&ancestor)
+            .map(|metadata| metadata.file_type().is_symlink())
+            .unwrap_or(false)
+        {
+            return Err("Full context is unavailable for symbolic links.".into());
+        }
+    }
+    if let Ok(metadata) = fs::symlink_metadata(&file_path) {
+        if metadata.file_type().is_symlink() || !metadata.is_file() {
+            return Err("Full context is unavailable for this file type.".into());
+        }
+        if metadata.len() > LIMIT {
+            return Err("File exceeds the 1 MiB full-context limit.".into());
+        }
+    }
+    let base_file = format!("{target}:{file}");
+    if let Ok(kind) = git(&root, &["cat-file", "-t", &base_file]) {
+        if kind != b"blob\n" {
+            return Err("Full context is only available for files.".into());
+        }
+    }
+    if let Ok(size) = git(&root, &["cat-file", "-s", &base_file]) {
+        let size = String::from_utf8_lossy(&size)
+            .trim()
+            .parse::<u64>()
+            .map_err(|_| "Could not determine base file size.")?;
+        if size > LIMIT {
+            return Err("Base file exceeds the 1 MiB full-context limit.".into());
+        }
+    }
+    let literal = format!(":(literal){file}");
+    let mut child = Command::new("git")
+        .env("GIT_OPTIONAL_LOCKS", "0")
+        .arg("-C")
+        .arg(&root)
+        .args([
+            "--no-pager",
+            "diff",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--no-renames",
+            "--no-color",
+            "--unified=2147483647",
+            &target,
+            "--",
+            &literal,
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| format!("Could not run Git: {e}"))?;
+    let mut output = Vec::new();
+    let read = child
+        .stdout
+        .take()
+        .unwrap()
+        .take(LIMIT + 1)
+        .read_to_end(&mut output);
+    if read.is_err() || output.len() as u64 > LIMIT {
+        let _ = child.kill();
+    }
+    let status = child
+        .wait()
+        .map_err(|e| format!("Could not wait for Git: {e}"))?;
+    read.map_err(|e| format!("Could not read Git diff: {e}"))?;
+    if output.len() as u64 > LIMIT || output.iter().filter(|&&b| b == b'\n').count() > 20_000 {
+        return Err("Diff exceeds the full-context size limit.".into());
+    }
+    if !status.success() {
+        return Err("Could not generate full-context diff.".into());
+    }
+    let text = String::from_utf8(output).map_err(|_| "File is not UTF-8 text.")?;
+    if text.is_empty() {
+        return Err("No tracked text changes are available for this file.".into());
+    }
+    if text.contains("Binary files ") || text.contains("GIT binary patch") {
+        return Err("Binary file; text diff unavailable.".into());
+    }
+    Ok(text)
 }
 
 /// Resolves only repository paths already associated with the requested owner,

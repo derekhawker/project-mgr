@@ -15,8 +15,8 @@ discussions. For workflow behavior beyond the UX vocabulary, see
   may use zero or more repositories and has its own lifecycle. Existing source
   checkouts stay where they are; Workspace worktrees are separate resources.
 - **Legacy Task record:** A retained pre-refactor database record, not a target
-  product concept or a creation option. Existing rows remain visible until the
-  final archive/conversion stage.
+  product concept or a creation option. Existing archived metadata remains
+  internal compatibility data and is not exposed as an in-app destination.
 - **Quick Request:** A named one-off tracked item under the special Quick
   Requests workspace. It is important work with its own status and lifecycle,
   not a generic label for a user's text or an OpenCode interaction.
