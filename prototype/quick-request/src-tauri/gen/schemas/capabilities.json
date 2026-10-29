@@ -1,1 +1,0 @@
-{"default":{"identifier":"default","description":"Allow the main window to receive OpenCode PTY events.","local":true,"windows":["main"],"permissions":["core:event:allow-listen","core:event:allow-unlisten"]}}
