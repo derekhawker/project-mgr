@@ -60,6 +60,12 @@ Show a compact modal titled **New Workspace** or **New Quick Request**. Label th
 field **Original prompt** and explain what that prompt will start. Preserve the
 original prompt exactly as entered.
 
+For Quick Requests, put **Working directory** before the prompt, prefilled with
+the shared default path. The user may type an existing absolute directory or use
+**Choose folder**. This choice applies only to the current request. An explicit
+choice takes precedence over a repository suggested by the prompt; the confirmed
+directory is shown in the review step.
+
 The Workspace capture form includes a collapsed **Proposal prompt preview**
 disclosure. Expanding it shows the read-only rendered proposal prompt, including
 the current original prompt, schema, and verified context. The preview uses the
@@ -215,12 +221,14 @@ Orchestrator.
 This is a two-step flow:
 
 1. **Resolve the directory.** The user chooses **Quick Request** from the New
-   navigation dropdown and
+   navigation dropdown, may change the prefilled working directory, and
    enters the original prompt. The internal proposal step's sole purpose is to
     resolve a working directory using the enabled repository list as its initial
     verified context. It may select only an enabled repository; Rust validates
-    the selected repository and exact path. The user can correct the proposed
-    selection using another enabled repository. If no repository is identified, the proposal
+    the selected repository and exact path. If the user changed the initial directory,
+    the proposal must return that exact directory and receives no repository catalog.
+    Otherwise it may select a matching enabled repository. The review field allows
+    typing, choosing a folder, or resetting to the shared default. If no repository is identified, the proposal
    uses the shared default Quick Request directory. This step does not create a
    Quick Request, generate a replacement prompt, or create a terminal.
 2. **Confirm and start.** The user reviews or corrects the resolved directory

@@ -291,7 +291,7 @@ export async function invokeBrowserFixture(name, payload = {}) {
     case "quick_request_create": {
       if (!request.prompt?.trim())
         throw new Error("Enter an original prompt first.");
-      const directory = quickDirectory(request.repositoryId);
+      const directory = request.directory || quickDirectory(request.repositoryId);
       const id = `fixture-quick-${nextQuickRequest++}`;
       const task = {
         id,

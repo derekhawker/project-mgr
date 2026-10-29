@@ -33,6 +33,7 @@ import {
 // validation, provisioning and process ownership still live behind Rust commands.
 export function createNewWork({
   invoke,
+  openDirectoryPicker,
   getCatalog,
   getNavigationData,
   refreshCatalog,
@@ -57,6 +58,8 @@ export function createNewWork({
     createSignal("");
   const [quickRequestDirectoryPath, setQuickRequestDirectoryPath] =
     createSignal("");
+  const [customQuickDirectory, setCustomQuickDirectory] = createSignal(null);
+  const [defaultQuickDirectory, setDefaultQuickDirectory] = createSignal("");
   const [proposalView, setProposalView] = createSignal({
     workType: "workspace",
     title: "Check the proposed context",
@@ -187,13 +190,17 @@ export function createNewWork({
     if (review.workType === "quick_request") {
       setQuickRequestDirectories(review.quickRequestDirectories);
       setQuickRequestDirectoryId(review.quickRequestDirectoryId);
-      await refreshQuickRequestDirectoryPath();
+      if (customQuickDirectory()) {
+        setQuickRequestDirectoryPath(customQuickDirectory());
+        quickRequestDirectoryReady = true;
+      } else await refreshQuickRequestDirectoryPath();
     }
   }
 
   const proposalController = createNewWorkProposalController({
     getOriginalPrompt: newWorkPromptValue,
     getRequestedType: () => requestedNewWorkType,
+    getExplicitDirectory: () => requestedNewWorkType === "quick_request" && customQuickDirectory() !== null ? customQuickDirectory() : undefined,
     getSelectedModel: proposalSelectedModel,
     getProposalSessionId: () => proposalSessionId,
     setProposalSessionId: (id) => {
@@ -261,7 +268,8 @@ export function createNewWork({
     quickRequestDirectoryReady: () => quickRequestDirectoryReady,
     getOriginalPrompt: newWorkPromptValue,
     getSelectedModel: proposalSelectedModel,
-    getRepositoryId: quickRequestDirectoryId,
+    getRepositoryId: () => customQuickDirectory() === defaultQuickDirectory() ? null : quickRequestDirectoryId(),
+    getDirectory: () => customQuickDirectory() === defaultQuickDirectory() ? null : customQuickDirectory(),
     proposalSessionId: () => proposalSessionId,
     invoke,
     submitResolvedQuickRequestFlow,
@@ -316,6 +324,12 @@ export function createNewWork({
   }
 
   function openNewWork(type) {
+      setCustomQuickDirectory(null);
+      setDefaultQuickDirectory("");
+      if (type === "quick_request") {
+        void resolveQuickRequestDirectory(invoke).then(setDefaultQuickDirectory)
+          .catch((error) => setDefaultQuickDirectory(formatWorkspaceError("Resolve Quick Request directory", error)));
+      }
       const disclosure = newWorkDialog.querySelector("#proposal-prompt-preview");
       if (disclosure) disclosure.open = false;
       previewOpen = false;
@@ -390,12 +404,41 @@ export function createNewWork({
         onCancel: dialogController.cancel,
         onConfirm: createProposedWork,
         onDirectoryChange: (event) => {
+          setCustomQuickDirectory(null);
           setQuickRequestDirectoryId(event.currentTarget.value);
           void refreshQuickRequestDirectoryPath();
         },
         directories: quickRequestDirectories,
         directoryId: quickRequestDirectoryId,
         directoryPath: quickRequestDirectoryPath,
+        defaultDirectory: defaultQuickDirectory,
+        customDirectory: customQuickDirectory,
+        onCustomDirectoryInput: (value) => {
+          setCustomQuickDirectory(value);
+          if (newWorkView() === "review") {
+            setQuickRequestDirectoryPath(value);
+            quickRequestDirectoryReady = Boolean(value.trim());
+            setProposalCreateDisabled(!quickRequestDirectoryReady);
+          }
+        },
+        onChooseDirectory: async () => {
+          try {
+            const selected = await openDirectoryPicker({ directory: true, multiple: false, title: "Choose working directory" });
+            if (selected) {
+              setCustomQuickDirectory(selected);
+              setQuickRequestDirectoryPath(selected);
+              quickRequestDirectoryReady = true;
+              setProposalCreateDisabled(false);
+            }
+          } catch (error) { setNewWorkCaptureError(formatWorkspaceError("Choose working directory", error)); }
+        },
+        onResetDirectory: () => {
+          setCustomQuickDirectory(defaultQuickDirectory());
+          setQuickRequestDirectoryId("");
+          setQuickRequestDirectoryPath(defaultQuickDirectory());
+          quickRequestDirectoryReady = Boolean(defaultQuickDirectory());
+          setProposalCreateDisabled(!quickRequestDirectoryReady);
+        },
       }),
   };
 }

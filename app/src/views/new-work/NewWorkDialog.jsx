@@ -119,6 +119,15 @@ export function NewWorkDialog(props) {
                   <pre class={styles.preview}>{props.preview()}</pre>
                 </Collapsible>
               </Show>
+              <Show when={props.workType() === "quick_request"}>
+                <div class={styles.directoryField}>
+                  <label for="quick-request-custom-directory">Working directory</label>
+                  <div class={styles.directoryRow}>
+                    <Input id="quick-request-custom-directory" type="text" required value={props.customDirectory?.() ?? props.defaultDirectory?.() ?? ""} onInput={(event) => props.onCustomDirectoryInput(event.currentTarget.value)} />
+                    <Button type="button" onClick={props.onChooseDirectory}>Choose folder</Button>
+                  </div>
+                </div>
+              </Show>
               <label id="new-work-prompt-label" for="new-work-prompt">
                 Original prompt
               </label>
@@ -222,26 +231,12 @@ export function NewWorkDialog(props) {
               <p>
                 The original prompt will be sent unchanged after confirmation.
               </p>
-              <label for="quick-request-directory">
-                OpenCode working directory
-              </label>
-              <Select
-                id="quick-request-directory"
-                value={props.directoryId()}
-                onChange={props.onDirectoryChange}
-              >
-                <option value="">Shared default Quick Request directory</option>
-                <For each={props.directories()}>
-                  {(repository) => (
-                    <option value={repository.id}>
-                      {repository.name} — {repository.repositoryPath}
-                    </option>
-                  )}
-                </For>
-              </Select>
-              <p id="quick-request-directory-path" class={styles.path}>
-                {props.directoryPath()}
-              </p>
+              <label for="quick-request-directory">OpenCode working directory</label>
+              <div class={styles.directoryRow}>
+                <Input id="quick-request-directory" type="text" value={props.directoryPath()} onInput={(event) => props.onCustomDirectoryInput(event.currentTarget.value)} />
+                <Button type="button" onClick={props.onChooseDirectory}>Choose folder</Button>
+                <Button type="button" onClick={props.onResetDirectory}>Reset to default</Button>
+              </div>
             </div>
             <Show when={progressDestination() === "quick_request"}>
               <SetupProgressPanel

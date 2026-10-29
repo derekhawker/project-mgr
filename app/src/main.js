@@ -677,6 +677,7 @@ async function refreshNavigation() {
 // shared navigation and the page-scoped terminal presentation.
 const newWork = createNewWork({
   invoke,
+  openDirectoryPicker,
   getCatalog: () => repositoryCatalog,
   getNavigationData: () => navigationData,
   refreshCatalog,

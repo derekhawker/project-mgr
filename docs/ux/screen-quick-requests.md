@@ -25,7 +25,7 @@ and control gaps. Filtering behavior is unchanged. Verify appearance on Wayland.
   request moves the highlight even when the list records have not changed;
   selecting a Workspace or deleting the selected request clears it.
 - Quick Requests are tasks under the special Quick Requests workspace. Each
-  uses the directory resolved for that request; when no registered repository
+  uses the directory chosen or resolved for that request; when no registered repository
   is identified, use the shared folder named **Quick Requests** directly under
   the configured OpenCode Projects root. This is a special shared project
   folder, not a folder in the system temporary directory or an individual
@@ -99,8 +99,13 @@ regular workspace is selected, and **Quick Request**. The full-list page also
 has a **New Quick Request** action that starts this same flow directly.
 
 Choose **Quick Request** from the dropdown. Quick Request
-creation first resolves a working directory from the app's registered repository
-catalog; the user can correct the proposed repository and confirms the directory.
+creation resolves a working directory from the user's explicit choice or the
+app's registered repository catalog; the user confirms the directory.
+The initial modal shows the default path in an editable field above the prompt,
+with a folder picker. A typed or chosen existing directory applies only to that
+request and is the only directory permitted in the proposal. When the default is
+unchanged, the proposal may choose a matching enabled repository. Review allows
+typing a path, choosing a folder, or resetting to the shared default.
 If no registered repository is identified, use the shared **Quick Requests**
 folder under the configured OpenCode Projects root. This step does not rewrite
 or reinterpret the user's prompt. Starting the request

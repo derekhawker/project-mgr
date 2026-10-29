@@ -1002,6 +1002,10 @@
             "repositoryId": {
               "type": "string",
               "nullable": true
+            },
+            "directory": {
+              "type": "string",
+              "nullable": true
             }
           },
           "required": ["prompt", "model", "repositoryId"],
@@ -2170,6 +2174,7 @@
             "sessionId": { "type": "string" },
             "originalPrompt": { "type": "string" },
             "preferredWorkspaceId": { "type": "string" },
+            "explicitDirectory": { "type": "string" },
             "workType": {
               "type": "string",
               "enum": ["workspace", "task", "quick_request"]

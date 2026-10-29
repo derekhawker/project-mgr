@@ -6,6 +6,7 @@ export function createQuickRequestCreationController(deps) {
     getOriginalPrompt,
     getSelectedModel,
     getRepositoryId,
+    getDirectory,
     proposalSessionId,
     invoke,
     submitResolvedQuickRequestFlow,
@@ -45,6 +46,7 @@ export function createQuickRequestCreationController(deps) {
         originalPrompt: getOriginalPrompt(),
         model,
         repositoryId: getRepositoryId() || null,
+        directory: getDirectory?.() || null,
         waitForTerminal,
         onCreated: (record) => {
           ownerCreated = true;

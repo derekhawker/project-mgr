@@ -132,3 +132,12 @@ test("captures failures and restores busy state for prior-session, model, start,
     ]);
   }
 });
+
+test("passes the explicitly chosen Quick Request directory to proposal generation", async () => {
+  const { controller, calls } = setup({
+    getRequestedType: () => "quick_request",
+    getExplicitDirectory: () => "/chosen/directory",
+  });
+  await controller.handleNewWorkCapture({ preventDefault() {} });
+  assert.equal(calls.find(([name]) => name === "run").at(-1), "/chosen/directory");
+});

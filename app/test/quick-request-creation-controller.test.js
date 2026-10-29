@@ -84,6 +84,12 @@ test("guards proposal, model readiness, and directory readiness without effects"
   }
 });
 
+test("passes the chosen working directory to creation", async () => {
+  const { controller, calls } = setup({ getDirectory: () => "/chosen folder" });
+  await controller.createQuickRequest();
+  assert.equal(calls.find(([key]) => key === "submit")[1].directory, "/chosen folder");
+});
+
 test("failure reports error and always clears busy state, preserving retry availability", async () => {
   const { controller, calls } = setup({
     submitResolvedQuickRequestFlow: async () => {

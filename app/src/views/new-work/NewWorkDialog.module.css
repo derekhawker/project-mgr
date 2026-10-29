@@ -13,6 +13,19 @@
   color: var(--ui-muted);
   font-size: 14px;
 }
+.directoryField {
+  margin-bottom: var(--ui-space-12);
+}
+.directoryRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ui-space-8);
+  align-items: center;
+}
+.directoryRow input {
+  flex: 1 1 18rem;
+  min-width: 0;
+}
 .review {
   display: grid;
   gap: var(--ui-space-12);

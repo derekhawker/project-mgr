@@ -1245,6 +1245,7 @@ test("Quick Request adapters preserve command names, explicit payloads, results,
   };
   const model = { providerId: "openai", id: "gpt-6-luna" };
   await createQuickRequest(invoke, "check this", model, "repo-1");
+  await createQuickRequest(invoke, "check this", model, null, "/chosen folder");
   await resolveQuickRequestDirectory(invoke, "repo-1");
   await followUpQuickRequest(invoke, "quick-1", "hello\r");
   await restoreQuickRequest(invoke, "quick-1");
@@ -1256,6 +1257,7 @@ test("Quick Request adapters preserve command names, explicit payloads, results,
       "quick_request_create",
       { prompt: "check this", model, repositoryId: "repo-1" },
     ],
+    ["quick_request_create", { prompt: "check this", model, repositoryId: null, directory: "/chosen folder" }],
     ["quick_request_resolve_directory", { repositoryId: "repo-1" }],
     ["quick_request_follow_up", { requestId: "quick-1", data: "hello\r" }],
     ["quick_request_restore", { requestId: "quick-1" }],

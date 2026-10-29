@@ -39,6 +39,7 @@ const MIGRATION_19: &str = include_str!("migrations/0019_legacy_task_archive.sql
 const MIGRATION_20: &str = include_str!("migrations/0020_workspace_worktree_base_compat.sql");
 const MIGRATION_21: &str = include_str!("migrations/0021_workspace_link_compat.sql");
 const MIGRATION_22: &str = include_str!("migrations/0022_repository_soft_delete.sql");
+const MIGRATION_23: &str = include_str!("migrations/0023_quick_request_custom_directory.sql");
 
 fn validate_quick_request_prompt(prompt: &str) -> StoreResult<()> {
     if prompt.trim().is_empty() {
@@ -851,7 +852,7 @@ impl ManagementStore {
             [],
             |row| row.get(0),
         )?;
-        if current_version > 22 {
+        if current_version > 23 {
             return Err(ManagementStoreError::UnsupportedSchemaVersion(
                 current_version,
             ));
@@ -1060,6 +1061,10 @@ impl ManagementStore {
                 "INSERT INTO schema_migrations(version, applied_at) VALUES (22, 0)",
                 [],
             )?;
+        }
+        if current_version < 23 {
+            transaction.execute_batch(MIGRATION_23)?;
+            transaction.execute("INSERT INTO schema_migrations(version, applied_at) VALUES (23, 0)", [])?;
         }
         transaction.commit()?;
         Ok(())
@@ -1786,14 +1791,9 @@ impl ManagementStore {
             &Self::quick_requests_directory_from(&connection, &self.user_home)?,
         )?;
         drop(connection);
-        let is_registered_repository = self.list_repositories()?.iter().any(|repository| {
-            std::fs::canonicalize(&repository.repository_path)
-                .is_ok_and(|repository_path| repository_path == actual && actual.is_dir())
-        });
-        if actual != default_directory && !is_registered_repository {
+        if actual != default_directory && !actual.is_dir() {
             return Err(ManagementStoreError::Safety(SafetyError::InvalidPath(
-                "Quick Request sessions must use the shared directory or a registered repository"
-                    .into(),
+                "Quick Request working directory must be an existing directory".into(),
             )));
         }
         let expires_at = task
@@ -3969,6 +3969,19 @@ impl ManagementStore {
     }
 
     pub fn create_session(&self, session: &NewSession) -> StoreResult<SessionRecord> {
+        if let SessionOwner::Task(id) = &session.owner {
+            if let Some(task) = self.get_task(id)? {
+                if task.quick_request.is_some() {
+                    let shared = self.quick_request_directory(None)?;
+                    let path = Path::new(&session.directory);
+                    if path != shared && !path.is_dir() {
+                        return Err(ManagementStoreError::Safety(SafetyError::InvalidPath(
+                            "Quick Request working directory must be an existing directory".into(),
+                        )));
+                    }
+                }
+            }
+        }
         let connection = self.lock()?;
         Self::insert_session(&connection, session)?;
         Self::get_session_from(&connection, &session.open_code_session_id)?.ok_or_else(|| {
@@ -5821,7 +5834,7 @@ mod tests {
         }
         let migrated =
             ManagementStore::open_with_paths(&database, &user_home, &system_temp).unwrap();
-        assert_eq!(migrated.migration_versions().unwrap().last(), Some(&22));
+        assert_eq!(migrated.migration_versions().unwrap().last(), Some(&23));
         let connection = migrated.lock().unwrap();
         let legacy_table_count: i64 = connection
             .query_row(
@@ -6022,7 +6035,7 @@ mod tests {
 
         let migrated =
             ManagementStore::open_with_paths(&database, &user_home, &system_temp).unwrap();
-        assert_eq!(migrated.migration_versions().unwrap().last(), Some(&22));
+        assert_eq!(migrated.migration_versions().unwrap().last(), Some(&23));
         assert_eq!(
             migrated
                 .quick_request_prompt("qr-legacy-prompt")
@@ -6415,7 +6428,7 @@ mod tests {
                 .unwrap(),
             vec![failed]
         );
-        assert_eq!(reopened.migration_versions().unwrap().last(), Some(&22));
+        assert_eq!(reopened.migration_versions().unwrap().last(), Some(&23));
     }
 
     #[test]
@@ -6850,7 +6863,7 @@ mod tests {
                     .unwrap();
             assert_eq!(
                 store.migration_versions().unwrap(),
-                vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22]
+                vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
             );
             assert_eq!(
                 store.project_home_root().unwrap(),
@@ -6877,7 +6890,7 @@ mod tests {
         let reopened = ManagementStore::open_with_paths(&path, user_home, system_temp).unwrap();
         assert_eq!(
             reopened.migration_versions().unwrap(),
-            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22]
+            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
         );
         assert_eq!(
             reopened.get_workspace("w-1").unwrap().unwrap().slug,
@@ -7047,7 +7060,7 @@ mod tests {
         }
 
         let migrated = ManagementStore::open_with_paths(&database, &home, fixture.path()).unwrap();
-        assert_eq!(migrated.migration_versions().unwrap().last(), Some(&22));
+        assert_eq!(migrated.migration_versions().unwrap().last(), Some(&23));
         assert!(migrated
             .list_workspace_repository_worktrees("workspace-with-no-worktrees")
             .unwrap()
@@ -7861,6 +7874,30 @@ mod tests {
     }
 
     #[test]
+    fn quick_request_accepts_an_existing_unregistered_working_directory() {
+        let fixture = tempdir().unwrap();
+        let store = ManagementStore::in_memory_with_paths(
+            fixture.path().join("home"), fixture.path().join("temp"),
+        ).unwrap();
+        let workspace = store.create_workspace(&quick_workspace()).unwrap();
+        let directory = fixture.path().join("chosen");
+        fs::create_dir_all(&directory).unwrap();
+        let request = task("qr-chosen", &workspace.id, "chosen");
+        let session = NewSession {
+            open_code_session_id: "ses-chosen".into(),
+            owner: SessionOwner::Task(request.id.clone()),
+            directory: fs::canonicalize(&directory).unwrap().to_string_lossy().into_owned(),
+            last_known_status: "starting".into(),
+            created_at: CREATED,
+        };
+        let record = store.create_quick_request_with_session_and_model(
+            &request, &session, "", "prompt",
+        ).unwrap();
+        assert_eq!(record.session.unwrap().directory, session.directory);
+        assert_eq!(store.validate_session_context("ses-chosen", &directory).unwrap().directory, session.directory);
+    }
+
+    #[test]
     fn quick_request_task_homes_and_session_directories_are_validated() {
         let fixture = tempdir().unwrap();
         let system_temp = fixture.path().join("system-temp");
@@ -7984,13 +8021,6 @@ mod tests {
             .execute(
                 "UPDATE tasks SET home_path = '/arbitrary/request/home' WHERE id = 'qr-shared'",
                 [],
-            )
-            .is_err());
-        assert!(connection
-            .execute(
-                "INSERT INTO sessions(open_code_session_id, owner_task_id, directory, last_known_status, created_at, updated_at)
-                 VALUES ('ses-sql-wrong-directory', 'qr-shared', '/arbitrary/request/home', 'starting', ?1, ?1)",
-                [CREATED],
             )
             .is_err());
     }

@@ -298,11 +298,12 @@ export function cleanupTerminal(invoke, sessionId) {
   return invokeCommand(invoke, "opencode_terminal_cleanup", { sessionId });
 }
 
-export function createQuickRequest(invoke, prompt, model, repositoryId = null) {
+export function createQuickRequest(invoke, prompt, model, repositoryId = null, directory = null) {
   return invokeCommand(invoke, "quick_request_create", {
     prompt,
     model,
     repositoryId,
+    ...(directory ? { directory } : {}),
   });
 }
 
@@ -349,6 +350,7 @@ export async function submitResolvedQuickRequestFlow({
   originalPrompt,
   model,
   repositoryId,
+  directory,
   waitForTerminal,
   onCreated,
   showSession,
@@ -362,6 +364,7 @@ export async function submitResolvedQuickRequestFlow({
     originalPrompt,
     model,
     repositoryId,
+    directory,
   );
   onCreated(record);
   const sessionId = record.session?.openCodeSessionId;
@@ -470,11 +473,13 @@ export function runNewWorkProposal(
   originalPrompt,
   preferredWorkspaceId = undefined,
   workType = undefined,
+  explicitDirectory = undefined,
 ) {
   const payload = { sessionId, originalPrompt };
   if (preferredWorkspaceId !== undefined)
     payload.preferredWorkspaceId = preferredWorkspaceId;
   if (workType !== undefined) payload.workType = workType;
+  if (explicitDirectory !== undefined) payload.explicitDirectory = explicitDirectory;
   return invokeCommand(invoke, "new_work_proposal_run", payload);
 }
 

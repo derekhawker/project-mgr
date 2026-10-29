@@ -604,9 +604,9 @@ recreates a missing worktree automatically.
 
 | Step | Actor | Action | Result |
 |---:|---|---|---|
-| 1 | User | Chooses **Quick Request** from the New work dropdown and enters an original prompt. | The shared New-work modal preserves the current destination. |
-| 2 | GUI/Rust/OpenCode | Runs the internal proposal whose sole purpose is to resolve a working directory from the registered repository catalog. | Rust validates the repository and exact path; no record or terminal is created. |
-| 3 | User | Reviews or corrects the resolved directory using a registered repository, then confirms. If no repository is identified, the proposed directory is `<configured OpenCode Projects root>/Quick Requests/`. | The original prompt remains unchanged; no workspace choice or starting-prompt rewrite is involved. |
+| 1 | User | Chooses **Quick Request**, reviews the prefilled default directory, optionally types or chooses another existing directory, and enters an original prompt. | The directory choice applies only to this request; the shared New-work modal preserves the current destination. |
+| 2 | GUI/Rust/OpenCode | Runs an internal directory proposal. An explicit directory must be returned unchanged, without supplying the repository catalog; otherwise the proposal may choose an enabled repository. | Rust validates the exact path or repository; no record or terminal is created. |
+| 3 | User | Reviews the directory, optionally types a path, chooses a folder, or resets to the default, then confirms. If no directory was explicitly chosen and no repository is identified, the default is `<configured OpenCode Projects root>/Quick Requests/`. | The original prompt remains unchanged; no workspace choice or starting-prompt rewrite is involved. |
 | 4 | Rust | Ensures the special Quick Requests workspace, resolved directory, and app-owned OpenCode server are ready. | The working directory is the identified repository or shared default. |
 | 5 | Rust | Creates the Quick Request task, stores its original prompt in `quick_request_prompts`, and records the OpenCode session ID, working directory, and creation time in one transaction. | The request and its exact prompt/session association are durable; the task's generic description remains unused. |
 | 6 | Rust/GUI | Attaches the exact session in a PTY and opens its dedicated Quick Request page. | The terminal fills the available main work area; app navigation remains visible and no session tabs or workspace/task controls are shown. |

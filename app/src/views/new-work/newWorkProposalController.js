@@ -2,6 +2,7 @@ export function createNewWorkProposalController(deps) {
   const {
     getOriginalPrompt,
     getRequestedType,
+    getExplicitDirectory,
     getSelectedModel,
     getProposalSessionId,
     setProposalSessionId,
@@ -43,6 +44,7 @@ export function createNewWorkProposalController(deps) {
         originalPrompt,
         undefined,
         requestedType,
+        ...(getExplicitDirectory?.() ? [getExplicitDirectory()] : []),
       );
       setProgress("interpret", "Interpret request", "success");
       await renderProposal(proposal, originalPrompt);
