@@ -40,12 +40,19 @@ Each component lives in its exact-name PascalCase file (`ActionMenu.jsx`,
 Shared styles such as `controls.module.css` remain shared. See
 [frontend organization](../../README.md#frontend-organization) for application
 and screen ownership.
+Shared buttons and ActionMenu triggers use solid fills, modestly rounded corners,
+a neutral border, and a layered lavender-gray shadow. Default buttons are white;
+pressed controls use an inset shadow. Navigation items opt out of the shared
+shadow and keep their flat treatment. Preserve clear focus, disabled, and variant
+states.
+
 Heading separates semantic level from its shared `hero`, `page`, `section`,
 `subsection`, and `compact` visual sizes. IconButton provides consistent sizing
-and SVG treatment. Button supports `primary`, `selected`, and `danger` visual
-variants; Icon renders shared inline 16×16 SVGs at a consistent 1rem size, with
-an optional muted treatment for icons paired with text. Keep its SVG artwork
-inline in `Icon.jsx`, not scattered through screen markup or external files.
+and SVG treatment. Button supports `primary`, `selected`, `danger`, and bordered
+`ghost` visual variants. Modal uses the ghost variant for its close control.
+Icon renders shared inline 16×16 SVGs at a consistent 1rem size, with an optional
+muted treatment for icons paired with text. Keep its SVG artwork inline in
+`Icon.jsx`, not scattered through screen markup or external files.
 The folder tree uses the `folder` and `folderOpen` artwork to distinguish
 collapsed and expanded directories.
 Button owns the token-based gap between an icon and its visible label.

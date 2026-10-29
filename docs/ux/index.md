@@ -52,9 +52,12 @@ experience; the glossary is the vocabulary reference.
 - **Visual language:** Keep the workbench neutral gray. Use C64-inspired blue,
   lavender, and cyan as deliberate splashes on selected list items, menus, and
   popups; use muted terracotta for primary actions. Keep outlines fine, corners
-   close to square, except the rounded recessed Workspace tab strip, and button
-   depth subtle. Use restrained monospace labels for
-  navigation and controls without turning the screen into pixel-art nostalgia.
+  close to square, except the rounded recessed Workspace tab strip, and button
+  depth subtle. Shared buttons use solid fills, modestly rounded gray borders,
+  and a layered lavender-gray shadow; default buttons are white and pressed
+  controls use an inset shadow. Keep navigation items flat. Avoid gradients and
+  pale edge highlights. This is a light Windows 95 cue, not pixel-art nostalgia.
+  Use restrained monospace labels for navigation and controls.
 
 - **Repository directories are explicit context.** Users add selected
   directories from the Repositories page. The app persists each scan root,

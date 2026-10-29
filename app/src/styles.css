@@ -308,12 +308,20 @@ body {
   color: var(--ui-text);
   text-align: left;
   cursor: pointer;
+  box-shadow: none;
   transition:
     background-color 120ms ease,
     color 120ms ease;
 }
 .navigation li button:hover:not(:disabled) {
   background: var(--ui-surface-pressed);
+}
+.navigation summary,
+.navigation button:hover:not(:disabled),
+.navigation summary:hover,
+.navigation button:active:not(:disabled),
+.navigation summary:active {
+  box-shadow: none;
 }
 .navigation button:focus-visible,
 .compact-input:focus-visible,

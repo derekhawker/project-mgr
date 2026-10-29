@@ -36,10 +36,8 @@
   --ui-space-64: 64px;
   --ui-space-96: 96px;
   --ui-control-padding: var(--ui-space-6) var(--ui-space-12);
-  --ui-control-radius: 0.25rem;
+  --ui-control-radius: 2px;
   --ui-control-font: ui-monospace, "SFMono-Regular", "Courier New", monospace;
-  --ui-gradient: linear-gradient(180deg, #f5f5f2, #e1e1dd);
-  --ui-gradient-hover: linear-gradient(180deg, #ffffff, #ebebe7);
 }
 
 @keyframes ui-dialog-enter {

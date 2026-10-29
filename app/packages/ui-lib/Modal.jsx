@@ -143,6 +143,7 @@ export function Modal(props) {
         )}
         <IconButton
           type="button"
+          variant="ghost"
           class={styles.close}
           onClick={requestClose}
           label={local.closeLabel || "Close dialog"}
