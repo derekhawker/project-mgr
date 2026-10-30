@@ -107,6 +107,47 @@ test("New Work modal sizes to content and keeps standard dialog interactions", a
     assert.ok(g.height < g.viewport, `Capture should fit its viewport: ${g.height}px`);
     assert.equal(evaluate("document.querySelector('#new-work-prompt').rows"), 9);
   });
+  await t.test("proposal preview is a stable template while typing original prompt", () => {
+    browser("click", "#proposal-prompt-preview summary");
+    browser(
+      "wait",
+      "--fn",
+      "document.querySelector('#proposal-prompt-preview pre')?.textContent.includes('{{originalPrompt}}')",
+    );
+    const before = evaluate(`(() => {
+      const dialog = document.querySelector('#new-work-dialog');
+      const disclosure = document.querySelector('#proposal-prompt-preview');
+      const preview = disclosure.querySelector('pre');
+      window.__previewBeforeTyping = { dialog, disclosure, preview };
+      return {
+        text: preview.textContent,
+        height: dialog.getBoundingClientRect().height,
+      };
+    })()`);
+    const after = evaluate(`(() => {
+      const dialog = document.querySelector('#new-work-dialog');
+      const disclosure = document.querySelector('#proposal-prompt-preview');
+      const preview = disclosure.querySelector('pre');
+      const previous = window.__previewBeforeTyping;
+      const prompt = document.querySelector('#new-work-prompt');
+      prompt.focus();
+      prompt.value = 'private original prompt';
+      prompt.dispatchEvent(new Event('input', { bubbles: true }));
+      return {
+        text: preview.textContent,
+        height: dialog.getBoundingClientRect().height,
+        disclosureStillMounted: disclosure === previous.disclosure && disclosure.isConnected && disclosure.open,
+        previewStillMounted: preview === previous.preview && preview.isConnected,
+      };
+    })()`);
+    assert.match(before.text, /\{\{repositoryCatalog\}\}/);
+    assert.doesNotMatch(before.text, /Example repository|\/fixture\/repository/);
+    assert.equal(after.disclosureStillMounted, true);
+    assert.equal(after.previewStillMounted, true);
+    assert.equal(after.height, before.height, "typing must not collapse the modal");
+    assert.equal(after.text, before.text, "typing must not refresh the static template");
+    assert.doesNotMatch(after.text, /private original prompt/);
+  });
   await t.test(
     "header close, Escape, focus containment and restoration",
     () => {

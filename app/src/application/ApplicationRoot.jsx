@@ -17,6 +17,7 @@ export function ApplicationRoot(props) {
               <h2>Workspaces</h2>
             </div>
             {props.workspaceNavigation()}
+            {props.portsNavigationButton()}
             {props.directoriesNavigationButton()}
             {props.newWorkMenu()}
           </aside>

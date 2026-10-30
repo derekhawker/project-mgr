@@ -25,6 +25,7 @@
   width: 100%;
   justify-content: space-between;
   gap: var(--ui-space-6);
+  padding: var(--ui-control-padding);
   border-radius: var(--ui-control-radius, 0.25rem);
   font-weight: 400;
 }
@@ -32,14 +33,13 @@
   background: var(--ui-surface-pressed);
 }
 :global(.navigation li) .workspaceButton[aria-current="page"] {
-  color: #fff;
-  background: var(--ui-blue);
-  box-shadow: inset 4px 0 var(--ui-cyan);
+  color: var(--ui-text);
+  background: #fff;
   font-weight: 700;
 }
 :global(.navigation li) .workspaceButton[aria-current="page"]:hover {
-  color: #fff;
-  background: var(--ui-blue);
+  color: var(--ui-text);
+  background: #fff;
 }
 .workspaceName {
   min-width: 0;
@@ -54,15 +54,14 @@
   font-size: 12px;
   line-height: 1.45;
 }
-.repositoryIndicator {
-  display: inline-flex;
-  flex: 0 0 auto;
-}
 .directoriesSlot {
   width:100%;
-  margin-top: auto;
+  margin-top: 0;
 }
 
 .directoriesButton {
   width: 100%;
+  justify-content: flex-start;
+  padding: var(--ui-control-padding);
 }
+.portsSlot { width:100%; margin-top:auto; }

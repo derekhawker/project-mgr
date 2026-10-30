@@ -21,3 +21,4 @@ export { Tabs } from "./Tabs.jsx";
 export { TabList } from "./TabList.jsx";
 export { Tab } from "./Tab.jsx";
 export { Collapsible } from "./Collapsible.jsx";
+export { Tooltip } from "./Tooltip.jsx";

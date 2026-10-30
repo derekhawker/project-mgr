@@ -8,8 +8,28 @@ use std::time::{SystemTime, UNIX_EPOCH};
 pub struct PresentationPreferences {
     pub shared: SharedPreferences,
     pub change_review: ChangeReviewPreferences,
+    pub ports: PortPreferences,
     #[serde(flatten)]
     pub other: BTreeMap<String, serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct PortPreferences {
+    pub selection: String,
+    #[serde(flatten)]
+    pub other: BTreeMap<String, serde_json::Value>,
+}
+
+impl Default for PortPreferences {
+    fn default() -> Self {
+        Self {
+            selection:
+                "3000-3010,4200,4321,5000-5010,5173-5180,5432,6379,8000-8010,8080-8090,9229,27017"
+                    .into(),
+            other: BTreeMap::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -58,9 +78,44 @@ impl Default for PresentationPreferences {
         Self {
             shared: SharedPreferences::default(),
             change_review: ChangeReviewPreferences::default(),
+            ports: PortPreferences::default(),
             other: BTreeMap::new(),
         }
     }
+}
+
+pub fn set_port_selection(
+    store: &ManagementStore,
+    selection: String,
+) -> Result<PresentationPreferences, String> {
+    let trimmed = selection.trim();
+    if trimmed.len() > 2048 {
+        return Err("Port selection is too long.".into());
+    }
+    if !trimmed.is_empty() {
+        for token in trimmed.split(',').map(str::trim) {
+            let parts: Vec<_> = token.split('-').collect();
+            if parts.len() > 2 {
+                return Err(format!("Invalid port range: {token}"));
+            }
+            let start = parts[0]
+                .parse::<u16>()
+                .map_err(|_| format!("Invalid port: {token}"))?;
+            let end = if parts.len() == 2 {
+                parts[1]
+                    .parse::<u16>()
+                    .map_err(|_| format!("Invalid port range: {token}"))?
+            } else {
+                start
+            };
+            if start == 0 || end < start {
+                return Err(format!("Invalid port range: {token}"));
+            }
+        }
+    }
+    let mut preferences = load(store)?;
+    preferences.ports.selection = trimmed.to_owned();
+    save(store, preferences)
 }
 
 pub fn load(store: &ManagementStore) -> Result<PresentationPreferences, String> {
@@ -107,4 +162,39 @@ fn save(
         .set_setting("presentation_preferences", &value, now)
         .map_err(|e| e.to_string())?;
     Ok(preferences)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn port_selection_defaults_persists_and_rejects_invalid_ranges_without_overwriting() {
+        let store = ManagementStore::in_memory().unwrap();
+        let default = load(&store).unwrap();
+        assert_eq!(
+            default.ports.selection,
+            PortPreferences::default().selection
+        );
+        set_port_selection(&store, "3001-3003,5173".into()).unwrap();
+        assert_eq!(load(&store).unwrap().ports.selection, "3001-3003,5173");
+        assert!(set_port_selection(&store, "3005-3001".into()).is_err());
+        assert_eq!(load(&store).unwrap().ports.selection, "3001-3003,5173");
+    }
+
+    #[test]
+    fn old_preference_records_load_with_default_port_selection() {
+        let store = ManagementStore::in_memory().unwrap();
+        store
+            .set_setting(
+                "presentation_preferences",
+                r#"{"shared":{"fileNavigator":{"width":300}},"changeReview":{"mode":"unified"}}"#,
+                1,
+            )
+            .unwrap();
+        assert_eq!(
+            load(&store).unwrap().ports.selection,
+            PortPreferences::default().selection
+        );
+    }
 }

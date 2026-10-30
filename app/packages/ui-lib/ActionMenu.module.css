@@ -57,12 +57,12 @@
   --ui-text: #fff;
   --ui-muted: #d8d2f0;
   --ui-focus: #fff;
-  --ui-menu-highlight: var(--ui-lavender);
-  --ui-menu-separator: var(--ui-lavender);
+  --ui-menu-highlight: var(--ui-primary-hover);
+  --ui-menu-separator: var(--ui-primary-pressed);
   --ui-menu-heading: #b8e4ed;
   --ui-menu-subheading: #d8d2f0;
-  border-color: var(--ui-lavender);
-  background: var(--ui-blue-deep);
+  border-color: var(--ui-primary-pressed);
+  background: var(--ui-primary);
 }
 .surface[hidden] {
   display: none;
@@ -123,5 +123,5 @@
 
 .surface :global(a:hover) {
   color: #fff;
-  background: var(--ui-blue, #40318d);
+  background: var(--ui-menu-highlight, var(--ui-primary-hover));
 }

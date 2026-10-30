@@ -9,6 +9,7 @@ export function createQuickRequestHistoryController(deps) {
     getHistoryQuery,
     getNavigationData,
     getSelectedQuickRequest,
+    isQuickRequestVisible = () => true,
     selectQuickRequest,
     showSession,
     forgetDeletedQuickRequestTerminal,
@@ -20,7 +21,9 @@ export function createQuickRequestHistoryController(deps) {
     refreshNavigation,
     clearSelectedRequest,
     showHistoryDestination,
+    setOwnerStatus,
   } = deps;
+  let openGeneration = 0;
 
   async function refreshRequests(history = false) {
     const records = await listQuickRequests(invoke, history);
@@ -30,23 +33,37 @@ export function createQuickRequestHistoryController(deps) {
   }
 
   async function openQuickRequestRecord(record) {
+    const generation = ++openGeneration;
+    const navigation = getNavigationData();
+    const workspace = navigation.workspaces.find(
+      (entry) => entry.id === record.task.workspaceId,
+    ) || {
+      id: record.task.workspaceId,
+      name: "Quick Requests",
+      kind: "quick_requests",
+      status: "active",
+    };
+    selectQuickRequest(record.task, workspace, navigation, {
+      deferRestore: true,
+    });
+    setOwnerStatus?.("Loading Quick Request…");
+    const isCurrent = () =>
+      generation === openGeneration &&
+      getSelectedQuickRequest()?.id === record.task.id &&
+      isQuickRequestVisible();
     try {
       const restored = await restoreQuickRequest(invoke, record.task.id);
-      const navigation = getNavigationData();
-      const workspace = navigation.workspaces.find(
-        (entry) => entry.id === record.task.workspaceId,
-      ) || {
-        id: record.task.workspaceId,
-        name: "Quick Requests",
-        kind: "quick_requests",
-        status: "active",
-      };
-      selectQuickRequest(restored.task, workspace, navigation);
+      if (!isCurrent()) return;
       if (!restored.session?.openCodeSessionId)
         throw new Error("Quick Request has no associated session.");
       await showSession(restored.session.openCodeSessionId);
+      if (isCurrent()) setOwnerStatus?.("");
     } catch (error) {
-      setAppNotice(formatWorkspaceError("Open Quick Request", error));
+      if (isCurrent()) {
+        const message = formatWorkspaceError("Open Quick Request", error);
+        setOwnerStatus?.(message);
+        setAppNotice(message);
+      }
     }
   }
 

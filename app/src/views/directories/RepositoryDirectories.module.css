@@ -1,8 +1,11 @@
 .navigator {
-  margin-top: var(--ui-space-12);
-  border: 1px solid var(--ui-border-light);
+  margin-top: var(--ui-space-20);
   padding: var(--ui-space-8);
   background: var(--ui-surface);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 32%),
+    0 1px 0 rgb(64 49 141 / 14%),
+    0 4px 8px rgb(36 36 35 / 8%);
 }
 
 .bulkActions {

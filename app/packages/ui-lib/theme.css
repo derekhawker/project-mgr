@@ -15,11 +15,14 @@
   --ui-muted: #5d5d59;
   --ui-focus: #40318d;
   --ui-error: #843d38;
+  --ui-danger: #bd3a45;
+  --ui-danger-hover: #8c3e34;
+  --ui-danger-pressed: #810c22;
   --ui-success: #236447;
   --ui-warning: #765214;
-  --ui-primary: #a85a4f;
-  --ui-primary-hover: #9b5147;
-  --ui-primary-pressed: #88473f;
+  --ui-primary: #265d61;
+  --ui-primary-hover: #317478;
+  --ui-primary-pressed: #1b4649;
   --ui-primary-text: #ffffff;
   /* Whole-CSS-pixel spacing weights. See spacing.md for usage and exceptions. */
   --ui-space-2: 2px;

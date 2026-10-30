@@ -74,79 +74,84 @@ export function ChangeReviewPanel(props) {
           </div>
         </div>
       </header>
-      <div
-        class="change-review-content"
-        style={{ "--navigator-width": `${props.navigatorWidth?.() ?? 300}px` }}
-      >
-        <aside
-          class="change-review-files"
-          aria-label="Changed files grouped by repository"
+      <Show when={!props.loading?.()}>
+        <div
+          class="change-review-content"
+          style={{
+            "--navigator-width": `${props.navigatorWidth?.() ?? 300}px`,
+          }}
         >
-          <For each={repositories()}>
-            {(repository) => (
-              <section class="change-review-repository">
-                <Show when={repositories().length > 1}>
-                  <h2
-                    title={repository.path}
-                    aria-label={`${repository.name}, ${repository.path}, ${repository.files.length} files`}
-                  >
-                    {repository.name} ({repository.files.length})
-                  </h2>
-                </Show>
-                <Show when={repository.comparisonError}>
-                  <p class="change-review-error">
-                    {repository.comparisonError}
-                  </p>
-                </Show>
-                <Show
-                  when={repository.files.length > 0}
-                  fallback={
-                    <p>
-                      {repository.comparisonError
-                        ? "No working-tree changes to list. Comparison diff is unavailable."
-                        : "No changed files against the selected comparison branch or in the working tree."}
+          <aside
+            class="change-review-files"
+            aria-label="Changed files grouped by repository"
+          >
+            <For each={repositories()}>
+              {(repository) => (
+                <section class="change-review-repository">
+                  <Show when={repositories().length > 1}>
+                    <h2
+                      title={repository.path}
+                      aria-label={`${repository.name}, ${repository.path}, ${repository.files.length} files`}
+                    >
+                      {repository.name} ({repository.files.length})
+                    </h2>
+                  </Show>
+                  <Show when={repository.comparisonError}>
+                    <p class="change-review-error">
+                      {repository.comparisonError}
                     </p>
-                  }
-                >
-                  <FileTree
-                    files={repository.files}
-                    isSelected={(entry) => file() === entry}
-                    onSelect={setSelectedFile}
-                    renderFile={(entry, name) => `${name} · ${entry.status}`}
-                  />
-                </Show>
-              </section>
-            )}
-          </For>
-          <Show when={!repositories().length}>
-            <p>
-              {props.error() || "This workspace has no repositories to review."}
-            </p>
-          </Show>
-        </aside>
-        <FileNavigatorDivider
-          width={props.navigatorWidth}
-          onResize={props.onNavigatorResize}
-        />
-        <DiffView
-          file={file}
-          mode={props.mode}
-          visible={props.visible}
-          onFullDiff={
-            props.onFullDiff &&
-            ((entry) => {
-              const repository = repositories().find((item) =>
-                item.files.includes(entry),
-              );
-              if (!repository)
-                return Promise.reject(
-                  new Error("Repository is no longer available."),
+                  </Show>
+                  <Show
+                    when={repository.files.length > 0}
+                    fallback={
+                      <p>
+                        {repository.comparisonError
+                          ? "No working-tree changes to list. Comparison diff is unavailable."
+                          : "No changed files against the selected comparison branch or in the working tree."}
+                      </p>
+                    }
+                  >
+                    <FileTree
+                      files={repository.files}
+                      isSelected={(entry) => file() === entry}
+                      onSelect={setSelectedFile}
+                      renderFile={(entry, name) => `${name} · ${entry.status}`}
+                    />
+                  </Show>
+                </section>
+              )}
+            </For>
+            <Show when={!repositories().length}>
+              <p>
+                {props.error() ||
+                  "This workspace has no repositories to review."}
+              </p>
+            </Show>
+          </aside>
+          <FileNavigatorDivider
+            width={props.navigatorWidth}
+            onResize={props.onNavigatorResize}
+          />
+          <DiffView
+            file={file}
+            mode={props.mode}
+            visible={props.visible}
+            onFullDiff={
+              props.onFullDiff &&
+              ((entry) => {
+                const repository = repositories().find((item) =>
+                  item.files.includes(entry),
                 );
-              return props.onFullDiff(repository.repositoryId, entry.path);
-            })
-          }
-        />
-      </div>
+                if (!repository)
+                  return Promise.reject(
+                    new Error("Repository is no longer available."),
+                  );
+                return props.onFullDiff(repository.repositoryId, entry.path);
+              })
+            }
+          />
+        </div>
+      </Show>
     </section>
   );
 }

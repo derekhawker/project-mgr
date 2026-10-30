@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="280" viewBox="0 0 760 280">
+  <rect width="760" height="280" rx="8" fill="#d2d2d0"/>
+  <g font-family="Arial, sans-serif" font-size="14" fill="#242423">
+    <g transform="translate(24 28)"><rect width="160" height="72" rx="4" fill="#903A0F"/><text x="14" y="31" fill="white">Create workspace</text><text x="14" y="57">Red-orange · #903A0F</text></g>
+    <g transform="translate(208 28)"><rect width="160" height="72" rx="4" fill="#744D08"/><text x="14" y="31" fill="white">Create workspace</text><text x="14" y="57">Orange · #744D08</text></g>
+    <g transform="translate(392 28)"><rect width="160" height="72" rx="4" fill="#595809"/><text x="14" y="31" fill="white">Create workspace</text><text x="14" y="57">Amber · #595809</text></g>
+    <g transform="translate(576 28)"><rect width="160" height="72" rx="4" fill="#24603E"/><text x="14" y="31" fill="white">Create workspace</text><text x="14" y="57">Green · #24603E</text></g>
+    <g transform="translate(24 132)"><rect width="160" height="72" rx="4" fill="#245E54"/><text x="14" y="31" fill="white">Create workspace</text><text x="14" y="57">Green-cyan · #245E54</text></g>
+    <g transform="translate(208 132)"><rect width="160" height="72" rx="4" fill="#265D61"/><text x="14" y="31" fill="white">Create workspace</text><text x="14" y="57">Cyan · #265D61</text></g>
+    <g transform="translate(392 132)"><rect width="160" height="72" rx="4" fill="#2A5979"/><text x="14" y="31" fill="white">Create workspace</text><text x="14" y="57">Blue · #2A5979</text></g>
+    <g transform="translate(576 132)"><rect width="160" height="72" rx="4" fill="#604B80"/><text x="14" y="31" fill="white">Create workspace</text><text x="14" y="57">Violet · #604B80</text></g>
+  </g>
+</svg>

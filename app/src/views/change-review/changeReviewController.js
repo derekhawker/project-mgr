@@ -14,10 +14,18 @@ export function createChangeReviewController({
   setChangeReviewSummary,
   setChangeReviewError,
   setChangeReviewRepositories,
+  setChangeReviewLoading,
   setDocsButtonSelected,
   setSelectedOwnerVisible,
 }) {
+  let generation = 0;
+  function cancelPendingReview() {
+    generation++;
+    setChangeReviewLoading(false);
+    setChangeReviewDisabled(false);
+  }
   function showOwnerTerminal() {
+    cancelPendingReview();
     setChangeReviewVisible(false);
     docsController.showTerminal();
     setSelectedOwnerVisible(true);
@@ -47,6 +55,7 @@ export function createChangeReviewController({
     if (!workspace || !getSelectedOwnerRepositoryCount()) return;
     const ownerType = "workspace";
     const ownerId = workspace.id;
+    const request = ++generation;
     docsController.showTerminal();
     setChangeReviewDisabled(true);
     setChangeReviewSelected(true);
@@ -55,9 +64,11 @@ export function createChangeReviewController({
     setChangeReviewSummary("Loading changes…");
     setChangeReviewError("");
     setChangeReviewRepositories([]);
+    setChangeReviewLoading(true);
     try {
       const repositories = await loadChangeReview(invoke, ownerType, ownerId);
-      if (getSelectedWorkspace()?.id !== ownerId) return;
+      if (request !== generation || getSelectedWorkspace()?.id !== ownerId)
+        return;
       const totalFiles = repositories.reduce(
         (sum, repository) => sum + repository.files.length,
         0,
@@ -67,15 +78,21 @@ export function createChangeReviewController({
       );
       setChangeReviewRepositories(repositories);
     } catch (error) {
+      if (request !== generation || getSelectedWorkspace()?.id !== ownerId)
+        return;
       setChangeReviewSummary(`Could not load changes: ${String(error)}`);
       setChangeReviewError(`Could not load changes: ${String(error)}`);
     } finally {
-      setChangeReviewDisabled(false);
+      if (request === generation) {
+        setChangeReviewLoading(false);
+        setChangeReviewDisabled(false);
+      }
     }
   }
 
   return {
     showOwnerTerminal,
+    cancelPendingReview,
     syncChangeReviewAvailability,
     refreshDocsAvailability,
     handleChangeReviewClick,

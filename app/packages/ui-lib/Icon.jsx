@@ -10,6 +10,8 @@ const icons = {
   folderOpen:
     "M1.5 5.5h13l-1.5 7H3l-1.5-7ZM1.5 5.5V3h4l1.5 1.5h4",
   list: "M2.5 3.5h11m-11 4h6m-6 4h6m2 0h2.5m-2-2 2 2-2 2",
+  ports: "M2 4h12v8H2zM5 4v3h6V4M5 10h.1M8 10h.1M11 10h.1",
+  questionMark: "M5.5 5.5a2.5 2.5 0 1 1 4.2 1.8C8.5 8.4 8 8.8 8 10m0 2.5v.1",
   trash: "M2.5 4h11M6 4V2.5h4V4m2.5 0-.7 9.5h-7.6L3.5 4m3 2.5v4m3-4v4",
 };
 

@@ -136,7 +136,12 @@ test("application areas compose once and retain terminals across navigation and 
     const host = $("#terminal-views");
     const workspaceTerminal = $("#terminal-session-fixture-workspace");
     const workspaceHeading = $("#workbench h1");
-    assert.equal(workspaceHeading.textContent, "Example Workspace");
+    assert.deepEqual(
+      [...workspaceHeading.children]
+        .slice(0, 3)
+        .map((part) => part.textContent),
+      ["Workspace", "/", "Example Workspace"],
+    );
 
     runtime.exit("session-fixture-workspace");
     const restart = $('[data-restart-session="session-fixture-workspace"]');
@@ -241,7 +246,12 @@ test("application areas compose once and retain terminals across navigation and 
     );
     const quickTerminal = $("#terminal-session-fixture-quick-seeded");
     assert.equal($("#workbench").hidden, true);
-    assert.equal(window.document.querySelector("#quick-request-back"), null);
+    assert.deepEqual(
+      [...$("#quick-request-title").children]
+        .slice(0, 3)
+        .map((part) => part.textContent),
+      ["Quick Request", "/", "Fixture Quick Request"],
+    );
     $("#show-history").click();
     await waitFor(() => !$("#quick-request-full-list").hidden);
     assert.equal(quickTerminal.isConnected, true);
@@ -290,7 +300,10 @@ test("application areas compose once and retain terminals across navigation and 
     assert.match($("#workspace-list").textContent, /Composition Workspace/);
     assert.equal($("#workbench").hidden, false);
     assert.equal($("#workbench h1"), workspaceHeading);
-    assert.equal(workspaceHeading.textContent, "Composition Workspace");
+    assert.equal(
+      workspaceHeading.children[2].textContent,
+      "Composition Workspace",
+    );
     assert.equal($("#terminal-views"), host);
     assert.equal(workspaceTerminal.isConnected, true);
     assert.equal(quickTerminal.isConnected, true);

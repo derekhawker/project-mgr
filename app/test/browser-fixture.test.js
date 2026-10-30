@@ -36,6 +36,27 @@ test("browser fixture is deterministic, isolated, and blocks unimplemented effec
   }
 });
 
+test("browser proposal preview uses template values instead of prompt or repository data", async () => {
+  const preview = await invokeBrowserFixture("new_work_proposal_preview");
+  assert.match(preview, /\{\{originalPrompt\}\}/);
+  assert.match(preview, /\{\{repositoryCatalog\}\}/);
+  assert.doesNotMatch(preview, /Example repository|\/fixture\/repository/);
+});
+
+test("Ports fixture shows informative default-range listeners and simulates stop without processes", async () => {
+  const listeners = await invokeBrowserFixture("ports_list");
+  assert.ok(listeners.length >= 2);
+  assert.ok(listeners.some((listener) => listener.ports.includes(3000) && listener.command && listener.cwd));
+  assert.ok(listeners.some((listener) => listener.ports.includes(5173) && listener.identity));
+  assert.ok(listeners.every((listener) => listener.pid && listener.identity && listener.addresses.length));
+
+  const stopped = listeners[0];
+  assert.equal(await invokeBrowserFixture("ports_stop", { pid: stopped.pid, identity: stopped.identity }), null);
+  const remaining = await invokeBrowserFixture("ports_list");
+  assert.equal(remaining.some((listener) => listener.pid === stopped.pid), false);
+  assert.equal(remaining.length, listeners.length - 1);
+});
+
 test("Quick Request fixture preserves exact in-memory prompt and session through create, start, restore and delete", async () => {
   const invoke = invokeBrowserFixture;
   const model = { providerId: "fixture", id: "model" };

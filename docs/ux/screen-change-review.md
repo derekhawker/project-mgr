@@ -17,9 +17,9 @@
 ## Layout
 
 Use compact shared controls and the neutral gray workbench. Reserve C64-inspired
-color for selected file rows and focus indicators. Let the selected tab name the
-page; keep toolbar actions grouped without crowding, and the changed-file list
-visually distinct from the diff surface.
+color for selected file rows and focus indicators. Keep the Workspace masthead
+visible above the selected tab; keep toolbar actions grouped without crowding,
+and the changed-file list visually distinct from the diff surface.
 Use the shared whole-CSS-pixel [spacing weights](../../app/packages/ui-lib/spacing.md)
 for file rows, toolbar gaps, and diff-pane insets.
 Verify the visual layout on Wayland.
@@ -49,6 +49,10 @@ file diff:
   The toolbar shows the selected repository, file count, and comparison target;
   its repository path is available without repeating it in the list.
 - Selecting a file updates the diff pane.
+- Show a loading status while the review is being gathered; do not show an
+  empty-repository message or a file-selection prompt until loading finishes.
+  Switching away keeps the terminal available and stale results must not replace
+  a later review.
 - The file navigator has a draggable, keyboard-adjustable divider. Its width is
   shared with Docs and restored when the app restarts.
 - Name the selected file once above its diff, without a second diff-library

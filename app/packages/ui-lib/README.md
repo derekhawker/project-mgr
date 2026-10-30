@@ -33,7 +33,7 @@ not application screens, commands, state, or Tauri. Add reusable app-specific
 meaning in `app/src/components/` instead. The library contains Heading, ErrorMessage, Button,
 IconButton, Input, TextArea, Select, Checkbox, ActionMenu, ActionMenuItem,
 ActionMenuGroup, ActionMenuSeparator, Collapsible, Modal, Drawer, TabList, Tab, Tabs,
-Notice and Status. ErrorMessage supports inline and page-banner placements and
+Tooltip, Notice and Status. ErrorMessage supports inline and page-banner placements and
 announces errors assertively.
 Each component lives in its exact-name PascalCase file (`ActionMenu.jsx`,
 `Status.jsx`); dedicated styles use the same stem (`ActionMenu.module.css`).
@@ -45,14 +45,27 @@ a neutral border, and a layered lavender-gray shadow. Default buttons are white;
 pressed controls use an inset shadow. Navigation items opt out of the shared
 shadow and keep their flat treatment. Preserve clear focus, disabled, and variant
 states.
+Form fields use a darker inset treatment at rest and clear it to a transparent
+background when focused, with a darker neutral border.
 
 Heading separates semantic level from its shared `hero`, `page`, `section`,
 `subsection`, and `compact` visual sizes. IconButton provides consistent sizing
 and SVG treatment. Button supports `primary`, `selected`, `danger`, and bordered
-`ghost` visual variants. Modal uses the ghost variant for its close control.
+`ghost` visual variants. Reserve the danger fill for destructive action buttons;
+icon-only delete affordances remain neutral. Modal uses the ghost variant for
+its close control.
 Icon renders shared inline 16×16 SVGs at a consistent 1rem size, with an optional
 muted treatment for icons paired with text. Keep its SVG artwork inline in
 `Icon.jsx`, not scattered through screen markup or external files.
+Tooltip renders a labelled question-mark trigger by default and a non-native,
+viewport-positioned `role="tooltip"` bubble in a document portal. It appears
+after 250ms of hover or keyboard focus and dismisses 250ms after pointer leave
+or blur (or immediately on Escape). Placement updates on scroll and resize.
+`renderTrigger` receives the event handlers and ref for the actual focusable
+help trigger; keep it separate from any action button rather than nesting
+interactive elements. The relationship is exposed with `aria-describedby` while
+the bubble is shown. Supply plain text through `content`; the default trigger
+accepts an optional `aria-label`.
 The folder tree uses the `folder` and `folderOpen` artwork to distinguish
 collapsed and expanded directories.
 Button owns the token-based gap between an icon and its visible label.
@@ -70,7 +83,7 @@ below the trigger, with a down-pointing chevron when closed and up when open.
 `direction="up"` places it above with a 4px gap and reverses those chevron states.
 ActionMenu owns placement, popup entry direction, and chevron rotation for both
 native and controlled menus; reduced motion disables both animations.
-ActionMenu defaults to the purple accent surface used by New work and Tools;
+ActionMenu defaults to the primary-color accent surface used by New work and Tools;
 `surfaceVariant="neutral"` explicitly selects the neutral surface. Compose
 `ActionMenuItem` for flat, left-aligned, full-width rows instead of ordinary
 Button controls. Rows have no button border or rounding; hover/focus highlights
@@ -78,7 +91,9 @@ the row. They retain native button attributes, disabled behavior, Tab navigation
 and Enter/Space activation. These disclosures are not ARIA arrow-key menus.
 `ActionMenuGroup label="Open in…"` provides a semantic section and compact
 heading, with its contents indented below it. Nest groups with `headingLevel={3}`
-for subheadings: primary headings use light cyan, nested headings light lavender.
+for subheadings: group labels need special colors for hierarchy and contrast;
+primary headings use light cyan, nested headings light lavender. Keep these label
+colors distinct from the primary-color menu surface and row highlights.
 `ActionMenuSeparator` provides a non-focusable horizontal divider. Group and item
 styles, typography, and indentation belong to the library; callers own only
 screen layout and action wiring. For example:

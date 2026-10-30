@@ -1,0 +1,99 @@
+import assert from "node:assert/strict";
+import { spawn, spawnSync } from "node:child_process";
+import { once } from "node:events";
+import { createServer } from "node:net";
+import { resolve } from "node:path";
+import test from "node:test";
+
+test("PortsInput range typing, native arrows, clamping, and Tab commit work in Chromium", async (t) => {
+  const root = resolve(import.meta.dirname, "..");
+  const probe = createServer().listen(0, "127.0.0.1");
+  await once(probe, "listening");
+  const { port } = probe.address();
+  await new Promise((done) => probe.close(done));
+  const server = spawn(process.execPath, [resolve(root, "node_modules/vite/bin/vite.js"), "--host", "127.0.0.1", "--port", String(port), "--strictPort"], { cwd: root, stdio: "ignore" });
+  const session = `ports-input-${process.pid}`;
+  const browser = (...args) => {
+    const result = spawnSync("agent-browser", ["--session", session, ...args], { encoding: "utf8", timeout: 30000 });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    return result.stdout.trim();
+  };
+  const evaluate = (js) => JSON.parse(browser("eval", js));
+  t.after(async () => {
+    try { browser("close"); } finally {
+      const exited = once(server, "exit"); server.kill("SIGTERM"); await exited;
+    }
+  });
+  const url = `http://127.0.0.1:${port}`;
+  const deadline = Date.now() + 15000;
+  while (true) {
+    try { if ((await fetch(url)).ok) break; } catch { /* Vite starting. */ }
+    assert.ok(Date.now() < deadline, "Vite starts within 15 seconds");
+    await new Promise((done) => setTimeout(done, 100));
+  }
+  browser("open", url);
+  browser("eval", `Promise.all([import('/src/views/ports/PortsInput.jsx'), import('/node_modules/.vite/deps/solid-js.js'), import('/node_modules/.vite/deps/solid-js_web.js')]).then(([c,s,w]) => { const host=document.createElement('div'); host.id='ports-test-host'; host.style='position:fixed;inset:0 auto auto 0;z-index:999999;background:white;width:500px;padding:30px'; document.body.append(host); const [value,setValue]=s.createSignal(''); window.portsValue=value; window.setPortsValue=setValue; window.portsChanged=''; window.disposePorts=w.render(()=>c.PortsInput({value,onChange:v=>{window.portsChanged=v;setValue(v)}}),host); return true })`);
+  browser("eval", `(() => { const input=document.querySelector('#ports-test-host [aria-label="Add port or range"]'); input.focus(); input.value='3000'; input.dispatchEvent(new Event('input',{bubbles:true})); input.dispatchEvent(new KeyboardEvent('keydown',{key:':',bubbles:true,cancelable:true})); return true })()`);
+  await new Promise((done) => setTimeout(done, 100));
+  assert.deepEqual(evaluate(`({start:document.querySelector('#ports-test-host [aria-label="Range start"]')?.value,end:document.querySelector('#ports-test-host [aria-label="Range end"]')?.value})`), { start: "3000", end: "3000" });
+  assert.equal(evaluate(`document.activeElement?.getAttribute('aria-label')`), "Range end", "colon immediately focuses range end");
+  browser("eval", `document.querySelector('#ports-test-host [aria-label="Range end"]').stepUp()`);
+  assert.equal(evaluate(`document.querySelector('#ports-test-host [aria-label="Range end"]').value`), "3001");
+  browser("eval", `(() => { const e=document.querySelector('#ports-test-host [aria-label="Range end"]'); e.stepDown(); e.stepDown(); })()`);
+  assert.equal(evaluate(`document.querySelector('#ports-test-host [aria-label="Range end"]').value`), "3000", "native arrows cannot decrement below start");
+  browser("eval", `(() => { const e=document.querySelector('#ports-test-host [aria-label="Range end"]'); e.value='3005'; e.dispatchEvent(new Event('input',{bubbles:true})); })()`);
+  assert.deepEqual(evaluate(`({value:document.querySelector('#ports-test-host [aria-label="Range end"]').value,start:document.querySelector('#ports-test-host [aria-label="Range start"]').value,selection:window.portsValue()})`), { value: "3005", start: "3000", selection: "" });
+  browser("eval", `(() => { const s=document.querySelector('#ports-test-host [aria-label="Range start"]'); s.value='3010'; s.dispatchEvent(new Event('input',{bubbles:true})); })()`);
+  assert.equal(evaluate(`document.querySelector('#ports-test-host [aria-label="Range end"]').value`), "3010", "raising the start clamps the end immediately");
+  browser("eval", `(() => { const s=document.querySelector('#ports-test-host [aria-label="Range start"]'); s.value='3000'; s.dispatchEvent(new Event('input',{bubbles:true})); const e=document.querySelector('#ports-test-host [aria-label="Range end"]'); e.value='3005'; e.dispatchEvent(new Event('input',{bubbles:true})); })()`);
+  const tabResult = evaluate(`(() => { const e=document.querySelector('#ports-test-host [aria-label="Range end"]'); const event=new KeyboardEvent('keydown',{key:'Tab',bubbles:true,cancelable:true}); e.dispatchEvent(event); return {value:e.value,prevented:event.defaultPrevented}; })()`);
+  assert.equal(tabResult.prevented, true, JSON.stringify(tabResult));
+  assert.deepEqual(evaluate(`({selection:window.portsValue(),entry:!!document.querySelector('#ports-test-host [aria-label="Add port or range"]'),end:!!document.querySelector('#ports-test-host [aria-label="Range end"]')})`), { selection: "3000-3005", entry: true, end: false });
+  assert.equal(evaluate(`document.activeElement?.getAttribute('aria-label')`), "Add port or range", "Tab commit focuses the new empty entry");
+  browser("eval", `(() => { const i=document.querySelector('#ports-test-host [aria-label="Add port or range"]'); i.value='4500'; i.dispatchEvent(new Event('input',{bubbles:true})); i.dispatchEvent(new KeyboardEvent('keydown',{key:',',bubbles:true,cancelable:true})); })()`);
+  assert.equal(evaluate(`window.portsValue()`), "3000-3005,4500", "comma commits a valid tag");
+  browser("eval", `document.querySelector('#ports-test-host [aria-label="Add port or range"]').dispatchEvent(new KeyboardEvent('keydown',{key:'Backspace',bubbles:true,cancelable:true}))`);
+  assert.equal(evaluate(`window.portsValue()`), "3000-3005", "Backspace removes the preceding tag at the end of the list");
+  browser("eval", `window.setPortsValue('3000-3005,4500')`);
+  browser("eval", `(() => { const i=document.querySelector('#ports-test-host [aria-label="Add port or range"]'); i.value='0'; i.dispatchEvent(new Event('input',{bubbles:true})); i.dispatchEvent(new KeyboardEvent('keydown',{key:',',bubbles:true,cancelable:true})); })()`);
+  assert.equal(evaluate(`window.portsValue()`), "3000-3005,4500", "invalid ports never reach the controlled value");
+  browser("eval", `window.setPortsValue('1000,2000,3000')`);
+  browser("eval", `document.querySelector('#ports-test-host [aria-label="Edit 2000"]').click()`);
+  await new Promise((done) => setTimeout(done, 30));
+  assert.equal(evaluate(`document.activeElement?.getAttribute('aria-label')`), "Edit port", "clicking a single-port tag focuses its editor");
+  browser("eval", `document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}))`);
+  assert.equal(evaluate(`!!document.querySelector('#ports-test-host [aria-label="Edit 2000"]')`), true, "Escape cancels single-port editing");
+  browser("eval", `document.querySelector('#ports-test-host [aria-label="Edit 2000"]').click()`);
+  browser("eval", `(() => { const i=document.querySelector('#ports-test-host [aria-label="Edit port"]'); i.value='2500'; i.dispatchEvent(new Event('input',{bubbles:true})); i.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true})); })()`);
+  assert.equal(evaluate(`window.portsValue()`), "1000,2500,3000", "editing replaces the selected tag without changing its position");
+  assert.equal(evaluate(`document.activeElement?.getAttribute('aria-label')`), "Add port or range", "Enter after editing focuses the new port entry");
+  browser("eval", `window.setPortsValue('1000,2500,3000-3005'); document.querySelector('#ports-test-host [aria-label="Edit 3000-3005"]').click()`);
+  await new Promise((done) => setTimeout(done, 30));
+  assert.equal(evaluate(`document.activeElement?.getAttribute('aria-label')`), "Range start", "editing a range begins at its start");
+  assert.equal(evaluate(`!!document.querySelector('#ports-test-host [aria-label="Edit 1000"]')`), true, "other ports remain visible while editing a range");
+  browser("eval", `document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}))`);
+  assert.equal(evaluate(`window.portsValue()`), "1000,2500,3000-3005", "Escape leaves the original range unchanged");
+  assert.equal(evaluate(`!!document.querySelector('#ports-test-host [aria-label="Edit 3000-3005"]')`), true, "Escape exits the range editor");
+  browser("eval", `document.querySelector('#ports-test-host [aria-label="Edit 3000-3005"]').click()`);
+  await new Promise((done) => setTimeout(done, 30));
+  browser("eval", `(() => { const s=document.querySelector('#ports-test-host [aria-label="Range start"]'); s.value='3000'; s.dispatchEvent(new Event('input',{bubbles:true})); s.dispatchEvent(new KeyboardEvent('keydown',{key:'Tab',bubbles:true,cancelable:true})); })()`);
+  assert.equal(evaluate(`document.activeElement?.getAttribute('aria-label')`), "Range end", "Tab moves from range start to end");
+  browser("eval", `(() => { const e=document.querySelector('#ports-test-host [aria-label="Range end"]'); e.value='3005'; e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new KeyboardEvent('keydown',{key:'Tab',bubbles:true,cancelable:true})); })()`);
+  assert.equal(evaluate(`window.portsValue()`), "1000,2500,3000-3005", "Tab commits edited ranges in place");
+  browser("eval", `document.querySelector('#ports-test-host [aria-label="Remove 2500"]').dispatchEvent(new MouseEvent('click',{bubbles:true}))`);
+  assert.equal(evaluate(`window.portsValue()`), "1000,3000-3005", "removing a tag updates the controlled value");
+  assert.equal(evaluate(`document.activeElement?.getAttribute('aria-label')`), "Add port or range", "deleting a tag focuses the entry at that position");
+  assert.deepEqual(evaluate(`Array.from(document.querySelector('#ports-test-host [aria-label="Port selection"]').children).map(el=>el.getAttribute('aria-label') || el.textContent.trim())`), ["1000", "Add port or range", "3000-3005"], "typing entry is inserted at the removed tag position");
+  browser("eval", `document.querySelector('#ports-test-host [aria-label="Add port or range"]').dispatchEvent(new KeyboardEvent('keydown',{key:'Backspace',bubbles:true,cancelable:true}))`);
+  assert.equal(evaluate(`window.portsValue()`), "3000-3005", "Backspace removes the tag immediately before the empty entry");
+  browser("eval", `window.setPortsValue('1000,2500,3000-3005'); document.querySelector('#ports-test-host [aria-label="Remove 2500"]').click()`);
+  browser("eval", `(() => { const i=document.querySelector('#ports-test-host [aria-label="Add port or range"]'); i.value='6000'; i.dispatchEvent(new Event('input',{bubbles:true})); i.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true})); })()`);
+  assert.equal(evaluate(`window.portsValue()`), "1000,6000,3000-3005", "a new port can be added after editing and deleting a tag");
+  browser("eval", `document.querySelector('#ports-test-host button[aria-pressed]').click()`);
+  assert.equal(evaluate(`!!document.querySelector('#ports-test-host [aria-label="Plain-text port selection"]')`), true, "plain-text toggle switches the same editor to a textarea");
+  assert.equal(evaluate(`document.activeElement?.getAttribute('aria-label')`), "Plain-text port selection", "plain-text toggle moves focus to the textarea");
+  browser("eval", `(() => { const t=document.querySelector('#ports-test-host [aria-label="Plain-text port selection"]'); t.value='8080,9090'; t.dispatchEvent(new Event('input',{bubbles:true})); })()`);
+  assert.equal(evaluate(`window.portsValue()`), "8080,9090", "plain-text edits preserve the controlled string contract");
+  browser("eval", `document.querySelector('#ports-test-host button[aria-pressed]').click()`);
+  assert.equal(evaluate(`document.querySelector('#ports-test-host [aria-label="Remove 8080"]').parentElement.textContent.trim()`), "8080", "switching back renders tags from controlled text");
+});

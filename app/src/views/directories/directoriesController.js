@@ -40,6 +40,7 @@ export function createDirectoriesController({
     setOwnerStatus,
     setFullRequestVisible,
     setDirectoriesVisible,
+    setPortsVisible,
     setNoSelectionVisible,
     setSelectedOwnerVisible,
     setWorkbenchVisible,
@@ -217,6 +218,7 @@ export function createDirectoriesController({
   }
   async function showPage() {
     setFullRequestVisible(false);
+    setPortsVisible?.(false);
     setDirectoriesVisible(true);
     setNoSelectionVisible(false);
     setSelectedOwnerVisible(false);

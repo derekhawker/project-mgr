@@ -21,7 +21,7 @@ const rustCommands = [...handler.matchAll(/\b([a-z][a-z0-9_]*)\s*,?/g)].map(
 );
 const rustAttributes = [
   ...rust.matchAll(
-    /#\[tauri::command(?:\([^]]*\))?\]\s*(?:pub\s+)?fn\s+([a-z][a-z0-9_]*)/g,
+    /#\[tauri::command(?:\([^]]*\))?\]\s*(?:pub\s+)?(?:async\s+)?fn\s+([a-z][a-z0-9_]*)/g,
   ),
 ].map((match) => match[1]);
 const html = readFileSync(join(process.cwd(), "index.html"), "utf8");
@@ -43,10 +43,6 @@ const appNotice = readFileSync(
 );
 const proposalRepositories = readFileSync(
   join(process.cwd(), "src/views/new-work/ProposalRepositoryList.jsx"),
-  "utf8",
-);
-const quickRequestHeading = readFileSync(
-  join(process.cwd(), "src/views/quick-requests/QuickRequestHeading.jsx"),
   "utf8",
 );
 const quickRequestHistoryPage = readFileSync(
@@ -97,7 +93,7 @@ const directoriesNavigationButton = readFileSync(
   join(process.cwd(), "src/views/directories/DirectoriesNavigationButton.jsx"),
   "utf8",
 );
-const uiMarkup = `${html}\n${workbenchShell}\n${rightContentShell}\n${newWorkMenu}\n${newWorkDialog}\n${ownerPanel}\n${appNotice}\n${proposalRepositories}\n${quickRequestHeading}\n${quickRequestHistoryPage}\n${repositoryToolsMenu}\n${directoriesPageMarkup}\n${directoriesNavigationButton}\n${commandResult}\n${applicationShellStatus}`;
+const uiMarkup = `${html}\n${workbenchShell}\n${rightContentShell}\n${newWorkMenu}\n${newWorkDialog}\n${ownerPanel}\n${appNotice}\n${proposalRepositories}\n${quickRequestHistoryPage}\n${repositoryToolsMenu}\n${directoriesPageMarkup}\n${directoriesNavigationButton}\n${commandResult}\n${applicationShellStatus}`;
 
 test("startup and command result feedback share the production Solid shell view", () => {
   assert.match(html, /<div id="application-status-root"><\/div>/);
@@ -934,7 +930,7 @@ test("Quick Requests use a dedicated available-height page with a visible way ba
     /id="new-work-menu"[\s\S]*data-new-work-type="quick_request"/,
   );
   assert.match(
-    quickRequestHeading,
+    quickRequestHistoryPage,
     /id="new-quick-request"[^>]*onClick=\{props\.onNew\}>New Quick Request/,
   );
   assert.match(
@@ -984,10 +980,10 @@ test("Quick Request navigation aligns its history icon button with the heading a
   assert.match(rightContentShell, /id="quick-request-history-root"/);
   assert.match(
     quickRequestHistoryPage,
-    /<QuickRequestHeading onNew=\{props\.onNew\} \/>/,
+    /<AppPageLayout\s+type="Quick Requests"\s+name="All"\s+id="quick-request-full-title">/,
   );
   assert.match(
-    quickRequestHeading,
+    quickRequestHistoryPage,
     /id="quick-request-full-title"[\s\S]*id="new-quick-request"/,
   );
   assert.doesNotMatch(html, /id="back-from-quick-requests"/);

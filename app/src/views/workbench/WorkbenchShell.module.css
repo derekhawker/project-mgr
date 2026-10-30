@@ -1,6 +1,7 @@
-.heading {
-  padding: var(--ui-space-6) var(--ui-space-8) var(--ui-space-2);
-  overflow-wrap: anywhere;
+.repositoryIndicator {
+  display: inline-flex;
+  margin-inline-start: var(--ui-space-8);
+  vertical-align: middle;
 }
 
 .toolbar {

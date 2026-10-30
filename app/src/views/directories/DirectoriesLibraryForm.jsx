@@ -1,14 +1,11 @@
-import { Button, ErrorMessage, Heading, Input } from "@ui-lib";
+import { Button, ErrorMessage, Input } from "@ui-lib";
 import { PageError } from "../../components/PageError.jsx";
 import styles from "./directories.module.css";
 
 export function DirectoriesLibraryForm(props) {
   return (
     <>
-      <div class={styles.heading}>
-        <Heading level={1} size="page" id="directories-title">
-          Repositories
-        </Heading>
+      <div class={styles.pageActions}>
         <Button
           id="add-repository-directories"
           variant="primary"

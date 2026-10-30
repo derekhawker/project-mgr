@@ -89,14 +89,14 @@ import {
   workspaceReviewDetails,
 } from "../src/services/shell.js";
 
-test("proposal preview sends the current prompt and returns Rust's rendered text", async () => {
+test("proposal preview requests the static prompt template without sending user input", async () => {
   const calls = [];
   const invoke = async (name, payload) => {
     calls.push([name, payload]);
     return "rendered proposal";
   };
-  assert.equal(await previewNewWorkProposal(invoke, "workspace intent"), "rendered proposal");
-  assert.deepEqual(calls, [["new_work_proposal_preview", { originalPrompt: "workspace intent" }]]);
+  assert.equal(await previewNewWorkProposal(invoke), "rendered proposal");
+  assert.deepEqual(calls, [["new_work_proposal_preview", undefined]]);
 });
 import {
   resultForCommand,

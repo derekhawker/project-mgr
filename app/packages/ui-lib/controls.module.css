@@ -56,14 +56,14 @@
 }
 .danger {
   color: #fff;
-  background: var(--ui-error);
+  background: var(--ui-danger);
 }
 .danger:hover:not(:disabled) {
   color: #fff;
-  background: #6f302c;
+  background: var(--ui-danger-hover);
 }
 .danger:active:not(:disabled) {
-  background: #5d2825;
+  background: var(--ui-danger-pressed);
 }
 .ghost {
   background: transparent;
@@ -78,8 +78,7 @@
   background: var(--ui-surface-pressed);
   box-shadow: inset 0 0.1rem 0.2rem rgb(75 68 92 / 35%);
 }
-.control:focus-visible,
-.field:focus-visible {
+.control:focus-visible {
   outline: 2px solid var(--ui-focus);
   outline-offset: 2px;
 }
@@ -93,12 +92,22 @@
   width: 100%;
   min-width: 0;
   border: 1px solid var(--ui-border);
-  border-radius: 0.5rem;
+  border-radius: 2px;
   padding: var(--ui-space-6) var(--ui-space-8);
   color: var(--ui-text);
-  background: var(--ui-field);
+  background: #b9b9b6;
+  box-shadow:
+    inset 0 1px 2px rgb(55 55 52 / 42%),
+    inset 0 0 0 1px rgb(255 255 255 / 18%);
   font: inherit;
   line-height: 1.4;
+}
+.field:focus {
+  background: transparent;
+  box-shadow: none;
+  border: 1px solid #383836;
+  color: #0b0b0a;
+  outline: none;
 }
 .field::placeholder {
   color: var(--ui-muted);
@@ -106,6 +115,9 @@
 }
 .field:read-only {
   background: var(--ui-surface);
+}
+.field:read-only:focus {
+  background: transparent;
 }
 .textarea {
   resize: vertical;

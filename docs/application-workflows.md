@@ -331,6 +331,30 @@ runtime or report a recoverable conflict for the user.
 
 ## 7. Repository Catalog and Discovery
 
+### 7.0 Inspect listening ports
+
+The Ports destination inspects TCP listeners on Linux and macOS without
+elevation. It refreshes on open and on explicit refresh. The OS may hide process
+details from the current user; unknown or inaccessible fields remain explicitly
+unavailable. Results group sockets by PID and expose only fields reported by the
+OS. Bind wildcard addresses are marked as listening on all interfaces, not as
+proof of external reachability. A persisted user preference filters the result
+to a default set of individual ports and ranges; users can edit/reset it or show
+all accessible listener results.
+
+Stopping a listener signals only its individual process, never its process
+group. Rust verifies the captured process start identity before signaling and
+again before escalation. Linux uses a pidfd to bind both signals to the same
+kernel process despite PID reuse. macOS rechecks the kernel-reported
+microsecond-resolution process start identity immediately before each signal;
+macOS offers no pidfd-equivalent conditional signal API, so a narrow
+check-to-signal PID-reuse race remains on that platform. Rust first sends graceful termination, waits
+five seconds, then attempts force termination only if the same process remains.
+Failures are returned to the UI. Process command lines may contain secrets and
+are displayed only in the local UI; they must never be logged. Listener cwd is
+not reliable ownership evidence, so no Workspace/repository association is
+inferred.
+
 ### 7.1 Add user-selected repository directories
 
 | Step | Actor | Action | Result |

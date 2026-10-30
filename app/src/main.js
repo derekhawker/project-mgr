@@ -60,6 +60,9 @@ import { createNewWork } from "./views/new-work/createNewWork.js";
 import { createDirectories } from "./views/directories/createDirectories.js";
 import { createQuickRequests } from "./views/quick-requests/createQuickRequests.js";
 import { createWorkbenchSessions } from "./views/workbench/createWorkbenchSessions.js";
+import { createPortsController } from "./views/ports/portsController.js";
+import { PortsPage } from "./views/ports/PortsPage.jsx";
+import { PortsNavigationButton } from "./views/ports/PortsNavigationButton.jsx";
 
 const browserFixture = isBrowserFixture(
   import.meta.env.DEV,
@@ -94,9 +97,11 @@ const rightContent = () =>
   RightContentShell({
     ownerActive: rightContentOwnerActive,
     quickRequestTerminalPage,
+    quickRequestName: ownerTitle,
     changeReview,
     quickRequestHistory: quickRequests.historyPage,
     directoriesPage: directories.page,
+    portsPage: () => PortsPage(ports),
     noSelection,
     docsPane,
     workspaceOwnerPanel,
@@ -225,6 +230,7 @@ const applicationStatus = () =>
 const [appNoticeMessage, setAppNoticeMessage] = createSignal("");
 const appNotice = () => AppNotice({ message: appNoticeMessage });
 const [directoriesVisible, setDirectoriesVisible] = createSignal(false);
+const [portsVisible, setPortsVisible] = createSignal(false);
 
 function setAppNotice(message) {
   setAppNoticeMessage(message);
@@ -305,6 +311,12 @@ const workbench = () =>
   WorkbenchShell({
     visible: workbenchVisible,
     workspaceName: ownerTitle,
+    workspaceRepositoryCount: () =>
+      (workspaceNavigation().data.workspaceRepositories || []).filter(
+        (binding) =>
+          binding.workspaceId === selectedWorkspace?.id &&
+          binding.verificationStatus === "verified",
+      ).length,
     changeReviewAvailable,
     changeReviewSelected,
     changeReviewDisabled,
@@ -317,6 +329,7 @@ const workbench = () =>
     repositoryTools,
   });
 const [changeReviewVisible, setChangeReviewVisible] = createSignal(false);
+const [changeReviewLoading, setChangeReviewLoading] = createSignal(false);
 const [changeReviewRepositories, setChangeReviewRepositories] = createSignal(
   [],
 );
@@ -350,6 +363,7 @@ const changeReview = () =>
   ChangeReviewPanel({
     repositories: changeReviewRepositories,
     visible: changeReviewVisible,
+    loading: changeReviewLoading,
     error: changeReviewError,
     mode: changeReviewMode,
     summary: changeReviewSummary,
@@ -378,6 +392,7 @@ const docsController = createDocsController({
     selectedWorkspace ? { type: "workspace", id: selectedWorkspace.id } : null,
   view: docsView,
   onOpen: () => {
+    changeReviewController.cancelPendingReview();
     setChangeReviewVisible(false);
     setChangeReviewSelected(false);
     setSelectedOwnerVisible(false);
@@ -442,6 +457,7 @@ const changeReviewController = createChangeReviewController({
   setChangeReviewSummary,
   setChangeReviewError,
   setChangeReviewRepositories,
+  setChangeReviewLoading,
   setDocsButtonSelected,
   setSelectedOwnerVisible,
 });
@@ -544,6 +560,7 @@ const directories = createDirectories({
   confirm: (message) => window.confirm(message),
   renderAttachedRepositories,
   beforeOpen: () => {
+    changeReviewController.cancelPendingReview();
     docsController.showTerminal();
     setChangeReviewVisible(false);
   },
@@ -558,6 +575,7 @@ const directories = createDirectories({
     setters: {
       setFullRequestVisible,
       setDirectoriesVisible,
+      setPortsVisible,
       setNoSelectionVisible,
       setSelectedOwnerVisible,
       setWorkbenchVisible,
@@ -568,11 +586,31 @@ const directories = createDirectories({
   },
 });
 
+const ports = createPortsController({
+  invoke,
+  visible: portsVisible,
+  setVisible: setPortsVisible,
+  onOpen: () => {
+    changeReviewController.cancelPendingReview();
+    docsController.showTerminal();
+    setChangeReviewVisible(false);
+    setDirectoriesVisible(false);
+    setFullRequestVisible(false);
+    setNoSelectionVisible(false);
+    setSelectedOwnerVisible(false);
+    setWorkbenchVisible(false);
+    setRightContentOwnerActive(false);
+    setQuickRequestTerminalPage(false);
+  },
+});
+
 function selectWorkspace(workspace, data = navigationData) {
   // Commit the destination first. The browser cannot paint Solid's updates until
   // this click handler returns, so keep the pre-paint path to selection and pane
   // visibility; terminal/repository setup can follow on the next task.
+  changeReviewController.cancelPendingReview();
   setDirectoriesVisible(false);
+  setPortsVisible(false);
   setFullRequestVisible(false);
   setWorkbenchVisible(true);
   setQuickRequestTerminalPage(false);
@@ -616,9 +654,10 @@ function selectWorkspace(workspace, data = navigationData) {
   }, 0);
 }
 
-function selectQuickRequest(task, workspace, data = navigationData) {
+function selectQuickRequest(task, workspace, data = navigationData, { deferRestore = false } = {}) {
   if (!task.quickRequest) return;
   setDirectoriesVisible(false);
+  setPortsVisible(false);
   setFullRequestVisible(false);
   const isQuickRequest = Boolean(task.quickRequest);
   setWorkbenchVisible(!isQuickRequest);
@@ -650,7 +689,7 @@ function selectQuickRequest(task, workspace, data = navigationData) {
   syncOwnerSessions();
   syncPendingPrompt();
   if (!isQuickRequest) void refreshDocsAvailability();
-  void restoreTrackedOwnerSession({ type: "task", id: task.id });
+  if (!deferRestore) void restoreTrackedOwnerSession({ type: "task", id: task.id });
 }
 const workspaceLifecycle = createWorkspaceLifecycleController({
   getSelectedWorkspace: () => selectedWorkspace,
@@ -748,11 +787,13 @@ const quickRequests = createQuickRequests({
   forgetDeletedQuickRequestTerminal,
   confirm: (message) => window.confirm(message),
   setAppNotice,
+  setOwnerStatus,
   setError: setQuickRequestError,
   refreshNavigation,
   openNewWork,
   destination: {
     visible: fullRequestVisible,
+    isQuickRequestVisible: quickRequestTerminalPage,
     clearSelectedRequest: () => {
       setSelectedQuickRequest(null);
       selectedWorkspace = null;
@@ -763,9 +804,11 @@ const quickRequests = createQuickRequests({
       setWorkbenchVisible(false);
     },
     showHistory: () => {
+      changeReviewController.cancelPendingReview();
       docsController.showTerminal();
       setChangeReviewVisible(false);
       setDirectoriesVisible(false);
+      setPortsVisible(false);
       setFullRequestVisible(true);
       setNoSelectionVisible(false);
       setSelectedOwnerVisible(false);
@@ -803,6 +846,7 @@ appLifetime.mount(
       quickRequestList: quickRequests.recentList,
       workspaceNavigation: workspaceNavigationView,
       directoriesNavigationButton: directories.navigationButton,
+      portsNavigationButton: () => PortsNavigationButton({ onOpen: () => void ports.open() }),
       newWorkMenu: newWork.menu,
       workbench,
       rightContent,

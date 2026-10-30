@@ -463,8 +463,8 @@ export function startNewWorkProposal(invoke, model) {
   return invokeCommand(invoke, "new_work_proposal_start", { model });
 }
 
-export function previewNewWorkProposal(invoke, originalPrompt) {
-  return invokeCommand(invoke, "new_work_proposal_preview", { originalPrompt });
+export function previewNewWorkProposal(invoke) {
+  return invokeCommand(invoke, "new_work_proposal_preview");
 }
 
 export function runNewWorkProposal(

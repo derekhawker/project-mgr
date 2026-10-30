@@ -1,5 +1,5 @@
 import { For, Show } from "solid-js";
-import { Button, Icon } from "@ui-lib";
+import { Button } from "@ui-lib";
 import styles from "../../application/navigation.module.css";
 
 /** Reactive Workspace navigation list; selection remains owned by the app shell. */
@@ -22,12 +22,6 @@ export function WorkspaceNavigation(props) {
       >
         <For each={workspaces()}>
           {(workspace) => {
-            const repositoryCount = () =>
-              (props.data()?.workspaceRepositories || []).filter(
-                (binding) =>
-                  binding.workspaceId === workspace.id &&
-                  binding.verificationStatus === "verified",
-              ).length;
             return (
               <li>
                 <Button
@@ -39,15 +33,6 @@ export function WorkspaceNavigation(props) {
                   onClick={() => props.onSelect(workspace)}
                 >
                   <span class={styles.workspaceName}>{workspace.name}</span>
-                  <Show when={repositoryCount() > 0}>
-                    <span
-                      class={styles.repositoryIndicator}
-                      aria-hidden="true"
-                      title={`${repositoryCount()} associated Git ${repositoryCount() === 1 ? "repository" : "repositories"}`}
-                    >
-                      <Icon name="branch" muted />
-                    </span>
-                  </Show>
                 </Button>
               </li>
             );

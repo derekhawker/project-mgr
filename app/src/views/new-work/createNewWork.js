@@ -6,6 +6,7 @@ import { createNewWorkDialogController } from "./newWorkDialogController.js";
 import { createNewWorkProposalController } from "./newWorkProposalController.js";
 import { createWorkspaceCreationController } from "./workspaceCreationController.js";
 import { createQuickRequestCreationController } from "./quickRequestCreationController.js";
+import { createNewWorkProposalPreview } from "./newWorkProposalPreview.js";
 import { prepareProposalReview } from "./newWorkProposalReview.js";
 import { handleEnterToSubmit } from "../../lib/formKeyboard.js";
 import {
@@ -84,19 +85,10 @@ export function createNewWork({
     createSignal(false);
   const [newWorkPromptValue, setNewWorkPromptValue] = createSignal("");
   const [preview, setPreview] = createSignal("");
-  let previewOpen = false;
-  let previewRequest = 0;
-  async function refreshPreview() {
-    if (!previewOpen) return;
-    const request = ++previewRequest;
-    setPreview("Loading preview…");
-    try {
-      const result = await previewNewWorkProposal(invoke, newWorkPromptValue());
-      if (request === previewRequest && previewOpen) setPreview(result);
-    } catch (error) {
-      if (request === previewRequest && previewOpen) setPreview(`Could not load preview: ${error}`);
-    }
-  }
+  const proposalPreview = createNewWorkProposalPreview({
+    requestPreview: () => previewNewWorkProposal(invoke),
+    setPreview,
+  });
   const [proposalRepositoryRows, setProposalRepositoryRows] = createSignal([]);
   let newWorkDialog;
   let newWorkPrompt;
@@ -332,10 +324,12 @@ export function createNewWork({
       }
       const disclosure = newWorkDialog.querySelector("#proposal-prompt-preview");
       if (disclosure) disclosure.open = false;
-      previewOpen = false;
-      previewRequest++;
-      setPreview("");
+      proposalPreview.close();
       return dialogController.open(type);
+  }
+  async function cancelNewWork() {
+    await dialogController.cancel();
+    if (!newWorkDialog.open) proposalPreview.close();
   }
   return {
     open: openNewWork,
@@ -391,17 +385,16 @@ export function createNewWork({
         setProposalSelectedModel,
         captureDisabled: newWorkCaptureDisabled,
         prompt: newWorkPromptValue,
-        setPrompt: (value) => { setNewWorkPromptValue(value); void refreshPreview(); },
+        setPrompt: setNewWorkPromptValue,
         preview,
         onPreviewToggle: (event) => {
-          previewOpen = event.currentTarget.open;
-          if (previewOpen) void refreshPreview();
-          else { previewRequest++; setPreview(""); }
+          if (event.currentTarget.open) proposalPreview.open();
+          else proposalPreview.close();
         },
         onCapture: proposalController.handleNewWorkCapture,
         onEnterToSubmit: handleEnterToSubmit,
         onBack: dialogController.backToCapture,
-        onCancel: dialogController.cancel,
+        onCancel: cancelNewWork,
         onConfirm: createProposedWork,
         onDirectoryChange: (event) => {
           setCustomQuickDirectory(null);

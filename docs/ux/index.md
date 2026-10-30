@@ -17,13 +17,14 @@ Application shell (fixed to the window)
 │   │   ├── See all Quick Requests
 │   │   └── Recent Quick Requests (created in the last 24 hours)
 │   ├── Workspaces (sole regular work record)
-│   ├── Repositories (immediately above New work)
+│   ├── Ports (immediately above Repositories)
+│   ├── Repositories
 │   └── New work (Workspace or Quick Request; primary action pinned to bottom)
 └── Main work area (only this pane scrolls)
-    ├── Repositories page (saved scan roots and enabled/disabled repositories)
-    ├── Workspace-name heading and recessed tab strip (OpenCode, open terminals, Change Review, Docs)
+    ├── Settings / Repositories page (saved scan roots and enabled/disabled repositories)
+    ├── Workspace / name masthead and recessed tab strip (OpenCode, open terminals, Change Review, Docs)
     ├── Full-size interactive terminal occupying the available work area
-    ├── Quick Request page (Back + terminal; no tabs or task/workspace tools)
+    ├── Quick Request / name masthead and terminal (no tabs or task/workspace tools)
     ├── Change Review (only when repositories are associated)
     ├── Docs reader (always shown; disabled when no documents are found)
     └── Tools menu (OS handoff above a divider, then repo tools grouped side by side)
@@ -43,21 +44,32 @@ experience; the glossary is the vocabulary reference.
 | Workspace workbench | Work in Workspace-owned interactive sessions; multi-repository workspaces have an orchestrator and repo workers. | [screen-workbench.md](screen-workbench.md) |
 | Quick Requests | Keep the last 24 hours in navigation and browse all retained requests in a separate destination; open each in a dedicated terminal page. | [screen-quick-requests.md](screen-quick-requests.md) |
 | Repositories | Manage saved scan roots and individually enabled repositories; deduplicate overlaps and scan saved roots at startup. | [screen-directories.md](screen-directories.md) |
+| Ports | Inspect accessible TCP listeners, filter by saved port/range preferences, and stop a selected process. | [screen-ports.md](screen-ports.md) |
 | Change Review | Review committed and working-tree changes in a conventional file list against remote or local `main`/`master` refs. | [screen-change-review.md](screen-change-review.md) |
 | Docs | Browse found Markdown and text files by source-relative path beside the selected file. | [screen-docs.md](screen-docs.md) |
 | No selection | A rare, simple prompt to select work or start something new. | [screen-no-selection.md](screen-no-selection.md) |
 
 ## Overarching goals
 
-- **Visual language:** Keep the workbench neutral gray. Use C64-inspired blue,
-  lavender, and cyan as deliberate splashes on selected list items, menus, and
-  popups; use muted terracotta for primary actions. Keep outlines fine, corners
+- **Visual language:** Keep the workbench neutral gray. Show the selected
+  Workspace navigation item on white without an edge marker. Show its associated
+  repository icon in the Workbench title, not in left navigation. Use the primary cyan
+  (`#265D61`) for action-menu surfaces and primary actions; reserve other
+  C64-inspired blue, lavender, and cyan accents for selected items and popups.
+  Keep outlines fine, corners
   close to square, except the rounded recessed Workspace tab strip, and button
   depth subtle. Shared buttons use solid fills, modestly rounded gray borders,
   and a layered lavender-gray shadow; default buttons are white and pressed
-  controls use an inset shadow. Keep navigation items flat. Avoid gradients and
-  pale edge highlights. This is a light Windows 95 cue, not pixel-art nostalgia.
-  Use restrained monospace labels for navigation and controls.
+  controls use an inset shadow. Destructive action buttons use C64 Variant 16
+  red (`#BD3A45`); icon-only delete affordances stay neutral. Keep navigation items flat. Avoid gradients and
+  pale edge highlights. Primary actions use Variant 16 cyan (`#265D61`), with
+  adjacent palette shades for hover and pressed states. This is a light Windows
+  95 cue, not pixel-art nostalgia.
+  Match primary navigation section headings to the page masthead size; keep
+  supporting navigation labels compact.
+  Use restrained monospace labels for navigation and controls. For color
+  exploration, use the C64 warm-identity palette, Variant 16; primary-button
+  alternatives are shown in [the palette options](primary-button-color-options.svg).
 
 - **Repository directories are explicit context.** Users add selected
   directories from the Repositories page. The app persists each scan root,

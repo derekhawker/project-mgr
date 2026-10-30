@@ -72,7 +72,7 @@ test("history controller preserves list filtering, open, delete ownership, and d
     [
       ["list", false],
       ["list", true],
-      ["select", { id: "qr-1" }],
+      ["select", records[0].task],
       ["show", "ses-1"],
       ["delete", "qr-1"],
       ["forget", "ses-1"],
@@ -154,6 +154,40 @@ test("history opening and deletion share the production selected-request signal"
   assert.deepEqual(state.notices, []);
 });
 
+test("opening selects the Quick Request before its terminal restore completes", async () => {
+  const { selection, records, controller } = selectionFixture();
+  const pending = controller.openQuickRequestRecord(records[0]);
+  assert.equal(selection.selectedId(), "qr-1");
+  await pending;
+});
+
+test("a late Quick Request restore cannot select its terminal after switching owners", async () => {
+  const selection = createQuickRequestSelection();
+  let resolve;
+  const shown = [];
+  const record = {
+    task: { id: "qr-1", workspaceId: "quick", quickRequest: true },
+  };
+  const controller = createQuickRequestHistoryController({
+    invoke: () => {},
+    getNavigationData: () => ({ workspaces: [] }),
+    getSelectedQuickRequest: selection.selectedQuickRequest,
+    selectQuickRequest: selection.setSelectedQuickRequest,
+    restoreQuickRequest: () =>
+      new Promise((done) => {
+        resolve = done;
+      }),
+    showSession: async (id) => shown.push(id),
+    setAppNotice: () => {},
+    formatWorkspaceError: (_context, error) => String(error),
+  });
+  const pending = controller.openQuickRequestRecord(record);
+  selection.setSelectedQuickRequest(null);
+  resolve({ ...record, session: { openCodeSessionId: "ses-1" } });
+  await pending;
+  assert.deepEqual(shown, []);
+});
+
 test("bulk deletion confirms once, deletes only selected records, closes their terminals, and refreshes both lists", async () => {
   const calls = [];
   const records = ["qr-1", "qr-2", "qr-3"].map((id) => ({
@@ -202,7 +236,7 @@ test("bulk deletion confirms once, deletes only selected records, closes their t
   );
 });
 
-test("cancelled or rejected deletion and rejected restore retain the selected request", async () => {
+test("cancelled or rejected deletion retains selection; restore failure keeps the newly selected request", async () => {
   const { selection, records, state, controller } = selectionFixture();
   await controller.openQuickRequestRecord(records[0]);
   state.confirmed = false;
@@ -214,7 +248,7 @@ test("cancelled or rejected deletion and rejected restore retain the selected re
   assert.equal(selection.selectedId(), "qr-1");
   state.restoreError = new Error("restore failed");
   await controller.openQuickRequestRecord(records[1]);
-  assert.equal(selection.selectedQuickRequest(), records[0].task);
+  assert.equal(selection.selectedQuickRequest(), records[1].task);
   assert.deepEqual(state.notices, [
     "Error: delete failed",
     "Error: restore failed",

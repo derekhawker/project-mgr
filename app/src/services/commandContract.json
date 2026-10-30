@@ -2125,13 +2125,10 @@
     }
   },
   "new_work_proposal_preview": {
-    "payload": {
-      "type": "object",
-      "properties": { "originalPrompt": { "type": "string" } },
-      "required": ["originalPrompt"],
-      "additionalProperties": false
-    },
-    "result": { "type": "string" }
+    "payload": "none",
+    "result": {
+      "type": "string"
+    }
   },
   "new_work_proposal_start": {
     "payload": {
@@ -5066,5 +5063,8 @@
       "required": ["path", "contents"],
       "additionalProperties": false
     }
-  }
+  },
+  "presentation_preferences_set_port_selection": {"payload":{"type":"object","required":["request"],"properties":{"request":{"type":"object","required":["selection"],"properties":{"selection":{"type":"string"}},"additionalProperties":false}},"additionalProperties":false},"result":{"type":"object","additionalProperties":true,"required":["shared","changeReview"],"properties":{"shared":{"type":"object","additionalProperties":true,"required":["fileNavigator"],"properties":{"fileNavigator":{"type":"object","additionalProperties":true,"required":["width"],"properties":{"width":{"type":"number"}}}}},"changeReview":{"type":"object","additionalProperties":true,"required":["mode"],"properties":{"mode":{"type":"string"}}}}}},
+  "ports_list": {"payload":"none","result":{"type":"array","items":{"type":"object","required":["pid","identity","name","owner","addresses","ports","cwd","command","startTime"],"properties":{"pid":{"type":"number"},"identity":{"type":"string"},"name":{"type":"string"},"owner":{"type":"string"},"addresses":{"type":"array","items":{"type":"string"}},"ports":{"type":"array","items":{"type":"number"}},"cwd":{"type":"string","nullable":true},"command":{"type":"string","nullable":true},"startTime":{"type":"string","nullable":true}},"additionalProperties":false}}},
+  "ports_stop": {"payload":{"type":"object","required":["pid","identity"],"properties":{"pid":{"type":"number"},"identity":{"type":"string"}},"additionalProperties":false},"result":{"type":"null"}}
 }

@@ -186,18 +186,15 @@ body {
   flex: 1 1 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: var(--ui-space-8) var(--ui-space-10);
 }
 .right-content.owner-active {
   display: flex;
   overflow: hidden;
-  padding: 0;
 }
 .right-content.quick-request-terminal-page {
   display: flex;
   flex: 1 1 0;
   flex-direction: column;
-  padding: 0;
   overflow: hidden;
 }
 .right-content.quick-request-terminal-page #workbench {
@@ -205,7 +202,7 @@ body {
 }
 .right-content.quick-request-terminal-page
   #selected-owner
-  > :not(.terminal-card) {
+  > :not(.terminal-card):not(.workspace-status) {
   display: none !important;
 }
 .right-content.quick-request-terminal-page #selected-owner {
@@ -345,6 +342,7 @@ body {
 #selected-owner .owner-management {
   flex: 0 0 auto;
   margin: 0 0 var(--ui-space-4);
+  padding-inline: var(--ui-space-8);
   color: var(--ui-text);
   font-size: 12px;
 }
@@ -383,6 +381,7 @@ body {
 }
 .navigation {
   padding: var(--ui-space-10) var(--ui-space-8);
+  padding-top: 0;
   border-right: 1px solid var(--ui-border-light);
   background: var(--ui-surface);
 }
@@ -431,7 +430,7 @@ body {
   font-size: 13px;
 }
 .quick-view h1 {
-  margin: 0 0 var(--ui-space-16);
+  margin: 0 0 var(--ui-space-8);
 }
 .error-message {
   min-height: 1.2em;
@@ -624,7 +623,13 @@ h2 {
   background: var(--ui-background);
 }
 .navigation-heading h2,
-.quick-section h3,
+.quick-section h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--ui-text);
+  text-transform: none;
+  letter-spacing: 0;
+}
 .history-section h3,
 .catalog-section h3 {
   font-size: 13px;
@@ -634,8 +639,7 @@ h2 {
   letter-spacing: 0;
 }
 .quick-section {
-  margin: var(--ui-space-2) 0 var(--ui-space-4);
-  padding: var(--ui-space-4) 0;
+  padding: var(--ui-space-8) 0;
   border: 0;
   background: transparent;
 }
@@ -644,11 +648,8 @@ h2 {
   padding: 0;
   border: 0;
 }
-.quick-section h3 {
-  font-size: 13px;
-}
 #workbench {
-  padding: var(--ui-space-6) var(--ui-space-8) 0;
+  padding: 0;
   background: var(--ui-background);
   border: 0;
 }

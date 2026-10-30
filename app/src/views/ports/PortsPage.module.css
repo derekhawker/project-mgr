@@ -1,0 +1,22 @@
+.page { display:flex; flex-direction:column; height:100%; overflow:hidden; padding:var(--ui-space-24); box-sizing:border-box; }
+.hidden { display: none; }
+.toolbar { display:flex; align-items:flex-start; flex-wrap:wrap; gap:var(--ui-space-12); margin:var(--ui-space-16) 0; }
+.refreshGroup { display:flex; flex-direction:column; align-items:flex-start; gap:var(--ui-space-4); }
+.allPorts { display:flex; align-items:center; gap:var(--ui-space-4); padding-block:var(--ui-space-6); }
+.reset { display:flex; align-items:center; }
+.reset { margin-left:auto; }
+.actionHelp { display:inline-flex; align-items:center; border:1px solid #ababab; border-radius:.2rem; background:#fff; box-shadow:0 .1rem .2rem rgb(149 141 171 / 64%), 0 .3rem .3rem rgb(149 141 171 / 14%); }
+.actionButton { border:0; border-radius:0; background:transparent; box-shadow:none; }
+.actionButton:hover:not(:disabled), .actionButton:active:not(:disabled) { border:0; background:transparent; box-shadow:none; }
+.actionHelp:has(.actionButton:active:not(:disabled)) { background:var(--ui-surface-pressed); box-shadow:inset 0 0.1rem 0.2rem rgb(75 68 92 / 35%); }
+.tooltipSlot { display:inline-flex; align-items:center; padding-inline:var(--ui-space-4); }
+.helpTrigger { display:inline-grid; place-items:center; width:1.5rem; height:1.5rem; padding:0; border:0; color:var(--ui-text); background:transparent; cursor:help; }
+.helpTrigger:focus-visible { outline:2px solid var(--ui-focus); outline-offset:2px; }
+.helpTrigger :global(svg) { width:.875rem; height:.875rem; background:transparent; fill:none; stroke-width:2.4; }
+.selection { display:flex; flex-direction:column; align-items:stretch; gap:var(--ui-space-8); }
+.fieldLabel { color:var(--ui-muted); font-size:12px; font-weight:650; }
+.meta { color:var(--ui-text); margin:0; }
+.selection { margin-top:var(--ui-space-16); }
+.error { color:var(--ui-error); }
+.list { display:grid; align-content:start; gap:var(--ui-space-8); flex:1; min-height:0; overflow:auto; }
+@media(max-width:700px) { .page {padding:var(--ui-space-12);} }

@@ -2543,6 +2543,7 @@ version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
  "ignore",
+ "libc",
  "png 0.18.1",
  "portable-pty",
  "reqwest 0.12.28",
@@ -2554,6 +2555,7 @@ dependencies = [
  "tauri-plugin-dialog",
  "tauri-plugin-single-instance",
  "tempfile",
+ "tokio",
 ]
 
 [[package]]

@@ -13,11 +13,11 @@ Workspaces directly; legacy Task rows are not shown as work destinations.
 Quick Requests remain a separate tracked flow above the Workspace list.
 
 Keep the app shell anchored to the window. Only the selected main pane scrolls.
-The workbench shell starts with a compact heading showing the selected
-Workspace's full name. It stays visible across terminal, Docs, and Change Review
+The workbench shell starts with the shared title-only masthead, showing
+**Workspace / <name>**. It stays visible across terminal, Docs, and Change Review
 views and updates when another Workspace is selected. Long names wrap rather
 than widening the work area. The compact Workspace/session toolbar sits below
-the heading and above compact, collapsed Workspace
+the masthead and above compact, collapsed Workspace
 options at the top of the work area, followed by the full-size interactive
 terminal. The terminal viewport reaches the work-area edges without an extra
 title strip or inset padding. C64-inspired color is reserved for navigation selection
@@ -63,9 +63,9 @@ Navigation, toolbars, menus, and inline panels use the shared whole-CSS-pixel
 remains edge-to-edge; consistent spacing must not add an inset around it.
 
 Keep the selected session identity in the session tab and let that tab own the
-primary selection fill. The Workspace heading belongs to the shell,
-not the terminal surface; do not add another terminal title strip or reserve an
-empty toolbar row. Quick Request and other destinations do not show the heading.
+primary selection fill. The Workspace masthead belongs to the shell, not the
+terminal surface; do not add another terminal title strip. Quick Requests use
+their own destination masthead instead.
 
 ## Workspace behavior
 

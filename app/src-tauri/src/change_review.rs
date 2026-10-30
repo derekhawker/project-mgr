@@ -6,6 +6,11 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+#[cfg(test)]
+thread_local! {
+    static GIT_INVOCATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReviewFile {
@@ -27,6 +32,8 @@ pub struct ReviewRepository {
 }
 
 fn git(path: &Path, args: &[&str]) -> Result<Vec<u8>, String> {
+    #[cfg(test)]
+    GIT_INVOCATIONS.with(|count| count.set(count.get() + 1));
     let output = Command::new("git")
         .arg("-C")
         .arg(path)
@@ -37,20 +44,6 @@ fn git(path: &Path, args: &[&str]) -> Result<Vec<u8>, String> {
         return Err(String::from_utf8_lossy(&output.stderr).trim().to_owned());
     }
     Ok(output.stdout)
-}
-
-fn status_for(path: &Path, file: &str) -> String {
-    let Ok(bytes) = git(path, &["status", "--porcelain=v1", "-z", "--", file]) else {
-        return "changed".into();
-    };
-    let Some(entry) = bytes.split(|byte| *byte == 0).next() else {
-        return "changed".into();
-    };
-    if entry.len() >= 3 {
-        classify_status(&String::from_utf8_lossy(&entry[..2]))
-    } else {
-        "changed".into()
-    }
 }
 
 fn classify_status(raw: &str) -> String {
@@ -66,8 +59,13 @@ fn classify_status(raw: &str) -> String {
     }
 }
 
-fn diff_for(path: &Path, file: &str, target: Option<&str>) -> (Option<String>, Option<String>) {
-    if status_for(path, file) == "untracked" {
+fn diff_for(
+    path: &Path,
+    file: &str,
+    status: &str,
+    target: Option<&str>,
+) -> (Option<String>, Option<String>) {
+    if status == "untracked" {
         let file_path = path.join(file);
         match fs::read(&file_path) {
             Ok(bytes) if bytes.len() > 1024 * 1024 => (
@@ -116,7 +114,7 @@ fn diff_for(path: &Path, file: &str, target: Option<&str>) -> (Option<String>, O
                 Ok(text) if text.contains("Binary files ") || text.contains("GIT binary patch") => {
                     (None, Some("Binary file; text diff unavailable.".into()))
                 }
-                Ok(text) if text.is_empty() && status_for(path, file) == "conflicted" => (
+                Ok(text) if text.is_empty() && status == "conflicted" => (
                     None,
                     Some(format!("Conflict has no text diff against {target}.")),
                 ),
@@ -197,7 +195,7 @@ pub fn review_repository(repository_id: &str, name: &str, path: &Path) -> Review
     result.files = files
         .into_iter()
         .map(|(file, status)| {
-            let (diff, diff_error) = diff_for(path, &file, target_ref.as_deref());
+            let (diff, diff_error) = diff_for(path, &file, &status, target_ref.as_deref());
             ReviewFile {
                 path: file,
                 status,
@@ -476,6 +474,24 @@ mod tests {
             .unwrap();
         assert_eq!(untracked.status, "untracked");
         assert!(untracked.diff.as_deref().unwrap().contains("+added"));
+    }
+
+    #[test]
+    fn review_reuses_repository_status_for_each_file() {
+        let dir = repository();
+        for index in 0..10 {
+            fs::write(dir.path().join(format!("file-{index}.txt")), "base\n").unwrap();
+        }
+        run(dir.path(), &["add", "."]);
+        run(dir.path(), &["commit", "-qm", "add files"]);
+        for index in 0..10 {
+            fs::write(dir.path().join(format!("file-{index}.txt")), "changed\n").unwrap();
+        }
+        GIT_INVOCATIONS.with(|count| count.set(0));
+        let review = review_repository("repo", "Example", dir.path());
+        let calls = GIT_INVOCATIONS.with(|count| count.get());
+        assert_eq!(review.files.len(), 10);
+        assert!(calls <= 16, "unexpected Git process count: {calls}");
     }
 
     #[test]

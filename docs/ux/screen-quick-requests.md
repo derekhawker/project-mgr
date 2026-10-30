@@ -33,8 +33,9 @@ and control gaps. Filtering behavior is unchanged. Verify appearance on Wayland.
 
 ## Full-list screen
 
-Use a simple list of all retained Quick Requests, including those older than 24
-hours. Each row has a folder-icon **Open** button on the left, the original
+Use the shared title-only masthead **Quick Requests / All**. Keep page actions
+below it in the content area. Use a simple list of all retained Quick Requests,
+including those older than 24 hours. Each row has a folder-icon **Open** button on the left, the original
 prompt as non-clickable text wrapped and clamped to three lines, and an icon-only
 Delete action. Activating a row's Delete action enters bulk-delete mode with that
 row checked; checkboxes appear on every row and a danger-styled **Delete selected**
@@ -78,12 +79,15 @@ shell. The persistent navigation returns to the list without closing the termina
 ## Opening a Quick Request
 
 - Selecting a Quick Request opens its own page in the main work area. Keep the
-  left navigation and app shell visible. The terminal fills all available height
+  left navigation and app shell visible. Start with the shared title-only
+  masthead **Quick Request / <name>**. The terminal fills the remaining height
   in that work area, using the workspace terminal's sizing behavior. Keep the
   window chrome and left navigation visible.
-- The Quick Request page contains the terminal only:
-  no workspace/task toolbar, **+ Task**, session tabs, prompt/header, or
-  page-level terminal controls. Show zero tabs on this page.
+- The Quick Request page has no workspace/task toolbar, **+ Task**, session
+  tabs, prompt, or page-level terminal controls. Show zero tabs on this page.
+- Select the request immediately and show a temporary loading status while its
+  terminal restores. Keep a restore failure visible without reverting to the
+  previous selection.
 - Navigation returns to the full Quick Requests list without closing the terminal or
   stopping its process. The Quick Request terminal page can be reopened.
 - The recent navigation list is limited to the last 24 hours. Older requests

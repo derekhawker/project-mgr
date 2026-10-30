@@ -129,12 +129,14 @@ export function createWorkbenchSessions({
   }
 
   async function refreshSessionEvidence(sessionId) {
+    const ownerKey = selectedOwnerKey();
     try {
       const [status, pending, reconciliation] = await Promise.all([
         getSessionStatus(invoke, sessionId),
         listPendingInputs(invoke, sessionId),
         reconcileSession(invoke, sessionId),
       ]);
+      if (ownerKey !== selectedOwnerKey()) return;
       setSessionStatus(sessionStatusLabel(reconciliation?.status || status));
       setPendingInputMessage("");
       setPendingInputRows(
@@ -145,6 +147,7 @@ export function createWorkbenchSessions({
         ),
       );
     } catch (error) {
+      if (ownerKey !== selectedOwnerKey()) return;
       setSessionStatus(`Session status unavailable: ${String(error)}`);
     }
   }
@@ -256,6 +259,7 @@ export function createWorkbenchSessions({
         : owner?.owner_type && owner?.owner_id
           ? `${owner.owner_type}:${owner.owner_id}`
           : null;
+      if (!proposal && ownerKey !== selectedOwnerKey()) return;
       const requestOwner =
         !proposal &&
         owner?.owner_type === "task" &&
@@ -288,7 +292,8 @@ export function createWorkbenchSessions({
             restartable: !proposal,
             restartHidden: !runtime.isExited(sessionId),
             onSelect: (event) => {
-              const focus = event?.currentTarget?.getAttribute("role") !== "tab";
+              const focus =
+                event?.currentTarget?.getAttribute("role") !== "tab";
               showOwnerTerminal();
               runtime.select(sessionId, { focus });
               selectedSessionByOwner.set(ownerKey, sessionId);
@@ -300,7 +305,12 @@ export function createWorkbenchSessions({
             onRestart: () => void restartSessionTerminal(sessionId),
           });
         }
-      } else runtime.select(sessionId);
+      } else if (proposal || ownerKey === selectedOwnerKey())
+        runtime.select(sessionId);
+      if (!proposal && ownerKey !== selectedOwnerKey()) {
+        syncOwnerSessions({ focus: false });
+        return;
+      }
       terminalSurfaces.show(sessionId);
       if (ownerKey) selectedSessionByOwner.set(ownerKey, sessionId);
       if (proposal) setSessionStatus("Proposal session · interactive");

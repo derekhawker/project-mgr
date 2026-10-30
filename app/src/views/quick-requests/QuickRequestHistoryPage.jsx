@@ -1,6 +1,6 @@
 import { createSignal, Show } from "solid-js";
 import { Button, Checkbox, Input } from "@ui-lib";
-import { QuickRequestHeading } from "./QuickRequestHeading.jsx";
+import { AppPageLayout } from "../../components/AppPageLayout.jsx";
 import { QuickRequestList } from "./QuickRequestList.jsx";
 import pageStyles from "./QuickRequestHistoryPage.module.css";
 import styles from "../../application/workArea.module.css";
@@ -31,47 +31,61 @@ export function QuickRequestHistoryPage(props) {
       hidden={!props.visible()}
       aria-labelledby="quick-request-full-title"
     >
-      <QuickRequestHeading onNew={props.onNew} />
-      <label class="visually-hidden" for="quick-request-search">
-        Search Quick Requests
-      </label>
-      <Input
-        id="quick-request-search"
-        type="search"
-        placeholder="Search Quick Requests…"
-        autocomplete="off"
-        onInput={(event) => {
-          setQuery(event.currentTarget.value);
-          props.onSearch?.(event.currentTarget.value);
-        }}
-      />
-      <Show when={deleteMode()}>
-        <div class={pageStyles.bulkActions}>
-          <Button onClick={cancelDelete}>Cancel</Button>
+      <AppPageLayout
+        type="Quick Requests"
+        name="All"
+        id="quick-request-full-title"
+      >
+        <div class={pageStyles.pageActions}>
           <Button
-            variant="danger"
-            disabled={!selectedIds().size}
-            onClick={() => {
-              void props.onDeleteMany([...selectedIds()]).then(cancelDelete);
-            }}
+            id="new-quick-request"
+            variant="primary"
+            onClick={props.onNew}
           >
-            Delete selected ({selectedIds().size})
+            New Quick Request
           </Button>
         </div>
-      </Show>
-      <ul class="quick-request-full-items">
-        <QuickRequestList
-          records={props.records}
-          history={() => true}
-          query={query}
-          selectedId={props.selectedId}
-          onOpen={props.onOpen}
-          onDelete={startDelete}
-          deleteMode={deleteMode}
-          selectedDeleteIds={selectedIds}
-          onToggleDelete={toggleDelete}
+        <label class="visually-hidden" for="quick-request-search">
+          Search Quick Requests
+        </label>
+        <Input
+          id="quick-request-search"
+          type="search"
+          placeholder="Search Quick Requests…"
+          autocomplete="off"
+          onInput={(event) => {
+            setQuery(event.currentTarget.value);
+            props.onSearch?.(event.currentTarget.value);
+          }}
         />
-      </ul>
+        <Show when={deleteMode()}>
+          <div class={pageStyles.bulkActions}>
+            <Button onClick={cancelDelete}>Cancel</Button>
+            <Button
+              variant="danger"
+              disabled={!selectedIds().size}
+              onClick={() => {
+                void props.onDeleteMany([...selectedIds()]).then(cancelDelete);
+              }}
+            >
+              Delete selected ({selectedIds().size})
+            </Button>
+          </div>
+        </Show>
+        <ul class="quick-request-full-items">
+          <QuickRequestList
+            records={props.records}
+            history={() => true}
+            query={query}
+            selectedId={props.selectedId}
+            onOpen={props.onOpen}
+            onDelete={startDelete}
+            deleteMode={deleteMode}
+            selectedDeleteIds={selectedIds}
+            onToggleDelete={toggleDelete}
+          />
+        </ul>
+      </AppPageLayout>
     </section>
   );
 }

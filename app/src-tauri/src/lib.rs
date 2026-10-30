@@ -16,6 +16,7 @@ pub mod change_review;
 pub mod docs_reader;
 pub mod management;
 pub mod opencode;
+pub mod ports;
 pub mod presentation_preferences;
 pub mod os_handoff;
 pub mod repo_tools;
@@ -254,6 +255,7 @@ pub fn run() {
             presentation_preferences_get,
             presentation_preferences_set_navigator_width,
             presentation_preferences_set_change_review_mode,
+            presentation_preferences_set_port_selection,
             docs_list,
             docs_read,
             repo_tools_list,
@@ -289,6 +291,8 @@ pub fn run() {
             repository_library_set,
             repository_enabled_set,
             repository_soft_delete_many,
+            ports_list,
+            ports_stop,
             repository_attach,
             workspace_session_create,
             task_session_create
@@ -301,6 +305,45 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("failed to run OpenCode Project Manager");
+}
+
+#[tauri::command]
+async fn ports_list() -> Result<Vec<ports::Listener>, String> {
+    run_ports_work(ports::listeners).await
+}
+
+#[tauri::command]
+async fn ports_stop(pid: u32, identity: String) -> Result<(), String> {
+    run_ports_work(move || ports::stop(pid, identity)).await
+}
+
+async fn run_ports_work<T: Send + 'static>(
+    work: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    static LIMIT: std::sync::OnceLock<std::sync::Arc<tokio::sync::Semaphore>> =
+        std::sync::OnceLock::new();
+    let limit = LIMIT.get_or_init(|| std::sync::Arc::new(tokio::sync::Semaphore::new(2)));
+    let permit = limit.clone().acquire_owned().await.map_err(|e| e.to_string())?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let _permit = permit;
+        work()
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct PortSelectionRequest {
+    selection: String,
+}
+
+#[tauri::command]
+fn presentation_preferences_set_port_selection(
+    request: PortSelectionRequest,
+    store: State<'_, ManagementStore>,
+) -> Result<presentation_preferences::PresentationPreferences, String> {
+    presentation_preferences::set_port_selection(&store, request.selection)
 }
 
 fn reconcile_startup(app: &AppHandle, store: &ManagementStore) -> Result<(), String> {
@@ -495,12 +538,35 @@ fn presentation_preferences_set_navigator_width(request: NavigatorWidthRequest, 
     presentation_preferences::set_navigator_width(&store, request.width)
 }
 
+async fn run_review_work<T: Send + 'static>(
+    work: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    static LIMIT: std::sync::OnceLock<std::sync::Arc<tokio::sync::Semaphore>> =
+        std::sync::OnceLock::new();
+    let permit = LIMIT
+        .get_or_init(|| std::sync::Arc::new(tokio::sync::Semaphore::new(2)))
+        .clone()
+        .acquire_owned()
+        .await
+        .map_err(|_| "Review worker unavailable.".to_owned())?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let _permit = permit;
+        work()
+    })
+    .await
+    .map_err(|error| format!("Review worker failed: {error}"))?
+}
+
 #[tauri::command]
-fn change_review_load(
+async fn change_review_load(
     request: OwnerContextRequest,
-    store: State<'_, ManagementStore>,
+    app: AppHandle,
 ) -> Result<Vec<change_review::ReviewRepository>, String> {
-    change_review::load_for_owner(&store, &request.owner_type, &request.owner_id)
+    run_review_work(move || {
+        let store = app.state::<ManagementStore>();
+        change_review::load_for_owner(&store, &request.owner_type, &request.owner_id)
+    })
+    .await
 }
 
 #[derive(Debug, Deserialize)]
@@ -513,8 +579,21 @@ struct ChangeReviewFullDiffRequest {
 }
 
 #[tauri::command]
-fn change_review_full_diff(request: ChangeReviewFullDiffRequest, store: State<'_, ManagementStore>) -> Result<String, String> {
-    change_review::full_diff_for_owner(&store, &request.owner_type, &request.owner_id, &request.repository_id, &request.path)
+async fn change_review_full_diff(
+    request: ChangeReviewFullDiffRequest,
+    app: AppHandle,
+) -> Result<String, String> {
+    run_review_work(move || {
+        let store = app.state::<ManagementStore>();
+        change_review::full_diff_for_owner(
+            &store,
+            &request.owner_type,
+            &request.owner_id,
+            &request.repository_id,
+            &request.path,
+        )
+    })
+    .await
 }
 
 #[tauri::command]
@@ -857,12 +936,8 @@ struct NewWorkProposalRunCommand {
 }
 
 #[tauri::command]
-fn new_work_proposal_preview(
-    store: State<'_, ManagementStore>,
-    original_prompt: String,
-) -> Result<String, String> {
-    let (context, _) = new_work_proposal_context(&store, "workspace", None)?;
-    render_new_work_proposal_prompt(&original_prompt, &context)
+async fn new_work_proposal_preview() -> Result<String, String> {
+    render_new_work_proposal_prompt_preview()
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -1255,6 +1330,16 @@ fn render_new_work_proposal_prompt(
         .replace("{{proposalSchema}}", &schema)
         .replace("{{verifiedContext}}", &context)
         .replace("{{originalPrompt}}", &original_prompt))
+}
+
+fn render_new_work_proposal_prompt_preview() -> Result<String, String> {
+    let context = serde_json::json!({
+        "requestedWorkType": "workspace",
+        "workspaces": "{{workspaces}}",
+        "repositoryCatalog": "{{repositoryCatalog}}",
+        "preferredTaskWorkspace": "{{preferredTaskWorkspace}}",
+    });
+    render_new_work_proposal_prompt("{{originalPrompt}}", &context)
 }
 
 #[cfg(test)]
@@ -3119,47 +3204,50 @@ fn quick_request_follow_up(
 }
 
 #[tauri::command]
-fn quick_request_restore(
+async fn quick_request_restore(
     app: AppHandle,
-    runtime: State<'_, opencode::Runtime>,
-    store: State<'_, ManagementStore>,
     request: QuickRequestIdCommand,
 ) -> Result<management::QuickRequestRecord, String> {
-    let record = store
-        .get_task(&request.request_id)
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "Quick Request not found".to_owned())?;
-    if record.quick_request.is_none() {
-        return Err("Record is not a Quick Request".into());
-    }
-    let session = store
-        .list_sessions(&management::SessionOwner::Task(record.id.clone()))
-        .map_err(|e| e.to_string())?
-        .into_iter()
-        .next()
-        .ok_or_else(|| "Quick Request session not found".to_owned())?;
-    if let Err(error) = store.validate_session_context(
-        &session.open_code_session_id,
-        std::path::Path::new(&session.directory),
-    ) {
-        let message = mark_session_failed(&store, &session.open_code_session_id, error.to_string());
-        return Err(format!("Quick Request restore rejected: {message}"));
-    }
-    if !runtime.terminal_attached(&session.open_code_session_id) {
-        runtime.attach_terminal(
-            app,
+    run_terminal_work(move || {
+        let runtime = app.state::<opencode::Runtime>();
+        let store = app.state::<ManagementStore>();
+        let record = store
+            .get_task(&request.request_id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| "Quick Request not found".to_owned())?;
+        if record.quick_request.is_none() {
+            return Err("Record is not a Quick Request".into());
+        }
+        let session = store
+            .list_sessions(&management::SessionOwner::Task(record.id.clone()))
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .next()
+            .ok_or_else(|| "Quick Request session not found".to_owned())?;
+        if let Err(error) = store.validate_session_context(
             &session.open_code_session_id,
             std::path::Path::new(&session.directory),
-        )?;
-        runtime.wait_for_terminal_ready(&session.open_code_session_id)?;
-    }
-    Ok(management::QuickRequestRecord {
-        task: record,
-        session: Some(session),
-        prompt: store
-            .quick_request_prompt(&request.request_id)
-            .map_err(|e| e.to_string())?,
+        ) {
+            let message = mark_session_failed(&store, &session.open_code_session_id, error.to_string());
+            return Err(format!("Quick Request restore rejected: {message}"));
+        }
+        if !runtime.terminal_attached(&session.open_code_session_id) {
+            runtime.attach_terminal(
+                app.clone(),
+                &session.open_code_session_id,
+                std::path::Path::new(&session.directory),
+            )?;
+            runtime.wait_for_terminal_ready(&session.open_code_session_id)?;
+        }
+        Ok(management::QuickRequestRecord {
+            task: record,
+            session: Some(session),
+            prompt: store
+                .quick_request_prompt(&request.request_id)
+                .map_err(|e| e.to_string())?,
+        })
     })
+    .await
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -3360,8 +3448,47 @@ fn opencode_terminal_restart(
     runtime.restart_exited_terminal(app, &session_id, std::path::Path::new(&session.directory))
 }
 
-/// Resolve and attach a persisted session in Rust before the renderer mounts
-/// its terminal surface. Restore never creates a new conversation or prompt.
+// Serialize restore work so simultaneous requests cannot duplicate a replacement
+// or attach while still allowing the native main thread to process input.
+async fn run_terminal_work<T: Send + 'static>(
+    work: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    static LIMIT: std::sync::OnceLock<std::sync::Arc<tokio::sync::Semaphore>> =
+        std::sync::OnceLock::new();
+    let permit = LIMIT
+        .get_or_init(|| std::sync::Arc::new(tokio::sync::Semaphore::new(1)))
+        .clone()
+        .acquire_owned()
+        .await
+        .map_err(|_| "Terminal worker unavailable.".to_owned())?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let _permit = permit;
+        work()
+    })
+    .await
+    .map_err(|error| format!("Terminal worker failed: {error}"))?
+}
+
+async fn run_session_evidence_work<T: Send + 'static>(
+    work: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    static LIMIT: std::sync::OnceLock<std::sync::Arc<tokio::sync::Semaphore>> =
+        std::sync::OnceLock::new();
+    let permit = LIMIT
+        .get_or_init(|| std::sync::Arc::new(tokio::sync::Semaphore::new(1)))
+        .clone()
+        .acquire_owned()
+        .await
+        .map_err(|_| "Session worker unavailable.".to_owned())?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let _permit = permit;
+        work()
+    })
+    .await
+    .map_err(|error| format!("Session worker failed: {error}"))?
+}
+
+/// Resolve and attach a persisted session before the renderer mounts its surface.
 struct SessionRestoreRuntimeAdapter<'a> {
     app: AppHandle,
     runtime: &'a opencode::Runtime,
@@ -3396,22 +3523,25 @@ impl session_restore::SessionRestoreRuntime for SessionRestoreRuntimeAdapter<'_>
 }
 
 #[tauri::command]
-fn opencode_session_restore(
+async fn opencode_session_restore(
     app: AppHandle,
-    runtime: State<'_, opencode::Runtime>,
-    store: State<'_, ManagementStore>,
     session_id: String,
 ) -> Result<management::SessionRecord, String> {
-    let mut adapter = SessionRestoreRuntimeAdapter {
-        app,
-        runtime: &runtime,
-    };
-    session_restore::restore_or_replace(
-        &store,
-        &session_id,
-        || Ok(opencode_model_default_command(&store)?.runtime_model()),
-        &mut adapter,
-    )
+    run_terminal_work(move || {
+        let runtime = app.state::<opencode::Runtime>();
+        let store = app.state::<ManagementStore>();
+        let mut adapter = SessionRestoreRuntimeAdapter {
+            app: app.clone(),
+            runtime: &runtime,
+        };
+        session_restore::restore_or_replace(
+            &store,
+            &session_id,
+            || Ok(opencode_model_default_command(&store)?.runtime_model()),
+            &mut adapter,
+        )
+    })
+    .await
 }
 
 #[tauri::command]
@@ -3724,11 +3854,14 @@ struct SessionCommand {
 }
 
 #[tauri::command]
-fn opencode_session_status(
-    state: State<'_, opencode::Runtime>,
+async fn opencode_session_status(
+    app: AppHandle,
     request: SessionCommand,
 ) -> Result<opencode::SessionStatus, String> {
-    state.session_status(&request.session_id)
+    run_session_evidence_work(move || {
+        app.state::<opencode::Runtime>().session_status(&request.session_id)
+    })
+    .await
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -3739,56 +3872,66 @@ struct SessionReconcileCommand {
 }
 
 #[tauri::command]
-fn opencode_session_reconcile(
-    state: State<'_, opencode::Runtime>,
-    store: State<'_, ManagementStore>,
+async fn opencode_session_reconcile(
+    app: AppHandle,
     request: SessionReconcileCommand,
 ) -> Result<opencode::SessionReconciliation, String> {
-    let result = state.reconcile_session(&request.session_id, request.cursor.as_deref())?;
-    let status = match result.status {
-        opencode::SessionApplicationStatus::Starting => "starting",
-        opencode::SessionApplicationStatus::Running => "running",
-        opencode::SessionApplicationStatus::WaitingForInput => "waiting_for_input",
-        opencode::SessionApplicationStatus::ReadyForReview => "ready_for_review",
-        opencode::SessionApplicationStatus::Reconnecting => "reconnecting",
-        opencode::SessionApplicationStatus::Unknown => "unknown",
-        opencode::SessionApplicationStatus::Failed => "failed",
-    };
-    let pending_json = serde_json::to_string(
-        &serde_json::json!({"permissions": &result.permissions, "forms": &result.forms}),
-    )
-    .ok();
-    store
-        .update_session_reconciliation(
-            &request.session_id,
-            status,
-            result.cursor.as_deref(),
-            matches!(
-                result.status,
-                opencode::SessionApplicationStatus::Unknown
-                    | opencode::SessionApplicationStatus::Reconnecting
-            ),
-            pending_json.as_deref(),
-            now_millis(),
+    run_session_evidence_work(move || {
+        let state = app.state::<opencode::Runtime>();
+        let store = app.state::<ManagementStore>();
+        let result = state.reconcile_session(&request.session_id, request.cursor.as_deref())?;
+        let status = match result.status {
+            opencode::SessionApplicationStatus::Starting => "starting",
+            opencode::SessionApplicationStatus::Running => "running",
+            opencode::SessionApplicationStatus::WaitingForInput => "waiting_for_input",
+            opencode::SessionApplicationStatus::ReadyForReview => "ready_for_review",
+            opencode::SessionApplicationStatus::Reconnecting => "reconnecting",
+            opencode::SessionApplicationStatus::Unknown => "unknown",
+            opencode::SessionApplicationStatus::Failed => "failed",
+        };
+        let pending_json = serde_json::to_string(
+            &serde_json::json!({"permissions": &result.permissions, "forms": &result.forms}),
         )
-        .map_err(|e| e.to_string())?;
-    Ok(result)
+        .ok();
+        store
+            .update_session_reconciliation(
+                &request.session_id,
+                status,
+                result.cursor.as_deref(),
+                matches!(
+                    result.status,
+                    opencode::SessionApplicationStatus::Unknown
+                        | opencode::SessionApplicationStatus::Reconnecting
+                ),
+                pending_json.as_deref(),
+                now_millis(),
+            )
+            .map_err(|e| e.to_string())?;
+        Ok(result)
+    })
+    .await
 }
 
 #[tauri::command]
-fn opencode_pending_inputs(
-    state: State<'_, opencode::Runtime>,
+async fn opencode_pending_inputs(
+    app: AppHandle,
     request: SessionCommand,
 ) -> Result<opencode::PendingInputs, String> {
-    state.pending_inputs(&request.session_id)
+    run_session_evidence_work(move || {
+        app.state::<opencode::Runtime>().pending_inputs(&request.session_id)
+    })
+    .await
 }
 
 #[tauri::command]
-fn opencode_session_pending_inputs(
-    state: State<'_, opencode::Runtime>,
+async fn opencode_session_pending_inputs(
+    app: AppHandle,
     request: SessionCommand,
 ) -> Result<opencode::PendingInputs, String> {
-    state.pending_inputs(&request.session_id)
+    run_session_evidence_work(move || {
+        app.state::<opencode::Runtime>().pending_inputs(&request.session_id)
+    })
+    .await
 }
 
 fn collect_pending_inputs(
@@ -3810,20 +3953,65 @@ fn collect_pending_inputs(
 }
 
 #[tauri::command]
-fn opencode_pending_inputs_all(
-    runtime: State<'_, opencode::Runtime>,
-    store: State<'_, ManagementStore>,
-) -> Result<Vec<opencode::PendingInputs>, String> {
-    collect_pending_inputs(
-        store.list_all_sessions().map_err(|e| e.to_string())?,
-        |session_id| runtime.pending_inputs(session_id),
-    )
+async fn opencode_pending_inputs_all(app: AppHandle) -> Result<Vec<opencode::PendingInputs>, String> {
+    run_session_evidence_work(move || {
+        let runtime = app.state::<opencode::Runtime>();
+        let store = app.state::<ManagementStore>();
+        collect_pending_inputs(
+            store.list_all_sessions().map_err(|e| e.to_string())?,
+            |session_id| runtime.pending_inputs(session_id),
+        )
+    })
+    .await
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn terminal_work_runs_off_the_calling_thread_and_preserves_errors() {
+        let caller = std::thread::current().id();
+        let worker = tauri::async_runtime::block_on(run_terminal_work(|| {
+            Ok(std::thread::current().id())
+        }))
+        .unwrap();
+        assert_ne!(caller, worker);
+        let error = tauri::async_runtime::block_on(run_terminal_work(|| -> Result<(), String> {
+            Err("restore failed".into())
+        }));
+        assert_eq!(error.unwrap_err(), "restore failed");
+    }
+
+    #[test]
+    fn terminal_restore_work_is_serialized_until_the_worker_finishes() {
+        use std::sync::mpsc;
+        use std::time::Duration;
+        let (entered, entered_rx) = mpsc::channel();
+        let (release, release_rx) = mpsc::channel();
+        let first = std::thread::spawn(move || {
+            tauri::async_runtime::block_on(run_terminal_work(move || {
+                entered.send(()).unwrap();
+                release_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+                Ok(())
+            }))
+        });
+        entered_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        let (second_entered, second_rx) = mpsc::channel();
+        let second = std::thread::spawn(move || {
+            tauri::async_runtime::block_on(run_terminal_work(move || {
+                second_entered.send(()).unwrap();
+                Ok(())
+            }))
+        });
+        let entered_early = second_rx.recv_timeout(Duration::from_millis(100)).is_ok();
+        release.send(()).unwrap();
+        first.join().unwrap().unwrap();
+        second.join().unwrap().unwrap();
+        assert!(!entered_early);
+        second_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+    }
 
     #[test]
     fn initialized_app_state_returns_the_known_shell_command_result() {
@@ -4323,6 +4511,18 @@ mod tests {
         );
         assert!(prompt.contains("\"schemaVersion\""));
         assert!(prompt.contains("Verified workspace and repository context as JSON:"));
+    }
+
+    #[test]
+    fn proposal_prompt_preview_uses_template_values_for_user_and_repository_data() {
+        let preview = render_new_work_proposal_prompt_preview().unwrap();
+
+        assert!(preview.contains(r#""{{originalPrompt}}""#));
+        assert!(preview.contains(r#""repositoryCatalog":"{{repositoryCatalog}}""#));
+        assert!(preview.contains(r#""workspaces":"{{workspaces}}""#));
+        assert!(preview.contains("\"schemaVersion\""));
+        assert!(!preview.contains("repo-179204"));
+        assert!(!preview.contains("/home/derekhawker/"));
     }
 
     #[test]

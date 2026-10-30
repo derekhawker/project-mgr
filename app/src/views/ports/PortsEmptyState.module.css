@@ -1,0 +1,33 @@
+.emptyState {
+  min-height: 18rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ui-space-12);
+  padding: var(--ui-space-24);
+  box-sizing: border-box;
+  text-align: center;
+  color: var(--ui-text);
+}
+
+.icon {
+  width: 2rem;
+  height: 2rem;
+  opacity: 0.65;
+}
+
+.emptyState h2,
+.emptyState p {
+  margin: 0;
+}
+
+.emptyState h2 {
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+.emptyState p {
+  color: var(--ui-text-muted, var(--ui-text));
+  opacity: 0.8;
+}

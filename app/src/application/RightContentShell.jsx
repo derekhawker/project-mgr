@@ -1,3 +1,6 @@
+import { Show } from "solid-js";
+import { PageMasthead } from "../components/PageMasthead.jsx";
+
 export function RightContentShell(props) {
   return (
     <div
@@ -8,9 +11,18 @@ export function RightContentShell(props) {
         "quick-request-terminal-page": props.quickRequestTerminalPage(),
       }}
     >
+      <Show when={props.quickRequestTerminalPage()}>
+        <PageMasthead
+          type="Quick Request"
+          name={props.quickRequestName()}
+          id="quick-request-title"
+          flush
+        />
+      </Show>
       {props.changeReview?.()}
       {props.quickRequestHistory?.()}
       {props.directoriesPage?.()}
+      {props.portsPage?.()}
       {props.noSelection?.()}
       {props.docsPane?.()}
       {props.workspaceOwnerPanel?.()}

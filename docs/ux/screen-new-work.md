@@ -67,10 +67,12 @@ choice takes precedence over a repository suggested by the prompt; the confirmed
 directory is shown in the review step.
 
 The Workspace capture form includes a collapsed **Proposal prompt preview**
-disclosure. Expanding it shows the read-only rendered proposal prompt, including
-the current original prompt, schema, and verified context. The preview uses the
-same Rust rendering path as proposal generation; context can change before submission.
-The prompt is indented on a darker surface, with its own scroll area capped at
+disclosure. Expanding it shows the read-only proposal template and schema, with
+template values in place of the original prompt and live workspace/repository
+context. Do not display that user data or send it to the preview command. The
+actual proposal request still receives the current original prompt and verified
+context when the user continues. The preview is static while the user edits the
+prompt. It is indented on a darker surface, with its own scroll area capped at
 20% of the viewport height.
 
 In the multiline Original prompt field, **Enter** continues the form and
@@ -235,8 +237,9 @@ This is a two-step flow:
    and confirms it.
    Rust creates the Quick Request under the special Quick Requests workspace,
     creates and records its exact OpenCode session and working directory, opens
-    the Quick Request page with the terminal filling the available main work
-    area, and sends the original prompt unchanged.
+     the Quick Request page with a **Quick Request / <name>** masthead above
+     the terminal, which fills the remaining main work area, and sends the
+     original prompt unchanged.
 
 There is no workspace choice or editable starting-prompt step in this flow. The
 terminal destination and navigation are specified in

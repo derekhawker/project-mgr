@@ -42,8 +42,9 @@ editor.
 - Center a brief status message in the work area while files load or if loading
   fails or unexpectedly returns no files. The confirmed no-files case is
   represented by the disabled **Docs** tab.
-- The Docs reader occupies the main work area. Switching back to a terminal
-  restores that terminal at full size; the terminal tab remains open.
+- The Docs reader occupies the main work area beneath the persistent Workspace
+  masthead and view toolbar. Switching back to a terminal restores that terminal
+  in the remaining work area; the terminal tab remains open.
 
 ```text
 ┌ Workspace │ Task A │ Task B ──────────────────────────────────┐

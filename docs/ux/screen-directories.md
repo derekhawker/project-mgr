@@ -6,8 +6,15 @@ Use persistent navigation to leave the page; do not add a Back button.
 The navigation control keeps its visible **Repositories** label and uses the
 shared decorative SVG folder, not a Unicode menu symbol.
 
-The page uses the neutral gray workbench and a Docs-style directory tree in a
-crisp bordered section. For scan roots sharing a filesystem-level path
+Use the shared page masthead pattern: an opaque neutral-gray band containing
+only the destination type and current name separated by `/`. On this screen,
+show **Settings / Repositories**. Keep descriptions and page actions in the
+content area, not in the masthead. Keep the masthead on the neutral gray page
+background. Give the form and directory group cards a subtly raised gray surface
+with a shallow layered shadow instead of visible outlines. Separate content
+areas with spacing. Center the content cards and cap them at 1000px; keep the
+masthead full-width. The tree remains a Docs-style directory tree. For scan roots
+sharing a filesystem-level path
 component, combine them at their shortest shared parent when they contain at
 most five repositories. Keep them separate above five; a lone scan root keeps
 its own path. Within each displayed group, collapse child folders with at most

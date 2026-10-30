@@ -123,6 +123,7 @@ test("Change Review controls preserve mode without a back button", () => {
   let back = 0;
   const view = mount(ChangeReviewPanel, {
     visible: () => true,
+    loading: () => false,
     repositories: () => [],
     summary: () => "",
     error: () => "",
@@ -146,6 +147,25 @@ test("Change Review controls preserve mode without a back button", () => {
   view.dispose();
 });
 
+test("Change Review shows loading without an empty-state message", () => {
+  const [loading, setLoading] = createSignal(true);
+  const view = mount(ChangeReviewPanel, {
+    visible: () => true,
+    loading,
+    repositories: () => [],
+    summary: () => "Loading changes…",
+    error: () => "",
+    mode: () => "unified",
+    onMode: () => {},
+  });
+  assert.match(view.host.textContent, /Loading changes/);
+  assert.doesNotMatch(view.host.textContent, /no repositories to review/i);
+  assert.doesNotMatch(view.host.textContent, /Select a changed file/i);
+  setLoading(false);
+  assert.match(view.host.textContent, /no repositories to review/i);
+  view.dispose();
+});
+
 test("file navigator divider adjusts a shared width from either tab", () => {
   const [width, setWidth] = createSignal(300);
   const commits = [];
@@ -155,6 +175,7 @@ test("file navigator divider adjusts a shared width from either tab", () => {
   };
   const review = mount(ChangeReviewPanel, {
     visible: () => true,
+    loading: () => false,
     repositories: () => [],
     summary: () => "",
     error: () => "",
@@ -192,6 +213,7 @@ test("file navigator divider adjusts a shared width from either tab", () => {
 test("Change Review keeps repository context without repeating the page title or checkout path", () => {
   const view = mount(ChangeReviewPanel, {
     visible: () => true,
+    loading: () => false,
     repositories: () => [
       {
         name: "Repo",

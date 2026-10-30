@@ -18,6 +18,7 @@ function fixture({
     "Summary",
     "Error",
     "Repositories",
+    "Loading",
     "Mode",
     "DocsButtonSelected",
     "SelectedOwnerVisible",
@@ -118,5 +119,43 @@ test("load failure reports the same summary and error and clears disabled in fin
   await f.controller.handleChangeReviewClick();
   assert.equal(f.state.Summary, "Could not load changes: Error: offline");
   assert.equal(f.state.Error, "Could not load changes: Error: offline");
+  assert.equal(f.state.Disabled, false);
+});
+
+test("loading is explicit and a stale failure cannot overwrite a newer review", async () => {
+  const pending = [];
+  const f = fixture({
+    load: () =>
+      new Promise((resolve, reject) => pending.push({ resolve, reject })),
+  });
+  const first = f.controller.handleChangeReviewClick();
+  assert.equal(f.state.Loading, true);
+  const second = f.controller.handleChangeReviewClick();
+  pending[0].reject(new Error("old failure"));
+  await first;
+  assert.equal(f.state.Loading, true);
+  assert.equal(f.state.Error, "");
+  pending[1].resolve([{ files: [] }]);
+  await second;
+  assert.equal(f.state.Loading, false);
+  assert.equal(f.state.Error, "");
+  assert.equal(f.state.Summary, "1 repository · 0 files changed");
+});
+
+test("leaving review invalidates an in-flight error and clears loading", async () => {
+  let reject;
+  const f = fixture({
+    load: () =>
+      new Promise((_, fail) => {
+        reject = fail;
+      }),
+  });
+  const pending = f.controller.handleChangeReviewClick();
+  f.controller.showOwnerTerminal();
+  assert.equal(f.state.Loading, false);
+  assert.equal(f.state.Visible, false);
+  reject(new Error("late error"));
+  await pending;
+  assert.equal(f.state.Error, "");
   assert.equal(f.state.Disabled, false);
 });
