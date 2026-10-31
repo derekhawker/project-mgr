@@ -6,6 +6,7 @@
 .summaryContent { display:block; flex:1; min-width:0; }
 .chevron { flex:0 0 1rem; margin-top:calc((1.75rem - 1rem) / 2); color:var(--ui-muted); transform:rotate(-90deg); transition:transform 150ms ease; }
 .content[open] .chevron { transform:none; }
+.content[open] .identity { display:none; }
 @media (prefers-reduced-motion:reduce) { .chevron { transition:none; } }
 .primary { display:flex; align-items:baseline; flex-wrap:wrap; gap:var(--ui-space-8); min-width:0; }
 .portList { display:inline-flex; flex-wrap:wrap; gap:var(--ui-space-8); }
@@ -14,6 +15,8 @@
 .process { color:var(--ui-muted); }
 .pid { color:var(--ui-muted); }
 .command { flex:1 1 16rem; min-width:0; color:var(--ui-text); font-family:var(--ui-control-font); font-size:inherit; white-space:pre-wrap; overflow-wrap:anywhere; word-break:break-word; }
-.details { display:flex; flex-wrap:wrap; gap:var(--ui-space-4) var(--ui-space-16); margin-top:var(--ui-space-4); margin-left:calc(1rem + var(--ui-space-8)); }
-.details span { min-width:0; }
+.details { display:grid; gap:var(--ui-space-4); margin:var(--ui-space-8) 0 0 calc(1rem + var(--ui-space-8)); }
+.detail { display:grid; grid-template-columns:max-content minmax(0,1fr); align-items:baseline; gap:var(--ui-space-8); min-width:0; }
+.detail dt { color:var(--ui-muted); font-weight:650; }
+.detail dd { min-width:0; margin:0; overflow-wrap:anywhere; }
 .exposure { color:var(--ui-warning); font-weight:600; margin:var(--ui-space-4) 0 0 calc(1rem + var(--ui-space-8)); }

@@ -1,8 +1,8 @@
 .page { display:flex; flex-direction:column; height:100%; overflow:hidden; padding:var(--ui-space-24); box-sizing:border-box; }
 .hidden { display: none; }
 .toolbar { display:flex; align-items:flex-start; flex-wrap:wrap; gap:var(--ui-space-12); margin:var(--ui-space-16) 0; }
-.refreshGroup { display:flex; flex-direction:column; align-items:flex-start; gap:var(--ui-space-4); }
 .allPorts { display:flex; align-items:center; gap:var(--ui-space-4); padding-block:var(--ui-space-6); }
+.allPortsLabel { cursor:pointer; }
 .reset { display:flex; align-items:center; }
 .reset { margin-left:auto; }
 .actionHelp { display:inline-flex; align-items:center; border:1px solid #ababab; border-radius:.2rem; background:#fff; box-shadow:0 .1rem .2rem rgb(149 141 171 / 64%), 0 .3rem .3rem rgb(149 141 171 / 14%); }

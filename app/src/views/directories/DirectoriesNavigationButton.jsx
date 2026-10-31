@@ -11,7 +11,7 @@ export function DirectoriesNavigationButton(props) {
         onClick={props.onOpen}
       >
         <Icon name="folder" muted />
-        Repositories
+        Repos
       </Button>
     </div>
   );

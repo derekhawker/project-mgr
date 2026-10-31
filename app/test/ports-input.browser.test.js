@@ -5,7 +5,7 @@ import { createServer } from "node:net";
 import { resolve } from "node:path";
 import test from "node:test";
 
-test("PortsInput range typing, native arrows, clamping, and Tab commit work in Chromium", async (t) => {
+test("Ports input editing and the all-ports label work in Chromium", async (t) => {
   const root = resolve(import.meta.dirname, "..");
   const probe = createServer().listen(0, "127.0.0.1");
   await once(probe, "listening");
@@ -64,9 +64,20 @@ test("PortsInput range typing, native arrows, clamping, and Tab commit work in C
   browser("eval", `document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}))`);
   assert.equal(evaluate(`!!document.querySelector('#ports-test-host [aria-label="Edit 2000"]')`), true, "Escape cancels single-port editing");
   browser("eval", `document.querySelector('#ports-test-host [aria-label="Edit 2000"]').click()`);
+  await new Promise((done) => setTimeout(done, 30));
   browser("eval", `(() => { const i=document.querySelector('#ports-test-host [aria-label="Edit port"]'); i.value='2500'; i.dispatchEvent(new Event('input',{bubbles:true})); i.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true})); })()`);
   assert.equal(evaluate(`window.portsValue()`), "1000,2500,3000", "editing replaces the selected tag without changing its position");
   assert.equal(evaluate(`document.activeElement?.getAttribute('aria-label')`), "Add port or range", "Enter after editing focuses the new port entry");
+  browser("eval", `document.querySelector('#ports-test-host [aria-label="Edit 2500"]').click()`);
+  await new Promise((done) => setTimeout(done, 30));
+  browser("eval", `(() => { const i=document.querySelector('#ports-test-host [aria-label="Edit port"]'); i.value='2600'; i.dispatchEvent(new Event('input',{bubbles:true})); i.blur(); })()`);
+  assert.equal(evaluate(`window.portsValue()`), "1000,2600,3000", "blur commits a valid single-port edit");
+  assert.equal(evaluate(`!!document.querySelector('#ports-test-host [aria-label="Edit 2600"]')`), true, "blur returns the edited port to a read-only tag");
+  browser("eval", `document.querySelector('#ports-test-host [aria-label="Edit 2600"]').click()`);
+  await new Promise((done) => setTimeout(done, 30));
+  browser("eval", `(() => { const i=document.querySelector('#ports-test-host [aria-label="Edit port"]'); i.value='0'; i.dispatchEvent(new Event('input',{bubbles:true})); i.blur(); })()`);
+  assert.equal(evaluate(`window.portsValue()`), "1000,2600,3000", "blur discards an invalid single-port edit");
+  assert.equal(evaluate(`!!document.querySelector('#ports-test-host [aria-label="Edit 2600"]')`), true, "invalid blur restores the original read-only tag");
   browser("eval", `window.setPortsValue('1000,2500,3000-3005'); document.querySelector('#ports-test-host [aria-label="Edit 3000-3005"]').click()`);
   await new Promise((done) => setTimeout(done, 30));
   assert.equal(evaluate(`document.activeElement?.getAttribute('aria-label')`), "Range start", "editing a range begins at its start");
@@ -76,6 +87,12 @@ test("PortsInput range typing, native arrows, clamping, and Tab commit work in C
   assert.equal(evaluate(`!!document.querySelector('#ports-test-host [aria-label="Edit 3000-3005"]')`), true, "Escape exits the range editor");
   browser("eval", `document.querySelector('#ports-test-host [aria-label="Edit 3000-3005"]').click()`);
   await new Promise((done) => setTimeout(done, 30));
+  browser("eval", `(() => { const e=document.querySelector('#ports-test-host [aria-label="Range end"]'); e.focus(); e.value='3010'; e.dispatchEvent(new Event('input',{bubbles:true})); e.blur(); })()`);
+  assert.equal(evaluate(`window.portsValue()`), "1000,2500,3000-3010", "leaving an edited range commits the valid endpoints");
+  assert.equal(evaluate(`!!document.querySelector('#ports-test-host [aria-label="Edit 3000-3010"]')`), true, "blur returns an edited range to a read-only tag");
+  browser("eval", `window.setPortsValue('1000,2500,3000-3005')`);
+  browser("eval", `document.querySelector('#ports-test-host [aria-label="Edit 3000-3005"]').click()`);
+  await new Promise((done) => setTimeout(done, 30));
   browser("eval", `(() => { const s=document.querySelector('#ports-test-host [aria-label="Range start"]'); s.value='3000'; s.dispatchEvent(new Event('input',{bubbles:true})); s.dispatchEvent(new KeyboardEvent('keydown',{key:'Tab',bubbles:true,cancelable:true})); })()`);
   assert.equal(evaluate(`document.activeElement?.getAttribute('aria-label')`), "Range end", "Tab moves from range start to end");
   browser("eval", `(() => { const e=document.querySelector('#ports-test-host [aria-label="Range end"]'); e.value='3005'; e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new KeyboardEvent('keydown',{key:'Tab',bubbles:true,cancelable:true})); })()`);
@@ -83,7 +100,7 @@ test("PortsInput range typing, native arrows, clamping, and Tab commit work in C
   browser("eval", `document.querySelector('#ports-test-host [aria-label="Remove 2500"]').dispatchEvent(new MouseEvent('click',{bubbles:true}))`);
   assert.equal(evaluate(`window.portsValue()`), "1000,3000-3005", "removing a tag updates the controlled value");
   assert.equal(evaluate(`document.activeElement?.getAttribute('aria-label')`), "Add port or range", "deleting a tag focuses the entry at that position");
-  assert.deepEqual(evaluate(`Array.from(document.querySelector('#ports-test-host [aria-label="Port selection"]').children).map(el=>el.getAttribute('aria-label') || el.textContent.trim())`), ["1000", "Add port or range", "3000-3005"], "typing entry is inserted at the removed tag position");
+  assert.deepEqual(evaluate(`Array.from(document.querySelector('#ports-test-host [aria-label="Port selection"]').children).map(el=>el.getAttribute('aria-label') || el.textContent.trim())`), ["1000", "Add port or range", "3000 — 3005"], "ranges display with a spaced em dash while stored values retain a hyphen");
   browser("eval", `document.querySelector('#ports-test-host [aria-label="Add port or range"]').dispatchEvent(new KeyboardEvent('keydown',{key:'Backspace',bubbles:true,cancelable:true}))`);
   assert.equal(evaluate(`window.portsValue()`), "3000-3005", "Backspace removes the tag immediately before the empty entry");
   browser("eval", `window.setPortsValue('1000,2500,3000-3005'); document.querySelector('#ports-test-host [aria-label="Remove 2500"]').click()`);
@@ -96,4 +113,8 @@ test("PortsInput range typing, native arrows, clamping, and Tab commit work in C
   assert.equal(evaluate(`window.portsValue()`), "8080,9090", "plain-text edits preserve the controlled string contract");
   browser("eval", `document.querySelector('#ports-test-host button[aria-pressed]').click()`);
   assert.equal(evaluate(`document.querySelector('#ports-test-host [aria-label="Remove 8080"]').parentElement.textContent.trim()`), "8080", "switching back renders tags from controlled text");
+  browser("eval", `Promise.all([import('/src/views/ports/PortsPage.jsx'),import('/node_modules/.vite/deps/solid-js.js'),import('/node_modules/.vite/deps/solid-js_web.js')]).then(([page,s,w])=>{const host=document.createElement('div');host.id='ports-page-test-host';document.body.append(host);const [allPorts,setAllPorts]=s.createSignal(false);const [selection,setSelection]=s.createSignal('3000');window.allPortsValue=allPorts;window.disposePortsPage=w.render(()=>page.PortsPage({visible:()=>true,allPorts,rows:()=>[],matchesPort:()=>false,busy:()=>false,error:()=>'',updated:()=>'',stopping:()=>null,selection,changeSelection:setSelection,refresh:()=>{},setAllPorts,reset:()=>{},stop:()=>{}}),host);return true})`);
+  browser("eval", `document.querySelector('#ports-page-test-host label').click()`);
+  assert.equal(evaluate(`window.allPortsValue()`), true, "clicking the All listening ports label checks the checkbox");
+  assert.equal(evaluate(`document.querySelector('#ports-page-test-host label').control.checked`), true, "the label is associated with its checkbox");
 });

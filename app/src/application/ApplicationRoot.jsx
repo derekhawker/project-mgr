@@ -1,3 +1,5 @@
+import styles from "./navigation.module.css";
+
 export function ApplicationRoot(props) {
   return (
     <>
@@ -17,8 +19,10 @@ export function ApplicationRoot(props) {
               <h2>Workspaces</h2>
             </div>
             {props.workspaceNavigation()}
-            {props.portsNavigationButton()}
-            {props.directoriesNavigationButton()}
+            <div class={styles.destinations}>
+              {props.portsNavigationButton()}
+              {props.directoriesNavigationButton()}
+            </div>
             {props.newWorkMenu()}
           </aside>
           <section class="quick-view" aria-label="Selected work">

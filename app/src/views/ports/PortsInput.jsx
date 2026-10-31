@@ -22,8 +22,11 @@ export function PortsInput(props) {
   const tokens = () => props.value().split(",").map((x) => x.trim()).filter(Boolean);
   const update = (items) => props.onChange(items.join(","));
   const focusEntry = () => queueMicrotask(() => entry?.focus());
-  const cancelEdit = () => {
+  const clearEditState = () => {
     setDraft(""); setStart(""); setEnd(""); setRangeMode(false); setEditing(null); setInsertAt(null);
+  };
+  const cancelEdit = () => {
+    clearEditState();
     focusEntry();
   };
   const clampEnd = (candidate, minimum = Number(start())) => {
@@ -53,6 +56,14 @@ export function PortsInput(props) {
     update(items);
     setDraft(""); setStart(""); setEnd(""); setRangeMode(false); setInsertAt(null); setEditing(null);
     return true;
+  };
+  const finishSingleEdit = (event) => {
+    if (event.currentTarget.getAttribute("aria-label") !== "Edit port" || editing() === null || rangeMode()) return;
+    if (!add()) clearEditState();
+  };
+  const finishRangeEdit = (event) => {
+    if (editing() === null || event.currentTarget.parentElement.contains(event.relatedTarget)) return;
+    if (!commitRange()) clearEditState();
   };
   const remove = (index) => {
     update(tokens().filter((_, i) => i !== index));
@@ -109,16 +120,16 @@ export function PortsInput(props) {
     if (!pasted.every((item) => /^(\d{1,5})(?:\s*-\s*(\d{1,5}))?$/.test(item) && (() => { const [a,b] = item.split("-").map(Number); return validPort(a) && validPort(b ?? a) && (b ?? a) >= a; })())) return;
     event.preventDefault(); update([...tokens(), ...pasted]); setDraft("");
   };
-  const Entry = () => <input ref={(el) => { entry = el; if (editing() !== null) queueMicrotask(() => el.focus()); }} class={editing() !== null ? styles.tagEntry : styles.entry} style={editing() !== null ? { width: `${Math.max(1, draft().length)}ch` } : undefined} type="text" aria-label={editing() !== null ? "Edit port" : "Add port or range"} value={draft()} placeholder={editing() !== null ? "" : "Add port…"} onInput={(e) => setDraft(e.currentTarget.value)} onKeyDown={keyDown} onPaste={onPaste} />;
+   const Entry = () => <input ref={(el) => { entry = el; if (editing() !== null) queueMicrotask(() => el.focus()); }} class={editing() !== null ? styles.tagEntry : styles.entry} style={editing() !== null ? { width: `${Math.max(1, draft().length)}ch` } : undefined} type="text" aria-label={editing() !== null ? "Edit port" : "Add port or range"} value={draft()} placeholder={editing() !== null ? "" : "Add port…"} onInput={(e) => setDraft(e.currentTarget.value)} onKeyDown={keyDown} onPaste={onPaste} onBlur={finishSingleEdit} />;
   return <div class={styles.root}>
     <div class={styles.editor} classList={{ [styles.plainEditor]: plainText() }} aria-label="Port selection">
       <Show when={plainText()} fallback={<Show when={!rangeMode() || editing() !== null}>
         <For each={tokens()}>{(token, index) => <>
           <Show when={editing() === index()} fallback={<><Show when={insertAt() === index()}><Entry /></Show>
             <span class={styles.tag}>
-              <button type="button" class={styles.tagValue} aria-label={`Edit ${token}`} onClick={() => edit(index())}>{token}</button><button type="button" class={styles.remove} aria-label={`Remove ${token}`} onClick={() => remove(index())}><Icon name="close" /></button>
+              <button type="button" class={styles.tagValue} aria-label={`Edit ${token}`} onClick={() => edit(index())}>{token.replace("-", " — ")}</button><button type="button" class={styles.remove} aria-label={`Remove ${token}`} onClick={() => remove(index())}><Icon name="close" /></button>
             </span></>}>
-            <span class={styles.tag}><Show when={rangeMode()} fallback={<Entry />}><span class={styles.range}><input ref={(el) => { startInput = el; }} style={{ width: `${Math.max(1, start().length) + 4}ch` }} type="number" min="1" max="65535" aria-label="Range start" value={start()} onInput={(e) => { const next = e.currentTarget.value; setStart(next); setEnd(clampEnd(end(), Number(next) || 1)); }} on:keydown={rangeKeyDown} /><span>–</span><input ref={(el) => { endInput = el; }} style={{ width: `${Math.max(1, end().length) + 4}ch` }} type="number" min={start() || 1} max="65535" aria-label="Range end" value={end()} onInput={(e) => setEnd(clampEnd(e.currentTarget.value))} on:keydown={rangeKeyDown} /></span></Show></span>
+           <span class={styles.tag}><Show when={rangeMode()} fallback={<Entry />}><span class={styles.range}><input ref={(el) => { startInput = el; }} style={{ width: `${Math.max(1, start().length) + 4}ch` }} type="number" min="1" max="65535" aria-label="Range start" value={start()} onInput={(e) => { const next = e.currentTarget.value; setStart(next); setEnd(clampEnd(end(), Number(next) || 1)); }} on:keydown={rangeKeyDown} onBlur={finishRangeEdit} /><span> — </span><input ref={(el) => { endInput = el; }} style={{ width: `${Math.max(1, end().length) + 4}ch` }} type="number" min={start() || 1} max="65535" aria-label="Range end" value={end()} onInput={(e) => setEnd(clampEnd(e.currentTarget.value))} on:keydown={rangeKeyDown} onBlur={finishRangeEdit} /></span></Show></span>
           </Show>
         </>}</For>
        <Show when={editing() === null && (insertAt() === null || insertAt() >= tokens().length)}><Entry /></Show>
@@ -126,7 +137,7 @@ export function PortsInput(props) {
         <TextArea ref={plainEditor} aria-label="Plain-text port selection" value={props.value()} onInput={(e) => props.onChange(e.currentTarget.value)} />
       </Show>
       <Show when={!plainText() && rangeMode() && editing() === null}>
-         <span class={styles.range}><input ref={(el) => { startInput = el; }} type="number" min="1" max="65535" aria-label="Range start" value={start()} onInput={(e) => { const next = e.currentTarget.value; setStart(next); setEnd(clampEnd(end(), Number(next) || 1)); }} on:keydown={rangeKeyDown} /><span>–</span><input ref={(el) => { endInput = el; }} type="number" min={start() || 1} max="65535" aria-label="Range end" value={end()} onInput={(e) => setEnd(clampEnd(e.currentTarget.value))} on:keydown={rangeKeyDown} onBlur={() => setEnd(clampEnd(end()))} /></span>
+          <span class={styles.range}><input ref={(el) => { startInput = el; }} type="number" min="1" max="65535" aria-label="Range start" value={start()} onInput={(e) => { const next = e.currentTarget.value; setStart(next); setEnd(clampEnd(end(), Number(next) || 1)); }} on:keydown={rangeKeyDown} /><span> — </span><input ref={(el) => { endInput = el; }} type="number" min={start() || 1} max="65535" aria-label="Range end" value={end()} onInput={(e) => setEnd(clampEnd(e.currentTarget.value))} on:keydown={rangeKeyDown} onBlur={() => setEnd(clampEnd(end()))} /></span>
       </Show>
     </div>
     <Show when={draft() && !rangeMode() && !PORT.test(draft().trim()) || rangeMode() && ((!PORT.test(start()) || !validPort(+start())) || end() && (!PORT.test(end()) || !validPort(+end()) || +end() < +start()))}>

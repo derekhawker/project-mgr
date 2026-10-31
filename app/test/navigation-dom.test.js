@@ -121,7 +121,7 @@ test("Directories uses a decorative SVG while retaining its label and action", (
   const view = mount(DirectoriesNavigationButton, { onOpen: () => opened++ });
   const button = view.host.querySelector("button");
   assertDecorativeIcon(button);
-  assert.equal(button.textContent.trim(), "Repositories");
+  assert.equal(button.textContent.trim(), "Repos");
   assert.equal(button.getAttribute("aria-label"), "Open repositories");
   button.click();
   assert.equal(opened, 1);

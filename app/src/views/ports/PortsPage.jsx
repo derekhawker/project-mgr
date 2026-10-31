@@ -1,4 +1,4 @@
-import { For, Show } from "solid-js";
+import { createUniqueId, For, Show } from "solid-js";
 import { Button, Checkbox, Icon, Tooltip } from "@ui-lib";
 import { PageMasthead } from "../../components/PageMasthead.jsx";
 import { PortsInput } from "./PortsInput.jsx";
@@ -8,6 +8,7 @@ import { DEFAULT_PORT_SELECTION } from "./portsController.js";
 import styles from "./PortsPage.module.css";
 
 export function PortsPage(p) {
+  const allPortsId = createUniqueId();
   const filtered = () => p.allPorts() ? p.rows() : p.rows().filter((row) => row.ports.some(p.matchesPort));
   return <section class={styles.page}
                   classList={{ [styles.hidden]: !p.visible() }}
@@ -15,20 +16,14 @@ export function PortsPage(p) {
                   hidden={!p.visible()}>
     <PageMasthead type="Ports" name="Listening ports"/>
     <div class={styles.toolbar}>
-      <div class={styles.refreshGroup}>
-        <div class={styles.actionHelp}><Button class={styles.actionButton}
-                                               onClick={p.refresh}
-                                               disabled={p.busy()}>{p.busy() ? "Refreshing…" : "Refresh"}</Button><Tooltip
-            class={styles.tooltipSlot}
-            content="Refresh runs when this page opens."
-            renderTrigger={tooltipProps => <button {...tooltipProps} type="button"
-                                                   class={styles.helpTrigger}
-                                                   aria-label="Refresh help">
-              <Icon name="questionMark"/></button>}/></div>
+      <Button onClick={p.refresh}
+              disabled={p.busy()}>{p.busy() ? "Refreshing…" : "Refresh"}</Button>
+      <div class={styles.allPorts}>
+        <Checkbox id={allPortsId}
+                  checked={p.allPorts()}
+                  onChange={e => p.setAllPorts(e.currentTarget.checked)}/>
+        <label class={styles.allPortsLabel} for={allPortsId}>All listening ports</label>
       </div>
-      <label class={styles.allPorts}><Checkbox checked={p.allPorts()}
-                                               onChange={e => p.setAllPorts(e.currentTarget.checked)}/> All
-        listening ports</label>
       <div class={styles.reset}>
         <div class={styles.actionHelp}><Button class={styles.actionButton} onClick={p.reset}>Reset
           to default ports list</Button><Tooltip class={styles.tooltipSlot}

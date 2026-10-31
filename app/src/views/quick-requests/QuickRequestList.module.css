@@ -1,6 +1,7 @@
 .navigationItem {
   display: block;
   width: 100%;
+  max-width: 10rem;
   overflow: hidden;
   text-align: left;
   text-overflow: ellipsis;
