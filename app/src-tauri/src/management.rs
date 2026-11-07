@@ -40,6 +40,10 @@ const MIGRATION_20: &str = include_str!("migrations/0020_workspace_worktree_base
 const MIGRATION_21: &str = include_str!("migrations/0021_workspace_link_compat.sql");
 const MIGRATION_22: &str = include_str!("migrations/0022_repository_soft_delete.sql");
 const MIGRATION_23: &str = include_str!("migrations/0023_quick_request_custom_directory.sql");
+const MIGRATION_24: &str = include_str!("migrations/0024_workspace_session_context_roles.sql");
+#[cfg(test)]
+const LEGACY_MIGRATION_18: &str =
+    include_str!("migrations/test_fixtures/0018_legacy_workspace_work_contexts.sql");
 
 fn validate_quick_request_prompt(prompt: &str) -> StoreResult<()> {
     if prompt.trim().is_empty() {
@@ -852,7 +856,7 @@ impl ManagementStore {
             [],
             |row| row.get(0),
         )?;
-        if current_version > 23 {
+        if current_version > 24 {
             return Err(ManagementStoreError::UnsupportedSchemaVersion(
                 current_version,
             ));
@@ -1064,7 +1068,17 @@ impl ManagementStore {
         }
         if current_version < 23 {
             transaction.execute_batch(MIGRATION_23)?;
-            transaction.execute("INSERT INTO schema_migrations(version, applied_at) VALUES (23, 0)", [])?;
+            transaction.execute(
+                "INSERT INTO schema_migrations(version, applied_at) VALUES (23, 0)",
+                [],
+            )?;
+        }
+        if current_version < 24 {
+            transaction.execute_batch(MIGRATION_24)?;
+            transaction.execute(
+                "INSERT INTO schema_migrations(version, applied_at) VALUES (24, 0)",
+                [],
+            )?;
         }
         transaction.commit()?;
         Ok(())
@@ -5721,6 +5735,114 @@ mod tests {
         }
     }
 
+    fn database_with_legacy_workspace_context_through_23(connection: &Connection) {
+        database_through_version(connection, 17);
+        connection.execute_batch(LEGACY_MIGRATION_18).unwrap();
+        connection
+            .execute(
+                "INSERT INTO schema_migrations(version, applied_at) VALUES (18, 0)",
+                [],
+            )
+            .unwrap();
+        for (version, migration) in [
+            (19, MIGRATION_19),
+            (20, MIGRATION_20),
+            (21, MIGRATION_21),
+            (22, MIGRATION_22),
+            (23, MIGRATION_23),
+        ] {
+            connection.execute_batch(migration).unwrap();
+            connection
+                .execute(
+                    "INSERT INTO schema_migrations(version, applied_at) VALUES (?1, 0)",
+                    [version],
+                )
+                .unwrap();
+        }
+    }
+
+    #[test]
+    fn migration_24_adds_workspace_role_and_preserves_existing_contexts() {
+        let fixture = tempdir().unwrap();
+        let home = fixture.path().join("workspace");
+        fs::create_dir_all(&home).unwrap();
+        let mut connection = Connection::open_in_memory().unwrap();
+        connection
+            .pragma_update(None, "foreign_keys", "ON")
+            .unwrap();
+        database_with_legacy_workspace_context_through_23(&connection);
+        connection
+            .execute(
+                "INSERT INTO workspaces(id, name, slug, description, home_path, kind, status, created_at)
+                 VALUES ('w-legacy-context', 'Legacy Context', 'legacy-context', NULL, ?1, 'regular', 'active', ?2)",
+                params![home.to_string_lossy(), CREATED],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO sessions(open_code_session_id, owner_workspace_id, owner_task_id, directory,
+                     last_known_status, created_at, updated_at)
+                 VALUES ('ses-legacy-orchestrator', 'w-legacy-context', NULL, ?1, 'starting', 1, 1)",
+                [home.to_string_lossy()],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO workspace_session_context(open_code_session_id, workspace_id, role, repository_id)
+                 VALUES ('ses-legacy-orchestrator', 'w-legacy-context', 'orchestrator', NULL)",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO sessions(open_code_session_id, owner_workspace_id, owner_task_id, directory,
+                     last_known_status, created_at, updated_at)
+                 VALUES ('ses-new-workspace-role', 'w-legacy-context', NULL, ?1, 'starting', 2, 2)",
+                [home.to_string_lossy()],
+            )
+            .unwrap();
+
+        let rejected_role = connection
+            .execute(
+                "INSERT INTO workspace_session_context(open_code_session_id, workspace_id, role, repository_id)
+                 VALUES ('ses-new-workspace-role', 'w-legacy-context', 'workspace', NULL)",
+                [],
+            )
+            .unwrap_err();
+        assert!(rejected_role
+            .to_string()
+            .contains("CHECK constraint failed"));
+
+        ManagementStore::migrate(&mut connection).unwrap();
+        let store = ManagementStore {
+            connection: Mutex::new(connection),
+            database_path: None,
+            user_home: home,
+        };
+        store
+            .save_workspace_session_context(&WorkspaceSessionContext {
+                open_code_session_id: "ses-new-workspace-role".into(),
+                workspace_id: "w-legacy-context".into(),
+                role: WorkspaceSessionRole::Workspace,
+                repository_id: None,
+            })
+            .unwrap();
+
+        assert_eq!(store.migration_versions().unwrap().last(), Some(&24));
+        let contexts = store
+            .list_workspace_session_context("w-legacy-context")
+            .unwrap();
+        assert_eq!(contexts.len(), 2);
+        assert!(contexts.iter().any(|context| {
+            context.open_code_session_id == "ses-legacy-orchestrator"
+                && context.role == WorkspaceSessionRole::Orchestrator
+        }));
+        assert!(contexts.iter().any(|context| {
+            context.open_code_session_id == "ses-new-workspace-role"
+                && context.role == WorkspaceSessionRole::Workspace
+        }));
+    }
+
     fn workspace(id: &str, slug: &str) -> NewWorkspace {
         NewWorkspace {
             id: id.to_owned(),
@@ -5834,7 +5956,7 @@ mod tests {
         }
         let migrated =
             ManagementStore::open_with_paths(&database, &user_home, &system_temp).unwrap();
-        assert_eq!(migrated.migration_versions().unwrap().last(), Some(&23));
+        assert_eq!(migrated.migration_versions().unwrap().last(), Some(&24));
         let connection = migrated.lock().unwrap();
         let legacy_table_count: i64 = connection
             .query_row(
@@ -6035,7 +6157,7 @@ mod tests {
 
         let migrated =
             ManagementStore::open_with_paths(&database, &user_home, &system_temp).unwrap();
-        assert_eq!(migrated.migration_versions().unwrap().last(), Some(&23));
+        assert_eq!(migrated.migration_versions().unwrap().last(), Some(&24));
         assert_eq!(
             migrated
                 .quick_request_prompt("qr-legacy-prompt")
@@ -6428,7 +6550,7 @@ mod tests {
                 .unwrap(),
             vec![failed]
         );
-        assert_eq!(reopened.migration_versions().unwrap().last(), Some(&23));
+        assert_eq!(reopened.migration_versions().unwrap().last(), Some(&24));
     }
 
     #[test]
@@ -6863,7 +6985,10 @@ mod tests {
                     .unwrap();
             assert_eq!(
                 store.migration_versions().unwrap(),
-                vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
+                vec![
+                    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22,
+                    23, 24
+                ]
             );
             assert_eq!(
                 store.project_home_root().unwrap(),
@@ -6890,7 +7015,10 @@ mod tests {
         let reopened = ManagementStore::open_with_paths(&path, user_home, system_temp).unwrap();
         assert_eq!(
             reopened.migration_versions().unwrap(),
-            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
+            vec![
+                1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22,
+                23, 24
+            ]
         );
         assert_eq!(
             reopened.get_workspace("w-1").unwrap().unwrap().slug,
@@ -7060,7 +7188,7 @@ mod tests {
         }
 
         let migrated = ManagementStore::open_with_paths(&database, &home, fixture.path()).unwrap();
-        assert_eq!(migrated.migration_versions().unwrap().last(), Some(&23));
+        assert_eq!(migrated.migration_versions().unwrap().last(), Some(&24));
         assert!(migrated
             .list_workspace_repository_worktrees("workspace-with-no-worktrees")
             .unwrap()

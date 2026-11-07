@@ -8,6 +8,7 @@ default-run = "opencode-project-manager"
 
 [features]
 integration-test-harnesses = []
+terminal-perf-harness = []
 
 [[bin]]
 name = "opencode-project-manager"
@@ -22,6 +23,11 @@ required-features = ["integration-test-harnesses"]
 name = "wire-contract-harness"
 path = "src/bin/wire-contract-harness.rs"
 required-features = ["integration-test-harnesses"]
+
+[[bin]]
+name = "terminal-perf-harness"
+path = "src/bin/terminal-perf-harness.rs"
+required-features = ["terminal-perf-harness"]
 
 [lib]
 name = "opencode_project_manager_lib"

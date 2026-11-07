@@ -68,6 +68,10 @@ test("Ports input editing and the all-ports label work in Chromium", async (t) =
   browser("eval", `(() => { const i=document.querySelector('#ports-test-host [aria-label="Edit port"]'); i.value='2500'; i.dispatchEvent(new Event('input',{bubbles:true})); i.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true})); })()`);
   assert.equal(evaluate(`window.portsValue()`), "1000,2500,3000", "editing replaces the selected tag without changing its position");
   assert.equal(evaluate(`document.activeElement?.getAttribute('aria-label')`), "Add port or range", "Enter after editing focuses the new port entry");
+  browser("eval", `(() => { const tag=document.querySelector('#ports-test-host [aria-label="Edit 2500"]'); tag.focus(); tag.dispatchEvent(new KeyboardEvent('keydown',{key:'Backspace',bubbles:true,cancelable:true})); })()`);
+  assert.equal(evaluate(`window.portsValue()`), "1000,3000", "Backspace on a focused tag removes it");
+  assert.equal(evaluate(`document.querySelector('#ports-test-host [aria-label="Remove 1000"]').tabIndex`), -1, "the close button is skipped by Tab navigation");
+  browser("eval", `window.setPortsValue('1000,2500,3000')`);
   browser("eval", `document.querySelector('#ports-test-host [aria-label="Edit 2500"]').click()`);
   await new Promise((done) => setTimeout(done, 30));
   browser("eval", `(() => { const i=document.querySelector('#ports-test-host [aria-label="Edit port"]'); i.value='2600'; i.dispatchEvent(new Event('input',{bubbles:true})); i.blur(); })()`);

@@ -1,5 +1,6 @@
 import { For, Show, createEffect, createSignal } from "solid-js";
-import { Icon, TextArea } from "@ui-lib";
+import { TextArea } from "@ui-lib";
+import { PortTag } from "./PortTag.jsx";
 import styles from "./PortsInput.module.css";
 
 const PORT = /^\d{1,5}$/;
@@ -126,9 +127,7 @@ export function PortsInput(props) {
       <Show when={plainText()} fallback={<Show when={!rangeMode() || editing() !== null}>
         <For each={tokens()}>{(token, index) => <>
           <Show when={editing() === index()} fallback={<><Show when={insertAt() === index()}><Entry /></Show>
-            <span class={styles.tag}>
-              <button type="button" class={styles.tagValue} aria-label={`Edit ${token}`} onClick={() => edit(index())}>{token.replace("-", " — ")}</button><button type="button" class={styles.remove} aria-label={`Remove ${token}`} onClick={() => remove(index())}><Icon name="close" /></button>
-            </span></>}>
+            <PortTag value={token} onEdit={() => edit(index())} onRemove={() => remove(index())} /></>}>
            <span class={styles.tag}><Show when={rangeMode()} fallback={<Entry />}><span class={styles.range}><input ref={(el) => { startInput = el; }} style={{ width: `${Math.max(1, start().length) + 4}ch` }} type="number" min="1" max="65535" aria-label="Range start" value={start()} onInput={(e) => { const next = e.currentTarget.value; setStart(next); setEnd(clampEnd(end(), Number(next) || 1)); }} on:keydown={rangeKeyDown} onBlur={finishRangeEdit} /><span> — </span><input ref={(el) => { endInput = el; }} style={{ width: `${Math.max(1, end().length) + 4}ch` }} type="number" min={start() || 1} max="65535" aria-label="Range end" value={end()} onInput={(e) => setEnd(clampEnd(e.currentTarget.value))} on:keydown={rangeKeyDown} onBlur={finishRangeEdit} /></span></Show></span>
           </Show>
         </>}</For>

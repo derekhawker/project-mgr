@@ -55,6 +55,42 @@ may predate the fixed-message policy and contain sensitive text.
 Browser screenshots and DOM inspection do not establish native Wayland/Tauri,
 real PTY, provider, window or tray acceptance.
 
+### Opt-in terminal performance harness
+
+This separate development page connects the production `TerminalRuntime` to a
+real Rust-owned PTY over a local WebSocket. It does not attach to app sessions,
+use the app database, or reproduce Tauri IPC. The PTY starts `/bin/sh -i` in the
+system temporary directory. **This is not a sandbox:** commands run with your
+user's permissions. Only start it on a trusted machine; do not share the printed
+URL. The bridge listens on loopback, requires its per-run random token and the
+`http://127.0.0.1:1420` browser origin, and accepts one connection at a time.
+
+With the development server already running at port 1420, run:
+
+```sh
+cargo build --manifest-path app/src-tauri/Cargo.toml --features terminal-perf-harness --bin terminal-perf-harness
+node app/scripts/terminal-perf-server.js
+```
+
+Open the printed URL with agent-browser. Close the page and stop the bridge when
+finished. The harness currently fixes the PTY at 80 columns by 24 rows, and its
+bridge limits queued input/output rather than implementing production streaming
+flow control. It is not a candidate production transport. For a controlled,
+idle shell, `terminalPerf.measure(40)` in the browser console sends one character
+at a time and reports xterm-input-to-next-PTY-output delivery in milliseconds;
+it removes the unsubmitted line afterward. It does not measure physical
+keyboard events, parsing, screen paint, native WebKitGTK, or Tauri IPC. It must
+not be run while a command is executing. To check the bridge explicitly after
+building, run `node --test app/test/terminal-perf-harness.browser.test.js` from
+the repository root.
+
+On 31 October 2026, two 40-sample idle-shell Chromium runs through this bridge
+measured medians of 0.9 ms and 0.5 ms and 95th percentiles of 7.0 ms and
+6.1 ms respectively. These are single sequential echo samples, not a throughput
+or paint benchmark. Earlier native user-collected samples used a different
+workload and timing probe; they are not an A/B comparison. A matched native
+comparison and native keyboard-to-paint measurements remain open.
+
 This production app is a Tauri 2 desktop shell with a Rust core and a SolidJS,
 HTML, CSS, and JavaScript frontend built by Vite. On startup, Rust opens and migrates an app-owned
 SQLite database in Tauri's per-user application-data directory. The startup UI
