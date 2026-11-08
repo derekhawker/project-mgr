@@ -12,6 +12,23 @@ const filesIn = (root) =>
     .filter((entry) => entry.isFile())
     .map((entry) => join(entry.parentPath, entry.name));
 const uiSourceFiles = () => filesIn(ui).filter((file) => !file.startsWith(fileURLToPath(new URL("test/", ui))));
+const componentNames = (text) => [
+  ...text.matchAll(
+    /(?:^|\n)(?:export\s+)?(?:function\s+([A-Z]\w*)\s*\(|const\s+([A-Z]\w*)\s*=\s*(?:function\b|(?:\([^\n]*?\)|[A-Za-z_$]\w*)\s*=>|[A-Za-z_$]\w*(?:\.[A-Za-z_$]\w*)?\s*\())/g,
+  ),
+].map((match) => match[1] || match[2]);
+
+test("component name detection ignores constants but includes local components", () => {
+  assert.deepEqual(
+    componentNames(`const PORT = /^\\d+$/;
+function Local() {}
+const Other = (props) => props;
+const Wrapped = memo(() => <div />);
+const Custom = wrappers.component(() => <div />);
+export function Example() {}`),
+    ["Local", "Other", "Wrapped", "Custom", "Example"],
+  );
+});
 
 test("frontend root contains only the entry and global styles", () => {
   const entries = readdirSync(source, { withFileTypes: true });
@@ -44,11 +61,7 @@ test("component files match their exported component names; plain modules use ca
     const name = basename(file, extname(file));
     if (file.endsWith(".jsx")) {
       assert.match(name, /^[A-Z][A-Za-z0-9]*$/, file);
-      const components = [
-        ...readFileSync(file, "utf8").matchAll(
-          /(?:^|\n)(?:export )?(?:function|const) ([A-Z]\w*)/g,
-        ),
-      ].map((match) => match[1]);
+      const components = componentNames(readFileSync(file, "utf8"));
       assert.deepEqual(components, [name], file);
     } else if (/\.(?:js|json|css)$/.test(file)) {
       assert.match(

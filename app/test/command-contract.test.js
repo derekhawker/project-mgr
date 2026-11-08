@@ -140,7 +140,6 @@ test("one Solid application root owns native subscriptions and polling for the p
 test("checked-in command inventory has one contract for every registered Rust command", () => {
   assert.deepEqual([...COMMAND_NAMES].sort(), [...rustCommands].sort());
   assert.deepEqual([...COMMAND_NAMES].sort(), [...rustAttributes].sort());
-  assert.equal(COMMAND_NAMES.length, 80);
 });
 
 test("the production screen mounts one component tree without selector-based mount targets", () => {

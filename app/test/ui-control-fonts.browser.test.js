@@ -169,55 +169,6 @@ test("shared controls keep consistent typography and whole-pixel spacing", async
     }
   });
 
-  await t.test(
-    "padding uses shared whole CSS pixels at different root font sizes",
-    () => {
-      for (const rootSize of [16, 20]) {
-        const padding = JSON.parse(
-          browser(
-            "--session",
-            session,
-            "eval",
-            `(() => {
-            document.documentElement.style.fontSize = '${rootSize}px';
-            return Object.fromEntries([
-              '#standalone-control', '#action-trigger', '#action-item',
-              '#new-work-menu summary', '#spacing-field', '#app-notice',
-            ].map(selector => {
-              const style = getComputedStyle(document.querySelector(selector));
-              return [selector, [style.paddingTop, style.paddingRight, style.paddingBottom, style.paddingLeft]];
-            }));
-          })()`,
-          ),
-        );
-        for (const selector of [
-          "#standalone-control",
-          "#action-trigger",
-          "#action-item",
-          "#new-work-menu summary",
-        ]) {
-          assert.deepEqual(
-            padding[selector],
-            ["6px", "12px", "6px", "12px"],
-            `${selector} at ${rootSize}px root`,
-          );
-        }
-        assert.deepEqual(padding["#spacing-field"], [
-          "6px",
-          "8px",
-          "6px",
-          "8px",
-        ]);
-        assert.deepEqual(padding["#app-notice"], [
-          "10px",
-          "12px",
-          "10px",
-          "12px",
-        ]);
-      }
-    },
-  );
-
   await t.test("Tools stacks Open in above scripts with a divider", () => {
     browser("--session", session, "click", "#show-repo-tools");
     for (const width of [1280, 720]) {

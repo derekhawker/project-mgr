@@ -1,7 +1,7 @@
 # Proposal: an idea-first workbench for OpenCode
 
-**Status:** reviewed product direction with user-selected decisions; not an
-implementation plan or authorization for production changes.
+**Status:** reviewed product direction with user-selected decisions; the separate
+implementation handoff was approved on 2026-11-07. Release acceptance is pending.
 **Date:** 2026-11-07.
 
 **Discussion refinement:** the sections below incorporate the follow-up on UI,
@@ -11,7 +11,9 @@ current-workspace migration, single-repository execution, and preservation of
 notes collections with optional tickets. The later directory decision gives
 both new and existing repo-free workspaces local repositories. Multi-repository execution is deferred to a
 second release. Research/isolated experiments are authorized; production changes
-and live migration are not authorized by that experiment approval.
+and live migration were not authorized by that experiment approval. The later
+handoff approval authorizes implementation, not live rollout or provider calls;
+explicit migration and preservation requirements remain in scope.
 
 **Integration contract:** [Ticket/session operating contract](ticket-session-protocol-proposal.md)
 specifies instruction ownership/invocation, guarded work-record operations,
@@ -435,19 +437,7 @@ verified execution approval receipt. The
 [runtime/storage experiments](ticket-runtime-storage-experiments.md) test these
 constraints before architecture conclusions are accepted.
 
-External editing is supported, including through ticket Tools. The user rejected
-a mandatory pause/reconcile editing ceremony: managed updates must use current
-content and reject stale/conflicting patches rather than silently overwrite an
-external edit. Surface the conflict, retain the edited file, and retry only after
-rereading/reconciling it. App and plugin writes still share the Rust core.
-
-The storage experiment demonstrated a lost-edit window in its whole-file
-hash-check/replace prototype; that strategy must not be treated as sufficient
-production conflict handling. It did not test production patch behavior, and no
-universal atomic-write guarantee against arbitrary editors is claimed. Conflict
-rejection and preservation are implementation acceptance risks, not a reason to
-exclude external editors or require a pause. A SQLite-only backup is also
-insufficient; combined backup remains a separate review concern.
+Ticket Tools can open the canonical Markdown. App and plugin writes share the Rust core. A SQLite-only backup is insufficient; combined backup remains a separate review concern.
 
 Existing repository tickets need an explicit import or external-link policy,
 not silent relocation. Imported/exported copies must not become competing
@@ -500,9 +490,11 @@ verified the actual installed path and failure cases; the
 [context experiment](opencode-session-context-experiments.md) verified native
 child binding and exposed a plugin-removal failure. Production authority,
 packaging, and reload guarantees still need acceptance. Where the required
-interception is unavailable, a managed profile must expose guarded
-bridge-owned context tools calling the native API, or require an OpenCode change;
-it must not silently miss operations and call the session managed. See the
+interception is unavailable, guarded bridge-owned context tools calling the native
+API may provide a documented degraded or recovery path, or an OpenCode change
+may be required. Such a fallback cannot substitute for required native release
+acceptance; the profile must not silently miss operations and call the session
+managed. See the
 [worktree protocol](ticket-session-protocol-proposal.md#native-worktree-tracking-protocol)
 and [focused hook research](opencode-tool-observation-research.md).
 
@@ -964,7 +956,7 @@ does not claim those changes have shipped.
 2. **Ticket authority:** canonical Markdown lives in one configurable independent
    ticket home, grouped by Workspace with an unassigned area. SQLite stores
    operational metadata; backup covers both. No dedicated revision-history UI is
-   required. External editing is supported with stale/conflicting updates rejected.
+   required. Ticket Tools can open canonical Markdown.
 3. **Integration stance — shared service selected:** use the same OpenCode service
    as the CLI; quitting project-mgr leaves agent work and the plugin running.
    Reopening reconnects to the same sessions. No extra private mode is required.
@@ -994,8 +986,9 @@ Read the
 for hypothesis/experiment conclusions and remaining constraints.
 
 These reviewed decisions are inputs to the separate
-[task-based implementation-plan handoff](idea-first-implementation-plan.md), which
-is pending explicit approval. They do not authorize live migration/cleanup, global skill installation,
+[task-based implementation-plan handoff](idea-first-implementation-plan.md),
+approved in full on 2026-11-07. Approval does not authorize live
+migration/cleanup, external-provider calls, global skill installation, live
 service-lifecycle changes, or changes to Simgame's working conventions now.
 
 ## Sources and validation limits

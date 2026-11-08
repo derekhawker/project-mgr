@@ -21,6 +21,8 @@ export { WorkbenchShell } from ${JSON.stringify(resolve(root, "src/views/workben
 export { TabList } from "@ui-lib";
 export { RepositoryToolsMenu } from ${JSON.stringify(resolve(root, "src/views/repository-tools/RepositoryToolsMenu.jsx"))};
 export { WorkspaceOwnerPanel } from ${JSON.stringify(resolve(root, "src/views/workbench/WorkspaceOwnerPanel.jsx"))};
+export { NewWorkDialog } from ${JSON.stringify(resolve(root, "src/views/new-work/NewWorkDialog.jsx"))};
+export { createQuickRequestCreationController } from ${JSON.stringify(resolve(root, "src/views/new-work/quickRequestCreationController.js"))};
 `,
 );
 try {
@@ -67,6 +69,8 @@ const {
   TabList,
   RepositoryToolsMenu,
   WorkspaceOwnerPanel,
+  NewWorkDialog,
+  createQuickRequestCreationController,
 } = await import(pathToFileURL(join(temp, "out/test.js")));
 function mount(Component, props) {
   const host = document.createElement("div");
@@ -83,6 +87,105 @@ function mount(Component, props) {
 test.after(async () => {
   await window.happyDOM.abort();
   await rm(temp, { recursive: true, force: true });
+});
+
+test("Quick Request confirmation disables repeat clicks and allows retry after creation fails", async () => {
+  const [disabled, setDisabled] = createSignal(false);
+  const [error, setError] = createSignal("");
+  const [review, setReview] = createSignal(true);
+  const proposal = {
+    workType: "quick_request",
+    title: "Confirm",
+    createLabel: "Start Quick Request",
+    originalPrompt: "Keep this prompt",
+  };
+  let rejectCreation;
+  let attempts = 0;
+  let pending;
+  const noop = () => {};
+  const controller = createQuickRequestCreationController({
+    getProposal: () => proposal,
+    modelsReady: () => true,
+    quickRequestDirectoryReady: () => true,
+    getOriginalPrompt: () => proposal.originalPrompt,
+    getSelectedModel: () => '{"providerId":"p","id":"m"}',
+    getRepositoryId: () => null,
+    getDirectory: () => "/work",
+    proposalSessionId: () => null,
+    submitResolvedQuickRequestFlow: () => {
+      attempts++;
+      if (attempts === 1)
+        return new Promise((_, reject) => {
+          rejectCreation = reject;
+        });
+      return Promise.resolve();
+    },
+    setCreateDisabled: setDisabled,
+    setOwnerSetupBusy: noop,
+    setProposalError: setError,
+    clearOwnerSetupNotice: noop,
+    setProgressProposalSession: noop,
+    setNewWorkView: () => setReview(false),
+    clearProposal: noop,
+    closeDialog: noop,
+    syncPendingPrompt: noop,
+    formatWorkspaceError: (label, failure) => `${label}: ${failure.message}`,
+  });
+  const empty = () => "",
+    no = () => false,
+    noopSetter = () => {};
+  const view = mount(NewWorkDialog, {
+    setDialog: noop,
+    setPromptElement: noop,
+    reviewVisible: review,
+    captureVisible: no,
+    workType: () => "quick_request",
+    proposal: () => proposal,
+    proposalError: error,
+    proposalCreateDisabled: disabled,
+    onConfirm: () => {
+      pending = controller.createQuickRequest();
+    },
+    workspaceName: empty,
+    startingPrompt: empty,
+    directoryPath: () => "/work",
+    proposalModelDisabled: no,
+    proposalSelectedModel: () => '{"providerId":"p","id":"m"}',
+    proposalModels: () => [
+      { value: '{"providerId":"p","id":"m"}', label: "Model" },
+    ],
+    progressVisible: no,
+    progressRows: () => [],
+    prompt: empty,
+    setPrompt: noopSetter,
+    setWorkspaceName: noopSetter,
+    setStartingPrompt: noopSetter,
+  });
+  try {
+    const button = view.host.querySelector("#proposal-create");
+    button.click();
+    assert.equal(button.disabled, true);
+    button.click();
+    assert.equal(attempts, 1);
+    rejectCreation(new Error("Cannot create request"));
+    await pending;
+    assert.match(
+      view.host.querySelector("#proposal-error").textContent,
+      /Cannot create request/,
+    );
+    assert.equal(
+      view.host.querySelector("#quick-request-original").textContent,
+      "Keep this prompt",
+    );
+    assert.equal(button.disabled, false);
+    button.click();
+    await pending;
+    assert.equal(attempts, 2);
+    assert.equal(view.host.querySelector("#proposal-error"), null);
+    assert.equal(review(), false);
+  } finally {
+    view.dispose();
+  }
 });
 
 test("session tabs retain terminal associations and action callbacks", () => {

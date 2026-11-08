@@ -128,7 +128,7 @@ test("Directories uses a decorative SVG while retaining its label and action", (
   view.dispose();
 });
 
-test("workspace navigation filters, selects, and tracks verified repositories", () => {
+test("workspace navigation filters and selects active regular workspaces", () => {
   const active = { id: "a", name: "Active", kind: "regular", status: "active" };
   const [selected, setSelected] = createSignal(null);
   const view = mount(WorkspaceNavigation, {
@@ -136,6 +136,7 @@ test("workspace navigation filters, selects, and tracks verified repositories", 
       workspaces: [
         active,
         { id: "b", name: "Done", kind: "regular", status: "completed" },
+        { id: "c", name: "Quick Requests", kind: "quick_request", status: "active" },
       ],
       workspaceRepositories: [
         { workspaceId: "a", verificationStatus: "verified" },
@@ -147,10 +148,8 @@ test("workspace navigation filters, selects, and tracks verified repositories", 
   });
   const buttons = view.host.querySelectorAll("button");
   assert.equal(buttons.length, 1);
-  assert.equal(
-    buttons[0].querySelector("[title]").title,
-    "1 associated Git repository",
-  );
+  assert.equal(buttons[0].textContent.trim(), "Active");
+  assert.equal(buttons[0].getAttribute("aria-current"), null);
   buttons[0].click();
   assert.equal(selected(), active);
   assert.equal(buttons[0].getAttribute("aria-current"), "page");

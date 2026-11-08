@@ -18,7 +18,7 @@ migrate live application data.
 | Defer multi-repository execution until release two. | Selected. Release one supports one active repository or non-Git context per ticket run. Excluded multi-repository Workspaces are unlinked/cleaned up rather than retained in a legacy view; actual repositories and `~/OpenCode Projects/Repositories` are preserved. |
 | Preserve existing notes collections and fit optional tickets into the model. | Notes/conversations remain useful without a ticket and their existing paths are preserved. The later user decision creates a local repository for both new and existing repo-free Workspaces; it does not move their notes or require tickets. |
 | Keep the integration simple: persist session links, require a working plugin, and use `session.idle` to mark work Blocked. | User clarification accepted. Resume uses the durable session-to-ticket association; the plugin triggers the Rust idle fallback. See the [lifecycle rules](ticket-session-protocol-proposal.md#ticket-status-and-session-activity-are-different). Native “children” mean OpenCode subagents. |
-| Support external ticket editing and Tools on every ticket view, as on Workspaces. | User requirement accepted; the pause-to-edit recommendation is superseded. Use current-content/conflict checks and preserve external edits. See [ticket Tools](idea-first-project-mgr-proposal.md#tools-stay-available-throughout-the-ticket-workbench) and the revised [mutation contract](ticket-session-protocol-proposal.md#markdown-mutation-and-operational-commit-boundary). |
+| Support external ticket editing and Tools on every ticket view, as on Workspaces. | User requirement accepted. See [ticket Tools](idea-first-project-mgr-proposal.md#tools-stay-available-throughout-the-ticket-workbench). |
 | Use OpenCode's shared service; quitting project-mgr leaves ongoing work running. | User approved. Project-mgr attaches as a client; the plugin continues while the GUI is closed; reopening reconnects to the same conversations. See [service ownership](idea-first-project-mgr-proposal.md#treat-service-ownership-as-a-product-choice). This changes the proposed runtime contract, not the currently running app. |
 | Use explicit terminal forms to approve the complete plan and accept/request changes to the reviewed result. | User approved after the implementation flow was explained. Use existing OpenCode session forms, a Rust-recorded revision-bound request/answer, and the waiting plugin tool; no approval between implementation tasks. Production/native validation remains outstanding. |
 | Create no migration tickets, including for existing work or ambiguous cases; exclude multi-repository workspaces. | Eligible workspaces retain their conversations/contexts with zero tickets. Multi-repository workspaces are not converted; the later user decision is to unlink their project-mgr records and clean up legacy resources, subject to confirmed targets. |
@@ -56,7 +56,6 @@ controls. Verification artifact:
 |---|---|---|
 | Per-request Rust core/stdio works without GUI or another daemon. | Separate processes and a separate in-process-core caller shared persistent state; real Node subprocess pipes returned bounded success/error JSON. | **Accepted as mechanism feasibility.** Recommend this over a new project-mgr daemon; actual installed-plugin integration/packaging still needs production tests. |
 | Markdown plus an operation journal handles cooperating writers and known process-crash windows. | Exactly one winner per 20 two-writer races; expected conflicts; crashes before/after file replacement reopened and retried once. | **Accepted with constraints.** This is recoverable coordination, not a transaction across file/SQLite; operational approval/run recovery is not implemented by the prototype. |
-| Hash/rename protects arbitrary concurrent editors. | A deliberately unlocked external write between last hash check and rename was overwritten. | **Rejected for that prototype strategy.** The user requires normal external editing and stale/conflicting-patch rejection, not a mandatory pause. Production conflict handling remains unimplemented and untested. |
 | SQLite backup alone restores the ticket store. | A valid DB snapshot was inconsistent with later Markdown. | **Rejected.** A coordinated Markdown/staging/SQLite snapshot manifest is required. |
 | Private stdin authenticates a session or human. | Fabricated caller labels did not establish verified identity. | **Rejected as a security claim.** Trusted plugin runtime capture plus Rust binding checks remain necessary; same-user unrestricted shell is not isolated. |
 
@@ -150,13 +149,6 @@ Ticket format is settled; the following are separate from that choice:
 | Conversation history and task prompts | OpenCode only. No transcript copy in Markdown or operational tables. |
 | Legacy Quick Request original prompts | Existing SQLite exception, explicitly preserved unless a separately agreed conversion changes that product concept. |
 | Backup/restore and migration | A coherent generation of Markdown plus operational database/manifest; backing up either one alone cannot restore all authority and pending operations. |
-
-External editors are supported without a mandatory pause. Advisory locking
-coordinates app/CLI/plugin writers but not ordinary editors. Production updates
-must reject stale/conflicting changes and preserve external content rather than
-copy the prototype's vulnerable whole-file replacement strategy. The exact
-mechanism and recovery behavior need regression evidence; they are not proven
-merely by choosing a patch tool. Backup consistency remains a separate concern.
 
 ## Notes-only workspaces
 
@@ -335,7 +327,7 @@ the two existing production preservation/reader baselines passed. Native externa
 provider, GUI/Wayland, packaging, full Rust authority integration, and new migration
 remain implementation/acceptance work, not claimed passes.
 
-### Decisions/constraints to resolve before authorizing implementation
+### Decisions and implementation constraints
 
 No material product decision is currently queued. The user selected cleanup of
 obsolete Workspace artifacts and symlink aliases while preserving actual
@@ -343,8 +335,8 @@ repositories and `~/OpenCode Projects/Repositories`. The earlier whole-root
 deletion alternative is closed. Safe ownership/retention manifests, canonical
 path resolution, active-usage protection, combined backup and retry/reopen recovery
 are implementation requirements to prove, not more choices to offload to the user.
-Approval of these product decisions is not yet approval of a complete production
-implementation plan or permission to run cleanup during this review.
+The user approved the complete implementation handoff on 2026-11-07. That
+approval does not authorize live cleanup or migration.
 
 ### Resolved integration direction after user review
 
@@ -423,12 +415,7 @@ need implementation and acceptance evidence. No extra project-mgr daemon or
 additional private-server mode is required by this decision. Ordinary app-owned
 shell/tool terminal persistence is separate from shared OpenCode agent execution.
 
-External ticket editing is required. Every ticket view exposes Tools using the
-Workspace pattern, including access to the canonical Markdown before execution
-setup. Reject stale/conflicting managed changes, retain external edits, and
-reconcile before retrying. The earlier mandatory-pause recommendation is
-superseded. The runtime fixture's hash-check/replace counterexample remains valid
-evidence about that strategy; production patch/conflict behavior has not run.
+Every ticket view exposes Tools using the Workspace pattern, including access to canonical Markdown before execution setup.
 
 Current Tools evidence: `app/src/views/repository-tools/RepositoryToolsMenu.jsx`
 provides terminal, IntelliJ and folder actions plus repository scripts; its
@@ -468,10 +455,10 @@ frontend/backend contract validation remain implementation acceptance work.
 ### What is sufficient now
 
 The architecture has credible feasibility evidence and the product decisions
-above are recorded. This is enough to prepare the task-based single-release
-implementation plan, while retaining production acceptance gates. There
+above are recorded. The task-based single-release implementation plan is
+approved, while production acceptance gates remain. There
 is not yet enough to promise uninterrupted managed enforcement through plugin
-removal, safe arbitrary-editor concurrency, or migration correctness. Those are
+removal or migration correctness. Those are
 specific limits, not invitations for a coding agent to invent policy.
 
 The single release still includes backlog, Markdown authority, ticket/session
@@ -480,13 +467,15 @@ workspaces, and existing-workspace migration. Internal incremental commits and
 test fixtures do not change that release commitment. Multi-repository
 orchestration is the explicit release-two exception.
 
-## Requirements for the later implementation plan
+## Requirements for the implementation plan
 
 The [implementation-plan handoff](idea-first-implementation-plan.md) now assigns
 the reviewed requirements and concerns to bounded tasks and a final full-release
-E2E integration task. It is a draft pending explicit plan approval, not evidence
-that implementation or live rollout has started. Task status and future execution
-evidence belong there; this assessment remains the decision/research record.
+E2E integration task. The user approved the full handoff on 2026-11-07;
+approval alone is not evidence of completed implementation or live rollout.
+Task status and execution evidence belong there; this assessment remains the
+decision/research record. Explicit migration and preservation requirements remain
+in scope; live rollout and external-provider calls require separate authorization.
 
 Use the reviewed decisions and linked specifications when authoring the
 implementation plan; bring back any newly discovered material scope conflict
@@ -506,6 +495,6 @@ rather than inventing policy. The user requires the eventual plan to:
   manual native terminal/Wayland acceptance. Passing isolated storage or browser
   checks must not be reported as completed native acceptance.
 
-These are planning constraints, not the task breakdown or authorization to
-implement. Review completion, plan creation, and production approval remain
-distinct steps.
+These are planning constraints, not the task breakdown or release acceptance.
+Plan approval, implementation evidence, and authorization for live operations
+remain distinct.

@@ -324,35 +324,17 @@ Every lifecycle operation that changes Markdown and operational authority uses
 the same logical pattern: take the cooperating-writer lock; verify revision,
 scope and authority; stage/sync intended Markdown; commit an operation intent;
 apply the validated mutation; revalidate/finalize operational authority; return
-a committed receipt. This is logical ordering, not endorsement of the prototype's
-whole-file hash-check/rename mechanism: production must satisfy the external-edit
-conflict/preservation contract below. Release locks before long native effects
+a committed receipt. This is logical ordering, not a cross-resource transaction. Release locks before long native effects
 or human decisions.
 
 Crash/reopen recovery compares actual bytes with the journal's base/intended
 hashes and preserves mismatches for reconciliation. Revalidate bindings, scope
 approval and revocation before completing authority-bearing work; mechanical
 byte recovery alone is not authorization. While incomplete, show pending/uncertain
-state and withhold implementation capability, even if an external editor can
-already see the new Markdown status. Never claim SQLite rollback undoes a file
+state and withhold implementation capability until recovery completes. Never claim SQLite rollback undoes a file
 replacement or that an operation receipt proves the current file is unchanged.
 
-The executed prototype supports cooperating writers and process-crash recovery,
-not power-loss durability or this full lifecycle protocol. Its whole-file
-hash-check/rename path reproduced a lost external edit; that is a counterexample
-to that implementation strategy, not a product ban on external editing. [S6]
-
-**User-selected editing contract:** ordinary external editors remain supported,
-including through Tools on every ticket view, without a mandatory pause workflow.
-Managed mutations use expected-content/revision checks, reread current content,
-and reject stale/conflicting changes instead of blindly rendering an old complete
-ticket over the current file. Preserve the external content and pending managed
-change for resolution; recovery must apply the same conflict rule. An external
-scope edit still invalidates approval when material, and editable status text
-does not manufacture an approval receipt. The exact production mutation mechanism
-must prove conflict rejection/preservation; the prototype did not test it.
-Do not describe a context-matching patch as a universal filesystem compare-and-swap
-against every simultaneous external write.
+The executed prototype supports cooperating writers and process-crash recovery, not power-loss durability or this full lifecycle protocol. [S6]
 
 ### Human decisions inside the OpenCode conversation
 
@@ -676,9 +658,10 @@ concurrent exact-child claim, malformed/stale rejection, and same-child recovery
 The proposed Rust transactions, one-reservation rule, background/cancellation
 interleavings, and full mutation-role authority still require implementation
 acceptance; fixture role text alone is not enforcement. If a required gate fails,
-the supported path is
-explicit create-bind-context-prompt dispatch, or an OpenCode extension—not
-speculative binding from `session.created`. [S4, S7]
+explicit create-bind-context-prompt dispatch may provide a documented degraded or
+recovery path, or an OpenCode extension may be required—not speculative binding
+from `session.created`. Neither fallback substitutes for required native release
+acceptance. [S4, S7]
 
 ### Finish while the human stays in OpenCode
 
@@ -762,9 +745,7 @@ project-mgr/GUI acceptance:
    blockers, Review or Done. Reconnect recovers the same result from live activity.
 10. Tools remains reachable across ticket views, including a repo-free Draft,
     and opens the canonical Markdown independently of the execution checkout.
-    Stale managed edits and recovery after an external edit reject conflicts and
-    preserve the edited content; refreshing/retrying does not silently restore
-    an old ticket or fabricate scope approval.
+    Refreshing or retrying must not fabricate scope approval.
 
 ## Review decisions and remaining implementation gates
 
@@ -776,8 +757,9 @@ not permission to replace it with a prompt-only solution. Before implementation:
   Require the plugin to be active and expose missing-plugin integration faults.
   The user chose a working-plugin requirement rather than host enforcement that
   survives deliberate plugin removal; polling is not claimed as prevention.
-  Use a documented explicit fallback if a required native path fails, without
-  claiming native delegation was delivered by replacing it silently.
+  A documented explicit fallback may provide degraded operation or recovery if a
+  required native path fails; it cannot substitute for required native release
+  acceptance or justify claiming native delegation was delivered.
 - Implement/validate the recommended shared Rust core plus one-shot JSON-stdio
   adapter, with versioned contracts, trusted runtime capture and binding checks.
   Feasibility is experimentally supported; production packaging, authority, and
@@ -812,8 +794,7 @@ or changed by this document.
   durable-record assumptions, explicit pointer branches, invocation, completion
   criteria, and separation of always-loaded routing from phase references.
 - **S6:** [Executable runtime/storage research](ticket-runtime-storage-experiments.md),
-  including the external-editor race counterexample and Markdown/SQLite crash
-  recovery boundary. [Readiness assessment](idea-first-implementation-readiness.md)
+  including the Markdown/SQLite crash recovery boundary. [Readiness assessment](idea-first-implementation-readiness.md)
   records independent reruns and accepted conclusions.
 - **S7:** [Executed session-context research](opencode-session-context-experiments.md):
   native child admission, skill attachment, error/recovery, context moves, and

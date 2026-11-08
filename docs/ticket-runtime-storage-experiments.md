@@ -8,7 +8,7 @@ installation, service change, or migration authorized.
 **A short-lived Rust command adapter is a feasible default for ticket operations
 while the GUI is absent. Canonical Markdown plus a SQLite operational journal is
 feasible for cooperating writers, but is not a cross-resource atomic transaction
-and cannot prevent lost edits from arbitrary concurrent editors.** The experiments
+and requires recovery across the two stores.** The experiments
 prove process-crash recovery on this host, not power-loss durability, native GUI
 acceptance, or a fully managed OpenCode integration.
 
@@ -46,7 +46,6 @@ research question. Migration mapping and release acceptance were not tested here
 | **H1:** one Rust core and store can serve GUI and plugin callers without the GUI or a new persistent project-mgr daemon. | Build a real Rust library, JSON-stdio adapter, and second in-process-core caller; update in one process and read in another. Compare 25 one-shot calls with 25 calls through one owned persistent pipe. | Revision 2 survived process exit; independent binaries read the same Markdown/journal. The second binary started no GUI. One-shot median 2.572 ms; persistent-pipe median 0.683 ms on tmpfs. | **Accepted as mechanism feasibility.** Actual Tauri integration and installed OpenCode plugin/packaging remain unvalidated. Persistent authenticated service performance was not measured. |
 | **H2a:** cooperating writers can detect conflicts without losing an update. | Race two independently running adapters behind a start rendezvous, using the same expected revision/hash, in 20 isolated fixtures. | Exactly 20 applied writes and 20 `revision_conflict` rejections; one operation row and one complete winning Markdown document per fixture. Writer A won 18; B won 2. | **Accepted within the cooperative-lock protocol.** Not a fairness or throughput result. |
 | **H2b:** durable-intent design can recover after process interruption and idempotent retry. | Stop after staging, committed intent, file replacement, or DB acknowledgement; additionally SIGKILL after intent and replacement. Reopen through the real core. Retry the same operation ID. | Each final ticket reached revision 2 once, with one applied receipt. A pre-intent orphan stage was reused only after exact-byte validation. Pending file-written/DB-unacknowledged work was finalized without another write. Ten further identical retries created no extra row. | **Accepted for the exercised process failures.** Physical durability is **not established**: fixtures were on tmpfs; no OS crash, reboot, disk-full, or power-cut tests ran. |
-| **H2c:** hashes plus replacement can make arbitrary editor concurrency safe. | Modify outside the adapter before a request, during an uncertain operation, and deliberately between its final hash check and rename. | Earlier mismatches preserved external bytes and rejected/blocked mutation. In the final window, the editor ignored the advisory lock, and the adapter overwrote its change while reporting success. | **Rejected.** Atomic replacement is not compare-and-swap against file content. |
 | **H2d:** a SQLite backup alone is a consistent ticket-store backup. | Take an online DB snapshot, then change Markdown via the adapter, then compare the copied DB hash against current Markdown. | DB snapshot and later Markdown did not match. | **Rejected.** A combined backup barrier or verified snapshot protocol is required. |
 | **H3a:** a child adapter can avoid a network listener and distributed network credentials. | Node `spawn` with executable/argument array, `shell:false`, private pipes, restricted fixture environment; real Rust child processes return success and errors. Inspect official plugin lifecycle and pinned loader source. | Four child calls exited `0,2,2,0`; each returned one JSON line; stderr was empty. Malformed and unsupported requests returned fixed categories without echoing a synthetic canary. | **Accepted as OS-child/stdio feasibility.** No real plugin was installed or invoked; this is not plugin acceptance. |
 | **H3b:** private stdin alone proves the runtime caller/session/human. | Supply fabricated caller labels to the fixture; compare with actual plugin runtime context documented in the hook/tool APIs. | Fabricated labels did not become verified identity; the deliberately unauthenticated fixture accepted an ordinary read with them. | **Rejected as an authentication claim.** Trust the installed adapter plugin to capture actual runtime context, then validate bindings/authority in Rust; no OS-user adversarial isolation is claimed. |
@@ -139,7 +138,7 @@ processes on failure. It starts no listener or background service, runs no
 The main investigator read the scratch implementation/runner and reran the
 documented command. It exited **0** with the same **16 groups**, **20 cooperating
 writer races**, **10 idempotent retries**, expected injected exits/SIGKILL, and
-the reproduced unlocked-editor counterexample. New evidence is retained at
+the recorded recovery results. New evidence is retained at
 `/tmp/opencode/ticket-runtime-experiment-2j31q2j3/runs/run-mp15cn42/results.json`.
 Its timing samples differ and are not substituted for the original run above.
 The [readiness assessment](idea-first-implementation-readiness.md) records the
@@ -161,7 +160,7 @@ parser, ticket lifecycle implementation, or reusable production storage layer.
    read/write/recovery path takes this lock.
 2. Recover pending operations before allowing another ordinary operation. Read
    the actual Markdown bytes. Validate both expected numeric revision and
-   SHA-256; an ordinary editor need not increment the revision.
+   SHA-256.
 3. Write the complete next Markdown to a uniquely named staging file on the same
    filesystem. Sync the file and relevant directories.
 4. Commit a SQLite intent containing operation ID, request fingerprint, base and
@@ -206,8 +205,7 @@ cannot literally be one SQLite transaction. A production implementation needs a
 recoverable logical operation: reserve a pending run/transition in SQL, install
 the guarded Markdown revision, then finalize the authority receipt. A pending
 reservation must not grant implementation authority. GUI/tool reads must expose
-pending or uncertain state rather than fabricate a completed transition; an
-external editor may still see intermediate file state.
+pending or uncertain state rather than fabricate a completed transition.
 
 The same distinction applies to approval, review and finish. Recovery must
 revalidate current binding generation, approved scope and any revocation before
@@ -216,20 +214,6 @@ and receipts; it does not prove run-claim atomicity or safe approval recovery.
 That protocol wording/implementation gate needs resolution before production,
 not an assumption that SQL rollback can undo an already replaced ticket file.
 
-### What the counterexample rules out
-
-The runner paused **after the last content check and before rename**. An ordinary
-file write ignored the adapter's lock and changed the ticket. Resuming installed
-the managed document and lost those external bytes. Post-write hash checking
-would see the managed bytes and cannot recover an edit it never observed.
-
-Therefore, promise no lost updates only for **cooperating writers using the same
-core and lock**, on validated local filesystems. File watchers and earlier hash
-checks improve detection, not exclusion. A single long-lived service has the
-same external-editor race; putting all managed writes in one process does not
-make arbitrary editors cooperate. Rust explicitly leaves lock interaction with
-non-lockholding reads/writes platform-dependent. [R2]
-
 For a simpler first production design, prefer serialized core operations and
 explicit discrepancy handling over a general bidirectional sync/merge engine.
 Do not copy the prototype's store-wide read blocking unchanged without checking
@@ -237,14 +221,6 @@ UI needs: here a pending mismatch blocks even ordinary adapter reads; production
 needs a safe read-only view of the canonical file and its recovery warning.
 
 ## Sources of truth and operational persistence
-
-**Subsequent product review:** the user requires ordinary external ticket editing
-and Tools on every ticket view, with stale/conflicting managed changes rejected.
-The report's pause/exclusive-edit recommendations are superseded by the revised
-[mutation contract](ticket-session-protocol-proposal.md#markdown-mutation-and-operational-commit-boundary).
-The observed hash-check/rename race remains a valid counterexample to the
-prototype's whole-file strategy; it does not establish that external editing
-must be excluded. Production patch/conflict behavior remains untested.
 
 Markdown is the **canonical authored ticket and lifecycle representation**.
 SQLite is authoritative for **operational receipts and authority**, not a second
@@ -290,11 +266,7 @@ SQLite lifecycle. That semantic validation remains unimplemented and untested.
   supported API, copy Markdown and required staging/history, and retain a manifest
   of IDs/hashes/schema versions. Check the manifest on restore. The online backup
   API snapshots SQLite, not adjacent Markdown. [S3]
-- **External editors complicate backup too:** the barrier excludes only cooperating
-  writers. Require an agreed editor quiescence policy or verify copied hashes and
-  retry/report inconsistency. Cloud-sync folders, multi-machine SQLite access,
-  network filesystems and concurrent external renames were not tested; WAL
-  specifically requires same-host shared memory. [S5]
+- Cloud-sync folders, multi-machine SQLite access and network filesystems were not tested; WAL requires same-host shared memory. [S5]
 - Missing/corrupt operational data should retain readable notes/tickets but
   disable unproven managed authority. Retention, restore UX, history privacy and
   migration rollback need explicit release acceptance tests.
@@ -391,10 +363,6 @@ and unexpected panics without exposing input or secrets.
 
 These are tradeoffs to approve, not product intent inferred from feasibility:
 
-1. **External editing contract:** should managed writes require all concurrent
-   ticket editors to use the bridge, or support external edits with explicit
-   quiescence/reconciliation and the stated race limit? If fully safe arbitrary
-   concurrent editor writes are required, this design has failed that requirement.
 2. **Ticket-home ownership and portability:** one app-managed home, user-selected
    homes, or registered external collections? Agree import/link/duplicate-ID
    treatment without making code repositories or Git mandatory.

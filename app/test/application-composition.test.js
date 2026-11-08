@@ -9,8 +9,8 @@ import solid from "vite-plugin-solid";
 import { presentationAliases } from "../vite.config.js";
 
 // Run the real entry, command contracts, feature controllers and Solid tree.
-// Only the terminal renderer/native transport are replaced: no live processes,
-// local directories, network services or application data are accessed.
+// The browser command transport and terminal renderer are fixtures: no live
+// processes, user directories, network services or application data are used.
 test("application areas compose once and retain terminals across navigation and creation", async () => {
   const root = resolve(import.meta.dirname, "..");
   const temp = await mkdtemp("/tmp/opencode/application-composition-");
@@ -26,9 +26,13 @@ test("application areas compose once and retain terminals across navigation and 
     "HTMLHeadElement",
     "Event",
     "MouseEvent",
+    "__quickRequestCreateCalls",
+    "__quickRequestCreatePrompts",
+    "__rejectQuickRequestCreate",
   ];
   try {
     const terminal = join(temp, "terminal.js");
+    const quickRequestFixture = join(temp, "quick-request-fixture.js");
     await writeFile(
       terminal,
       `
@@ -56,6 +60,22 @@ test("application areas compose once and retain terminals across navigation and 
       }
     `,
     );
+    await writeFile(
+      quickRequestFixture,
+      `
+      import { invokeBrowserFixture as invoke } from ${JSON.stringify(resolve(root, "src/fixtures/browserFixture.js"))};
+      let calls = 0;
+      export function invokeBrowserFixture(name, payload) {
+        if (name === "quick_request_create") {
+          calls++;
+          globalThis.__quickRequestCreateCalls = calls;
+          globalThis.__quickRequestCreatePrompts.push(payload.request.prompt);
+          if (calls === 1) return new Promise((_, reject) => { globalThis.__rejectQuickRequestCreate = reject; });
+        }
+        return invoke(name, payload);
+      }
+      `,
+    );
     await build({
       configFile: false,
       resolve: { alias: presentationAliases },
@@ -64,8 +84,9 @@ test("application areas compose once and retain terminals across navigation and 
         {
           name: "terminal-renderer-fixture",
           enforce: "pre",
-          resolveId(source) {
+          resolveId(source, importer) {
             if (source === "./terminal/terminalRuntime.js") return terminal;
+            if (importer !== quickRequestFixture && source.endsWith("fixtures/browserFixture.js")) return quickRequestFixture;
           },
         },
         solid(),
@@ -124,10 +145,13 @@ test("application areas compose once and retain terminals across navigation and 
       field.value = value;
       field.dispatchEvent(new window.Event("input", { bubbles: true }));
     };
+    globalThis.__quickRequestCreateCalls = 0;
+    globalThis.__quickRequestCreatePrompts = [];
 
     await waitFor(
       () => $("#workspace-list").getAttribute("aria-busy") === "false",
     );
+
     assert.equal($("#workbench").hidden, true);
     $("#workspace-list button").click();
     await waitFor(() =>
@@ -270,12 +294,30 @@ test("application areas compose once and retain terminals across navigation and 
     $("#new-work-capture").dispatchEvent(
       new window.Event("submit", { bubbles: true, cancelable: true }),
     );
-    await waitFor(
-      () => !$("#new-work-review").hidden && !$("#proposal-create").disabled,
-    );
+    await waitFor(() => !$("#new-work-review").hidden);
+    await waitFor(() => !$("#proposal-create").disabled);
+    input("#quick-request-directory", "");
+    assert.equal($("#proposal-create").disabled, true);
+    input("#quick-request-directory", "/fixture/custom-working-directory");
+    assert.equal($("#proposal-create").disabled, false);
     assert.equal($("#quick-request-original").textContent, originalPrompt);
     $("#proposal-create").click();
+    await waitFor(() => globalThis.__quickRequestCreateCalls === 1);
+    assert.equal($("#proposal-create").disabled, true);
+    $("#proposal-create").click();
+    assert.equal(globalThis.__quickRequestCreateCalls, 1);
+    globalThis.__rejectQuickRequestCreate(new Error("Deferred creation failed"));
+    await waitFor(() =>
+      window.document
+        .querySelector("#proposal-error")
+        ?.textContent.includes("Deferred creation failed"),
+    );
+    assert.equal($("#quick-request-original").textContent, originalPrompt);
+    assert.equal($("#proposal-create").disabled, false);
+    $("#proposal-create").click();
     await waitFor(() => !$("#new-work-dialog").open);
+    assert.equal(globalThis.__quickRequestCreateCalls, 2);
+    assert.equal(globalThis.__quickRequestCreatePrompts[1], originalPrompt);
     assert.match(
       $("#quick-request-list").textContent,
       /A quick fixture prompt/,
