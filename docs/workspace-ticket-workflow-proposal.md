@@ -1,0 +1,253 @@
+# Workspace Ticket Workflow Proposal
+
+**State:** Draft requirements; implementation scope not approved.
+
+## Main task
+
+**Draft implementation tasks; not approved for execution.**
+
+1. [ ] Make the `rust-main` ticket skill available in `~/.agents/skills/`.
+   **Proof:** OpenCode discovers it from a repository-rooted session.
+2. [ ] Create Workspace ticket files and make them visible in the app.
+   **Proof:** create a draft, restart the app, and confirm it appears with its
+   Markdown status; change the file's status and confirm the list reflects it.
+3. [ ] Build the simple ticket list before adding ticket-session behavior.
+   **Proof:** select a ticket from the list and see its content truncated.
+4. [ ] Add basic ticket-session resume behavior. See
+   [`ticket-session-protocol-proposal.md`](ticket-session-protocol-proposal.md).
+   **Proof:** work on a ticket, leave and return, and resume that ticket's same
+   OpenCode session.
+5. [ ] Put Change Review, Docs, and repository tools under the selected ticket.
+   **Proof:** these destinations require a selected ticket and use its repo.
+6. [ ] Improve the ticket viewer.
+
+Do not duplicate the detailed requirements in the task list; this document and
+the linked research carry them.
+
+## Current summary
+
+Selecting a Workspace should lead first to a ticket viewer. Each Workspace is
+associated with exactly one repository; when no repository exists, Workspace
+creation makes a new local Git repository. Workspace and repository records live
+in SQLite. Each Workspace owns Markdown tickets stored outside Git under the
+application data directory. OpenCode sessions guide ticket
+creation and work. The Markdown ticket is the source of truth for ticket status
+and records the one OpenCode work session needed to resume work. Workbench
+destinations and tools are entered through a selected ticket; a ticket is
+required to work.
+
+This proposal changes the accepted model in
+[`workspace-refactor-target.md`](workspace-refactor-target.md), which currently
+allows zero or multiple repositories. Do not silently change that contract until
+the revised requirements are shaped and approved.
+
+## Request coverage
+
+| Ask | Disposition | Coverage |
+|---|---|---|
+| Make a substantial UI improvement and document its requirements collaboratively. | In scope | This draft; detailed acceptance checks and implementation slices remain open. |
+| Make each Workspace strictly coupled to one repository, creating a local Git repository if needed, without creating a new Workspace directory under `~/OpenCode Projects`. | In scope | Workspace/repository creation and storage location; replaces the accepted target contract. |
+| Make the ticket viewer the primary Workspace screen, with a selectable ticket list and a way to work on a ticket. | In scope | Tasks 3–4. |
+| Store each Workspace's Markdown tickets outside the repository, in Workspace-owned storage. | In scope | Storage location section. |
+| Follow the ticket format and creation guidance from `rust-main`; make its ticket skill global. | In scope | Global skill and its guidance are required for ticket creation, clarification, and work flows. |
+| Start or resume an OpenCode session in the repository for ticket work, and record enough in the ticket to resume it. | In scope | Task 4. |
+| Use one OpenCode work session per ticket. | In scope | Session association section. |
+| Create tickets through an OpenCode-driven UX rooted in the repository, following ticket-skill guidance. | In scope | Tasks 1–2. |
+| Create tickets with `draft` status; keep the Markdown ticket authoritative for all statuses. | In scope | Status ownership section. |
+| Keep ticket-session instructions concise and prove session resumption. | In scope | Task 4; see linked session research. |
+| Start with a simple list that truncates ticket content, and track a task to improve the viewer. | In scope | Tasks 3 and 6. |
+| Require a selected ticket for Change Review, Docs, and repository tools. | In scope | Task 5. |
+
+## Proposed requirements captured so far
+
+### Workspace and repository
+
+- Apply these Workspace and ticket rules uniformly to every Workspace in the
+  clean-break product model; no prior Workspace or repository is a special
+  case.
+- A regular Workspace has exactly one associated repository.
+- If there is no repository to use, create a new local Git repository. No hosted
+  repository or remote is implied. Create it under
+  `~/OpenCode Projects/repos/<username>/<workspace-slug>/`.
+- Creating a Workspace must not create a separate Workspace home directory under
+  `~/OpenCode Projects`. Workspace/repository metadata stays in SQLite; the repo
+  directory is the sole code working directory, and ticket files live under
+  `<app_data_dir>/workspace-tickets/<workspace-slug>/`.
+- The old database has already been deleted; database deletion is not an
+  implementation task. Do not carry forward prior repository associations.
+- Selecting a Workspace opens its ticket viewer as the primary screen.
+- Selecting a ticket selects its context; a separate explicit **Work** action
+  opens or resumes that ticket's session. Selecting a ticket alone does not
+  start an OpenCode session or change ticket status.
+- Existing work destinations and tools—including OpenCode terminals, Change
+  Review, Docs, and repository tools—are scoped under a selected ticket. Users
+  must select a ticket to work; these are not independent Workspace-level work
+  destinations.
+
+### Ticket files and lifecycle
+
+- Each Workspace has its own Markdown tickets under
+  `<app_data_dir>/workspace-tickets/<workspace-slug>/`, outside the repository
+  and therefore outside Git. Closed tickets use `archived/<slug>.md`, following
+  the `rust-main` convention.
+- The main ticket list shows non-archived tickets by default. Provide a separate
+  way to browse archived tickets; the UI does not itself archive tickets or
+  change their status.
+- Start with a simple ticket list. Each entry shows ticket identity and
+  Markdown-backed status, plus truncated ticket content; provide the explicit
+  **Work** action for the selected ticket. A separate full-ticket detail layout
+  is deferred.
+- Use the `rust-main` ticket conventions as the starting format and follow its
+  ticket skill for creation. Making the skill and its applicable guidance
+  globally available is required in this task; the ticket experience depends on
+  it for its workflows.
+- A newly created ticket starts in `draft`.
+- Ticket status is changed through the OpenCode session and recorded in the
+  Markdown ticket. The app reads and displays status; it must not independently
+  change or override it.
+- Draft tickets may be clarified and expanded; draft status does not prevent
+  further ticket authoring.
+
+### Ticket creation and work sessions
+
+- Creating a ticket is an OpenCode-driven interaction rooted in the Workspace's
+  repository, with the ticket skill guiding the work.
+- Use OpenCode's session instruction-entry API to give each ticket-related
+  session Workspace-specific context. The Rust OpenCode client calls
+  `PUT /api/experimental/session/{sessionID}/instructions/entries/{key}` with a
+  JSON `value`, keyed by the exact OpenCode session ID. For ticket creation,
+  attach the repository root, canonical Workspace ticket directory outside the
+  repository, and direction to follow the global ticket skill and save a new
+  `draft` there.
+- For ticket work, attach a barebones assignment in a durable entry (for
+  example, key `workspace-ticket`) containing only useful identifying/routing
+  metadata: ticket title/slug, filename and canonical Markdown path, current
+  status, Workspace ticket directory, repository root, and global ticket skill
+  reference. Do not include or duplicate ticket body/content. Direct OpenCode to
+  read the canonical Markdown file for its content and latest status, and treat
+  that file as the status/progress authority. Ensure the OpenCode process has
+  read/write access to that path. The explicit assignment plus file access is
+  sufficient; no second ticket-content copy or ticket registry is required.
+  Never infer the assigned ticket from the shared repository directory or
+  current UI selection.
+- Create or refresh the entry after session creation and before opening the
+  interactive terminal; refresh the current status from the Markdown file when
+  a ticket session is selected/resumed. A replacement session gets a new entry
+  keyed to its new session ID. The session cwd remains the Workspace's shared
+  repository directory.
+- Every ticket work session for a Workspace uses that Workspace's same
+  repository directory and working tree. Tickets do not get separate
+  repositories, branches, or worktrees by default; session instructions select
+  the ticket record, not an isolated code checkout.
+- Make the ticket-management skill and the guidance needed for its workflows
+  globally available as part of this task; this is a required dependency for
+  ticket creation and progress flows, not optional follow-up work.
+- Use OpenCode and the applicable skills to explain and govern the complete
+  creation, clarification, grooming, work, recovery, completion, cancellation,
+  and archival flows. The product requirements must document each ticket state,
+  its meaning, and the allowed transitions; do not replace those flows with
+  undocumented app-side status rules.
+- The resulting Markdown ticket is saved under the Workspace's app-data ticket
+  directory, outside the repository.
+- Ticket-creation interaction and ticket work are distinct: a ticket's creation
+  session does not become its work/resume session.
+- Tickets remain open to clarification and detail improvements. Use OpenCode and
+  the ticket guidance to update the Markdown ticket; do not make draft status a
+  barrier to refining its contents.
+- Each ticket has one OpenCode work session. When a user chooses to work on a
+  ticket, open its repository-rooted interactive terminal and associate the
+  session with the ticket. Record the session identity in the ticket's YAML
+  front matter so the exact session can be resumed later. Keep ticket status
+  authoritative in Markdown according to the global ticket skill's format.
+- If the recorded session is unavailable, start a new session and replace the
+  session identity in front matter.
+- The precise status transition, if any, is performed in OpenCode and persisted
+  in the Markdown ticket; the app's Work action does not change status.
+
+### Ticket status model from the reference skill
+
+These names, meanings, and transitions are documented in `rust-main`'s ticket
+skill and are the baseline to carry into the global skill. The skill explains
+the authoring and execution flows; the application must not invent a competing
+lifecycle.
+
+| Status | Meaning | Provisional transitions |
+|---|---|---|
+| `draft` | Captured ticket still being clarified or groomed; not yet approved for execution. | Remain `draft` while details or material decisions are open; move to `in_progress` when approved work begins; may move to `cancelled`. |
+| `in_progress` | Approved ticket work is underway. | Move to `blocked` when an external blocker prevents progress; return from `blocked` when resolved; move back to `draft` when evidence requires renewed grooming/approval; move to `done` after approved work and verification complete; may move to `cancelled`. |
+| `blocked` | Work cannot proceed until a recorded blocker is resolved; preserve the last useful state and next step. | Return to `in_progress` when unblocked; may move to `cancelled`. |
+| `done` | Approved work and its required validation/verification are complete. | Terminal in the reference workflow; archived after closeout. |
+| `cancelled` | Work is abandoned, with reason and disposition of completed/remaining work recorded. | Terminal in the reference workflow; archived after closeout. |
+
+The Markdown file is authoritative for the current status. Any derived list,
+badge, or filter in the UI must reflect that file and must not become a second
+status store. Whether the app needs a derived index/cache for responsiveness is
+an implementation detail, not a second authority.
+
+## Decisions recorded
+
+- **No repository exists:** create a local Git repository; do not assume a
+  remote. Put it under
+  `~/OpenCode Projects/repos/<username>/<workspace-slug>/`. Confirmed in
+  conversation.
+- **Workspace directory:** do not create a new directory under
+  `~/OpenCode Projects` for a Workspace home. Workspace metadata is in SQLite;
+  the repository directory is the only Workspace-related directory there.
+  Confirmed in conversation.
+- **Database reset:** deletion is already complete; no database task is included.
+  Prior repository associations are out of scope. Confirmed in conversation.
+- **Sessions per ticket:** one work/resume session. Confirmed in conversation.
+- **Session metadata:** record the work-session identity in YAML front matter.
+  Confirmed in conversation.
+- **Unavailable work session:** start a new one and replace its recorded ID.
+  Confirmed in conversation.
+- **Ticket status:** OpenCode changes status; the Markdown file is authoritative.
+  Confirmed in conversation.
+- **Ticket storage:** `<app_data_dir>/workspace-tickets/<workspace-slug>/`, outside
+  the repository and beside the app database. Confirmed in conversation.
+- **Ticket file layout:** `<workspace-ticket-dir>/<slug>.md`, with closed
+  tickets under `archived/<slug>.md`, matching `rust-main`. Confirmed in
+  conversation.
+- **Status on creation:** newly created ticket is `draft`. Confirmed in
+  conversation.
+- **Creation session:** separate from the ticket's work/resume session.
+  Confirmed in conversation.
+- **Archived tickets:** separate archive browsing; the default list contains
+  non-archived tickets. Confirmed in conversation.
+- **Workspace workbench:** existing work destinations and tools are scoped under
+  a selected ticket; a ticket is required to work. Confirmed in conversation.
+- **Ticket selection:** selecting a ticket and explicitly choosing **Work** are
+  separate actions; Work opens/resumes the ticket session. Confirmed from the
+  original request.
+
+## Feasibility research: ticket assignment in a session
+
+Static source inspection confirms that OpenCode v2.0.27 has an experimental,
+session-scoped instruction-entry API. An instruction entry is keyed by the exact
+OpenCode session ID, persisted by OpenCode, and rendered into model-visible
+context. It can carry the ticket name and absolute Markdown path independently
+of the session's working directory. This is durable model context, **not** a
+literal system-prompt field.
+
+The application does not currently use this capability. Its Rust create-session
+request contains title, location, and model only; its prompt request contains
+user text only (`app/src-tauri/src/opencode.rs`). Exact session ID and working
+directory are separately recorded and restored (`app/src-tauri/src/session_restore.rs`).
+The project's v2 contract currently documents create/prompt/resume, not
+instruction entries (`docs/opencode-v2-contract.md`). Implementing the proposed
+assignment therefore requires adding an adapter for OpenCode's experimental
+instruction-entry API and associating the ticket entry with the exact session.
+Replacement sessions must receive a new entry because entries belong to the old
+session ID.
+
+This proves a protocol/source mechanism for assigning a ticket without changing
+the shared repository cwd. The remaining implementation obligation is to grant
+the OpenCode process read/write access to the Workspace ticket path, as required
+above. No ticket-content duplication or separate runtime-assignment mechanism is
+needed. The API's experimental status remains an implementation risk to record.
+
+## Next step
+
+Reconcile the global ticket skill and backup migration details, then write a
+bounded implementation plan and acceptance checks. No implementation is
+authorized by this draft.
