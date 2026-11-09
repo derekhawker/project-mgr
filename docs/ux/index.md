@@ -1,9 +1,9 @@
 # UX Index
 
-> **Refactor in progress:** `../workspace-refactor-target.md` is the accepted
-> product contract. The existing screen specifications below describe the
-> current implementation and are pending replacement as the implementation
-> advances. Follow `../workspace-refactor-plan.md` for delivery order.
+> **Ticket-first transition:** The approved requirements and current evidence
+> are in `../workspace-ticket-workflow-proposal.md`. The screen specifications
+> below describe the earlier Workspace workbench and may not yet reflect the
+> selected-ticket navigation.
 
 This folder records the agreed user experience for the project manager. These
 are screen and interaction decisions, not implementation instructions.

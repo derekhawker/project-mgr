@@ -155,7 +155,7 @@ test("workspace review lists repository locations and uses the proposal prompt a
     }),
     {
       name: "Edited proposal name",
-      directory: "/home/user/Projects/proposed-folder",
+      directory: "A new local repository will be created",
     },
   );
 });
@@ -534,9 +534,7 @@ test("workspace adapters preserve navigation and setup command boundaries", asyn
   await createInitializedWorkspace(
     invoke,
     "Ready",
-    { providerId: "openai", id: "gpt-6-luna" },
-    "Plan the project",
-    "proposal-1",
+    "repo-1",
   );
   await createWorkspaceTask(
     invoke,
@@ -578,9 +576,7 @@ test("workspace adapters preserve navigation and setup command boundaries", asyn
       "workspace_create_initialized",
       {
         name: "Ready",
-        description: "Plan the project",
-        model: { providerId: "openai", id: "gpt-6-luna" },
-        proposalSessionId: "proposal-1",
+        repositoryId: "repo-1",
       },
     ],
     [

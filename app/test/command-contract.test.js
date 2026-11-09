@@ -597,7 +597,7 @@ test("Change Review toolbar availability and selection are WorkbenchShell state"
   assert.match(workbenchShell, /props\.changeReviewSelected\(\)/);
   assert.match(
     main,
-    /onOpenChangeReview: \(event\) => handleChangeReviewClick\(event\)/,
+    /onOpenChangeReview: \(event\) => \{ setTicketViewerVisible\(false\); void handleChangeReviewClick\(event\); \}/,
   );
   assert.match(
     controller,
@@ -1331,7 +1331,8 @@ test("contracts leave opaque JSON only at explicitly reviewed protocol/form seam
     }
     if (value.type === "object") {
       assert.ok(
-        value.properties || value.additionalProperties === true,
+        value.properties || value.additionalProperties === true ||
+          (value.additionalProperties && typeof value.additionalProperties === "object"),
         `object lacks fields at ${path}`,
       );
     }

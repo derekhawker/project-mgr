@@ -172,19 +172,7 @@ export function NewWorkDialog(props) {
                   props.setWorkspaceName(event.currentTarget.value)
                 }
               />
-              <label for="workspace-review-directory">
-                Workspace directory
-              </label>
-              <output id="workspace-review-directory" class={styles.directory}>
-                {proposal().workspaceDirectory}
-              </output>
-              <label for="workspace-original-prompt">Original prompt</label>
-              <TextArea
-                id="workspace-original-prompt"
-                rows="3"
-                readOnly
-                value={proposal().originalPrompt}
-              />
+              <p>Choose one existing repository, or leave it unselected to create a new local repository.</p>
             </div>
             <blockquote id="proposal-original" hidden>
               {proposal().originalPrompt}
@@ -197,21 +185,6 @@ export function NewWorkDialog(props) {
               <ul id="proposal-repositories" class={styles.repositories}>
                 {props.proposalRepositories?.()}
               </ul>
-            </section>
-            <section
-              id="proposal-starting-prompt"
-              class={styles.fields}
-              hidden={proposal().workType !== "workspace"}
-            >
-              <label for="proposal-prompt">Starting prompt</label>
-              <TextArea
-                id="proposal-prompt"
-                rows="4"
-                value={props.startingPrompt()}
-                onInput={(event) =>
-                  props.setStartingPrompt(event.currentTarget.value)
-                }
-              />
             </section>
             <Show when={progressDestination() === "workspace"}>
               <SetupProgressPanel

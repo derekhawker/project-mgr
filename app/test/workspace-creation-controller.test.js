@@ -53,7 +53,7 @@ function setup(overrides = {}) {
   return { controller: createWorkspaceCreationController(deps), calls };
 }
 
-test("successful creation selects, displays, prompts, closes, and clears busy state", async () => {
+test("successful creation selects workspace without opening a session or submitting a prompt", async () => {
   const { controller, calls } = setup();
   await controller.createWorkspace();
   assert.deepEqual(
@@ -66,92 +66,17 @@ test("successful creation selects, displays, prompts, closes, and clears busy st
       "disabled",
       "busy",
       "create",
-      "show",
-      "show",
-      "prompt",
       "busy",
       "sync",
       "disabled",
     ],
   );
-  assert.ok(
-    calls.some(([key, ...args]) => key === "prompt" && args[2] === " start "),
-  );
+  assert.equal(calls.some(([key]) => key === "show" || key === "prompt"), false);
   assert.deepEqual(calls.slice(-3), [
     ["busy", false],
     ["sync"],
     ["disabled", true],
   ]);
-});
-
-test("setup failure keeps the durable owner retryable and exposes recovery", async () => {
-  const { controller, calls } = setup({
-    createInitializedWorkspace: async () => ({
-      workspace: { id: "w" },
-      setup: [{ setupStatus: "failed" }],
-      sessions: [],
-      sessionErrors: [],
-    }),
-  });
-  await controller.createWorkspace();
-  assert.ok(
-    calls.some(
-      ([key, ...args]) =>
-        key === "proposalView" && args[0].createLabel === "Retry setup",
-    ),
-  );
-  assert.deepEqual(calls.slice(-3), [
-    ["busy", false],
-    ["sync"],
-    ["disabled", false],
-  ]);
-  assert.ok(
-    calls.some(
-      ([key, value]) => key === "error" && value.includes("Retry setup"),
-    ),
-  );
-  assert.ok(calls.some(([key, value]) => key === "view" && value === "review"));
-});
-
-test("missing or partially failed terminals retain session recovery in the review view", async () => {
-  for (const sessionErrors of [[], ["terminal unavailable"]]) {
-    const { controller, calls } = setup({
-      createInitializedWorkspace: async () => ({
-        workspace: { id: "w" },
-        setup: [],
-        sessions: [],
-        sessionErrors,
-      }),
-    });
-    await controller.createWorkspace();
-    assert.ok(
-      calls.some(([key, value]) => key === "view" && value === "review"),
-    );
-    assert.ok(
-      calls.some(
-        ([key, value]) =>
-          key === "proposalView" && value.createLabel === "Retry session",
-      ),
-    );
-    assert.ok(
-      calls.some(
-        ([key, value]) =>
-          key === "error" &&
-          value.includes(
-            sessionErrors.length ? "starting a terminal" : "no terminal",
-          ),
-      ),
-    );
-    assert.equal(
-      calls.some(([key]) => key === "closeDialog"),
-      false,
-    );
-    assert.deepEqual(calls.slice(-3), [
-      ["busy", false],
-      ["sync"],
-      ["disabled", false],
-    ]);
-  }
 });
 
 test("pre-owner command failure reports create error and always restores busy state", async () => {

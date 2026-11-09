@@ -67,6 +67,8 @@ All paths include `/api`; successful responses are generally wrapped in
 | Volatile events | `GET /api/event`, SSE; disconnects can lose events. |
 | Durable events | `GET /api/experimental/session/{sessionID}/log?after=<exclusive-seq>&follow=true`, SSE; experimental cursor replay plus live follow. |
 | Permissions | `GET /api/session/{sessionID}/permission`; reply with `POST /api/session/{sessionID}/permission/{requestID}/reply`, body `{"decision":"once"}` (`always`/`reject` also valid, optional `message`). |
+| Ticket directory access | For ticket sessions, `PATCH /api/session/{sessionID}` supplies session-scoped `external_directory`, `read`, and `edit` allow rules for the canonical Workspace ticket directory. This does not sandbox shell or override an effective hard denial. The v2.1.4 schema and mock HTTP requests support the route; native behavior remains unverified. |
+| Ticket instructions | `PUT /api/experimental/session/{sessionID}/instructions/entries/{key}` with `{"value":"..."}` installs concise routing context on the exact session. This experimental route is not a system-prompt field; native behavior remains unverified. |
 | Forms | `GET /api/session/{sessionID}/form`; inspect `GET .../form/{formID}`; reply `POST .../form/{formID}/reply`, body `{"answer":{"fieldId": value}}`; cancel with `DELETE .../form/{formID}`. |
 
 The canonical v2 session source defines the routes and semantics in

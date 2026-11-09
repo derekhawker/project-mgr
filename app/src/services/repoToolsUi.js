@@ -1,8 +1,8 @@
 import { invokeCommand } from "./commandContract.js";
 
-export function listRepositoryTools(invoke, ownerType, ownerId) {
+export function listRepositoryTools(invoke, ownerType, ownerId, ticketFilename) {
   return invokeCommand(invoke, "repo_tools_list", {
-    request: { ownerType, ownerId },
+    request: { ownerType, ownerId, ...(ticketFilename ? { ticketFilename } : {}) },
   });
 }
 
@@ -13,21 +13,22 @@ export function startRepositoryTool(
   repositoryId,
   kind,
   name = "",
+  ticketFilename,
 ) {
   return invokeCommand(invoke, "repo_tool_terminal_start", {
-    request: { ownerType, ownerId, repositoryId, kind, name },
+    request: { ownerType, ownerId, repositoryId, kind, name, ...(ticketFilename ? { ticketFilename } : {}) },
   });
 }
 
-export function startWorkbenchShell(invoke, ownerType, ownerId) {
+export function startWorkbenchShell(invoke, ownerType, ownerId, ticketFilename) {
   return invokeCommand(invoke, "workbench_shell_terminal_start", {
-    request: { ownerType, ownerId },
+    request: { ownerType, ownerId, ...(ticketFilename ? { ticketFilename } : {}) },
   });
 }
 
-export function launchWorkbenchOsHandoff(invoke, ownerType, ownerId, action) {
+export function launchWorkbenchOsHandoff(invoke, ownerType, ownerId, action, ticketFilename) {
   return invokeCommand(invoke, "workbench_os_handoff", {
-    request: { ownerType, ownerId, action },
+    request: { ownerType, ownerId, action, ...(ticketFilename ? { ticketFilename } : {}) },
   });
 }
 

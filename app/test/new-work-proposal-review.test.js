@@ -31,7 +31,7 @@ test("prepares Workspace review state without changing prompt or reviewed direct
     workType: "workspace",
     title: "Review New Workspace",
     workspaceName: "A workspace",
-    workspaceDirectory: "/planned/a-workspace",
+      workspaceDirectory: "Existing repository",
     originalPrompt: "exact original prompt",
     startingPrompt: "  revised starting prompt  ",
     createLabel: "Create Workspace",

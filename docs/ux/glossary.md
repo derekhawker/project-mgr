@@ -1,9 +1,7 @@
 # UX Glossary
 
-> **Refactor in progress:** The target product model is recorded in
-> [`../workspace-refactor-target.md`](../workspace-refactor-target.md). In that
-> model, Workspace is the only regular work record; Task terminology below is
-> legacy until this glossary is fully updated.
+> **Transition in progress:** The approved ticket-first model and remaining
+> proof are recorded in [`../workspace-ticket-workflow-proposal.md`](../workspace-ticket-workflow-proposal.md).
 
 Use these terms consistently in user-facing copy, UX specifications, and product
 discussions. For workflow behavior beyond the UX vocabulary, see
@@ -11,9 +9,10 @@ discussions. For workflow behavior beyond the UX vocabulary, see
 
 ## Work and context
 
-- **Workspace:** The sole regular work record and a complete unit of work. It
-  may use zero or more repositories and has its own lifecycle. Existing source
-  checkouts stay where they are; Workspace worktrees are separate resources.
+- **Workspace:** A project grouping coupled to one repository. Existing source
+  checkouts stay where they are unless the user chooses otherwise.
+- **Ticket:** A Workspace-owned Markdown work record outside Git. Selection sets
+  context; the separate **Work** action opens or resumes its OpenCode session.
 - **Legacy Task record:** A retained pre-refactor database record, not a target
   product concept or a creation option. Existing archived metadata remains
   internal compatibility data and is not exposed as an in-app destination.
@@ -24,9 +23,8 @@ discussions. For workflow behavior beyond the UX vocabulary, see
   **original prompt** and text prepared for a new session the **starting
   prompt**. A prompt is not itself a product record; Quick Requests retain their
   original prompt as a field on the tracked request.
-- **Repository context:** Catalog repositories proposed for a new Workspace and
-  the repositories associated after confirmation. Show relevant repository
-  context before work begins; it determines Workspace worktrees and sessions.
+- **Repository context:** The single repository associated with a Workspace and
+  used as the working directory for its ticket sessions and tools.
 
 ## OpenCode interaction
 

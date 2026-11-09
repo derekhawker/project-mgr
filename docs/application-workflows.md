@@ -1,5 +1,11 @@
 # Application Workflows
 
+> **Ticket-workflow transition:** The approved single-repository, ticket-first
+> requirements and implementation progress are recorded in
+> [workspace-ticket-workflow-proposal.md](workspace-ticket-workflow-proposal.md).
+> They supersede conflicting regular-Workspace descriptions below; the new
+> workflow remains subject to the proof and validation recorded there.
+
 > **Workspace-only contract:** `workspace-refactor-target.md` is authoritative
 > for regular work. Most detailed sequences below document the former
 > Workspace/Task product and are retained as historical implementation context;

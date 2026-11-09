@@ -215,8 +215,32 @@ export async function invokeBrowserFixture(name, payload = {}) {
             repositoryId: null,
           })),
         quickRequests,
+        workspaceTickets: {},
       };
       break;
+    case "workspace_tickets_list":
+      result = payload.archived ? [] : [{ filename: "example.md", title: "Example ticket", status: "draft", content: "# Example ticket\n\nA fixture ticket for the Workspace." }];
+      break;
+    case "workspace_ticket_creation_start": {
+      const workspace = workspaces.find((item) => item.id === payload.workspaceId);
+      if (!workspace) throw new Error("Workspace was not found");
+      result = { ...makeSession(workspace), openCodeSessionId: `fixture-ticket-creation-${sessions.length}` };
+      sessions.push(result);
+      break;
+    }
+    case "workspace_ticket_work": {
+      const workspace = workspaces.find((item) => item.id === payload.workspaceId);
+      if (!workspace) throw new Error("Workspace was not found");
+      const id = workspace.id === example.id && payload.filename === "example.md"
+        ? `session-${workspace.id}`
+        : `fixture-ticket-work-${workspace.id}-${payload.filename}`;
+      result = sessions.find((item) => item.openCodeSessionId === id);
+      if (!result) {
+        result = { ...makeSession(workspace), openCodeSessionId: id };
+        sessions.push(result);
+      }
+      break;
+    }
     case "repository_catalog":
       result = softDeletedRepositoryIds.has(repository.id) ? [] : [repository];
       break;
@@ -407,10 +431,8 @@ export async function invokeBrowserFixture(name, payload = {}) {
         `fixture-created-${nextWorkspace++}`,
         request.name,
       );
-      const session = makeSession(workspace);
       workspaces.push(workspace);
-      sessions.push(session);
-      result = { workspace, sessions: [session], setup: [], sessionErrors: [] };
+      result = { workspace, sessions: [], setup: [], sessionErrors: [] };
       break;
     }
     case "opencode_session_restore":

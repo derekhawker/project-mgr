@@ -428,6 +428,28 @@ impl Runtime {
             },
         )
     }
+
+    /// Stores durable model-visible context for one exact OpenCode session.
+    pub fn set_instruction_entry(&self, id: &str, key: &str, value: &str) -> Result<(), String> {
+        let id = validate_session_id(id)?;
+        if key.is_empty() || !key.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+            return Err("Invalid OpenCode instruction entry key".into());
+        }
+        let (client, url) = self.client_url()?;
+        set_instruction_entry_at(&client, &url, &id, key, value)
+    }
+
+    /// Permit this session's native file tools to use the Workspace ticket directory.
+    pub fn allow_ticket_directory(&self, id: &str, directory: &Path) -> Result<(), String> {
+        let id = validate_session_id(id)?;
+        let directory = directory.canonicalize().map_err(|e| e.to_string())?;
+        let path = directory.to_str().ok_or("Ticket directory is not valid UTF-8")?;
+        if path.contains(['*', '?']) {
+            return Err("Ticket directory cannot contain permission wildcard characters".into());
+        }
+        let (client, url) = self.client_url()?;
+        allow_directory_at(&client, &url, &id, path)
+    }
     pub fn generate_session_text(&self, id: &str, prompt: &str) -> Result<String, String> {
         let (client, url) = self.client_url()?;
         let response = post_data_value(
@@ -893,6 +915,18 @@ fn post_empty<T: Serialize>(client: &Client, url: &str, body: &T) -> Result<(), 
             .map_err(|e| e.to_string())?,
     )
     .map(|_| ())
+}
+fn put_empty<T: Serialize>(client: &Client, url: &str, body: &T) -> Result<(), String> {
+    checked(client.put(url).json(body).send().map_err(|e| e.to_string())?).map(|_| ())
+}
+fn set_instruction_entry_at(client: &Client, base_url: &str, id: &str, key: &str, value: &str) -> Result<(), String> {
+    put_empty(client, &format!("{base_url}/api/experimental/session/{id}/instructions/entries/{key}"), &json!({"value": value}))
+}
+fn allow_directory_at(client: &Client, base_url: &str, id: &str, path: &str) -> Result<(), String> {
+    let permissions = ["external_directory", "read", "edit"].into_iter().flat_map(|action| {
+        [path.to_owned(), format!("{path}/*")].into_iter().map(move |resource| json!({"action": action, "resource": resource, "effect": "allow"}))
+    }).collect::<Vec<_>>();
+    checked(client.patch(format!("{base_url}/api/session/{id}")).json(&json!({"permissions": permissions})).send().map_err(|e| e.to_string())?).map(|_| ())
 }
 fn delete_empty(client: &Client, url: &str) -> Result<(), String> {
     checked(client.delete(url).send().map_err(|e| e.to_string())?).map(|_| ())
@@ -1672,6 +1706,37 @@ mod tests {
         )
         .unwrap();
         delete_empty(&client, &format!("{base}/api/session/ses_1/form/f1")).unwrap();
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn ticket_session_instruction_and_directory_permissions_use_exact_routes_and_payloads() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = thread::spawn(move || {
+            for (method, path, expected_body, status) in [
+                ("PUT", "/api/experimental/session/ses_ticket-42/instructions/entries/workspace-ticket", r#"{"value":"Keep this ticket context."}"#, "204 No Content"),
+                ("PATCH", "/api/session/ses_ticket-42", r#"{"permissions":[{"action":"external_directory","effect":"allow","resource":"/tmp/ticket"},{"action":"external_directory","effect":"allow","resource":"/tmp/ticket/*"},{"action":"read","effect":"allow","resource":"/tmp/ticket"},{"action":"read","effect":"allow","resource":"/tmp/ticket/*"},{"action":"edit","effect":"allow","resource":"/tmp/ticket"},{"action":"edit","effect":"allow","resource":"/tmp/ticket/*"}]}"#, "403 Forbidden"),
+            ] {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                let mut line = String::new(); reader.read_line(&mut line).unwrap();
+                assert_eq!(line.split_whitespace().take(2).collect::<Vec<_>>(), [method, path]);
+                let mut headers = String::new();
+                loop { line.clear(); reader.read_line(&mut line).unwrap(); if line == "\r\n" { break; } headers.push_str(&line); }
+                let length = headers.lines().find_map(|h| h.to_ascii_lowercase().strip_prefix("content-length:").and_then(|n| n.trim().parse().ok())).unwrap_or(0);
+                let mut body = vec![0; length]; reader.read_exact(&mut body).unwrap();
+                assert_eq!(String::from_utf8(body).unwrap(), expected_body);
+                let response = format!("HTTP/1.1 {status}\r\nContent-Length: 20\r\nConnection: close\r\n\r\nsecret echoed body!");
+                stream.write_all(response.as_bytes()).unwrap();
+            }
+        });
+        let client = api_client("secret").unwrap();
+        let base = format!("http://{address}");
+        set_instruction_entry_at(&client, &base, "ses_ticket-42", "workspace-ticket", "Keep this ticket context.").unwrap();
+        let error = allow_directory_at(&client, &base, "ses_ticket-42", "/tmp/ticket").unwrap_err();
+        assert!(error.contains("HTTP 403"));
+        assert!(!error.contains("secret echoed"));
         server.join().unwrap();
     }
 

@@ -15,8 +15,9 @@
 ## UX Terms
 
 - For UI names and locations, consult `docs/ux/glossary.md` and the screen map in `docs/ux/index.md` before asking the user to identify an area.
-- **Workspace:** A project grouping that knows about zero or more repositories and may contain zero or more tasks. Its repository associations are working context; existing repositories stay where they are unless the user explicitly chooses otherwise.
-- **Task:** An optional, independently progressing unit of work nested under one workspace. It may use one or more repositories associated with that workspace; managed worktrees go under `<task-home>/worktrees/`.
+- **Workspace:** A project grouping coupled to one repository. Existing repositories stay where they are unless the user explicitly chooses otherwise. The ticket-first transition and its remaining proof are tracked in `docs/workspace-ticket-workflow-proposal.md`.
+- **Ticket:** A Workspace-owned Markdown work record outside Git. Selecting it establishes context; **Work** opens or resumes its OpenCode session.
+- **Task:** A retained legacy record, distinct from a Workspace ticket; managed legacy worktrees live under `<task-home>/worktrees/`.
 - **Quick Request:** A named one-off tracked item under the special Quick Requests workspace. It is important work with its own status and lifecycle, not a generic label for a user's text or an OpenCode interaction.
 - **Prompt:** Text supplied to OpenCode. The initial user text is the **original prompt**; text prepared for a new session is the **starting prompt**. A prompt is not a product record.
 - **Interactive terminal:** The user's live interface to an OpenCode session or interactive tool process. Users watch progress and handle follow-ups, approvals, input, and changes there. The terminal is not an app-rendered transcript or a background-only process.

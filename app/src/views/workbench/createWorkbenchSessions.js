@@ -2,6 +2,7 @@ import { createSignal } from "solid-js";
 import { invokeCommand } from "../../services/commandContract.js";
 import { SessionTabList } from "./SessionTabList.jsx";
 import { PendingInputList } from "./PendingInputList.jsx";
+import { scopedSessionOwnerKey, sessionInTicketScope } from "./ticketSessionScope.js";
 import {
   ownerSessionTabState,
   restoreOwnerSessionTabs,
@@ -48,6 +49,7 @@ export function createWorkbenchSessions({
   setCommandResultMessage,
   setSessionStatus,
   notice,
+  getSessionScope = () => undefined,
 }) {
   const terminalSurfaces = createTerminalSurfaceRegistry();
   const [sessionTabEntries, setSessionTabEntries] = createSignal([]);
@@ -62,6 +64,8 @@ export function createWorkbenchSessions({
   const installStarted = new Set();
   const installTerminalKeys = new Map();
   let terminalViews;
+  const selectionKey = (ownerKey) => scopedSessionOwnerKey(ownerKey, getSessionScope());
+  const inCurrentScope = (entry) => sessionInTicketScope(entry, getSessionScope());
 
   function addSessionTab(entry) {
     setSessionTabEntries((entries) =>
@@ -109,19 +113,20 @@ export function createWorkbenchSessions({
       ownerKey === `task:${selectedQuickRequest().id}`,
     );
     const state = ownerSessionTabState(
-      sessionTabEntries(),
+      sessionTabEntries().filter(inCurrentScope),
       ownerKey,
-      selectedSessionByOwner.get(ownerKey),
+      selectedSessionByOwner.get(selectionKey(ownerKey)),
       hideTabs,
     );
     const selectedId = state.selectedId;
     if (selectedId) {
-      selectedSessionByOwner.set(ownerKey, selectedId);
+      selectedSessionByOwner.set(selectionKey(ownerKey), selectedId);
       void getRuntime().then((runtime) => {
         if (!appLifetime.disposed) runtime?.select(selectedId, { focus });
       });
     }
-    setSessionTabEntries(state.entries);
+    const byId = new Map(state.entries.map((entry) => [entry.sessionId, entry]));
+    setSessionTabEntries((entries) => entries.map((entry) => byId.get(entry.sessionId) || { ...entry, visible: false, selected: false }));
     if (selectedId && sessionOwners.get(selectedId) === ownerKey)
       terminalSurfaces.show(selectedId);
     else terminalSurfaces.hide();
@@ -200,8 +205,8 @@ export function createWorkbenchSessions({
     sessionOwners.delete(sessionId);
     repositoryToolTerminals.delete(sessionId);
     releaseInstall(sessionId);
-    if (selectedSessionByOwner.get(ownerKey) === sessionId)
-      selectedSessionByOwner.delete(ownerKey);
+    if (selectedSessionByOwner.get(selectionKey(ownerKey)) === sessionId)
+      selectedSessionByOwner.delete(selectionKey(ownerKey));
     const selectedId = syncOwnerSessions({ focus: false });
     if (ownerKey === selectedOwnerKey() && !selectedId) setSessionStatus("");
   }
@@ -287,6 +292,7 @@ export function createWorkbenchSessions({
           addSessionTab({
             sessionId,
             ownerKey: ownerKey || "",
+            ticketScope: ownerKey?.startsWith("workspace:") ? getSessionScope() : null,
             label,
             closeable: !proposal,
             restartable: !proposal,
@@ -296,7 +302,7 @@ export function createWorkbenchSessions({
                 event?.currentTarget?.getAttribute("role") !== "tab";
               showOwnerTerminal();
               runtime.select(sessionId, { focus });
-              selectedSessionByOwner.set(ownerKey, sessionId);
+              selectedSessionByOwner.set(selectionKey(ownerKey), sessionId);
               syncOwnerSessions({ focus });
               if (proposal) setSessionStatus("Proposal session · interactive");
               else void refreshSessionEvidence(sessionId);
@@ -312,7 +318,7 @@ export function createWorkbenchSessions({
         return;
       }
       terminalSurfaces.show(sessionId);
-      if (ownerKey) selectedSessionByOwner.set(ownerKey, sessionId);
+      if (ownerKey) selectedSessionByOwner.set(selectionKey(ownerKey), sessionId);
       if (proposal) setSessionStatus("Proposal session · interactive");
       else await refreshSessionEvidence(sessionId);
       syncOwnerSessions();
@@ -357,8 +363,8 @@ export function createWorkbenchSessions({
     removeSessionTab(sessionId);
     openSessions.delete(sessionId);
     sessionOwners.delete(sessionId);
-    if (ownerKey && selectedSessionByOwner.get(ownerKey) === sessionId)
-      selectedSessionByOwner.delete(ownerKey);
+    if (ownerKey && selectedSessionByOwner.get(selectionKey(ownerKey)) === sessionId)
+      selectedSessionByOwner.delete(selectionKey(ownerKey));
     return true;
   }
 
@@ -381,6 +387,7 @@ export function createWorkbenchSessions({
       addSessionTab({
         sessionId,
         ownerKey,
+        ticketScope: ownerKey.startsWith("workspace:") ? getSessionScope() : null,
         label,
         closeable: true,
         restartable: false,
@@ -388,12 +395,12 @@ export function createWorkbenchSessions({
           const focus = event?.currentTarget?.getAttribute("role") !== "tab";
           showOwnerTerminal();
           runtime.select(sessionId, { focus });
-          selectedSessionByOwner.set(ownerKey, sessionId);
+          selectedSessionByOwner.set(selectionKey(ownerKey), sessionId);
           syncOwnerSessions({ focus });
         },
         onClose: () => void closeWorkbenchSession(sessionId),
       });
-      selectedSessionByOwner.set(ownerKey, sessionId);
+      selectedSessionByOwner.set(selectionKey(ownerKey), sessionId);
       syncOwnerSessions();
       return started;
     } catch (error) {

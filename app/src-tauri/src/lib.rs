@@ -26,6 +26,7 @@ pub mod task_setup;
 pub mod terminal;
 pub mod workspace_coordinator;
 pub mod workspace_setup;
+pub mod workspace_tickets;
 
 use management::ManagementStore;
 
@@ -250,6 +251,9 @@ pub fn run() {
             quick_request_expire,
             quick_request_promote,
             workspace_navigation,
+            workspace_tickets_list,
+            workspace_ticket_creation_start,
+            workspace_ticket_work,
             change_review_load,
             change_review_full_diff,
             presentation_preferences_get,
@@ -305,6 +309,53 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("failed to run OpenCode Project Manager");
+}
+
+#[tauri::command]
+async fn workspace_ticket_work(app: AppHandle, workspace_id: String, filename: String) -> Result<management::SessionRecord, String> {
+    run_ports_work(move || {
+        let store = app.state::<ManagementStore>();
+        let runtime = app.state::<opencode::Runtime>();
+        let workspace = store.get_workspace(&workspace_id).map_err(|e| e.to_string())?.ok_or("Workspace was not found")?;
+        let bindings = store.list_workspace_repository_bindings(&workspace.id).map_err(|e| e.to_string())?;
+        if bindings.len() != 1 { return Err("Workspace must have exactly one associated repository to work on a ticket".into()); }
+        let app_data = app.path().app_data_dir().map_err(|e| e.to_string())?;
+        let directory = workspace_tickets::workspace_ticket_dir(&app_data, &workspace.slug)?;
+        let mut adapter = TicketWorkAdapter { app: app.clone(), store: &store, runtime: &runtime, workspace_id: &workspace.id };
+        workspace_tickets::work(&directory, std::path::Path::new(&bindings[0].checkout_path), &workspace.name, &filename, &mut adapter)
+    }).await.map_err(|e| e.to_string())
+}
+
+struct TicketWorkAdapter<'a> {
+    app: AppHandle,
+    store: &'a ManagementStore,
+    runtime: &'a opencode::Runtime,
+    workspace_id: &'a str,
+}
+
+impl workspace_tickets::TicketWorkRuntime for TicketWorkAdapter<'_> {
+    type Session = management::SessionRecord;
+    fn exists(&mut self, id: &str) -> Result<bool, String> { self.runtime.session_exists(id) }
+    fn create(&mut self, title: &str, repository: &std::path::Path) -> Result<String, String> {
+        let models = self.runtime.enabled_models()?;
+        let selected = models.iter().find(|m| m.enabled).ok_or("No enabled OpenCode model is available")?;
+        let model = opencode::ModelReference { provider_id: selected.provider_id.clone(), id: selected.id.clone() };
+        session_id_from_response(&self.runtime.create_session(title, repository, model)?)
+    }
+    fn prepare(&mut self, id: &str, directory: &std::path::Path, instructions: &str) -> Result<(), String> {
+        self.runtime.allow_ticket_directory(id, directory)?;
+        self.runtime.set_instruction_entry(id, "workspace-ticket", instructions)
+    }
+    fn attach(&mut self, id: &str, repository: &std::path::Path) -> Result<Self::Session, String> {
+        let new_record = management::NewSession { open_code_session_id: id.to_owned(), owner: management::SessionOwner::Workspace(self.workspace_id.to_owned()), directory: repository.to_string_lossy().into_owned(), last_known_status: "starting".into(), created_at: now_millis() };
+        let session = match self.store.get_session(id).map_err(|e| e.to_string())? {
+            Some(existing) if existing.directory == new_record.directory && existing.owner == new_record.owner => existing,
+            Some(_) => return Err("OpenCode session is already associated with a different owner or working directory".into()),
+            None => self.store.create_session(&new_record).map_err(|e| e.to_string())?,
+        };
+        self.runtime.restore_terminal(self.app.clone(), id, repository)?;
+        Ok(session)
+    }
 }
 
 #[tauri::command]
@@ -460,10 +511,16 @@ struct WorkspaceNavigation {
     workspace_repositories: Vec<management::WorkspaceRepositoryBinding>,
     workspace_session_contexts: Vec<management::WorkspaceSessionContext>,
     quick_requests: Vec<management::QuickRequestRecord>,
+    workspace_tickets: HashMap<String, Vec<workspace_tickets::Ticket>>,
 }
 
 #[tauri::command]
-fn workspace_navigation(store: State<'_, ManagementStore>) -> Result<WorkspaceNavigation, String> {
+async fn workspace_navigation(app: AppHandle) -> Result<WorkspaceNavigation, String> {
+    run_ports_work(move || workspace_navigation_inner(&app)).await
+}
+
+fn workspace_navigation_inner(app: &AppHandle) -> Result<WorkspaceNavigation, String> {
+    let store = app.state::<ManagementStore>();
     let workspaces = store.list_workspaces().map_err(|e| e.to_string())?;
     let mut tasks = Vec::new();
     let mut sessions = Vec::new();
@@ -498,6 +555,12 @@ fn workspace_navigation(store: State<'_, ManagementStore>) -> Result<WorkspaceNa
     let quick_requests = store
         .list_quick_requests(false)
         .map_err(|e| e.to_string())?;
+    let app_data = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let mut workspace_tickets = HashMap::new();
+    for workspace in &workspaces {
+        let directory = workspace_tickets::workspace_ticket_dir(&app_data, &workspace.slug)?;
+        workspace_tickets.insert(workspace.id.clone(), workspace_tickets::list(&directory)?);
+    }
     Ok(WorkspaceNavigation {
         workspaces,
         tasks,
@@ -505,7 +568,69 @@ fn workspace_navigation(store: State<'_, ManagementStore>) -> Result<WorkspaceNa
         workspace_repositories,
         workspace_session_contexts,
         quick_requests,
+        workspace_tickets,
     })
+}
+
+#[tauri::command]
+async fn workspace_tickets_list(
+    app: AppHandle,
+    workspace_id: String,
+    archived: Option<bool>,
+) -> Result<Vec<workspace_tickets::Ticket>, String> {
+    run_ports_work(move || {
+    let store = app.state::<ManagementStore>();
+    let workspace = store.get_workspace(&workspace_id).map_err(|e| e.to_string())?
+        .ok_or_else(|| "Workspace was not found".to_owned())?;
+    let app_data = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let directory = workspace_tickets::workspace_ticket_dir(&app_data, &workspace.slug)?;
+    if archived.unwrap_or(false) { workspace_tickets::list_archived(&directory) }
+    else { workspace_tickets::list(&directory) }
+    }).await
+}
+
+#[tauri::command]
+async fn workspace_ticket_creation_start(
+    app: AppHandle,
+    workspace_id: String,
+    model: ModelCommand,
+) -> Result<management::SessionRecord, String> {
+    static LIMIT: std::sync::OnceLock<std::sync::Arc<tokio::sync::Semaphore>> =
+        std::sync::OnceLock::new();
+    let limit = LIMIT.get_or_init(|| std::sync::Arc::new(tokio::sync::Semaphore::new(2)));
+    let permit = limit.clone().acquire_owned().await.map_err(|e| e.to_string())?;
+    tauri::async_runtime::spawn_blocking(move || {
+    let _permit = permit;
+    let runtime = app.state::<opencode::Runtime>();
+    let store = app.state::<ManagementStore>();
+    let workspace = store.get_workspace(&workspace_id).map_err(|e| e.to_string())?
+        .ok_or_else(|| "Workspace was not found".to_owned())?;
+    let bindings = store.list_workspace_repository_bindings(&workspace.id).map_err(|e| e.to_string())?;
+    if bindings.len() != 1 {
+        return Err("This Workspace must have exactly one associated repository before creating a ticket.".into());
+    }
+    let directory = PathBuf::from(&bindings[0].checkout_path);
+    if !directory.is_dir() { return Err(format!("Workspace repository is unavailable: {}", directory.display())); }
+    let app_data = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let ticket_dir = workspace_tickets::workspace_ticket_dir(&app_data, &workspace.slug)?;
+    std::fs::create_dir_all(&ticket_dir).map_err(|e| format!("Could not create Workspace ticket directory: {e}"))?;
+    let canonical_ticket_dir = ticket_dir.canonicalize().map_err(|e| e.to_string())?;
+    let canonical_repository = directory.canonicalize().map_err(|e| e.to_string())?;
+    if canonical_ticket_dir.starts_with(&canonical_repository) {
+        return Err("Workspace ticket storage must be outside the repository.".into());
+    }
+    let response = runtime.create_session(&format!("{} ticket creation", workspace.name), &directory, model.clone().runtime_model())?;
+    let id = session_id_from_response(&response)?;
+    runtime.allow_ticket_directory(&id, &canonical_ticket_dir)?;
+    let session = store.create_session_with_model(&management::NewSession {
+        open_code_session_id: id.clone(), owner: management::SessionOwner::Workspace(workspace.id),
+        directory: directory.to_string_lossy().into_owned(), last_known_status: "starting".into(), created_at: now_millis(),
+    }, &model_key(&model)).map_err(|e| e.to_string())?;
+    let instructions = format!("Create or clarify a Workspace ticket following the globally available ticket-management skill. Repository root: {}. Canonical Workspace ticket directory (outside Git): {}. Save the resulting ticket as a new Markdown file with status `draft` in that directory. Do not create ticket records elsewhere.", canonical_repository.display(), canonical_ticket_dir.display());
+    runtime.set_instruction_entry(&id, "workspace-ticket-creation", &instructions)?;
+    runtime.attach_terminal(app.clone(), &id, &directory)?;
+    Ok(session)
+    }).await.map_err(|e| e.to_string())?
 }
 
 #[derive(Debug, Deserialize)]
@@ -513,6 +638,13 @@ fn workspace_navigation(store: State<'_, ManagementStore>) -> Result<WorkspaceNa
 struct OwnerContextRequest {
     owner_type: String,
     owner_id: String,
+    ticket_filename: Option<String>,
+}
+
+fn require_ticket_context(app: &AppHandle, store: &ManagementStore, owner_type: &str, owner_id: &str, filename: Option<&str>, repository_id: Option<&str>) -> Result<(), String> {
+    if owner_type != "workspace" { return Ok(()); }
+    let app_data = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    workspace_tickets::validate_workbench_context(store, &app_data, owner_type, owner_id, filename, repository_id)
 }
 
 #[tauri::command]
@@ -564,6 +696,7 @@ async fn change_review_load(
 ) -> Result<Vec<change_review::ReviewRepository>, String> {
     run_review_work(move || {
         let store = app.state::<ManagementStore>();
+        require_ticket_context(&app, &store, &request.owner_type, &request.owner_id, request.ticket_filename.as_deref(), None)?;
         change_review::load_for_owner(&store, &request.owner_type, &request.owner_id)
     })
     .await
@@ -576,6 +709,7 @@ struct ChangeReviewFullDiffRequest {
     owner_id: String,
     repository_id: String,
     path: String,
+    ticket_filename: Option<String>,
 }
 
 #[tauri::command]
@@ -585,6 +719,7 @@ async fn change_review_full_diff(
 ) -> Result<String, String> {
     run_review_work(move || {
         let store = app.state::<ManagementStore>();
+        require_ticket_context(&app, &store, &request.owner_type, &request.owner_id, request.ticket_filename.as_deref(), Some(&request.repository_id))?;
         change_review::full_diff_for_owner(
             &store,
             &request.owner_type,
@@ -597,11 +732,15 @@ async fn change_review_full_diff(
 }
 
 #[tauri::command]
-fn docs_list(
+async fn docs_list(
     request: OwnerContextRequest,
-    store: State<'_, ManagementStore>,
+    app: AppHandle,
 ) -> Result<Vec<docs_reader::DocumentPath>, String> {
+    run_ports_work(move || {
+    let store = app.state::<ManagementStore>();
+    require_ticket_context(&app, &store, &request.owner_type, &request.owner_id, request.ticket_filename.as_deref(), None)?;
     docs_reader::list_for_owner(&store, &request.owner_type, &request.owner_id)
+    }).await
 }
 
 #[derive(Debug, Deserialize)]
@@ -611,13 +750,17 @@ struct DocsReadRequest {
     owner_id: String,
     path: String,
     repository_id: Option<String>,
+    ticket_filename: Option<String>,
 }
 
 #[tauri::command]
-fn docs_read(
+async fn docs_read(
     request: DocsReadRequest,
-    store: State<'_, ManagementStore>,
+    app: AppHandle,
 ) -> Result<docs_reader::DocumentContent, String> {
+    run_ports_work(move || {
+    let store = app.state::<ManagementStore>();
+    require_ticket_context(&app, &store, &request.owner_type, &request.owner_id, request.ticket_filename.as_deref(), request.repository_id.as_deref())?;
     docs_reader::read_for_owner(
         &store,
         &request.owner_type,
@@ -625,6 +768,7 @@ fn docs_read(
         &request.path,
         request.repository_id.as_deref(),
     )
+    }).await
 }
 
 #[derive(Debug, Deserialize)]
@@ -632,14 +776,19 @@ fn docs_read(
 struct RepositoryToolsRequest {
     owner_type: String,
     owner_id: String,
+    ticket_filename: Option<String>,
 }
 
 #[tauri::command]
-fn repo_tools_list(
+async fn repo_tools_list(
     request: RepositoryToolsRequest,
-    store: State<'_, ManagementStore>,
+    app: AppHandle,
 ) -> Result<Vec<repo_tools::RepositoryToolGroup>, String> {
+    run_ports_work(move || {
+    let store = app.state::<ManagementStore>();
+    require_ticket_context(&app, &store, &request.owner_type, &request.owner_id, request.ticket_filename.as_deref(), None)?;
     repo_tools::list_for_owner(&store, &request.owner_type, &request.owner_id)
+    }).await
 }
 
 #[derive(Debug, Deserialize)]
@@ -650,6 +799,7 @@ struct RepositoryToolStartRequest {
     repository_id: String,
     kind: String,
     name: String,
+    ticket_filename: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -664,12 +814,14 @@ static NEXT_REPOSITORY_TOOL_TERMINAL: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(1);
 
 #[tauri::command]
-fn repo_tool_terminal_start(
+async fn repo_tool_terminal_start(
     app: AppHandle,
     request: RepositoryToolStartRequest,
-    runtime: State<'_, opencode::Runtime>,
-    store: State<'_, ManagementStore>,
 ) -> Result<RepositoryToolTerminal, String> {
+    run_ports_work(move || {
+    let store = app.state::<ManagementStore>();
+    let runtime = app.state::<opencode::Runtime>();
+    require_ticket_context(&app, &store, &request.owner_type, &request.owner_id, request.ticket_filename.as_deref(), Some(&request.repository_id))?;
     let launch = repo_tools::launch_for_owner(
         &store,
         &request.owner_type,
@@ -683,7 +835,7 @@ fn repo_tool_terminal_start(
         NEXT_REPOSITORY_TOOL_TERMINAL.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     );
     runtime.start_repository_tool(
-        app,
+        app.clone(),
         &terminal_id,
         &launch.executable,
         &launch.args,
@@ -694,6 +846,7 @@ fn repo_tool_terminal_start(
         label: launch.label,
         directory: launch.directory.display().to_string(),
     })
+    }).await
 }
 
 #[tauri::command]
@@ -736,6 +889,7 @@ fn repo_tool_terminal_cleanup(
 struct WorkbenchOwnerRequest {
     owner_type: String,
     owner_id: String,
+    ticket_filename: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -750,12 +904,14 @@ static NEXT_WORKBENCH_SHELL_TERMINAL: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(1);
 
 #[tauri::command]
-fn workbench_shell_terminal_start(
+async fn workbench_shell_terminal_start(
     app: AppHandle,
     request: WorkbenchOwnerRequest,
-    runtime: State<'_, opencode::Runtime>,
-    store: State<'_, ManagementStore>,
 ) -> Result<WorkbenchShellTerminal, String> {
+    run_ports_work(move || {
+    let store = app.state::<ManagementStore>();
+    let runtime = app.state::<opencode::Runtime>();
+    require_ticket_context(&app, &store, &request.owner_type, &request.owner_id, request.ticket_filename.as_deref(), None)?;
     let directory = os_handoff::owner_home(&store, &request.owner_type, &request.owner_id)?;
     let shell = if cfg!(target_os = "windows") {
         std::env::var_os("COMSPEC")
@@ -771,12 +927,13 @@ fn workbench_shell_terminal_start(
         "workbench-shell-{}",
         NEXT_WORKBENCH_SHELL_TERMINAL.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     );
-    runtime.start_repository_tool(app, &terminal_id, &shell, &[], &directory)?;
+    runtime.start_repository_tool(app.clone(), &terminal_id, &shell, &[], &directory)?;
     Ok(WorkbenchShellTerminal {
         terminal_id,
         label: "Terminal".into(),
         directory: directory.display().to_string(),
     })
+    }).await
 }
 
 #[derive(Debug, Deserialize)]
@@ -785,13 +942,17 @@ struct WorkbenchOsHandoffRequest {
     owner_type: String,
     owner_id: String,
     action: String,
+    ticket_filename: Option<String>,
 }
 
 #[tauri::command]
-fn workbench_os_handoff(
+async fn workbench_os_handoff(
     request: WorkbenchOsHandoffRequest,
-    store: State<'_, ManagementStore>,
+    app: AppHandle,
 ) -> Result<(), String> {
+    run_ports_work(move || {
+    let store = app.state::<ManagementStore>();
+    require_ticket_context(&app, &store, &request.owner_type, &request.owner_id, request.ticket_filename.as_deref(), None)?;
     let directory = os_handoff::owner_home(&store, &request.owner_type, &request.owner_id)?;
     let launch = os_handoff::external_launch(&request.action, &directory, os_handoff::platform())?;
     let child = os_handoff::spawn_external(&launch)?;
@@ -800,6 +961,7 @@ fn workbench_os_handoff(
         let _ = child.wait();
     });
     Ok(())
+    }).await
 }
 
 #[derive(Debug, Deserialize)]
@@ -1124,7 +1286,7 @@ fn new_work_proposal_run(
         let raw = runtime.generate_session_text(&request.session_id, &prompt)?;
         serde_json::from_str(&raw).map_err(|error| format!("OpenCode returned an invalid proposal: {error}"))?
     };
-    let mut parsed = NewWorkProposal {
+    let parsed = NewWorkProposal {
         schema_version: extraction.schema_version,
         work_type: extraction.work_type,
         workspace: extraction.workspace,
@@ -1141,40 +1303,6 @@ fn new_work_proposal_run(
     }
     if requested_work_type == "quick_request" {
         validate_quick_request_resolution(&parsed)?;
-    }
-    if parsed.work_type == "workspace" {
-        let workspace = parsed
-            .workspace
-            .as_ref()
-            .ok_or_else(|| "Workspace proposal details are missing.".to_owned())?;
-        let name = workspace
-            .name
-            .as_deref()
-            .ok_or_else(|| "Workspace proposal name is missing.".to_owned())?;
-        let root = store
-            .resolved_project_home_root()
-            .map_err(|error| error.to_string())?;
-        let slug = store
-            .suggest_workspace_slug(name)
-            .map_err(|error| error.to_string())?;
-        let home = root.join(slug);
-        let facts = parsed
-            .repositories
-            .iter()
-            .map(|entry| {
-                let repository = store
-                    .get_repository(&entry.repository_id)
-                    .map_err(|error| error.to_string())?
-                    .ok_or_else(|| {
-                        format!(
-                            "Repository {} is no longer in the catalog.",
-                            entry.repository_id
-                        )
-                    })?;
-                workspace_setup::inspect_repository_preflight(&repository)
-            })
-            .collect::<Result<Vec<_>, String>>()?;
-        parsed.setup_plan = Some(workspace_setup::plan_workspace_setup(&home, facts)?);
     }
     if let Ok(mut sessions) = state.proposal_sessions.lock() {
         if let Some(session) = sessions.get_mut(&request.session_id) {
@@ -1734,24 +1862,28 @@ fn task_registration_results(
 }
 
 #[tauri::command]
-fn workspace_create(
-    store: State<'_, ManagementStore>,
+async fn workspace_create(
+    app: AppHandle,
     request: WorkspaceCreateCommand,
 ) -> Result<management::Workspace, String> {
+    run_ports_work(move || {
+    let store = app.state::<ManagementStore>();
     let name = request.name.trim().to_owned();
     let slug = store
         .suggest_workspace_slug(&name)
         .map_err(|e| e.to_string())?;
     store
-        .create_workspace(&management::NewWorkspace {
+        .create_single_repository_workspace(&management::NewWorkspace {
             id: format!("workspace-{}", now_millis()),
             name,
             slug,
             description: request.description.filter(|v| !v.trim().is_empty()),
             kind: management::WorkspaceKind::Regular,
             created_at: now_millis(),
-        })
+        }, None)
+        .map(|(workspace, _)| workspace)
         .map_err(|e| e.to_string())
+    }).await
 }
 
 #[derive(Debug, Deserialize)]
@@ -1772,10 +1904,43 @@ struct WorkspaceCreateInitializedResponse {
     session_errors: Vec<String>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct TicketWorkspaceCreateRequest {
+    name: String,
+    description: Option<String>,
+    repository_id: Option<String>,
+}
+
+#[tauri::command]
+async fn workspace_create_initialized(
+    app: AppHandle,
+    request: TicketWorkspaceCreateRequest,
+) -> Result<WorkspaceCreateInitializedResponse, String> {
+    run_ports_work(move || {
+        let store = app.state::<ManagementStore>();
+        let name = request.name.trim().to_owned();
+        let slug = store.suggest_workspace_slug(&name).map_err(|e| e.to_string())?;
+        let (workspace, _) = store.create_single_repository_workspace(
+            &management::NewWorkspace {
+                id: format!("workspace-{}", request_id()),
+                name,
+                slug,
+                description: request.description.filter(|s| !s.trim().is_empty()),
+                kind: management::WorkspaceKind::Regular,
+                created_at: now_millis(),
+            },
+            request.repository_id.as_deref(),
+        ).map_err(|e| e.to_string())?;
+        Ok(WorkspaceCreateInitializedResponse {
+            workspace, sessions: Vec::new(), setup: Vec::new(), session_errors: Vec::new(),
+        })
+    }).await
+}
+
 /// Creates a workspace, provisions its reviewed repository clones, then starts
 /// the first OpenCode session only after the repository paths are stable.
-#[tauri::command]
-fn workspace_create_initialized(
+fn workspace_create_initialized_legacy(
     app: AppHandle,
     runtime: State<'_, opencode::Runtime>,
     store: State<'_, ManagementStore>,
@@ -2584,6 +2749,9 @@ fn repository_attach(
     {
         return Err("Repositories can only be attached to an active regular workspace.".into());
     }
+    if !store.list_workspace_repository_bindings(&workspace.id).map_err(|e| e.to_string())?.is_empty() {
+        return Err("A Workspace already has its one repository.".into());
+    }
     let repository = store
         .list_repositories()
         .map_err(|error| error.to_string())?
@@ -2713,6 +2881,9 @@ fn workspace_session_create(
         || workspace.status != management::WorkspaceStatus::Active
     {
         return Err("Workspace is not active.".into());
+    }
+    if workspace.kind == management::WorkspaceKind::Regular {
+        return Err("Select a ticket and use Work to start its session.".into());
     }
     let bindings = store
         .list_workspace_repository_bindings(&workspace.id)

@@ -1,11 +1,15 @@
 import "@xterm/xterm/css/xterm.css";
 import { invokeCommand } from "./services/commandContract.js";
+import { withSelectedTicketContext } from "./services/workspaceTicketCommandContext.js";
 import { listen as tauriListen } from "@tauri-apps/api/event";
 import { open as tauriOpenDirectoryPicker } from "@tauri-apps/plugin-dialog";
 import {
   loadApplicationShell,
   loadWorkspaceNavigation,
   createWorkspaceSession,
+  startWorkspaceTicketCreation,
+  listWorkspaceTickets,
+  workOnWorkspaceTicket,
   submitNewWorkStartingPrompt,
   formatWorkspaceError,
   completeWorkspace,
@@ -42,6 +46,7 @@ import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import { createApplicationLifetime } from "./application/applicationLifetime.js";
 import { WorkspaceNavigation } from "./views/workbench/WorkspaceNavigation.jsx";
+import { WorkspaceTicketViewer } from "./views/workbench/WorkspaceTicketViewer.jsx";
 import { ChangeReviewPanel } from "./views/change-review/ChangeReviewPanel.jsx";
 import { DocsPane } from "./views/docs/DocsPane.jsx";
 import { RepositoryToolsMenu } from "./views/repository-tools/RepositoryToolsMenu.jsx";
@@ -103,6 +108,7 @@ const rightContent = () =>
     directoriesPage: directories.page,
     portsPage: () => PortsPage(ports),
     noSelection,
+    ticketViewer: workspaceTicketViewer,
     docsPane,
     workspaceOwnerPanel,
   });
@@ -116,6 +122,7 @@ const invoke = (name, payload) => {
     return Promise.reject(
       new Error("Application presentation has been disposed."),
     );
+  payload = withSelectedTicketContext(name, payload, selectedTicketFilename());
   return payload === undefined
     ? invokeCommand(name)
     : invokeCommand(name, payload);
@@ -249,6 +256,83 @@ let navigationData = {
   workspaceRepositories: [],
   workspaceSessionContexts: [],
 };
+const [ticketViewerVisible, setTicketViewerVisible] = createSignal(false);
+const [ticketItems, setTicketItems] = createSignal([]);
+const [ticketLoading, setTicketLoading] = createSignal(false);
+const [ticketWorking, setTicketWorking] = createSignal(false);
+const [ticketError, setTicketError] = createSignal("");
+const [selectedTicketFilename, setSelectedTicketFilename] = createSignal(null);
+const [ticketSessionScope, setTicketSessionScope] = createSignal(null);
+const [ticketArchived, setTicketArchived] = createSignal(false);
+async function refreshTicketList(archived = ticketArchived()) {
+  const workspaceId = selectedWorkspace?.id;
+  if (!workspaceId) return;
+  setTicketLoading(true);
+  setTicketError("");
+  try {
+    const tickets = await listWorkspaceTickets(invoke, workspaceId, archived);
+    if (selectedWorkspace?.id === workspaceId && ticketArchived() === archived) setTicketItems(tickets);
+  } catch (error) {
+    setTicketError(String(error));
+  } finally {
+    setTicketLoading(false);
+  }
+}
+const workspaceTicketViewer = () => ticketViewerVisible() && WorkspaceTicketViewer({
+  tickets: ticketItems,
+  selectedFilename: selectedTicketFilename,
+  loading: ticketLoading,
+  archived: ticketArchived,
+  working: ticketWorking,
+  error: ticketError,
+  onSelect: (filename) => {
+    setSelectedTicketFilename(filename);
+    setTicketSessionScope(filename);
+    sessions.hide();
+    setWorkbenchVisible(Boolean(filename) && !ticketArchived());
+    setSelectedOwnerVisible(false);
+    syncOwnerSessions({ focus: false });
+    syncChangeReviewAvailability();
+    syncRepositoryToolsAvailability();
+    if (filename && !ticketArchived()) void refreshDocsAvailability();
+    else setSelectedOwnerVisible(false);
+  },
+  onArchiveChange: (archived) => { setTicketArchived(archived); void refreshTicketList(archived); },
+  onRefresh: () => void refreshTicketList(),
+  onWork: async (filename) => {
+    if (ticketWorking() || !selectedWorkspace) return;
+    const workspaceId = selectedWorkspace.id;
+    setTicketWorking(true);
+    setTicketError("");
+    try {
+      const session = await workOnWorkspaceTicket(invoke, workspaceId, filename);
+      await refreshNavigation();
+      if (selectedWorkspace?.id !== workspaceId || selectedTicketFilename() !== filename) return;
+      setTicketSessionScope(filename);
+      setTicketViewerVisible(false);
+      setWorkbenchVisible(true);
+      setSelectedOwnerVisible(true);
+      await showSession(session.openCodeSessionId);
+    } catch (error) { setTicketViewerVisible(true); setWorkbenchVisible(false); setTicketError(String(error)); }
+    finally { setTicketWorking(false); }
+  },
+  onCreate: async () => {
+    const workspaceId = selectedWorkspace?.id;
+    try {
+      if (!workspaceId) throw new Error("Select a Workspace first.");
+      const model = quickSelectedModel();
+      if (!model) throw new Error("Choose an enabled OpenCode model before creating a ticket.");
+      const session = await startWorkspaceTicketCreation(invoke, workspaceId, JSON.parse(model));
+      if (selectedWorkspace?.id !== workspaceId) return;
+      setTicketSessionScope("__ticket_creation__");
+      setTicketViewerVisible(false);
+      setWorkbenchVisible(true);
+      setSelectedOwnerVisible(true);
+      await refreshNavigation();
+      await showSession(session.openCodeSessionId);
+    } catch (error) { setTicketViewerVisible(true); setWorkbenchVisible(false); setTicketError(String(error)); }
+  },
+});
 const [fullRequestVisible, setFullRequestVisible] = createSignal(false);
 const [workspaceNavigation, setWorkspaceNavigation] = createSignal({
   data: navigationData,
@@ -273,7 +357,8 @@ const sessions = createWorkbenchSessions({
   selectedQuickRequest,
   proposalSessionId: () => newWork.proposalSessionId(),
   getToolsOwner: repositoryToolsOwner,
-  showOwnerTerminal: () => showOwnerTerminal(),
+  getSessionScope: ticketSessionScope,
+  showOwnerTerminal: () => { setTicketViewerVisible(false); showOwnerTerminal(); },
   setOwnerStatus,
   ownerStatus,
   setCommandResultMessage,
@@ -323,7 +408,7 @@ const workbench = () =>
     docsDisabled,
     docsButtonSelected,
     onOpenDocs: () => void docsController.open(),
-    onOpenChangeReview: (event) => handleChangeReviewClick(event),
+    onOpenChangeReview: (event) => { setTicketViewerVisible(false); void handleChangeReviewClick(event); },
     selectedSessionId: sessions.selectedSessionId,
     sessionTabs: sessions.tabs,
     repositoryTools,
@@ -389,9 +474,10 @@ const docsPane = () =>
 const docsController = createDocsController({
   invoke,
   getOwner: () =>
-    selectedWorkspace ? { type: "workspace", id: selectedWorkspace.id } : null,
+    selectedWorkspace && selectedTicketFilename() && !ticketArchived() ? { type: "workspace", id: selectedWorkspace.id } : null,
   view: docsView,
   onOpen: () => {
+    setTicketViewerVisible(false);
     changeReviewController.cancelPendingReview();
     setChangeReviewVisible(false);
     setChangeReviewSelected(false);
@@ -445,7 +531,7 @@ const changeReviewController = createChangeReviewController({
   invoke,
   loadChangeReview,
   getSelectedWorkspace: () => selectedWorkspace,
-  getSelectedOwnerRepositoryCount: () => selectedOwnerRepositoryCount,
+  getSelectedOwnerRepositoryCount: () => selectedTicketFilename() && !ticketArchived() ? selectedOwnerRepositoryCount : 0,
   getSelectedQuickRequest: selectedQuickRequest,
   getRepositoryToolsOwner: repositoryToolsOwner,
   syncRepositoryToolsAvailability,
@@ -469,7 +555,7 @@ const {
 } = changeReviewController;
 
 function repositoryToolsOwner() {
-  if (!selectedWorkspace || selectedQuickRequest()?.quickRequest) return null;
+  if (!selectedWorkspace || !selectedTicketFilename() || ticketArchived() || selectedQuickRequest()?.quickRequest) return null;
   return { type: "workspace", id: selectedWorkspace.id };
 }
 
@@ -560,6 +646,7 @@ const directories = createDirectories({
   confirm: (message) => window.confirm(message),
   renderAttachedRepositories,
   beforeOpen: () => {
+    setTicketViewerVisible(false);
     changeReviewController.cancelPendingReview();
     docsController.showTerminal();
     setChangeReviewVisible(false);
@@ -591,6 +678,7 @@ const ports = createPortsController({
   visible: portsVisible,
   setVisible: setPortsVisible,
   onOpen: () => {
+    setTicketViewerVisible(false);
     changeReviewController.cancelPendingReview();
     docsController.showTerminal();
     setChangeReviewVisible(false);
@@ -612,7 +700,7 @@ function selectWorkspace(workspace, data = navigationData) {
   setDirectoriesVisible(false);
   setPortsVisible(false);
   setFullRequestVisible(false);
-  setWorkbenchVisible(true);
+  setWorkbenchVisible(false);
   setQuickRequestTerminalPage(false);
   setProposalMode(false);
   setRightContentOwnerActive(true);
@@ -621,8 +709,13 @@ function selectWorkspace(workspace, data = navigationData) {
   setWorkspaceNavigation({ data, selected: workspace });
   setNoSelectionVisible(false);
   setWorkspaceSelected(true);
-  setWorkbenchVisible(true);
-  setSelectedOwnerVisible(true);
+  setWorkbenchVisible(false);
+  setSelectedOwnerVisible(false);
+  setTicketArchived(false);
+  setSelectedTicketFilename(null);
+  setTicketSessionScope(null);
+  setTicketViewerVisible(true);
+  void refreshTicketList(false);
   newWork.hide();
   setOwnerTitle(workspace.name);
   setOwnerDescription(
@@ -641,7 +734,6 @@ function selectWorkspace(workspace, data = navigationData) {
         binding.workspaceId === workspace.id &&
         binding.verificationStatus === "verified",
     ).length;
-    showOwnerTerminal();
     syncChangeReviewAvailability();
     syncRepositoryToolsAvailability();
     syncOwnerControls();
@@ -649,13 +741,13 @@ function selectWorkspace(workspace, data = navigationData) {
     renderNavigation(data);
     syncOwnerSessions();
     syncPendingPrompt();
-    void refreshDocsAvailability();
-    void restoreTrackedOwnerSession({ type: "workspace", id: workspace.id });
+    if (!selectedTicketFilename()) setSelectedOwnerVisible(false);
   }, 0);
 }
 
 function selectQuickRequest(task, workspace, data = navigationData, { deferRestore = false } = {}) {
   if (!task.quickRequest) return;
+  setTicketViewerVisible(false);
   setDirectoriesVisible(false);
   setPortsVisible(false);
   setFullRequestVisible(false);
@@ -804,6 +896,7 @@ const quickRequests = createQuickRequests({
       setWorkbenchVisible(false);
     },
     showHistory: () => {
+      setTicketViewerVisible(false);
       changeReviewController.cancelPendingReview();
       docsController.showTerminal();
       setChangeReviewVisible(false);

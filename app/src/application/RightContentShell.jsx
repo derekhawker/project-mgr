@@ -24,6 +24,7 @@ export function RightContentShell(props) {
       {props.directoriesPage?.()}
       {props.portsPage?.()}
       {props.noSelection?.()}
+      {props.ticketViewer?.()}
       {props.docsPane?.()}
       {props.workspaceOwnerPanel?.()}
     </div>

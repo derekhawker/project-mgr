@@ -79,6 +79,7 @@ export const navigation = {
   sessions: [session],
   workspaceRepositories: [],
   workspaceSessionContexts: [],
+  workspaceTickets: {},
   quickRequests: [],
 };
 

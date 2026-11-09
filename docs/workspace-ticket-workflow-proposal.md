@@ -1,28 +1,81 @@
 # Workspace Ticket Workflow Proposal
 
-**State:** Draft requirements; implementation scope not approved.
+**State:** Tasks 1–5 approved for implementation; task 6 remains deferred.
 
 ## Main task
 
-**Draft implementation tasks; not approved for execution.**
+**Implementation tasks:** 1–5 approved by the user in this conversation on
+2026-11-08; task 6 is not approved for execution.
 
-1. [ ] Make the `rust-main` ticket skill available in `~/.agents/skills/`.
+1. [x] Make the `rust-main` ticket skill available in `~/.agents/skills/`.
    **Proof:** OpenCode discovers it from a repository-rooted session.
-2. [ ] Create Workspace ticket files and make them visible in the app.
+   **Outcome:** Installed adapted `ticket-management` and its workflow references
+   globally. OpenCode announced the skill as available in this repository-rooted
+   session on 2026-11-08; the skill is also present in the available skill catalog.
+2. [x] Create Workspace ticket files and make them visible in the app.
    **Proof:** create a draft, restart the app, and confirm it appears with its
    Markdown status; change the file's status and confirm the list reflects it.
-3. [ ] Build the simple ticket list before adding ticket-session behavior.
+   **Proof (2026-11-08):** The user confirmed the native draft creation,
+   app-reopen persistence, and Markdown status-refresh checks in this conversation.
+   Added single-repository
+   creation, Markdown discovery and refresh, and an OpenCode creation session
+   with a session-scoped directory grant and instruction entry. Rust library
+   tests passed; focused frontend adapter/controller/wire tests passed
+   (55); the production frontend build passed. The session HTTP route has a
+   focused mock test. The full frontend suite remains red: 287 of 314 passed,
+   with 27 failures matching the previously documented failure count. The
+   updated frontend composition test passes with ticket-first navigation.
+3. [x] Build the simple ticket list before adding ticket-session behavior.
    **Proof:** select a ticket from the list and see its content truncated.
-4. [ ] Add basic ticket-session resume behavior. See
+   **Proof (2026-11-08):** `node --test app/test/workspace-ticket-viewer-dom.test.js`
+   passed 2 DOM tests covering selection without session work, truncated content,
+   status, and archive selection. The frontend build passes. Native appearance
+   remains unverified. Selecting a Workspace no longer restores a session.
+4. [x] Add basic ticket-session resume behavior. See
    [`ticket-session-protocol-proposal.md`](ticket-session-protocol-proposal.md).
    **Proof:** work on a ticket, leave and return, and resume that ticket's same
    OpenCode session.
-5. [ ] Put Change Review, Docs, and repository tools under the selected ticket.
+   **Proof (2026-11-08):** The user confirmed native exact-session resume after
+   leaving and returning in this conversation. A below-handler filesystem/fake-runtime test
+   exercises creation, exact-ID resume, confirmed-missing replacement, network
+   error, repository cwd and fresh Markdown status without copying ticket body.
+   The frontend Work action is wired. Non-cooperating external writers can still race file replacement;
+   do not claim fully atomic concurrent editing.
+5. [x] Put Change Review, Docs, and repository tools under the selected ticket.
    **Proof:** these destinations require a selected ticket and use its repo.
+   **Proof (2026-11-08):** The user confirmed these native destinations require
+   a selected ticket and use its repository in this conversation. Rust validates the
+   explicit ticket and sole verified repository before opening these destinations
+   or tools. The frontend propagates the selected filename and scopes session
+   tabs to the selected ticket. Focused filesystem/store, context-propagation and
+   session-scope tests pass.
 6. [ ] Improve the ticket viewer.
+   **Proof:** Not yet defined; the intended improvement and its acceptance check
+   need a user decision before this task can be approved for execution.
+
+### Integrated validation and remaining gate
+
+- `cargo test --manifest-path app/src-tauri/Cargo.toml` passed (177 library
+  tests plus the integration test binaries).
+- `npm run build --prefix app` and `git diff --check` passed.
+- `npm test --prefix app` passed 287 of 314 tests; 27 source-contract failures
+  remain, matching the previously recorded baseline count. A matching count is
+  not proof that every failing assertion is identical to the baseline.
+- The user confirmed the requested native verification checks 1–3 in this
+  conversation on 2026-11-08. The full frontend suite remains red as noted above.
+- Non-cooperating external writers can still race a Markdown replacement between
+  comparison and rename. Preserve the ticket if a mismatch is detected; no
+  universal cross-process atomic-write guarantee is claimed.
 
 Do not duplicate the detailed requirements in the task list; this document and
 the linked research carry them.
+
+**Source precedence:** This proposal and its recorded decisions supersede
+conflicting material in the older session protocol. That document is research,
+not an additional task list or an authorization for its earlier migration,
+managed-bridge, ticketless-workspace, or lifecycle proposals. Use only material
+consistent with this proposal. The old database has already been deleted; do
+not add a database reset, backup migration, or legacy-association migration task.
 
 ## Current summary
 
@@ -57,6 +110,10 @@ the revised requirements are shaped and approved.
 | Keep ticket-session instructions concise and prove session resumption. | In scope | Task 4; see linked session research. |
 | Start with a simple list that truncates ticket content, and track a task to improve the viewer. | In scope | Tasks 3 and 6. |
 | Require a selected ticket for Change Review, Docs, and repository tools. | In scope | Task 5. |
+| Execute the existing task list in order, with observable proof recorded for each task. | Tasks 1–5 approved; Task 6 deferred | Defer discussion of Task 6 until the others are done, as requested by the user. |
+| Preserve existing worktree changes and reuse the running live runtime. | In scope as execution constraints | All tasks; do not restart the runtime without explaining a demonstrated need. |
+| Respect frontend/backend test boundaries and avoid end-to-end tests. | In scope as execution constraints | Focused tests below command handlers and separate frontend tests; manual proof where applicable. |
+| Keep integration in the main session and delegate independent outcomes when useful. | In scope as an execution constraint | Ordered tasks; parallel work only with clear ownership and dependencies. |
 
 ## Proposed requirements captured so far
 
@@ -229,25 +286,21 @@ context. It can carry the ticket name and absolute Markdown path independently
 of the session's working directory. This is durable model context, **not** a
 literal system-prompt field.
 
-The application does not currently use this capability. Its Rust create-session
-request contains title, location, and model only; its prompt request contains
-user text only (`app/src-tauri/src/opencode.rs`). Exact session ID and working
-directory are separately recorded and restored (`app/src-tauri/src/session_restore.rs`).
-The project's v2 contract currently documents create/prompt/resume, not
-instruction entries (`docs/opencode-v2-contract.md`). Implementing the proposed
-assignment therefore requires adding an adapter for OpenCode's experimental
-instruction-entry API and associating the ticket entry with the exact session.
-Replacement sessions must receive a new entry because entries belong to the old
-session ID.
+At the time of this research the application did not use this capability. The
+current Rust adapter now installs an entry for the exact ticket session and
+refreshes it on Work; replacement sessions receive their own entry. Its HTTP
+route is covered by a mock test, but native behavior remains unverified.
 
 This proves a protocol/source mechanism for assigning a ticket without changing
-the shared repository cwd. The remaining implementation obligation is to grant
-the OpenCode process read/write access to the Workspace ticket path, as required
-above. No ticket-content duplication or separate runtime-assignment mechanism is
-needed. The API's experimental status remains an implementation risk to record.
+the shared repository cwd. The adapter requests session-scoped read/write access
+to the Workspace ticket directory; effective native permissions remain to be
+verified. No ticket-content duplication or separate runtime-assignment mechanism
+is needed. The API's experimental status remains an implementation risk.
 
 ## Next step
 
-Reconcile the global ticket skill and backup migration details, then write a
-bounded implementation plan and acceptance checks. No implementation is
-authorized by this draft.
+The existing task list remains the sole ordered implementation plan; its
+requirements and proof above define tasks 1–5. The user explicitly approved
+tasks 1–5 on 2026-11-08 and confirmed their native checks. Address any
+in-scope failures and retain the recorded frontend-suite limitation. Revisit
+Task 6 only after the other tasks are done, as requested by the user.

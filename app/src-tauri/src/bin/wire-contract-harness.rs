@@ -211,6 +211,7 @@ fn build_output(root: &std::path::Path) -> Result<Value, String> {
             "sessions": sessions,
             "workspaceRepositories": workspace_repositories,
             "workspaceSessionContexts": workspace_session_contexts,
+            "workspaceTickets": {},
             "quickRequests": store.list_quick_requests(false).map_err(|error| error.to_string())?,
         },
         "sessionHistory": history,

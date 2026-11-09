@@ -85,7 +85,7 @@ export function workspaceStartingPromptSession(sessions, sessionContexts) {
 export function workspaceReviewDetails(proposal) {
   return {
     name: proposal?.workspace?.name || "",
-    directory: proposal?.setupPlan?.workspaceHome || "Directory unavailable",
+    directory: proposal?.repositories?.length ? "Existing repository" : "A new local repository will be created",
   };
 }
 
@@ -561,15 +561,11 @@ export function createWorkspace(invoke, name, description = null) {
 export function createInitializedWorkspace(
   invoke,
   name,
-  model,
-  description = null,
-  proposalSessionId,
+  repositoryId = null,
 ) {
   return invokeCommand(invoke, "workspace_create_initialized", {
     name,
-    description,
-    model,
-    proposalSessionId,
+    repositoryId,
   });
 }
 
@@ -741,4 +737,19 @@ export function createWorkspaceSession(invoke, workspaceId, prompt, model) {
     prompt,
     model,
   });
+}
+
+export function startWorkspaceTicketCreation(invoke, workspaceId, model) {
+  return invokeCommand(invoke, "workspace_ticket_creation_start", {
+    workspaceId,
+    model,
+  });
+}
+
+export function listWorkspaceTickets(invoke, workspaceId, archived = false) {
+  return invokeCommand(invoke, "workspace_tickets_list", { workspaceId, archived });
+}
+
+export function workOnWorkspaceTicket(invoke, workspaceId, filename) {
+  return invokeCommand(invoke, "workspace_ticket_work", { workspaceId, filename });
 }

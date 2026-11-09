@@ -151,11 +151,13 @@ test("fixture creates and reopens a workspace and tool without external operatio
       (await invokeBrowserFixture("workspace_navigation")).workspaces.at(-1).id,
       created.workspace.id,
     );
+    assert.deepEqual(created.sessions, []);
+    const ticketSession = await invokeBrowserFixture("workspace_ticket_work", {
+      workspaceId: created.workspace.id, filename: "example.md",
+    });
     assert.deepEqual(
-      await invokeBrowserFixture("opencode_session_restore", {
-        sessionId: created.sessions[0].openCodeSessionId,
-      }),
-      created.sessions[0],
+      await invokeBrowserFixture("opencode_session_restore", { sessionId: ticketSession.openCodeSessionId }),
+      ticketSession,
     );
     const tools = await invokeBrowserFixture("repo_tools_list", {
       request: { ownerId: "fixture-workspace" },

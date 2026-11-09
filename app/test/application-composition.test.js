@@ -154,6 +154,10 @@ test("application areas compose once and retain terminals across navigation and 
 
     assert.equal($("#workbench").hidden, true);
     $("#workspace-list button").click();
+    await waitFor(() => window.document.querySelector('[aria-label="Tickets"] button'));
+    assert.equal(window.document.getElementById("terminal-session-fixture-workspace"), null);
+    $('[aria-label="Tickets"] button').click();
+    [...window.document.querySelectorAll("button")].find((button) => button.textContent === "Work").click();
     await waitFor(() =>
       window.document.getElementById("terminal-session-fixture-workspace"),
     );
@@ -255,6 +259,9 @@ test("application areas compose once and retain terminals across navigation and 
     assert.equal($("#workbench").hidden, true);
     assert.equal($("#terminal-views"), host);
     $("#workspace-list button").click();
+    await waitFor(() => window.document.querySelector('[aria-label="Tickets"] button'));
+    $('[aria-label="Tickets"] button').click();
+    [...window.document.querySelectorAll("button")].find((button) => button.textContent === "Work").click();
     await waitFor(
       () => !workspaceTerminal.hidden && !$("#selected-owner").hidden,
     );
@@ -336,11 +343,10 @@ test("application areas compose once and retain terminals across navigation and 
     assert.equal($("#proposal-repositories").textContent.trim(), "None");
     await waitFor(() => !$("#proposal-model").disabled);
     input("#workspace-review-name", "Composition Workspace");
-    input("#proposal-prompt", "");
     $("#proposal-create").click();
     await waitFor(() => !$("#new-work-dialog").open);
     assert.match($("#workspace-list").textContent, /Composition Workspace/);
-    assert.equal($("#workbench").hidden, false);
+    assert.equal($("#workbench").hidden, true);
     assert.equal($("#workbench h1"), workspaceHeading);
     assert.equal(
       workspaceHeading.children[2].textContent,

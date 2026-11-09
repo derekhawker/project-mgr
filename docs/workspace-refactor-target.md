@@ -1,5 +1,11 @@
 # Workspace-Only Product Contract
 
+> **Superseded target, implementation in progress:** The approved Workspace
+> ticket model in [workspace-ticket-workflow-proposal.md](workspace-ticket-workflow-proposal.md)
+> replaces this document's zero/multiple-repository and ticketless-workspace
+> assumptions. Consult that work record for current scope, proof, and gaps; the
+> older details below remain historical until the transition is complete.
+
 This is the accepted target contract for the Workspace refactor. It supersedes
 the current Workspace/Task behavior described in `application-workflows.md` and
 the existing New-work and workbench UX specifications until those documents
