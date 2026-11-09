@@ -24,8 +24,13 @@ test("resolves xterm Terminal from the namespace Vite serves for the CommonJS pa
 
 test("terminal selection can preserve tablist focus while still selecting and fitting the session", () => {
   const runtime = new TerminalRuntime({ invoke: nullResult });
-  let fits = 0, focuses = 0;
-  const session = { hidden: true, fit: { fit: () => fits++ }, terminal: { focus: () => focuses++ } };
+  let fits = 0,
+    focuses = 0;
+  const session = {
+    hidden: true,
+    fit: { fit: () => fits++ },
+    terminal: { focus: () => focuses++ },
+  };
   runtime.sessions.set("code", session);
   runtime.select("code", { focus: false });
   assert.equal(runtime.selectedSessionId, "code");
@@ -241,6 +246,70 @@ test("runtime routes input and resize to the exact session and retains hidden vi
     ["opencode_terminal_resize", { sessionId: "a", cols: 80, rows: 24 }],
   ]);
   assert.equal(runtime.sessions.get("a").hidden, false);
+});
+
+test("OpenCode terminal encodes Shift+Enter as the modified Enter key without changing regular PTY input", async () => {
+  const calls = [];
+  let onData;
+  let onKeyEvent;
+  const terminal = {
+    cols: 80,
+    rows: 24,
+    loadAddon() {},
+    parser: {
+      registerDcsHandler() {
+        return { dispose() {} };
+      },
+    },
+    open() {},
+    onData(callback) {
+      onData = callback;
+    },
+    attachCustomKeyEventHandler(callback) {
+      onKeyEvent = callback;
+    },
+    write() {},
+    focus() {},
+    dispose() {},
+  };
+  const runtime = new TerminalRuntime({
+    invoke: async (command, payload) => {
+      calls.push([command, payload]);
+      return command === "opencode_terminal_replay" ? { replay: [] } : null;
+    },
+    terminalFactory: () => terminal,
+    fitAddonFactory: () => ({ fit() {} }),
+    webglAddonFactory: () => {
+      throw new Error("not needed");
+    },
+  });
+  runtime.listenersReady = true;
+  await runtime.attachExisting("session-a", {});
+
+  assert.equal(onKeyEvent({ key: "Enter", shiftKey: true }), false);
+  assert.equal(onKeyEvent({ key: "Enter", shiftKey: false }), true);
+  assert.equal(
+    onKeyEvent({ key: "Enter", shiftKey: true, isComposing: true }),
+    true,
+  );
+  onData("\r");
+  onData("ordinary input");
+
+  assert.deepEqual(
+    calls.filter(([command]) => command === "opencode_terminal_write"),
+    [
+      [
+        "opencode_terminal_write",
+        { sessionId: "session-a", data: "\u001b[13;2u" },
+      ],
+      ["opencode_terminal_write", { sessionId: "session-a", data: "\r" }],
+      [
+        "opencode_terminal_write",
+        { sessionId: "session-a", data: "ordinary input" },
+      ],
+    ],
+  );
+  runtime.dispose();
 });
 
 test("repository tool terminal routes input and resize through its separate process commands", async () => {

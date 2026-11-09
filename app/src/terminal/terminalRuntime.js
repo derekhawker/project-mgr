@@ -171,11 +171,7 @@ export class TerminalRuntime {
     terminal.loadAddon(fit);
     // Register before open/replay: startup queries can be in the buffered data.
     registerXtGetTcapHandler(terminal, (data) => this.write(sessionId, data));
-    terminal.onData((data) =>
-      this.write(sessionId, data).catch((error) =>
-        this.onError({ sessionId, operation: "write", message: String(error) }),
-      ),
-    );
+    this.registerInputHandlers(terminal, sessionId, "opencode_terminal");
     terminal.open(container);
     const session = {
       terminal,
@@ -243,11 +239,7 @@ export class TerminalRuntime {
     const fit = this.fitAddonFactory();
     terminal.loadAddon(fit);
     registerXtGetTcapHandler(terminal, (data) => this.write(sessionId, data));
-    terminal.onData((data) =>
-      this.write(sessionId, data, commandPrefix).catch((error) =>
-        this.onError({ sessionId, operation: "write", message: String(error) }),
-      ),
-    );
+    this.registerInputHandlers(terminal, sessionId, commandPrefix);
     terminal.open(container);
     const session = {
       terminal,
@@ -307,6 +299,29 @@ export class TerminalRuntime {
       if (event.kind === "error") this.onError(event);
       if (event.kind === "exit") this.exit({ sessionId });
     }
+  }
+
+  registerInputHandlers(terminal, sessionId, commandPrefix) {
+    if (commandPrefix === "opencode_terminal") {
+      terminal.attachCustomKeyEventHandler?.((event) => {
+        if (event.key !== "Enter" || !event.shiftKey || event.isComposing) {
+          return true;
+        }
+        this.write(sessionId, "\u001b[13;2u", commandPrefix).catch((error) =>
+          this.onError({
+            sessionId,
+            operation: "write",
+            message: String(error),
+          }),
+        );
+        return false;
+      });
+    }
+    terminal.onData((data) =>
+      this.write(sessionId, data, commandPrefix).catch((error) =>
+        this.onError({ sessionId, operation: "write", message: String(error) }),
+      ),
+    );
   }
 
   tryEnableWebglRenderer(sessionId, session) {
