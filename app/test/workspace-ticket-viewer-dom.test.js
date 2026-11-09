@@ -52,8 +52,9 @@ function mount(props) {
 
 const longContent = "x".repeat(1300);
 const tickets = [
-  { filename: "one.md", title: "First", status: "open", content: longContent },
-  { filename: "two.md", title: "Second", status: "closed", content: "Second body" },
+  { filename: "one.md", title: "First", status: "draft", modifiedAt: 100, content: `---\ntitle: First\nstatus: draft\nowner: Alice\n---\n# First body\n\n${longContent}` },
+  { filename: "two.md", title: "Second", status: "blocked", modifiedAt: 200, content: "---\ntitle: Second\nstatus: blocked\n---\nSecond body" },
+  { filename: "three.md", title: "Third", status: "in_progress", modifiedAt: 50, content: "---\ntitle: Third\nstatus: in_progress\n---\nThird body" },
 ];
 
 test.after(async () => {
@@ -61,10 +62,11 @@ test.after(async () => {
   await rm(temp, { recursive: true, force: true });
 });
 
-test("ticket selection calls only selection, and previews/details are truncated with status", () => {
+test("ticket browser keeps selection separate from Work, renders the complete safe Markdown reader, and formats frontmatter after it", () => {
   const [selected, setSelected] = createSignal(null);
   const calls = [];
   const view = mount({
+    workspaceName: () => "Example Workspace",
     tickets: () => tickets,
     selectedFilename: selected,
     loading: () => false,
@@ -76,24 +78,45 @@ test("ticket selection calls only selection, and previews/details are truncated 
     onWork: (filename) => calls.push(["work", filename]),
   });
   try {
+    assert.deepEqual(
+      [...view.host.querySelector("#workspace-ticket-title").children].map((part) => part.textContent),
+      ["Workspace", "/", "Example Workspace", "/", "Tickets"],
+    );
     const first = [...view.host.querySelectorAll("li")][0];
-    assert.equal(first.querySelector("span").textContent, "open");
-    assert.equal(first.querySelector("p").textContent, `${"x".repeat(280)}…`);
-    first.querySelector("button").click();
-    assert.deepEqual(calls, [["select", "one.md"]]);
+    assert.match(first.textContent, /Blocked/);
+    assert.equal([...view.host.querySelectorAll("li")][0].querySelector("button").children[1].textContent, "Second");
+    assert.equal(first.querySelector("p"), null, "rows have no body preview");
+    first.querySelector('button[aria-label="Work on ticket: Second"]').click();
+    assert.deepEqual(calls, [["select", "two.md"], ["work", "two.md"]]);
+    first.querySelector('button[aria-pressed]').click();
+    assert.deepEqual(calls, [["select", "two.md"], ["work", "two.md"], ["select", "two.md"]]);
+    // Set the selected row to the long Markdown ticket.
+    const selectFirst = [...view.host.querySelectorAll('button[aria-pressed]')].find((button) => button.textContent.includes("First"));
+    selectFirst.click();
+    assert.deepEqual(calls.at(-1), ["select", "one.md"]);
     const detail = view.host.querySelector("article");
     assert.equal(detail.getAttribute("aria-label"), "Selected ticket: First");
-    assert.equal(detail.querySelector("p").textContent, "Status: open");
-    assert.equal(detail.querySelector("pre").textContent, `${"x".repeat(1200)}…`);
-    assert.equal(first.querySelector("button").getAttribute("aria-pressed"), "true");
-    [...detail.querySelectorAll("button")].find((button) => button.textContent === "Work").click();
-    assert.deepEqual(calls, [["select", "one.md"], ["work", "one.md"]]);
+    assert.equal(detail.children[1].textContent.includes("First body"), true);
+    assert.equal(detail.children[1].textContent.includes(longContent), true);
+    assert.equal(detail.querySelector("script"), null);
+    assert.equal(detail.querySelector('[aria-label="Ticket metadata"] dt').textContent, "title");
+    assert.equal(detail.querySelector('[aria-label="Ticket metadata"] dd').textContent, "First");
+    assert.equal(detail.children[1].compareDocumentPosition(detail.querySelector('[aria-label="Ticket metadata"]')) & Node.DOCUMENT_POSITION_FOLLOWING, Node.DOCUMENT_POSITION_FOLLOWING);
+    assert.equal(selectFirst.getAttribute("aria-pressed"), "true");
+    const sort = view.host.querySelector('summary[aria-label="Sort: Status"]');
+    sort.click();
+    [...view.host.querySelectorAll("button")].find((button) => button.textContent.includes("Recently modified")).click();
+    assert.equal(view.host.querySelector("ul li button").children[1].textContent, "Second");
+    view.host.querySelector('summary[aria-label="Sort: Recently modified"]').click();
+    [...view.host.querySelectorAll("button")].find((button) => button.textContent.trim() === "Title").click();
+    assert.equal(view.host.querySelector("ul li button").children[1].textContent, "First");
   } finally { view.dispose(); }
 });
 
 test("archive toggle reports state and clears selection; create and refresh forward callbacks", () => {
   const calls = [];
   const view = mount({
+    workspaceName: () => "Example Workspace",
     tickets: () => tickets,
     selectedFilename: () => "two.md",
     loading: () => false,
@@ -104,13 +127,17 @@ test("archive toggle reports state and clears selection; create and refresh forw
     onRefresh: () => calls.push(["refresh"]),
   });
   try {
-    view.host.querySelector('button').click();
-    [...view.host.querySelectorAll("button")].find((button) => button.textContent === "Refresh tickets").click();
-    [...view.host.querySelectorAll("button")].find((button) => button.textContent === "Browse archived tickets").click();
-    assert.equal(view.host.querySelector("h2").textContent, "Archived tickets");
+    [...view.host.querySelectorAll("button")].find((button) => button.textContent === "Create ticket").click();
+    view.host.querySelector('button[aria-label="Refresh tickets"]').click();
+    const archiveSwitch = view.host.querySelector('input[role="switch"]');
+    assert.equal(archiveSwitch.closest("label").textContent.trim(), "Show archived");
+    archiveSwitch.checked = true;
+    archiveSwitch.dispatchEvent(new Event("change", { bubbles: true }));
+    assert.equal(view.host.querySelector("ul").getAttribute("aria-label"), "Archived tickets");
     assert.deepEqual(calls, [["create"], ["refresh"], ["archive", true], ["select", null]]);
-    [...view.host.querySelectorAll("button")].find((button) => button.textContent === "Show active tickets").click();
+    archiveSwitch.checked = false;
+    archiveSwitch.dispatchEvent(new Event("change", { bubbles: true }));
     assert.deepEqual(calls.slice(-2), [["archive", false], ["select", null]]);
-    assert.equal(view.host.querySelector("h2").textContent, "Tickets");
+    assert.equal(view.host.querySelector("ul").getAttribute("aria-label"), "Tickets");
   } finally { view.dispose(); }
 });

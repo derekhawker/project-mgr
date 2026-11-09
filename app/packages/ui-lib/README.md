@@ -31,7 +31,7 @@ published package. Solid is a peer dependency, supplied by the application.
 Keep this package presentation-only: it may depend on Solid and its own files,
 not application screens, commands, state, or Tauri. Add reusable app-specific
 meaning in `app/src/components/` instead. The library contains Heading, ErrorMessage, Button,
-IconButton, Input, TextArea, Select, Checkbox, ActionMenu, ActionMenuItem,
+IconButton, Input, TextArea, Select, Checkbox, Switch, ActionMenu, ActionMenuItem,
 ActionMenuGroup, ActionMenuSeparator, Collapsible, Modal, Drawer, TabList, Tab, Tabs,
 Tooltip, Notice and Status. ErrorMessage supports inline and page-banner placements and
 announces errors assertively.
@@ -50,7 +50,7 @@ background when focused, with a darker neutral border.
 
 Heading separates semantic level from its shared `hero`, `page`, `section`,
 `subsection`, and `compact` visual sizes. IconButton provides consistent sizing
-and SVG treatment. Button supports `primary`, `selected`, `danger`, and bordered
+and SVG treatment. Button supports `primary`, `selected`, `danger`, `compact`, and bordered
 `ghost` visual variants. Reserve the danger fill for destructive action buttons;
 icon-only delete affordances remain neutral. Modal uses the ghost variant for
 its close control.
@@ -74,9 +74,12 @@ chevron. Its optional `maxHeight` accepts a CSS length and makes the content
 independently scrollable and keyboard-focusable.
 App-specific actions such as
 DeleteButton belong in `app/src/components/` and compose these primitives.
+Switch is a native checkbox input with `role="switch"`; pair it with a visible
+label. It forwards standard input attributes, checked state, and change events.
 ActionMenu supports both native disclosures and controlled menus with app-owned
 state. Its summary trigger shares Button's base control styling and accepts the
-same visual variants. A decorative shared SVG chevron replaces the native marker
+same visual variants, including `triggerVariant="compact"` for dense toolbars.
+A decorative shared SVG chevron replaces the native marker
 and rotates smoothly on opening and closing; the summary retains native disclosure
 behavior and its accessible label. `direction="down"` (default) places the popup
 below the trigger, with a down-pointing chevron when closed and up when open.

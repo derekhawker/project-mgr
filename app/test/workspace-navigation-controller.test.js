@@ -2,12 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createWorkspaceNavigationController } from "../src/views/workbench/workspaceNavigationController.js";
 
-function setup({ workspace = null, quickRequest = null, catalog = [] } = {}) {
+function setup({ workspace = null, quickRequest = null } = {}) {
   const state = {
     data: null,
     navigation: null,
     selected: null,
-    rows: null,
     busy: true,
     count: null,
     reviews: 0,
@@ -15,7 +14,6 @@ function setup({ workspace = null, quickRequest = null, catalog = [] } = {}) {
   const controller = createWorkspaceNavigationController({
     getSelectedWorkspace: () => workspace,
     getSelectedQuickRequest: () => quickRequest,
-    getRepositoryCatalog: () => catalog,
     getNavigationData: () => state.data,
     setNavigationData: (data) => {
       state.data = data;
@@ -25,9 +23,6 @@ function setup({ workspace = null, quickRequest = null, catalog = [] } = {}) {
     },
     setWorkspaceSelected: (value) => {
       state.selected = value;
-    },
-    setAttachedRepositoryRows: (value) => {
-      state.rows = value;
     },
     setNavigationBusy: (value) => {
       state.busy = value;
@@ -78,41 +73,4 @@ test("no-selection and Quick Request navigation do not recalculate review count"
     assert.equal(state.reviews, 0);
     assert.equal(state.count, null);
   }
-});
-
-test("attached repository rows include labels and checkout paths with catalog fallback", () => {
-  const { controller, state } = setup({
-    catalog: [{ id: "known", name: "Known repo" }],
-  });
-  const data = {
-    workspaceRepositories: [
-      {
-        workspaceId: "w1",
-        repositoryId: "known",
-        branch: "main",
-        verificationStatus: "verified",
-        checkoutPath: "/work/known",
-      },
-      {
-        workspaceId: "w1",
-        repositoryId: "gone",
-        branch: "topic",
-        verificationStatus: "unverified",
-        checkoutPath: "/work/gone",
-      },
-      {
-        workspaceId: "w2",
-        repositoryId: "other",
-        branch: "main",
-        verificationStatus: "verified",
-        checkoutPath: "/elsewhere",
-      },
-    ],
-  };
-  state.data = data;
-  controller.renderAttachedRepositories("w1");
-  assert.deepEqual(state.rows, [
-    { label: "Known repo · main · verified", checkoutPath: "/work/known" },
-    { label: "gone · topic · unverified", checkoutPath: "/work/gone" },
-  ]);
 });

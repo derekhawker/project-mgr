@@ -6,14 +6,11 @@ import { open as tauriOpenDirectoryPicker } from "@tauri-apps/plugin-dialog";
 import {
   loadApplicationShell,
   loadWorkspaceNavigation,
-  createWorkspaceSession,
   startWorkspaceTicketCreation,
   listWorkspaceTickets,
   workOnWorkspaceTicket,
   submitNewWorkStartingPrompt,
   formatWorkspaceError,
-  completeWorkspace,
-  reactivateWorkspace,
 } from "./services/shell.js";
 import "./styles.css";
 import { cleanupErrorText } from "./lib/errorEvents.js";
@@ -57,8 +54,6 @@ import { AppNotice } from "./application/AppNotice.jsx";
 import { WorkbenchShell } from "./views/workbench/WorkbenchShell.jsx";
 import { NoSelection } from "./application/NoSelection.jsx";
 import { RightContentShell } from "./application/RightContentShell.jsx";
-import { createWorkspaceLifecycleController } from "./views/workbench/workspaceLifecycleController.js";
-import { createWorkspaceSessionFormController } from "./views/workbench/workspaceSessionFormController.js";
 import { isBrowserFixture } from "./lib/runtimeMode.js";
 import { ApplicationRoot } from "./application/ApplicationRoot.jsx";
 import { createNewWork } from "./views/new-work/createNewWork.js";
@@ -133,9 +128,7 @@ function handleQuickRequestSubmit(event) {
 }
 
 // Workspace workbench presentation and the retained Quick Request form adapter.
-const [attachedRepositoryRows, setAttachedRepositoryRows] = createSignal([]);
 const [ownerTitle, setOwnerTitle] = createSignal("");
-const [ownerDescription, setOwnerDescription] = createSignal("");
 const [ownerStatus, setOwnerStatus] = createSignal("");
 const [sessionStatusMessage, setSessionStatusMessage] = createSignal("");
 const [pendingPromptVisible, setPendingPromptVisible] = createSignal(false);
@@ -160,19 +153,6 @@ const pendingStartingPromptController = createPendingStartingPromptController({
   setPromptText: setPendingPromptText,
   setDisabled: setPendingPromptDisabled,
 });
-const [ownerIsQuickRequest, setOwnerIsQuickRequest] = createSignal(false);
-const [completeWorkspaceDisabled, setCompleteWorkspaceDisabled] =
-  createSignal(true);
-const [reactivateWorkspaceDisabled, setReactivateWorkspaceDisabled] =
-  createSignal(true);
-const [attachRepositoryDisabled, setAttachRepositoryDisabled] =
-  createSignal(true);
-const [attachRepositoryOptions, setAttachRepositoryOptions] = createSignal([]);
-const [selectedAttachRepository, setSelectedAttachRepository] =
-  createSignal("");
-const [workspaceSessionSubmitDisabled, setWorkspaceSessionSubmitDisabled] =
-  createSignal(true);
-const [workspacePrompt, setWorkspacePrompt] = createSignal("");
 const [quickModelOptions, setQuickModelOptions] = createSignal([]);
 const [quickSelectedModel, setQuickSelectedModel] = createSignal("");
 const [quickModelDisabled, setQuickModelDisabled] = createSignal(true);
@@ -186,24 +166,12 @@ const [selectedOwnerVisible, setSelectedOwnerVisible] = createSignal(false);
 const [proposalMode, setProposalMode] = createSignal(false);
 const workspaceOwnerPanel = () =>
   WorkspaceOwnerPanel({
-    repositories: attachedRepositoryRows,
-    description: ownerDescription,
     status: ownerStatus,
     sessionStatus: sessionStatusMessage,
     pendingPromptVisible,
     pendingPromptDisabled,
     pendingPromptText,
     pendingPromptLabel,
-    quickRequest: ownerIsQuickRequest,
-    completeWorkspaceDisabled,
-    reactivateWorkspaceDisabled,
-    attachRepositoryDisabled,
-    attachRepositoryOptions,
-    selectedAttachRepository,
-    onAttachRepositoryChange: (event) =>
-      setSelectedAttachRepository(event.currentTarget.value),
-    workspaceSessionSubmitDisabled,
-    workspacePrompt,
     terminalRuntimeStartupFailed,
     modelOptions: quickModelOptions,
     selectedModel: quickSelectedModel,
@@ -215,16 +183,11 @@ const workspaceOwnerPanel = () =>
     onQuickPromptInput: quickRequestFormView.setPrompt,
     quickRequestBusy: quickRequestFormView.isBusy,
     onModelChange: (event) => setQuickSelectedModel(event.currentTarget.value),
+    onEnterToSubmit: handleEnterToSubmit,
     visible: selectedOwnerVisible,
     proposalMode,
     onSubmitStartingPrompt: () => submitPendingStartingPrompt(),
     onPendingPromptTextInput: setPendingPromptText,
-    onWorkspaceSessionSubmit: (event) => startWorkspaceSessionFromForm(event),
-    onEnterToSubmit: handleEnterToSubmit,
-    onWorkspacePromptInput: setWorkspacePrompt,
-    onCompleteWorkspace: () => handleCompleteWorkspace(),
-    onReactivateWorkspace: () => handleReactivateWorkspace(),
-    onAttachRepository: handleAttachRepository,
     onQuickRequestSubmit: handleQuickRequestSubmit,
     pendingInputs: sessions.pendingInputs,
     setTerminalViews: sessions.setTerminalViews,
@@ -279,6 +242,7 @@ async function refreshTicketList(archived = ticketArchived()) {
   }
 }
 const workspaceTicketViewer = () => ticketViewerVisible() && WorkspaceTicketViewer({
+  workspaceName: ownerTitle,
   tickets: ticketItems,
   selectedFilename: selectedTicketFilename,
   loading: ticketLoading,
@@ -289,7 +253,7 @@ const workspaceTicketViewer = () => ticketViewerVisible() && WorkspaceTicketView
     setSelectedTicketFilename(filename);
     setTicketSessionScope(filename);
     sessions.hide();
-    setWorkbenchVisible(Boolean(filename) && !ticketArchived());
+    setWorkbenchVisible(false);
     setSelectedOwnerVisible(false);
     syncOwnerSessions({ focus: false });
     syncChangeReviewAvailability();
@@ -313,11 +277,13 @@ const workspaceTicketViewer = () => ticketViewerVisible() && WorkspaceTicketView
       setWorkbenchVisible(true);
       setSelectedOwnerVisible(true);
       await showSession(session.openCodeSessionId);
+      if (ownerStatus() === "Loading workspace…") setOwnerStatus("");
     } catch (error) { setTicketViewerVisible(true); setWorkbenchVisible(false); setTicketError(String(error)); }
     finally { setTicketWorking(false); }
   },
   onCreate: async () => {
     const workspaceId = selectedWorkspace?.id;
+    setSelectedTicketFilename(null);
     try {
       if (!workspaceId) throw new Error("Select a Workspace first.");
       const model = quickSelectedModel();
@@ -396,6 +362,13 @@ const workbench = () =>
   WorkbenchShell({
     visible: workbenchVisible,
     workspaceName: ownerTitle,
+    ticketTitle: () => ticketItems().find((ticket) => ticket.filename === selectedTicketFilename())?.title,
+    onWorkspaceClick: () => {
+      setWorkbenchVisible(false);
+      setTicketViewerVisible(true);
+      setSelectedOwnerVisible(false);
+      sessions.hide();
+    },
     workspaceRepositoryCount: () =>
       (workspaceNavigation().data.workspaceRepositories || []).filter(
         (binding) =>
@@ -569,18 +542,6 @@ const { toggleRepositoryTools } = repositoryToolsController;
 
 function setModelControls(ready) {
   modelsReady = ready;
-  syncWorkspaceActionDisabled();
-}
-
-let workspaceSessionSubmissionBusy = false;
-function syncWorkspaceActionDisabled() {
-  const activeWorkspace = Boolean(
-    selectedWorkspace && selectedWorkspace.status === "active",
-  );
-  setAttachRepositoryDisabled(!activeWorkspace);
-  setWorkspaceSessionSubmitDisabled(
-    !modelsReady || !activeWorkspace || workspaceSessionSubmissionBusy,
-  );
 }
 
 setModelControls(false);
@@ -606,56 +567,37 @@ function syncPendingPrompt() {
   );
 }
 
-function syncOwnerControls() {
-  const isQuickRequest = Boolean(selectedQuickRequest()?.quickRequest);
-  setOwnerIsQuickRequest(isQuickRequest);
-}
-
 const workspaceNavigationController = createWorkspaceNavigationController({
   getSelectedWorkspace: () => selectedWorkspace,
   getSelectedQuickRequest: selectedQuickRequest,
-  getRepositoryCatalog: () => repositoryCatalog,
   setNavigationData: (data) => {
     navigationData = data;
   },
   setWorkspaceNavigation,
   setWorkspaceSelected,
-  setAttachedRepositoryRows,
   setNavigationBusy,
   setSelectedOwnerRepositoryCount: (count) => {
     selectedOwnerRepositoryCount = count;
   },
   syncChangeReviewAvailability,
 });
-const { renderNavigation, renderAttachedRepositories } =
-  workspaceNavigationController;
+const { renderNavigation } = workspaceNavigationController;
 
 // Directories needs initialized destination signals and navigation/Docs actions,
 // not placeholders captured before those dependencies exist.
 const directories = createDirectories({
   invoke,
   picker: openDirectoryPicker,
-  getSelectedWorkspace: () => selectedWorkspace,
-  getRepositoryCatalog: () => repositoryCatalog,
-  getNavigationData: () => navigationData,
   setRepositoryCatalog: (repositories) => {
     repositoryCatalog = repositories;
   },
   refreshNavigation,
-  refreshDocsAvailability,
   confirm: (message) => window.confirm(message),
-  renderAttachedRepositories,
   beforeOpen: () => {
     setTicketViewerVisible(false);
     changeReviewController.cancelPendingReview();
     docsController.showTerminal();
     setChangeReviewVisible(false);
-  },
-  setOwnerStatus,
-  attachment: {
-    setAttachRepositoryOptions,
-    selectedAttachRepository,
-    setSelectedAttachRepository,
   },
   destination: {
     visible: directoriesVisible,
@@ -718,12 +660,6 @@ function selectWorkspace(workspace, data = navigationData) {
   void refreshTicketList(false);
   newWork.hide();
   setOwnerTitle(workspace.name);
-  setOwnerDescription(
-    `${workspace.description || "Workspace"} · ${workspace.status}`,
-  );
-  const disabled = workspace.status !== "active";
-  setCompleteWorkspaceDisabled(disabled);
-  setReactivateWorkspaceDisabled(workspace.status !== "completed");
   setOwnerStatus("Loading workspace…");
   sessions.hide();
   setTimeout(() => {
@@ -736,8 +672,6 @@ function selectWorkspace(workspace, data = navigationData) {
     ).length;
     syncChangeReviewAvailability();
     syncRepositoryToolsAvailability();
-    syncOwnerControls();
-    syncWorkspaceActionDisabled();
     renderNavigation(data);
     syncOwnerSessions();
     syncPendingPrompt();
@@ -764,41 +698,18 @@ function selectQuickRequest(task, workspace, data = navigationData, { deferResto
   showOwnerTerminal();
   syncChangeReviewAvailability();
   syncRepositoryToolsAvailability();
-  syncOwnerControls();
   setNoSelectionVisible(false);
   setWorkspaceSelected(false);
   setWorkbenchVisible(!isQuickRequest);
   setSelectedOwnerVisible(true);
   newWork.hide();
   setOwnerTitle(task.name);
-  setOwnerDescription(
-    `${task.description || "Quick Request"} · ${task.status}`,
-  );
-  syncWorkspaceActionDisabled();
-  setCompleteWorkspaceDisabled(workspace.status !== "active");
-  setReactivateWorkspaceDisabled(workspace.status !== "completed");
   renderNavigation(data);
   syncOwnerSessions();
   syncPendingPrompt();
   if (!isQuickRequest) void refreshDocsAvailability();
   if (!deferRestore) void restoreTrackedOwnerSession({ type: "task", id: task.id });
 }
-const workspaceLifecycle = createWorkspaceLifecycleController({
-  getSelectedWorkspace: () => selectedWorkspace,
-  setSelectedWorkspace: (workspace) => {
-    selectedWorkspace = workspace;
-  },
-  completeWorkspace,
-  reactivateWorkspace,
-  invoke,
-  setOwnerStatus,
-  refreshNavigation,
-  selectWorkspace,
-  getNavigationData: () => navigationData,
-  formatWorkspaceError,
-});
-const { handleCompleteWorkspace, handleReactivateWorkspace } =
-  workspaceLifecycle;
 async function refreshNavigation() {
   const data = await loadWorkspaceNavigation(invoke);
   renderNavigation(data);
@@ -847,28 +758,9 @@ const submitPendingStartingPrompt =
 async function refreshCatalog() {
   return directories.refreshCatalog();
 }
-async function handleAttachRepository() {
-  return directories.attach();
-}
 async function scanSavedRepositoryDirectories() {
   return directories.scanSavedDirectories();
 }
-const workspaceSessionForm = createWorkspaceSessionFormController({
-  createWorkspaceSession,
-  invoke,
-  getSelectedWorkspace: () => selectedWorkspace,
-  isModelsReady: () => modelsReady,
-  getPrompt: workspacePrompt,
-  getSelectedModel: quickSelectedModel,
-  showSession,
-  setOwnerStatus,
-  formatWorkspaceError,
-  setSubmissionBusy: (busy) => {
-    workspaceSessionSubmissionBusy = busy;
-  },
-  syncWorkspaceActionDisabled,
-});
-const { startWorkspaceSessionFromForm } = workspaceSessionForm;
 // Quick Request lists share selection with the dedicated terminal destination.
 const quickRequests = createQuickRequests({
   invoke,

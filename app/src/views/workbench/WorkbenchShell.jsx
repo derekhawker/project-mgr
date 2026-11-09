@@ -3,11 +3,19 @@ import { AppPageLayout } from "../../components/AppPageLayout.jsx";
 import repositoryToolsStyles from "../repository-tools/RepositoryToolsMenu.module.css";
 import styles from "./WorkbenchShell.module.css";
 export function WorkbenchShell(props) {
+  const ticketTitle = () => props.ticketTitle?.();
+  const shortenedTicketTitle = () => {
+    const title = ticketTitle();
+    return title && title.length > 38 ? `${title.slice(0, 35).trimEnd()}…` : title;
+  };
   return (
     <div id="workbench" hidden={!props.visible()}>
       <AppPageLayout
         type="Workspace"
         name={props.workspaceName?.()}
+        onNameClick={ticketTitle() ? props.onWorkspaceClick : undefined}
+        nameActionLabel={ticketTitle() ? `Back to tickets for ${props.workspaceName?.()}` : undefined}
+        segments={ticketTitle() ? [{ label: "Tickets" }, { label: shortenedTicketTitle(), title: ticketTitle() }] : []}
         id="workspace-title"
         fullWidth
         adornment={

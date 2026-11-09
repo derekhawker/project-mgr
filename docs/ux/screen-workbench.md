@@ -5,6 +5,33 @@
 > archived records are not listed or restored in the UI. See
 > [`../workspace-refactor-target.md`](../workspace-refactor-target.md).
 
+## Ticket browser and Workbench
+
+Selecting a Workspace opens its ticket browser. The browser presents a compact,
+sortable list beside a separate selected-ticket reader. Each row starts with a
+tag-style status, then the title (which selects the ticket), and an icon-only
+folder action that starts **Work** on active tickets. Rows have no body previews,
+and selection is visually distinct. The list can grow to half the ticket pane,
+up to 800px. The default sort is `blocked`,
+`in_progress`, `draft`, then other statuses, with newest modification first
+within each status. **Status**, **Recently modified**, and **Title** are the
+available sort choices in a compact ActionMenu. Active/Archived uses a shared
+binary switch, and Refresh stays beside it in the list toolbar. Keep the ticket
+list flat, without an enclosing card or border; use a primary **Create ticket**
+action above it. List and reader scroll independently. The reader shows
+the full sanitized Markdown body followed by formatted ticket frontmatter.
+The ticket-list `ul` owns shared grid columns: content-sized status tags, a
+flexible title, and a fixed action column. Long wrapped titles expand their row
+without forcing horizontal page overflow.
+The browser uses the shared page masthead, `Workspace / <workspace name> / Tickets`;
+the selected ticket title appears in the reader, not in this container heading.
+
+Selecting a ticket establishes context but does not show Workbench tabs/tools.
+Activating **Work** opens or resumes its interactive session. The heading is
+`Workspace / <workspace name> / Tickets / <shortened ticket title>`; the
+workspace name is a button that returns to the ticket list without closing the
+session.
+
 ## Purpose and layout
 
 The workbench is the main application surface for a Workspace and its
@@ -13,18 +40,16 @@ Workspaces directly; legacy Task rows are not shown as work destinations.
 Quick Requests remain a separate tracked flow above the Workspace list.
 
 Keep the app shell anchored to the window. Only the selected main pane scrolls.
-The workbench shell starts with the shared title-only masthead, showing
-**Workspace / <name>**. It stays visible across terminal, Docs, and Change Review
-views and updates when another Workspace is selected. Long names wrap rather
-than widening the work area. The compact Workspace/session toolbar sits below
-the masthead and above compact, collapsed Workspace
-options at the top of the work area, followed by the full-size interactive
+The post-Work shell starts with the shared masthead, showing the Workspace name
+and ticket breadcrumb. It stays visible across terminal, Docs, and Change Review
+views. Long names wrap rather than widening the work area. The compact
+Workspace/session toolbar sits below the masthead, followed by the full-size interactive
 terminal. The terminal viewport reaches the work-area edges without an extra
 title strip or inset padding. C64-inspired color is reserved for navigation selection
 and focused controls. It remains the primary work area without an app transcript
 or persistent status panel.
-Workspace options use the shared Collapsible and its decorative SVG chevron,
-not the browser's default disclosure marker.
+The post-Work ticket Workbench has no Workspace options collapsible or its
+controls. Clear the workspace-loading status after the terminal opens.
 
 The navigation is a quiet gray rail with a subtle divider. Quick Requests and
 Workspaces form a continuous list, without section cards or hard rules. Labels

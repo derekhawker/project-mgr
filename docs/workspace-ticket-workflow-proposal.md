@@ -49,11 +49,28 @@
    or tools. The frontend propagates the selected filename and scopes session
    tabs to the selected ticket. Focused filesystem/store, context-propagation and
    session-scope tests pass.
-6. [ ] Improve the ticket viewer.
-   **Proof:** Not yet defined; the intended improvement and its acceptance check
-   need a user decision before this task can be approved for execution.
+6. [x] Improve the ticket viewer.
+   **Proof (implementation, 2026-11-09):** The Workspace ticket browser now has
+   compact status rows, a selected-ticket reader with complete sanitized Markdown
+   and formatted frontmatter, status/modified/title sorting, row-level Work, and
+   filesystem modification timestamps. Selection remains separate from Workbench
+   tools. The post-Work options panel was removed, terminal-ready clears the
+   initial loading status, and the Workbench heading includes ticket context.
+   Focused frontend checks (29 tests), the ticket command-contract check, the
+   frontend build, 181 Rust library tests, and `git diff --check` pass. A dev
+   browser run on port 1421 verified fixture-backed sorting, archive browsing,
+   selected-reader content and scrolling, selection/Work separation, mock Work
+   handoff, heading, loading status, options removal, and a 640px layout with no
+   horizontal document overflow. The fixture and command contract now include
+   `modifiedAt`. The full
+   frontend suite has 23 source-contract failures (284/307 passing); matching the
+    previously observed failure count does not establish identical baseline
+    failures. The user completed manual inspection of the desktop/narrow layout,
+    scrolling, Work handoff, and breadcrumb, and confirmed all manual checks were
+    complete on 2026-11-09. Native Wayland verification is not a completion gate
+    for this task.
 
-### Integrated validation and remaining gate
+### Integrated validation and limitations
 
 - `cargo test --manifest-path app/src-tauri/Cargo.toml` passed (177 library
   tests plus the integration test binaries).
@@ -61,8 +78,9 @@
 - `npm test --prefix app` passed 287 of 314 tests; 27 source-contract failures
   remain, matching the previously recorded baseline count. A matching count is
   not proof that every failing assertion is identical to the baseline.
-- The user confirmed the requested native verification checks 1–3 in this
-  conversation on 2026-11-08. The full frontend suite remains red as noted above.
+- The user confirmed all manual ticket-view checks complete on 2026-11-09. Native
+  Wayland verification is not required for this task. The full frontend suite
+  remains red as noted above; exact baseline equivalence is not established.
 - Non-cooperating external writers can still race a Markdown replacement between
   comparison and rename. Preserve the ticket if a mismatch is detected; no
   universal cross-process atomic-write guarantee is claimed.

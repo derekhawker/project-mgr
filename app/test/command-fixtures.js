@@ -161,6 +161,14 @@ export function resultForCommand(name) {
       return cleanupJobs;
     case "workspace_navigation":
       return navigation;
+    case "workspace_tickets_list":
+      return [{
+        filename: "example.md",
+        title: "Example ticket",
+        status: "draft",
+        content: "---\ntitle: Example ticket\nstatus: draft\n---\nExample body",
+        modifiedAt: 1_793_700_000_000,
+      }];
     case "repository_directory_page":
       return repositoryDirectoryPage;
     case "repository_soft_delete_many":

@@ -219,7 +219,44 @@ export async function invokeBrowserFixture(name, payload = {}) {
       };
       break;
     case "workspace_tickets_list":
-      result = payload.archived ? [] : [{ filename: "example.md", title: "Example ticket", status: "draft", content: "# Example ticket\n\nA fixture ticket for the Workspace." }];
+      result = payload.archived
+        ? [{
+            filename: "archived-example.md",
+            title: "Archived example",
+            status: "done",
+            modifiedAt: 1_762_400_000_000,
+            content: "---\ntitle: Archived example\nstatus: done\n---\n# Archived example\n\nThis archived ticket remains readable.",
+          }]
+        : [
+            {
+              filename: "blocked-example.md",
+              title: "Blocked example ticket",
+              status: "blocked",
+              modifiedAt: 1_793_500_000_000,
+              content: "---\ntitle: Blocked example ticket\nstatus: blocked\nowner: Browser fixture\n---\n# Blocked ticket\n\nThis entry verifies blocked-status priority and formatted frontmatter.\n\n- First check\n- Second check",
+            },
+            {
+              filename: "in-progress-example.md",
+              title: "In-progress example ticket",
+              status: "in_progress",
+              modifiedAt: 1_793_600_000_000,
+              content: "---\ntitle: In-progress example ticket\nstatus: in_progress\n---\n# In progress\n\nThis entry verifies the in-progress status position.",
+            },
+            {
+              filename: "example.md",
+              title: "Example ticket",
+              status: "draft",
+              modifiedAt: 1_793_700_000_000,
+              content: `---\ntitle: Example ticket\nstatus: draft\nwork_session_id: fixture-session\n---\n# Example ticket\n\nA fixture ticket for the Workspace with readable **Markdown**.\n\n${"This long paragraph checks reader scrolling and keeps the full ticket body available. ".repeat(28)}\n\n## Acceptance checks\n\n- List and reader scroll independently\n- Metadata follows the body\n\n\`\`\`js\nconsole.log("safe fixture Markdown");\n\`\`\``,
+            },
+            {
+              filename: "other-example.md",
+              title: "Other-status example",
+              status: "review",
+              modifiedAt: 1_793_650_000_000,
+              content: "---\ntitle: Other-status example\nstatus: review\n---\nAn unknown status follows draft.",
+            },
+          ];
       break;
     case "workspace_ticket_creation_start": {
       const workspace = workspaces.find((item) => item.id === payload.workspaceId);

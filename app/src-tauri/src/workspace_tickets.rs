@@ -104,6 +104,7 @@ pub struct Ticket {
     pub title: String,
     pub status: String,
     pub content: String,
+    pub modified_at: u64,
 }
 
 pub fn workspace_ticket_dir(app_data: &Path, workspace_slug: &str) -> Result<PathBuf, String> {
@@ -169,6 +170,10 @@ pub fn list(directory: &Path) -> Result<Vec<Ticket>, String> {
         if path.extension().and_then(|s| s.to_str()) != Some("md") || !path.is_file() {
             continue;
         }
+        let modified_at = path.metadata().map_err(|e| e.to_string())?
+            .modified().map_err(|e| e.to_string())?
+            .duration_since(std::time::UNIX_EPOCH).unwrap_or_default()
+            .as_millis().min(u64::MAX as u128) as u64;
         let content = fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
         let (title, status) = ticket_metadata(
             &content,
@@ -181,6 +186,7 @@ pub fn list(directory: &Path) -> Result<Vec<Ticket>, String> {
             title,
             status,
             content,
+            modified_at,
         });
     }
     tickets.sort_by(|a, b| a.filename.cmp(&b.filename));
@@ -362,7 +368,12 @@ mod tests {
             "---\ntitle: Sample\nstatus: draft\n---\n# Sample\nBody",
         )
         .unwrap();
-        assert_eq!(list(root.path()).unwrap()[0].status, "draft");
+        let listed = list(root.path()).unwrap();
+        assert_eq!(listed[0].status, "draft");
+        let expected = file.metadata().unwrap().modified().unwrap()
+            .duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64;
+        assert_eq!(listed[0].modified_at, expected);
+        assert_eq!(serde_json::to_value(&listed[0]).unwrap()["modifiedAt"], expected);
         fs::write(
             &file,
             "---\ntitle: Sample\nstatus: in_progress\n---\n# Sample\nBody",

@@ -15,6 +15,11 @@
   line-height: 1.25;
   cursor: pointer;
 }
+.compact {
+  padding: var(--ui-space-4) var(--ui-space-8);
+  font-size: 0.75rem;
+  line-height: 1.2;
+}
 .button {
   appearance: none;
   display: inline-flex;
