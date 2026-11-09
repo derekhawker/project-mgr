@@ -1,6 +1,6 @@
 import { createSignal } from "solid-js";
-import { recordUiDiagnostic } from "../../lib/uiDiagnostics.js";
-import { invokeCommand } from "../../services/commandContract.js";
+import { recordUiDiagnostic } from "../../../lib/uiDiagnostics.js";
+import { invokeCommand } from "../../../services/commandContract.js";
 import { SessionTabList } from "./SessionTabList.jsx";
 import { PendingInputList } from "./PendingInputList.jsx";
 import { scopedSessionOwnerKey, sessionInTicketScope } from "./ticketSessionScope.js";
@@ -8,16 +8,16 @@ import {
   ownerSessionTabState,
   restoreOwnerSessionTabs,
 } from "./sessionTabState.js";
-import { createTerminalSurfaceRegistry } from "../../terminal/terminalSurfaceRegistry.js";
+import { createTerminalSurfaceRegistry } from "../../../terminal/terminalSurfaceRegistry.js";
 import {
   recordSessionReplacement,
   resolveSessionReplacement,
 } from "./sessionRestoreUi.js";
 import {
   startRepositoryTool,
-  startWorkbenchShell,
+  startWorkspaceShell,
   repoToolTerminalCommand,
-} from "../../services/repoToolsUi.js";
+} from "../../../services/repoToolsUi.js";
 import {
   createKeyedSingleFlight,
   terminalAccessibilityAttributes,
@@ -29,12 +29,12 @@ import {
   reconcileSession,
   sessionStatusLabel,
   listAllPendingInputs,
-} from "../../services/shell.js";
+} from "../../../services/shell.js";
 
 // Page-scoped terminal presentation, shared by Workspaces and Quick Requests.
 // Navigation only hides surfaces. Explicit close/delete commands remain separate
 // from page disposal; Rust retains all process and persisted-session ownership.
-export function createWorkbenchSessions({
+export function createWorkspaceSessions({
   invoke,
   appLifetime,
   getRuntime,
@@ -182,7 +182,7 @@ export function createWorkbenchSessions({
     }
   }
 
-  async function closeWorkbenchSession(sessionId) {
+  async function closeWorkspaceSession(sessionId) {
     if (sessionId === proposalSessionId()) return;
     try {
       if (repositoryToolTerminals.has(sessionId))
@@ -308,7 +308,7 @@ export function createWorkbenchSessions({
               if (proposal) setSessionStatus("Proposal session · interactive");
               else void refreshSessionEvidence(sessionId);
             },
-            onClose: () => void closeWorkbenchSession(sessionId),
+            onClose: () => void closeWorkspaceSession(sessionId),
             onRestart: () => void restartSessionTerminal(sessionId),
           });
         }
@@ -404,7 +404,7 @@ export function createWorkbenchSessions({
           selectedSessionByOwner.set(selectionKey(ownerKey), sessionId);
           syncOwnerSessions({ focus });
         },
-        onClose: () => void closeWorkbenchSession(sessionId),
+        onClose: () => void closeWorkspaceSession(sessionId),
       });
       selectedSessionByOwner.set(selectionKey(ownerKey), sessionId);
       syncOwnerSessions();
@@ -459,10 +459,10 @@ export function createWorkbenchSessions({
     }
   }
 
-  async function openWorkbenchShellTerminal(owner) {
+  async function openWorkspaceShellTerminal(owner) {
     let started = null;
     try {
-      started = await startWorkbenchShell(invoke, owner.type, owner.id);
+      started = await startWorkspaceShell(invoke, owner.type, owner.id);
       return await attachManagedTerminal(started, owner, started.label);
     } catch (error) {
       if (
@@ -487,7 +487,7 @@ export function createWorkbenchSessions({
     restoreTrackedOwnerSession,
     syncOwnerSessions,
     openRepositoryToolTerminal,
-    openWorkbenchShellTerminal,
+    openWorkspaceShellTerminal,
     installStarted,
     refreshGlobalPendingInputs,
     hide: () => terminalSurfaces.hide(),

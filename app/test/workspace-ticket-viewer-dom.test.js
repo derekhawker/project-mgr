@@ -17,7 +17,7 @@ await writeFile(
   `
   export { render } from ${JSON.stringify(resolve(root, "node_modules/solid-js/web/dist/web.js"))};
   export { createComponent, createSignal } from ${JSON.stringify(resolve(root, "node_modules/solid-js/dist/solid.js"))};
-  export { WorkspaceTicketViewer } from ${JSON.stringify(resolve(root, "src/views/workbench/WorkspaceTicketViewer.jsx"))};
+  export { WorkspaceTicketViewer } from ${JSON.stringify(resolve(root, "src/views/workspace/tickets/WorkspaceTicketViewer.jsx"))};
 `,
 );
 try {

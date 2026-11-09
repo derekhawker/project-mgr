@@ -1,6 +1,6 @@
 import { createUniqueId, For, Show } from "solid-js";
 import { Button, Checkbox, Icon, Tooltip } from "@ui-lib";
-import { PageMasthead } from "../../components/PageMasthead.jsx";
+import { PageMasthead } from "../../components/page/PageMasthead.jsx";
 import { PortsInput } from "./PortsInput.jsx";
 import { PortsEmptyState } from "./PortsEmptyState.jsx";
 import { PortProcessItem } from "./PortProcessItem.jsx";

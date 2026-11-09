@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { loadDocs, readDoc } from "../src/services/docsUi.js";
+import { loadDocs, readDoc } from "../src/views/workspace/docs/docsUi.js";
 
 test("Docs adapters validate owner-scoped list/read commands, including Workspace-home identity", async () => {
   const files = [

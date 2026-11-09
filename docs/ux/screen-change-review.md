@@ -16,7 +16,7 @@
 
 ## Layout
 
-Use compact shared controls and the neutral gray workbench. Reserve C64-inspired
+Use compact shared controls and the neutral gray workspace screen. Reserve C64-inspired
 color for selected file rows and focus indicators. Keep the Workspace masthead
 visible above the selected tab; keep toolbar actions grouped without crowding,
 and the changed-file list visually distinct from the diff surface.
@@ -62,7 +62,7 @@ file diff:
 - Make each repository's comparison target visible and allow a conventional
   unified/split presentation. Remember the selected presentation across tab
   switches and application restarts; use unified by default.
-- Use the light workbench palette for the diff, color additions and removals
+- Use the light workspace screen palette for the diff, color additions and removals
   distinctly, show line numbers and align split changes. Automatically load full
   file context for the selected tracked text file. Untracked text already appears in full.
   Wrap long lines to the available width; line-number gutters scroll and resize

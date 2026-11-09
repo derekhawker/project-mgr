@@ -53,9 +53,9 @@
    **Proof (implementation, 2026-11-09):** The Workspace ticket browser now has
    compact status rows, a selected-ticket reader with complete sanitized Markdown
    and formatted frontmatter, status/modified/title sorting, row-level Work, and
-   filesystem modification timestamps. Selection remains separate from Workbench
+   filesystem modification timestamps. Selection remains separate from Workspace screen
    tools. The post-Work options panel was removed, terminal-ready clears the
-   initial loading status, and the Workbench heading includes ticket context.
+   initial loading status, and the Workspace screen heading includes ticket context.
    Focused frontend checks (29 tests), the ticket command-contract check, the
    frontend build, 181 Rust library tests, and `git diff --check` pass. A dev
    browser run on port 1421 verified fixture-backed sorting, archive browsing,
@@ -103,7 +103,7 @@ creation makes a new local Git repository. Workspace and repository records live
 in SQLite. Each Workspace owns Markdown tickets stored outside Git under the
 application data directory. OpenCode sessions guide ticket
 creation and work. The Markdown ticket is the source of truth for ticket status
-and records the one OpenCode work session needed to resume work. Workbench
+and records the one OpenCode work session needed to resume work. Workspace screen
 destinations and tools are entered through a selected ticket; a ticket is
 required to work.
 
@@ -289,7 +289,7 @@ an implementation detail, not a second authority.
   Confirmed in conversation.
 - **Archived tickets:** separate archive browsing; the default list contains
   non-archived tickets. Confirmed in conversation.
-- **Workspace workbench:** existing work destinations and tools are scoped under
+- **Workspace screen:** existing work destinations and tools are scoped under
   a selected ticket; a ticket is required to work. Confirmed in conversation.
 - **Ticket selection:** selecting a ticket and explicitly choosing **Work** are
   separate actions; Work opens/resumes the ticket session. Confirmed from the

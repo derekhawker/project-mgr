@@ -20,13 +20,13 @@ export function startRepositoryTool(
   });
 }
 
-export function startWorkbenchShell(invoke, ownerType, ownerId, ticketFilename) {
+export function startWorkspaceShell(invoke, ownerType, ownerId, ticketFilename) {
   return invokeCommand(invoke, "workbench_shell_terminal_start", {
     request: { ownerType, ownerId, ...(ticketFilename ? { ticketFilename } : {}) },
   });
 }
 
-export function launchWorkbenchOsHandoff(invoke, ownerType, ownerId, action, ticketFilename) {
+export function launchWorkspaceOsHandoff(invoke, ownerType, ownerId, action, ticketFilename) {
   return invokeCommand(invoke, "workbench_os_handoff", {
     request: { ownerType, ownerId, action, ...(ticketFilename ? { ticketFilename } : {}) },
   });

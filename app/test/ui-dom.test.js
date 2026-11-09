@@ -26,7 +26,7 @@ await writeFile(
   export { NoSelection } from ${JSON.stringify(resolve(appRoot, "src/application/NoSelection.jsx"))};
   export { DirectoriesLibraryForm } from ${JSON.stringify(resolve(appRoot, "src/views/directories/DirectoriesLibraryForm.jsx"))};
   export { RepositoryDirectories } from ${JSON.stringify(resolve(appRoot, "src/views/directories/RepositoryDirectories.jsx"))};
-  export { NewWorkDialog } from ${JSON.stringify(resolve(appRoot, "src/views/new-work/NewWorkDialog.jsx"))};
+  export { NewWorkModal } from ${JSON.stringify(resolve(appRoot, "src/features/new-work/modal/NewWorkModal.jsx"))};
 `,
 );
 try {
@@ -99,7 +99,7 @@ const {
   OpenItemButton,
   DirectoriesLibraryForm,
   RepositoryDirectories,
-  NewWorkDialog,
+  NewWorkModal,
 } = await import(pathToFileURL(join(output, "ui-dom.js")));
 const component = (Component, props) => createComponent(Component, props);
 function mount(componentFactory) {
@@ -371,7 +371,7 @@ test("New work uses native dialog and adopted controls without taking over cance
     createLabel: "Create",
   };
   const props = {
-    setDialog: () => {},
+    setModal: () => {},
     proposal: () => proposal,
     captureVisible: () => true,
     reviewVisible: () => false,
@@ -409,7 +409,7 @@ test("New work uses native dialog and adopted controls without taking over cance
     proposalCreateDisabled: () => false,
     proposalError: () => "",
   };
-  const mounted = mount(() => component(NewWorkDialog, props));
+  const mounted = mount(() => component(NewWorkModal, props));
   const preview = mounted.host.querySelector("#proposal-prompt-preview");
   assert.equal(preview.open, false);
   assert.ok(

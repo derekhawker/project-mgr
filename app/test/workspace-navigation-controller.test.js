@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createWorkspaceNavigationController } from "../src/views/workbench/workspaceNavigationController.js";
+import { createWorkspaceNavigationController } from "../src/views/workspace/navigation/workspaceNavigationController.js";
 
 function setup({ workspace = null, quickRequest = null } = {}) {
   const state = {

@@ -4,7 +4,7 @@ import { createSignal } from "solid-js";
 import {
   createRepositoryToolsActionForwarders,
   createRepositoryToolsController,
-} from "../src/views/repository-tools/repositoryToolsController.js";
+} from "../src/views/workspace/repository-tools/repositoryToolsController.js";
 const vi = {
   fn: (impl = () => {}) => {
     const f = (...args) => {
@@ -61,8 +61,8 @@ function setup(overrides = {}) {
       state.actions = v;
     },
     openRepositoryToolTerminal: vi.fn().mockResolvedValue(true),
-    openWorkbenchShellTerminal: vi.fn().mockResolvedValue(true),
-    launchWorkbenchOsHandoff: vi.fn().mockResolvedValue(),
+    openWorkspaceShellTerminal: vi.fn().mockResolvedValue(true),
+    launchWorkspaceOsHandoff: vi.fn().mockResolvedValue(),
     installStarted: new Set(),
     ...overrides,
   };
@@ -130,7 +130,7 @@ test("repository tools controller ignores stale owner identity", async () => {
 });
 test("repository tools controller preserves handoff/install semantics", async () => {
   const a = setup({
-    launchWorkbenchOsHandoff: vi.fn().mockRejectedValue("denied"),
+    launchWorkspaceOsHandoff: vi.fn().mockRejectedValue("denied"),
   });
   await a.ctl.toggleRepositoryTools();
   const v = view();
@@ -287,26 +287,26 @@ test("current controller actions run tools and handoffs with existing busy/statu
       ["Opened successfully."],
     ]);
   }
-  assert.deepEqual(a.deps.openWorkbenchShellTerminal.calls, [
+  assert.deepEqual(a.deps.openWorkspaceShellTerminal.calls, [
     [{ type: "workspace", id: "w1" }],
   ]);
-  assert.deepEqual(a.deps.launchWorkbenchOsHandoff.calls, [
+  assert.deepEqual(a.deps.launchWorkspaceOsHandoff.calls, [
     [a.deps.invoke, "workspace", "w1", "idea"],
     [a.deps.invoke, "workspace", "w1", "folder"],
   ]);
-  a.deps.openWorkbenchShellTerminal.mockResolvedValue(false);
+  a.deps.openWorkspaceShellTerminal.mockResolvedValue(false);
   const v = view();
   await menu.onHandoff("shell", v);
   assert.equal(
     v.setStatus.calls.at(-1)[0],
-    "Could not open: Error: Terminal could not be started; see the workbench error.",
+    "Could not open: Error: Terminal could not be started; see the workspace error.",
   );
   assert.equal(v.setDisabled.calls.at(-1)[0], false);
   await a.ctl.toggleRepositoryTools();
   a.setOwner({ type: "workspace", id: "w2" });
   await a.ctl.toggleRepositoryTools();
   await menu.onHandoff("folder", view());
-  assert.deepEqual(a.deps.launchWorkbenchOsHandoff.calls.at(-1), [
+  assert.deepEqual(a.deps.launchWorkspaceOsHandoff.calls.at(-1), [
     a.deps.invoke,
     "workspace",
     "w2",
@@ -337,8 +337,8 @@ test("actions retained across owner changes cannot start tools, installs or hand
     await stale.onHandoff("shell", v);
     await stale.onHandoff("folder", v);
     assert.equal(a.deps.openRepositoryToolTerminal.calls.length, 0);
-    assert.equal(a.deps.openWorkbenchShellTerminal.calls.length, 0);
-    assert.equal(a.deps.launchWorkbenchOsHandoff.calls.length, 0);
+    assert.equal(a.deps.openWorkspaceShellTerminal.calls.length, 0);
+    assert.equal(a.deps.launchWorkspaceOsHandoff.calls.length, 0);
     assert.equal(a.deps.installStarted.size, 0);
     assert.equal(v.setStatus.calls.length, 0);
     assert.equal(v.setDisabled.calls.length, 0);

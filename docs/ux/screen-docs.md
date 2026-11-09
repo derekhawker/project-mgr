@@ -10,7 +10,7 @@ editor.
 
 - Use the shared whole-CSS-pixel [spacing weights](../../app/packages/ui-lib/spacing.md)
   for the path list, reading surface, code blocks, and table-cell insets.
-- Use the neutral gray workbench and a readable raised reading surface. Reserve
+- Use the neutral gray workspace screen and a readable raised reading surface. Reserve
   C64-inspired color for the selected path and focus accent. Keep typography
   consistent with the rest of the app; verify on Wayland.
 - Always show a **Docs** toolbar tab for a selected Workspace or Task. Disable

@@ -47,6 +47,7 @@ test("frontend root contains only the entry and global styles", () => {
     [
       "application",
       "components",
+      "features",
       "fixtures",
       "lib",
       "services",
@@ -54,6 +55,23 @@ test("frontend root contains only the entry and global styles", () => {
       "views",
     ],
   );
+});
+
+test("view directories reflect destinations and nested workspace features", () => {
+  const directories = (root) => readdirSync(root, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
+  assert.deepEqual(directories(new URL("views/", source)), [
+    "directories", "ports", "quick-requests", "workspace",
+  ]);
+  assert.deepEqual(directories(new URL("views/workspace/", source)), [
+    "change-review", "docs", "navigation", "repository-tools", "sessions", "tickets",
+  ]);
+  assert.ok(existsSync(new URL("features/new-work/modal/NewWorkModal.jsx", source)));
+  assert.ok(existsSync(new URL("features/new-work/NewWorkMenu.jsx", source)));
+  assert.ok(existsSync(new URL("components/page/AppPageLayout.jsx", source)));
+  assert.ok(existsSync(new URL("components/file-navigation/FileTree.jsx", source)));
 });
 
 test("component files match their exported component names; plain modules use camelCase", () => {

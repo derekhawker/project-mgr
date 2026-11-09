@@ -1,9 +1,9 @@
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { ActionMenu, ActionMenuItem, Button, Icon, IconButton, Switch } from "@ui-lib";
-import { AppPageLayout } from "../../components/AppPageLayout.jsx";
-import { OpenItemButton } from "../../components/OpenItemButton.jsx";
-import { TicketStatusBadge } from "../../components/TicketStatusBadge.jsx";
-import { recordUiDiagnostic } from "../../lib/uiDiagnostics.js";
+import { AppPageLayout } from "../../../components/page/AppPageLayout.jsx";
+import { OpenItemButton } from "../../../components/OpenItemButton.jsx";
+import { TicketStatusBadge } from "./TicketStatusBadge.jsx";
+import { recordUiDiagnostic } from "../../../lib/uiDiagnostics.js";
 import { renderTicketMarkdown, splitTicketFrontmatter } from "./ticketContent.js";
 import styles from "./WorkspaceTicketViewer.module.css";
 

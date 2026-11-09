@@ -168,7 +168,7 @@ body {
   flex-direction: column;
   overflow: hidden;
 }
-#workbench {
+#workspace-shell {
   flex: 0 0 auto;
   background: var(--ui-surface);
 }
@@ -195,7 +195,7 @@ body {
   flex-direction: column;
   overflow: hidden;
 }
-.right-content.quick-request-terminal-page #workbench {
+.right-content.quick-request-terminal-page #workspace-shell {
   display: none !important;
 }
 .right-content.quick-request-terminal-page
@@ -333,7 +333,7 @@ body {
   border: 0 !important;
 }
 
-/* Calm continuous workbench navigation and one shared control language. */
+/* Calm continuous workspace navigation and one shared control language. */
 .navigation {
   padding: var(--ui-space-10) var(--ui-space-8);
   padding-top: 0;
@@ -357,7 +357,7 @@ body {
 .catalog-section h3 {
   margin-top: var(--ui-space-10);
 }
-#workbench {
+#workspace-shell {
   background: var(--ui-background);
 }
 .navigation button:focus-visible {
@@ -569,7 +569,7 @@ h2 {
   }
 }
 
-/* Final workbench skin: remove the older layered card/rule treatments above. */
+/* Final workspace skin: remove the older layered card/rule treatments above. */
 .shell {
   background: var(--ui-background);
 }
@@ -599,7 +599,7 @@ h2 {
   padding: 0;
   border: 0;
 }
-#workbench {
+#workspace-shell {
   padding: 0;
   background: var(--ui-background);
   border: 0;

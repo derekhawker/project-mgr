@@ -16,13 +16,13 @@ await writeFile(
   `
 export { render } from ${JSON.stringify(resolve(root, "node_modules/solid-js/web/dist/web.js"))};
 export { createComponent, createSignal } from ${JSON.stringify(resolve(root, "node_modules/solid-js/dist/solid.js"))};
-export { SessionTabList } from ${JSON.stringify(resolve(root, "src/views/workbench/SessionTabList.jsx"))};
-export { WorkbenchShell } from ${JSON.stringify(resolve(root, "src/views/workbench/WorkbenchShell.jsx"))};
+export { SessionTabList } from ${JSON.stringify(resolve(root, "src/views/workspace/sessions/SessionTabList.jsx"))};
+export { WorkspaceShell } from ${JSON.stringify(resolve(root, "src/views/workspace/WorkspaceShell.jsx"))};
 export { TabList } from "@ui-lib";
-export { RepositoryToolsMenu } from ${JSON.stringify(resolve(root, "src/views/repository-tools/RepositoryToolsMenu.jsx"))};
-export { WorkspaceOwnerPanel } from ${JSON.stringify(resolve(root, "src/views/workbench/WorkspaceOwnerPanel.jsx"))};
-export { NewWorkDialog } from ${JSON.stringify(resolve(root, "src/views/new-work/NewWorkDialog.jsx"))};
-export { createQuickRequestCreationController } from ${JSON.stringify(resolve(root, "src/views/new-work/quickRequestCreationController.js"))};
+export { RepositoryToolsMenu } from ${JSON.stringify(resolve(root, "src/views/workspace/repository-tools/RepositoryToolsMenu.jsx"))};
+export { WorkspaceOwnerPanel } from ${JSON.stringify(resolve(root, "src/views/workspace/sessions/WorkspaceOwnerPanel.jsx"))};
+export { NewWorkModal } from ${JSON.stringify(resolve(root, "src/features/new-work/modal/NewWorkModal.jsx"))};
+export { createQuickRequestCreationController } from ${JSON.stringify(resolve(root, "src/features/new-work/modal/quickRequestCreationController.js"))};
 `,
 );
 try {
@@ -65,11 +65,11 @@ const {
   createComponent,
   createSignal,
   SessionTabList,
-  WorkbenchShell,
+  WorkspaceShell,
   TabList,
   RepositoryToolsMenu,
   WorkspaceOwnerPanel,
-  NewWorkDialog,
+  NewWorkModal,
   createQuickRequestCreationController,
 } = await import(pathToFileURL(join(temp, "out/test.js")));
 function mount(Component, props) {
@@ -127,15 +127,15 @@ test("Quick Request confirmation disables repeat clicks and allows retry after c
     setProgressProposalSession: noop,
     setNewWorkView: () => setReview(false),
     clearProposal: noop,
-    closeDialog: noop,
+    closeModal: noop,
     syncPendingPrompt: noop,
     formatWorkspaceError: (label, failure) => `${label}: ${failure.message}`,
   });
   const empty = () => "",
     no = () => false,
     noopSetter = () => {};
-  const view = mount(NewWorkDialog, {
-    setDialog: noop,
+  const view = mount(NewWorkModal, {
+    setModal: noop,
     setPromptElement: noop,
     reviewVisible: review,
     captureVisible: no,
@@ -254,7 +254,7 @@ test("workspace views share one tablist and switching views never closes a sessi
         { sessionId: "other", visible: false, label: "Other owner" },
       ],
     });
-  const view = mount(WorkbenchShell, {
+  const view = mount(WorkspaceShell, {
     visible: () => true,
     sessionTabs: tabs,
     selectedSessionId: () => "code",
@@ -331,7 +331,7 @@ test("workspace views share one tablist and switching views never closes a sessi
 test("ticket Workbench heading keeps workspace, Tickets, and shortened ticket context", () => {
   const title = "A rather long ticket title that needs shortening in the breadcrumb";
   let returnedToTickets = false;
-  const view = mount(WorkbenchShell, {
+  const view = mount(WorkspaceShell, {
     visible: () => true,
     workspaceName: () => "Project Workspace",
     ticketTitle: () => title,

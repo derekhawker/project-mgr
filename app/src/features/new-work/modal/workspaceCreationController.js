@@ -16,7 +16,7 @@ export function createWorkspaceCreationController(deps) {
     getShowSession,
     setOwnerStatus,
     clearProposal,
-    closeDialog,
+    closeModal,
     formatWorkspaceError,
     setOwnerSetupBusy,
     syncPendingPrompt,
@@ -55,7 +55,7 @@ export function createWorkspaceCreationController(deps) {
       setOwnerStatus("");
       setNewWorkView("closed");
       clearProposal();
-      closeDialog();
+      closeModal();
     } catch (error) {
       setProgress(
         "workspace-result",
@@ -66,7 +66,7 @@ export function createWorkspaceCreationController(deps) {
       if (ownerCreated) {
         setNewWorkView("closed");
         clearProposal();
-        closeDialog();
+        closeModal();
         setOwnerStatus(formatWorkspaceError("Finish owner setup", error));
       } else setProposalError(formatWorkspaceError("Create work", error));
     } finally {

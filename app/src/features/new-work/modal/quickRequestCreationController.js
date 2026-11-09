@@ -21,7 +21,7 @@ export function createQuickRequestCreationController(deps) {
     setProgressProposalSession,
     setNewWorkView,
     clearProposal,
-    closeDialog,
+    closeModal,
     closeProposalSession,
     setOwnerStatus,
     formatWorkspaceError,
@@ -57,7 +57,7 @@ export function createQuickRequestCreationController(deps) {
       });
       setNewWorkView("closed");
       clearProposal();
-      closeDialog();
+      closeModal();
       if (proposalSessionId()) {
         try {
           await closeProposalSession();
@@ -71,7 +71,7 @@ export function createQuickRequestCreationController(deps) {
       if (ownerCreated) {
         setNewWorkView("closed");
         clearProposal();
-        closeDialog();
+        closeModal();
         const message = formatWorkspaceError("Finish owner setup", error);
         setOwnerStatus(message);
         setAppNotice(message);

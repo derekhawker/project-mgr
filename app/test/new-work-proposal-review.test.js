@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { prepareProposalReview } from "../src/views/new-work/newWorkProposalReview.js";
+import { prepareProposalReview } from "../src/features/new-work/modal/newWorkProposalReview.js";
 
 const repositoryCatalog = [
   { id: "repo-1", name: "Example", repositoryPath: "/src/example" },

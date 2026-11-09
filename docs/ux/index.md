@@ -2,7 +2,7 @@
 
 > **Ticket-first transition:** The approved requirements and current evidence
 > are in `../workspace-ticket-workflow-proposal.md`. The screen specifications
-> below describe the earlier Workspace workbench and may not yet reflect the
+> below describe the earlier Workspace screen and may not yet reflect the
 > selected-ticket navigation.
 
 This folder records the agreed user experience for the project manager. These
@@ -42,7 +42,7 @@ experience; the glossary is the vocabulary reference.
 | Screen | Purpose | Specification |
 |---|---|---|
 | New | The navigation dropdown starts a Workspace or Quick Request. Workspace creation reviews an editable proposal and optional starting prompt; Quick Request resolves a directory and starts with the original prompt. | [screen-new-work.md](screen-new-work.md) |
-| Workspace workbench | Work in Workspace-owned interactive sessions; multi-repository workspaces have an orchestrator and repo workers. | [screen-workbench.md](screen-workbench.md) |
+| Workspace screen | Work in Workspace-owned interactive sessions; multi-repository workspaces have an orchestrator and repo workers. | [screen-workspace.md](screen-workspace.md) |
 | Quick Requests | Keep the last 24 hours in navigation and browse all retained requests in a separate destination; open each in a dedicated terminal page. | [screen-quick-requests.md](screen-quick-requests.md) |
 | Repositories | Manage saved scan roots and individually enabled repositories; deduplicate overlaps and scan saved roots at startup. | [screen-directories.md](screen-directories.md) |
 | Ports | Inspect accessible TCP listeners, filter by saved port/range preferences, and stop a selected process. | [screen-ports.md](screen-ports.md) |
@@ -52,9 +52,9 @@ experience; the glossary is the vocabulary reference.
 
 ## Overarching goals
 
-- **Visual language:** Keep the workbench neutral gray. Show the selected
+- **Visual language:** Keep the workspace screen neutral gray. Show the selected
   Workspace navigation item on white without an edge marker. Show its associated
-  repository icon in the Workbench title, not in left navigation. Use the primary cyan
+  repository icon in the Workspace screen title, not in left navigation. Use the primary cyan
   (`#265D61`) for action-menu surfaces and primary actions; reserve other
   C64-inspired blue, lavender, and cyan accents for selected items and popups.
   Keep outlines fine, corners

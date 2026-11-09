@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createWorkspaceTicketCache } from "../src/views/workbench/workspaceTicketCache.js";
+import { createWorkspaceTicketCache } from "../src/views/workspace/tickets/workspaceTicketCache.js";
 
 test("workspace selection reads the cache without invoking the Tauri loader", async () => {
   const calls = [];

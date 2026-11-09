@@ -135,9 +135,9 @@ closing the terminal or stopping its process.
 
 ## 3.4 Navigation and workspace focus
 
-### 3.4.1 Workbench Tools and OS handoff
+### 3.4.1 Workspace screen Tools and OS handoff
 
-For an active regular Workspace or Task, the workbench Tools menu starts with
+For an active regular Workspace or Task, the workspace screen Tools menu starts with
 OS handoff actions, regardless of repository count. Rust resolves the target
 from the selected owner's persisted home path and verifies it before use; the
 GUI does not provide a filesystem path. **Open terminal** starts a new
@@ -801,7 +801,7 @@ leaves the compact diff visible; untracked text is already shown in full.
 
 ### 12.7 Repository tools and OS handoff
 
-The workbench Tools menu resolves repository paths from the selected owner, not
+The workspace screen Tools menu resolves repository paths from the selected owner, not
 from UI-supplied directories. A Workspace uses every verified associated clone;
 a Task uses only ready task-repository bindings and their exact worktrees. Rust
 discovers every named target in the root `GNUmakefile`, `makefile`, or

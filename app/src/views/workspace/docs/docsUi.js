@@ -1,4 +1,4 @@
-import { invokeCommand } from "./commandContract.js";
+import { invokeCommand } from "../../../services/commandContract.js";
 
 export function loadDocs(invoke, ownerType, ownerId, ticketFilename) {
   return invokeCommand(invoke, "docs_list", {

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createQuickRequestCreationController } from "../src/views/new-work/quickRequestCreationController.js";
+import { createQuickRequestCreationController } from "../src/features/new-work/modal/quickRequestCreationController.js";
 
 function setup(overrides = {}) {
   const calls = [];
@@ -27,7 +27,7 @@ function setup(overrides = {}) {
     setProgressProposalSession: (v) => calls.push(["progressSession", v]),
     setNewWorkView: (v) => calls.push(["view", v]),
     clearProposal: () => calls.push(["clearProposal"]),
-    closeDialog: () => calls.push(["closeDialog"]),
+    closeModal: () => calls.push(["closeModal"]),
     closeProposalSession: async () => calls.push(["closeProposal"]),
     setOwnerStatus: (v) => calls.push(["status", v]),
     formatWorkspaceError: (label, error) => `${label}:${error.message}`,

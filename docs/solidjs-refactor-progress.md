@@ -717,13 +717,13 @@ differs.
   `/tmp/opencode/layout-1000x720.png`. This validates Chromium layout only.
   Native Wayland visual acceptance remains open.
 - [x] Reviewed `application-workflows.md`, the UX index, and
-  `screen-workbench.md`. This repairs the existing full-height terminal, compact
+  `screen-workspace.md`. This repairs the existing full-height terminal, compact
   session tab bar, and bottom-pinned navigation contract without changing product
   workflows; no UX specification change is needed. The matrix records the visual
   verification and Wayland acceptance gaps separately.
 
 **Tools-slice documentation review:** reviewed `application-workflows.md` Tools
-handoff, the UX index and `screen-workbench.md`, and `app/README.md`. This repairs
+handoff, the UX index and `screen-workspace.md`, and `app/README.md`. This repairs
 callback wiring and synchronous presentation-adapter ordering, not intended
 behavior, copy, layout, screen hierarchy, or terminal lifetime. No UX/index or
 README change is needed. The integration matrix now records nonvisual production
@@ -732,7 +732,7 @@ acceptance.
 
 **Tab-state-slice documentation review:** reviewed `application-workflows.md`
 exact-session restore, Tools, and hide/reopen workflows, the UX index,
-`screen-workbench.md`, and `app/README.md`. Workbench now explicitly records the
+`screen-workspace.md`, and `app/README.md`. Workbench now explicitly records the
 confirmed selected-owner keyboard behavior. Copy, screen hierarchy, command
 contracts, process ownership, and terminal lifetime are unchanged; no index or
 README update is needed. The integration matrix separates nonvisual tab/restore

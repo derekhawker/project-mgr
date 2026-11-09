@@ -1,19 +1,19 @@
 import { createSignal } from "solid-js";
-import { NewWorkDialog } from "./NewWorkDialog.jsx";
+import { NewWorkModal } from "./modal/NewWorkModal.jsx";
 import { NewWorkMenu } from "./NewWorkMenu.jsx";
-import { ProposalRepositoryList } from "./ProposalRepositoryList.jsx";
-import { createNewWorkDialogController } from "./newWorkDialogController.js";
-import { createNewWorkProposalController } from "./newWorkProposalController.js";
-import { createWorkspaceCreationController } from "./workspaceCreationController.js";
-import { createQuickRequestCreationController } from "./quickRequestCreationController.js";
-import { createNewWorkProposalPreview } from "./newWorkProposalPreview.js";
-import { prepareProposalReview } from "./newWorkProposalReview.js";
+import { ProposalRepositoryList } from "./modal/ProposalRepositoryList.jsx";
+import { createNewWorkModalController } from "./modal/newWorkModalController.js";
+import { createNewWorkProposalController } from "./modal/newWorkProposalController.js";
+import { createWorkspaceCreationController } from "./modal/workspaceCreationController.js";
+import { createQuickRequestCreationController } from "./modal/quickRequestCreationController.js";
+import { createNewWorkProposalPreview } from "./modal/newWorkProposalPreview.js";
+import { prepareProposalReview } from "./modal/newWorkProposalReview.js";
 import { handleEnterToSubmit } from "../../lib/formKeyboard.js";
 import {
   hideWorkspaceRepositoryIds,
   workspaceProgressPresentation,
   workspaceSetupFailureDetails,
-} from "./workspaceSetupProgress.js";
+} from "./modal/workspaceSetupProgress.js";
 import {
   startNewWorkProposal,
   previewNewWorkProposal,
@@ -90,7 +90,7 @@ export function createNewWork({
     setPreview,
   });
   const [proposalRepositoryRows, setProposalRepositoryRows] = createSignal([]);
-  let newWorkDialog;
+  let newWorkModal;
   let newWorkPrompt;
   let requestedNewWorkType = "workspace";
   let currentProposal = null;
@@ -128,7 +128,7 @@ export function createNewWork({
     owner.syncPendingPrompt();
   }
 
-  const dialogController = createNewWorkDialogController({
+  const modalController = createNewWorkModalController({
     getProposalSessionId: () => proposalSessionId,
     setRequestedType: (value) => {
       requestedNewWorkType = value;
@@ -137,10 +137,10 @@ export function createNewWork({
     setView: setNewWorkView,
     setPrompt: setNewWorkPromptValue,
     setCaptureError: setNewWorkCaptureError,
-    dialog: {
-      isOpen: () => newWorkDialog.open,
-      showModal: () => newWorkDialog.showModal(),
-      close: () => newWorkDialog.close(),
+    modal: {
+      isOpen: () => newWorkModal.open,
+      showModal: () => newWorkModal.showModal(),
+      close: () => newWorkModal.close(),
     },
     focusPrompt: () => newWorkPrompt.focus(),
     closeProposalSession,
@@ -241,7 +241,7 @@ export function createNewWork({
     clearProposal: () => {
       currentProposal = null;
     },
-    closeDialog: () => newWorkDialog.close(),
+    closeModal: () => newWorkModal.close(),
     closeProposalSession,
     formatWorkspaceError,
     setOwnerSetupBusy: owner.setSetupBusy,
@@ -291,7 +291,7 @@ export function createNewWork({
     clearProposal: () => {
       currentProposal = null;
     },
-    closeDialog: () => newWorkDialog.close(),
+    closeModal: () => newWorkModal.close(),
     closeProposalSession,
     setOwnerStatus: owner.setStatus,
     formatWorkspaceError,
@@ -322,14 +322,14 @@ export function createNewWork({
         void resolveQuickRequestDirectory(invoke).then(setDefaultQuickDirectory)
           .catch((error) => setDefaultQuickDirectory(formatWorkspaceError("Resolve Quick Request directory", error)));
       }
-      const disclosure = newWorkDialog.querySelector("#proposal-prompt-preview");
+      const disclosure = newWorkModal.querySelector("#proposal-prompt-preview");
       if (disclosure) disclosure.open = false;
       proposalPreview.close();
-      return dialogController.open(type);
+      return modalController.open(type);
   }
   async function cancelNewWork() {
-    await dialogController.cancel();
-    if (!newWorkDialog.open) proposalPreview.close();
+    await modalController.cancel();
+    if (!newWorkModal.open) proposalPreview.close();
   }
   return {
     open: openNewWork,
@@ -356,10 +356,10 @@ export function createNewWork({
       );
     },
     menu: () => NewWorkMenu({ onChoose: openNewWork }),
-    dialog: () =>
-      NewWorkDialog({
-        setDialog: (element) => {
-          newWorkDialog = element;
+    modal: () =>
+      NewWorkModal({
+        setModal: (element) => {
+          newWorkModal = element;
         },
         setPromptElement: (element) => {
           newWorkPrompt = element;
@@ -393,7 +393,7 @@ export function createNewWork({
         },
         onCapture: proposalController.handleNewWorkCapture,
         onEnterToSubmit: handleEnterToSubmit,
-        onBack: dialogController.backToCapture,
+        onBack: modalController.backToCapture,
         onCancel: cancelNewWork,
         onConfirm: createProposedWork,
         onDirectoryChange: (event) => {

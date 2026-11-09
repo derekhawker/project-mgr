@@ -26,15 +26,15 @@ const rustAttributes = [
 ].map((match) => match[1]);
 const html = readFileSync(join(process.cwd(), "index.html"), "utf8");
 const newWorkMenu = readFileSync(
-  join(process.cwd(), "src/views/new-work/NewWorkMenu.jsx"),
+  join(process.cwd(), "src/features/new-work/NewWorkMenu.jsx"),
   "utf8",
 );
-const newWorkDialog = readFileSync(
-  join(process.cwd(), "src/views/new-work/NewWorkDialog.jsx"),
+const newWorkModal = readFileSync(
+  join(process.cwd(), "src/features/new-work/modal/NewWorkModal.jsx"),
   "utf8",
 );
 const ownerPanel = readFileSync(
-  join(process.cwd(), "src/views/workbench/WorkspaceOwnerPanel.jsx"),
+  join(process.cwd(), "src/views/workspace/sessions/WorkspaceOwnerPanel.jsx"),
   "utf8",
 );
 const appNotice = readFileSync(
@@ -42,7 +42,7 @@ const appNotice = readFileSync(
   "utf8",
 );
 const proposalRepositories = readFileSync(
-  join(process.cwd(), "src/views/new-work/ProposalRepositoryList.jsx"),
+  join(process.cwd(), "src/features/new-work/modal/ProposalRepositoryList.jsx"),
   "utf8",
 );
 const quickRequestHistoryPage = readFileSync(
@@ -50,15 +50,15 @@ const quickRequestHistoryPage = readFileSync(
   "utf8",
 );
 const repositoryToolsMenu = readFileSync(
-  join(process.cwd(), "src/views/repository-tools/RepositoryToolsMenu.jsx"),
+  join(process.cwd(), "src/views/workspace/repository-tools/RepositoryToolsMenu.jsx"),
   "utf8",
 );
 const directoriesPageMarkup = readFileSync(
   join(process.cwd(), "src/views/directories/DirectoriesPage.jsx"),
   "utf8",
 );
-const workbenchShell = readFileSync(
-  join(process.cwd(), "src/views/workbench/WorkbenchShell.jsx"),
+const workspaceShell = readFileSync(
+  join(process.cwd(), "src/views/workspace/WorkspaceShell.jsx"),
   "utf8",
 );
 const rightContentShell = readFileSync(
@@ -82,8 +82,8 @@ const shell = readFileSync(
   "utf8",
 );
 const main = readFileSync(join(process.cwd(), "src", "main.js"), "utf8");
-const workbenchSessions = readFileSync(
-  join(process.cwd(), "src/views/workbench/createWorkbenchSessions.js"),
+const workspaceSessions = readFileSync(
+  join(process.cwd(), "src/views/workspace/sessions/createWorkspaceSessions.js"),
   "utf8",
 );
 const frontendFiles = readdirSync(join(process.cwd(), "src"), {
@@ -93,7 +93,7 @@ const directoriesNavigationButton = readFileSync(
   join(process.cwd(), "src/views/directories/DirectoriesNavigationButton.jsx"),
   "utf8",
 );
-const uiMarkup = `${html}\n${workbenchShell}\n${rightContentShell}\n${newWorkMenu}\n${newWorkDialog}\n${ownerPanel}\n${appNotice}\n${proposalRepositories}\n${quickRequestHistoryPage}\n${repositoryToolsMenu}\n${directoriesPageMarkup}\n${directoriesNavigationButton}\n${commandResult}\n${applicationShellStatus}`;
+const uiMarkup = `${html}\n${workspaceShell}\n${rightContentShell}\n${newWorkMenu}\n${newWorkModal}\n${ownerPanel}\n${appNotice}\n${proposalRepositories}\n${quickRequestHistoryPage}\n${repositoryToolsMenu}\n${directoriesPageMarkup}\n${directoriesNavigationButton}\n${commandResult}\n${applicationShellStatus}`;
 
 test("startup and command result feedback share the production Solid shell view", () => {
   assert.match(html, /<div id="application-status-root"><\/div>/);
@@ -154,7 +154,7 @@ test("repository tool action status and availability are Solid-owned", () => {
   const controller = readFileSync(
     join(
       process.cwd(),
-      "src/views/repository-tools/repositoryToolsController.js",
+      "src/views/workspace/repository-tools/repositoryToolsController.js",
     ),
     "utf8",
   );
@@ -184,7 +184,7 @@ test("Directories repository toggle pending and checked state are Solid-owned", 
   const controller = readFileSync(
     join(
       process.cwd(),
-      "src/views/repository-tools/repositoryToolsController.js",
+      "src/views/workspace/repository-tools/repositoryToolsController.js",
     ),
     "utf8",
   );
@@ -211,14 +211,14 @@ test("Directories repository toggle pending and checked state are Solid-owned", 
 test("ticket Workbench selection does not expose tools until row Work is activated", () => {
   const main = readFileSync(join(process.cwd(), "src", "main.js"), "utf8");
   assert.doesNotMatch(ownerPanel, /Workspace options|attach-repository|complete-workspace|reactivate-workspace|workspace-session-form/);
-  assert.match(main, /onSelect: \(filename\) => \{[\s\S]*setWorkbenchVisible\(false\)/);
-  assert.match(main, /onWork: async \(filename\) => \{[\s\S]*setWorkbenchVisible\(true\)[\s\S]*await showSession\(session\.openCodeSessionId\)[\s\S]*ownerStatus\(\) === "Loading workspace…"\) setOwnerStatus\(""\)/);
+  assert.match(main, /onSelect: \(filename\) => \{[\s\S]*setWorkspaceShellVisible\(false\)/);
+  assert.match(main, /onWork: async \(filename\) => \{[\s\S]*setWorkspaceShellVisible\(true\)[\s\S]*await showSession\(session\.openCodeSessionId\)[\s\S]*ownerStatus\(\) === "Loading workspace…"\) setOwnerStatus\(""\)/);
 });
 
 test("proposal owner mode is presented and identified through the Solid signal", () => {
   const main = readFileSync(join(process.cwd(), "src", "main.js"), "utf8");
   const controller = readFileSync(
-    join(process.cwd(), "src/views/new-work/newWorkProposalController.js"),
+    join(process.cwd(), "src/features/new-work/modal/newWorkProposalController.js"),
     "utf8",
   );
   assert.match(
@@ -296,30 +296,30 @@ test("Quick Request model and submit disabled/busy attributes are Solid-owned", 
 test("New-work dialog class and accessible name derive from Solid view and proposal state", () => {
   const main = readFileSync(join(process.cwd(), "src", "main.js"), "utf8");
   assert.match(
-    newWorkDialog,
+    newWorkModal,
     /classList=\{\{ 'proposal-open': props\.reviewVisible\(\) \}\}/,
   );
   assert.match(
-    newWorkDialog,
+    newWorkModal,
     /aria-label=\{props\.reviewVisible\(\) \? proposal\(\)\.title : labels\(\)\[2\]\}/,
   );
-  assert.doesNotMatch(main, /newWorkDialog\.(?:classList|setAttribute)/);
-  assert.match(main, /newWorkDialog\.showModal\(\)/);
-  assert.match(main, /newWorkDialog\.close\(\)/);
+  assert.doesNotMatch(main, /newWorkModal\.(?:classList|setAttribute)/);
+  assert.match(main, /newWorkModal\.showModal\(\)/);
+  assert.match(main, /newWorkModal\.close\(\)/);
 });
 
 test("New-work capture alert is rendered from its Solid signal and controller setters", () => {
   const main = readFileSync(join(process.cwd(), "src", "main.js"), "utf8");
   const dialogController = readFileSync(
-    join(process.cwd(), "src/views/new-work/newWorkDialogController.js"),
+    join(process.cwd(), "src/features/new-work/modal/newWorkModalController.js"),
     "utf8",
   );
   const controller = readFileSync(
-    join(process.cwd(), "src/views/new-work/newWorkProposalController.js"),
+    join(process.cwd(), "src/features/new-work/modal/newWorkProposalController.js"),
     "utf8",
   );
   assert.match(
-    newWorkDialog,
+    newWorkModal,
     /id="new-work-error"[^>]*role="alert">\{props\.captureError\(\)\}<\/p>/,
   );
   assert.match(
@@ -340,11 +340,11 @@ test("New-work capture alert is rendered from its Solid signal and controller se
 test("New-work proposal-create disabled presentation is Solid-owned", () => {
   const main = readFileSync(join(process.cwd(), "src", "main.js"), "utf8");
   const controller = readFileSync(
-    join(process.cwd(), "src/views/new-work/quickRequestCreationController.js"),
+    join(process.cwd(), "src/features/new-work/modal/quickRequestCreationController.js"),
     "utf8",
   );
   assert.match(
-    newWorkDialog,
+    newWorkModal,
     /id="proposal-create" disabled=\{props\.proposalCreateDisabled\(\)\} onClick=\{props\.onConfirm\}/,
   );
   assert.match(main, /proposalCreateDisabled, /);
@@ -358,7 +358,7 @@ test("New-work proposal-create disabled presentation is Solid-owned", () => {
 test("New-work proposal model selector disabled state is Solid-owned", () => {
   const main = readFileSync(join(process.cwd(), "src", "main.js"), "utf8");
   assert.match(
-    newWorkDialog,
+    newWorkModal,
     /id="proposal-model" required disabled=\{props\.proposalModelDisabled\(\)\} aria-busy=\{props\.proposalModelDisabled\(\) \? 'true' : undefined\} value=\{props\.proposalSelectedModel\(\)\}/,
   );
   assert.match(
@@ -381,15 +381,15 @@ test("New-work proposal model selector disabled state is Solid-owned", () => {
 test("New-work capture Continue busy state is Solid-owned by controller setters", () => {
   const main = readFileSync(join(process.cwd(), "src", "main.js"), "utf8");
   const controller = readFileSync(
-    join(process.cwd(), "src/views/new-work/newWorkProposalController.js"),
+    join(process.cwd(), "src/features/new-work/modal/newWorkProposalController.js"),
     "utf8",
   );
   const quickRequestController = readFileSync(
-    join(process.cwd(), "src/views/new-work/quickRequestCreationController.js"),
+    join(process.cwd(), "src/features/new-work/modal/quickRequestCreationController.js"),
     "utf8",
   );
   assert.match(
-    newWorkDialog,
+    newWorkModal,
     /type="submit" disabled=\{props\.captureDisabled\(\)\}>Continue/,
   );
   assert.match(
@@ -410,19 +410,19 @@ test("New-work capture Continue busy state is Solid-owned by controller setters"
 test("New-work original prompt is Solid-owned and passed unchanged through capture and Quick Request confirmation", () => {
   const main = readFileSync(join(process.cwd(), "src", "main.js"), "utf8");
   const controller = readFileSync(
-    join(process.cwd(), "src/views/new-work/newWorkProposalController.js"),
+    join(process.cwd(), "src/features/new-work/modal/newWorkProposalController.js"),
     "utf8",
   );
   const quickRequestController = readFileSync(
-    join(process.cwd(), "src/views/new-work/quickRequestCreationController.js"),
+    join(process.cwd(), "src/features/new-work/modal/quickRequestCreationController.js"),
     "utf8",
   );
   const dialogController = readFileSync(
-    join(process.cwd(), "src/views/new-work/newWorkDialogController.js"),
+    join(process.cwd(), "src/features/new-work/modal/newWorkModalController.js"),
     "utf8",
   );
   assert.match(
-    newWorkDialog,
+    newWorkModal,
     /id="new-work-prompt" required rows="3" placeholder="Describe the workspace" value=\{props\.prompt\(\)\} onInput=\{\(event\) => props\.setPrompt\(event\.currentTarget\.value\)\}/,
   );
   assert.match(
@@ -435,7 +435,7 @@ test("New-work original prompt is Solid-owned and passed unchanged through captu
   );
   assert.match(
     main,
-    /const \{ open: openNewWork[\s\S]*\} = newWorkDialogController/,
+    /const \{ open: openNewWork[\s\S]*\} = newWorkModalController/,
   );
   assert.match(main, /setPrompt: setNewWorkPromptValue/);
   assert.match(dialogController, /setPrompt\(''\)/);
@@ -447,14 +447,14 @@ test("New-work original prompt is Solid-owned and passed unchanged through captu
   assert.doesNotMatch(main, /newWorkPrompt\.value/);
 });
 
-test("Change Review toolbar availability and selection are WorkbenchShell state", () => {
+test("Change Review toolbar availability and selection are WorkspaceShell state", () => {
   const main = readFileSync(join(process.cwd(), "src", "main.js"), "utf8");
   const controller = readFileSync(
-    join(process.cwd(), "src/views/change-review/changeReviewController.js"),
+    join(process.cwd(), "src/views/workspace/change-review/changeReviewController.js"),
     "utf8",
   );
-  assert.match(workbenchShell, /hidden=\{!props\.changeReviewAvailable\(\)\}/);
-  assert.match(workbenchShell, /props\.changeReviewSelected\(\)/);
+  assert.match(workspaceShell, /hidden=\{!props\.changeReviewAvailable\(\)\}/);
+  assert.match(workspaceShell, /props\.changeReviewSelected\(\)/);
   assert.match(
     main,
     /onOpenChangeReview: \(event\) => \{ setTicketViewerVisible\(false\); void handleChangeReviewClick\(event\); \}/,
@@ -480,13 +480,13 @@ test("Docs data and view wiring remain at the command adapter boundary", () => {
   assert.match(main, /view: docsView/);
   assert.match(main, /DocsPane\(\{\s*\.\.\.docsView/);
   const pane = readFileSync(
-    join(process.cwd(), "src/views/docs/DocsPane.jsx"),
+    join(process.cwd(), "src/views/workspace/docs/DocsPane.jsx"),
     "utf8",
   );
   assert.match(pane, /createDocContentAdapter\(document\.defaultView\)/);
   assert.doesNotMatch(
     readFileSync(
-      join(process.cwd(), "src/views/docs/docsController.js"),
+      join(process.cwd(), "src/views/workspace/docs/docsController.js"),
       "utf8",
     ),
     /button\.disabled\s*=\s*(?:true|false|files\.length)/,
@@ -498,7 +498,7 @@ test("Tools toolbar disabled state is presented by the repository-tools componen
   const controller = readFileSync(
     join(
       process.cwd(),
-      "src/views/repository-tools/repositoryToolsController.js",
+      "src/views/workspace/repository-tools/repositoryToolsController.js",
     ),
     "utf8",
   );
@@ -521,11 +521,11 @@ test("Tools toolbar disabled state is presented by the repository-tools componen
 test("New-work progress is composed by Solid with shared rows, not a reparented child root", () => {
   const main = readFileSync(join(process.cwd(), "src", "main.js"), "utf8");
   const controller = readFileSync(
-    join(process.cwd(), "src/views/new-work/workspaceCreationController.js"),
+    join(process.cwd(), "src/features/new-work/modal/workspaceCreationController.js"),
     "utf8",
   );
   const progress = readFileSync(
-    join(process.cwd(), "src/views/new-work/SetupProgressPanel.jsx"),
+    join(process.cwd(), "src/features/new-work/modal/SetupProgressPanel.jsx"),
     "utf8",
   );
   assert.match(
@@ -537,19 +537,19 @@ test("New-work progress is composed by Solid with shared rows, not a reparented 
     /id="new-work-progress-steps"><SetupProgressList rows=\{props\.rows\} \/>/,
   );
   assert.match(
-    newWorkDialog,
+    newWorkModal,
     /newWorkProgressDestination\(\s*props\.captureVisible\(\), props\.reviewVisible\(\), proposal\(\)\.workType/,
   );
   for (const destination of ["capture", "workspace", "quick_request"]) {
     assert.ok(
-      newWorkDialog.includes(
+      newWorkModal.includes(
         `<Show when={progressDestination() === '${destination}'}>`,
       ),
     );
   }
   assert.equal(
     (
-      newWorkDialog.match(
+      newWorkModal.match(
         /<SetupProgressPanel visible=\{props\.progressVisible\} rows=\{props\.progressRows\} \/>/g,
       ) || []
     ).length,
@@ -573,7 +573,7 @@ test("New-work progress is composed by Solid with shared rows, not a reparented 
 test("Workspace navigation owns its list and busy attribute through Solid", () => {
   const main = readFileSync(join(process.cwd(), "src", "main.js"), "utf8");
   const navigation = readFileSync(
-    join(process.cwd(), "src/views/workbench/WorkspaceNavigation.jsx"),
+    join(process.cwd(), "src/views/workspace/navigation/WorkspaceNavigation.jsx"),
     "utf8",
   );
   assert.match(html, /id="workspace-navigation-root"/);
@@ -682,29 +682,29 @@ test("repository directory management is a page opened from top navigation", () 
 
 test("proposal review uses a compact repository path list and has one starting prompt field", () => {
   assert.match(
-    newWorkDialog,
+    newWorkModal,
     /<ul id="proposal-repositories" class="proposal-repository-list" \/>/,
   );
   assert.match(
-    newWorkDialog,
+    newWorkModal,
     /id="workspace-review-name" type="text" required maxlength="120" value=\{props\.workspaceName\(\)\} onInput=\{\(event\) => props\.setWorkspaceName\(event\.currentTarget\.value\)\}/,
   );
-  assert.match(newWorkDialog, /id="workspace-review-directory"/);
+  assert.match(newWorkModal, /id="workspace-review-directory"/);
   assert.match(
-    newWorkDialog,
+    newWorkModal,
     /<TextArea id="workspace-original-prompt" rows="3" readOnly value=\{proposal\(\)\.originalPrompt\} \/>/,
   );
   assert.match(
-    newWorkDialog,
+    newWorkModal,
     /<label for="proposal-prompt">Starting prompt<\/label>/,
   );
   assert.match(
-    newWorkDialog,
+    newWorkModal,
     /<TextArea id="proposal-prompt" rows="4" value=\{props\.startingPrompt\(\)\} onInput=\{\(event\) => props\.setStartingPrompt\(event\.currentTarget\.value\)\} \/>/,
   );
   const main = readFileSync(join(process.cwd(), "src", "main.js"), "utf8");
   const controller = readFileSync(
-    join(process.cwd(), "src/views/new-work/workspaceCreationController.js"),
+    join(process.cwd(), "src/features/new-work/modal/workspaceCreationController.js"),
     "utf8",
   );
   assert.match(main, /setReviewWorkspaceName\(review\.workspaceName\)/);
@@ -771,7 +771,7 @@ test("Quick Requests use a dedicated available-height page with a visible way ba
     main,
     /classList\.(?:add|remove|toggle)\(['"](?:owner-active|quick-request-terminal-page)/,
   );
-  assert.match(main, /setWorkbenchVisible\(!isQuickRequest\)/);
+  assert.match(main, /setWorkspaceShellVisible\(!isQuickRequest\)/);
   assert.match(
     ownerPanel,
     /id="selected-owner" hidden=\{!props\.visible\(\)\}/,
@@ -866,22 +866,22 @@ test("Quick Request navigation aligns its history icon button with the heading a
 test("New-work is a modal over the existing workbench, with no standalone workspace creation path", () => {
   const main = readFileSync(join(process.cwd(), "src", "main.js"), "utf8");
   const controller = readFileSync(
-    join(process.cwd(), "src/views/new-work/newWorkProposalController.js"),
+    join(process.cwd(), "src/features/new-work/modal/newWorkProposalController.js"),
     "utf8",
   );
   const quickRequestController = readFileSync(
-    join(process.cwd(), "src/views/new-work/quickRequestCreationController.js"),
+    join(process.cwd(), "src/features/new-work/modal/quickRequestCreationController.js"),
     "utf8",
   );
   assert.match(
-    newWorkDialog,
-    /<dialog id="new-work-dialog"[\s\S]*id="new-work"[\s\S]*id="new-work-review"[\s\S]*<\/dialog>/,
+    newWorkModal,
+    /<dialog id="new-work-modal"[\s\S]*id="new-work"[\s\S]*id="new-work-review"[\s\S]*<\/dialog>/,
   );
   assert.doesNotMatch(
     html,
     /id="new-workspace"|id="workspace-create-form"|id="empty-workspaces"/,
   );
-  assert.match(main, /newWorkDialog\.showModal\(\)/);
+  assert.match(main, /newWorkModal\.showModal\(\)/);
   assert.match(
     newWorkMenu,
     /id="new-work-menu"[\s\S]*data-new-work-type="workspace"[\s\S]*data-new-work-type="quick_request"/,
@@ -889,20 +889,20 @@ test("New-work is a modal over the existing workbench, with no standalone worksp
   assert.match(newWorkMenu, /props\.onChoose\(type\)/);
   assert.doesNotMatch(html, /<select id="new-work-type"/);
   assert.match(
-    newWorkDialog,
+    newWorkModal,
     /\['Workspace', 'Describe the workspace you want to create\.', 'New Workspace'\]/,
   );
   assert.match(
-    newWorkDialog,
+    newWorkModal,
     /id="new-work-prompt-label"[^>]*>Original prompt</,
   );
   assert.match(
-    newWorkDialog,
+    newWorkModal,
     /props\.workType\(\) === 'quick_request'[\s\S]*\['Quick Request', 'What do you want OpenCode to do\?'/,
   );
-  assert.doesNotMatch(newWorkDialog, /\['Task'/);
+  assert.doesNotMatch(newWorkModal, /\['Task'/);
   const proposalReview = readFileSync(
-    join(process.cwd(), "src/views/new-work/newWorkProposalReview.js"),
+    join(process.cwd(), "src/features/new-work/modal/newWorkProposalReview.js"),
     "utf8",
   );
   assert.match(
@@ -910,11 +910,11 @@ test("New-work is a modal over the existing workbench, with no standalone worksp
     /createLabel: isQuickRequest \? 'Confirm directory and start Quick Request' : 'Create Workspace'/,
   );
   assert.match(
-    newWorkDialog,
+    newWorkModal,
     /id="proposal-create" disabled=\{props\.proposalCreateDisabled\(\)\} onClick=\{props\.onConfirm\}>\{proposal\(\)\.createLabel\}/,
   );
   assert.match(controller, /undefined, requestedType,/);
-  assert.match(newWorkDialog, /id="quick-request-directory"/);
+  assert.match(newWorkModal, /id="quick-request-directory"/);
   assert.match(
     quickRequestController,
     /originalPrompt: getOriginalPrompt\(\),[\s\S]*model,[\s\S]*repositoryId: getRepositoryId\(\) \|\| null/,
@@ -936,8 +936,8 @@ test("New-work is a modal over the existing workbench, with no standalone worksp
     /Select a Workspace, or choose New work to start\./,
   );
   assert.match(
-    newWorkDialog,
-    /class="new-work-dialog-scroll"[\s\S]*class="new-work-dialog-footer"/,
+    newWorkModal,
+    /class="new-work-modal-scroll"[\s\S]*class="new-work-modal-footer"/,
   );
 });
 
@@ -953,7 +953,7 @@ test("New-work offers only Workspace and Quick Request creation, not legacy Task
   );
   const dialogController = readFileSync(
     new URL(
-      "../src/views/new-work/newWorkDialogController.js",
+      "../src/features/new-work/modal/newWorkModalController.js",
       import.meta.url,
     ),
     "utf8",
@@ -972,7 +972,7 @@ test("regular Workspace navigation does not render retained legacy Task records"
     "utf8",
   );
   const navigation = readFileSync(
-    join(process.cwd(), "src/views/workbench/WorkspaceNavigation.jsx"),
+    join(process.cwd(), "src/views/workspace/navigation/WorkspaceNavigation.jsx"),
     "utf8",
   );
   const renderNavigation =
@@ -1015,7 +1015,7 @@ test("Workspace ticket viewer is mounted as a Solid component", () => {
 test("Workspace confirmation opens its sessions and sends only the reviewed starting prompt", () => {
   const main = readFileSync(join(process.cwd(), "src", "main.js"), "utf8");
   const controller = readFileSync(
-    join(process.cwd(), "src/views/new-work/workspaceCreationController.js"),
+    join(process.cwd(), "src/features/new-work/modal/workspaceCreationController.js"),
     "utf8",
   );
   assert.match(
@@ -1029,9 +1029,9 @@ test("Workspace confirmation opens its sessions and sends only the reviewed star
   assert.match(controller, /initialized\.sessions \|\| \[\]/);
   assert.doesNotMatch(main, /task-revised-prompt|taskPromptAction/);
   assert.doesNotMatch(main, /currentProposal\.workType === 'task'/);
-  assert.match(newWorkDialog, /id="proposal-starting-prompt"/);
+  assert.match(newWorkModal, /id="proposal-starting-prompt"/);
   assert.match(
-    newWorkDialog,
+    newWorkModal,
     /id="proposal-starting-prompt"[^>]*hidden=\{proposal\(\)\.workType !== 'workspace'\}/,
   );
   assert.match(controller, /Retry setup/);
@@ -1043,7 +1043,7 @@ test("pending starting-prompt editor and submit busy state are WorkspaceOwnerPan
   const controller = readFileSync(
     join(
       process.cwd(),
-      "src/views/workbench/pendingStartingPromptController.js",
+      "src/views/workspace/sessions/pendingStartingPromptController.js",
     ),
     "utf8",
   );
@@ -1077,7 +1077,7 @@ test("pending starting-prompt editor and submit busy state are WorkspaceOwnerPan
 test("terminal card contains only the terminal viewport and has no surrounding inset", () => {
   const main = readFileSync(join(process.cwd(), "src", "main.js"), "utf8");
   const pendingList = readFileSync(
-    join(process.cwd(), "src/views/workbench/PendingInputList.jsx"),
+    join(process.cwd(), "src/views/workspace/sessions/PendingInputList.jsx"),
     "utf8",
   );
   const terminalCard =
@@ -1097,7 +1097,7 @@ test("terminal card contains only the terminal viewport and has no surrounding i
     /id="session-status"[\s\S]*?role="status"[\s\S]*?\{props\.sessionStatus\(\)\}/,
   );
   assert.match(
-    workbenchSessions,
+    workspaceSessions,
     /const \[pendingInputRows, setPendingInputRows\] = createSignal\(\[\]\)/,
   );
   assert.match(
@@ -1109,12 +1109,12 @@ test("terminal card contains only the terminal viewport and has no surrounding i
 });
 
 test("Workbench sessions own terminal maps outside application composition", () => {
-  assert.match(main, /createWorkbenchSessions\(/);
+  assert.match(main, /createWorkspaceSessions\(/);
   assert.doesNotMatch(
     main,
     /const (?:sessionOwners|sessionDirectories|openSessions) = new/,
   );
-  assert.match(workbenchSessions, /const sessionOwners = new Map\(\)/);
+  assert.match(workspaceSessions, /const sessionOwners = new Map\(\)/);
   assert.doesNotMatch(main, /viewFactories|defineView\(/);
 });
 

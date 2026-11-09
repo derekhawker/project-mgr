@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createDocsController } from "../src/views/docs/docsController.js";
-import { createDocsView } from "../src/views/docs/docsView.js";
+import { createDocsController } from "../src/views/workspace/docs/docsController.js";
+import { createDocsView } from "../src/views/workspace/docs/docsView.js";
 
 const files = [
   { path: "README.md", repositoryId: "api", repositoryName: "api" },

@@ -56,16 +56,16 @@ test("New Work modal sizes to content and keeps standard dialog interactions", a
   const open = (type) => {
     browser("click", "#new-work-menu summary");
     browser("click", `[data-new-work-type="${type}"]`);
-    browser("wait", "--fn", "document.querySelector('#new-work-dialog').open");
+    browser("wait", "--fn", "document.querySelector('#new-work-modal').open");
     browser(
       "wait",
       "--fn",
-      "document.querySelector('#new-work-dialog').getAnimations().every(a => a.playState === 'finished')",
+      "document.querySelector('#new-work-modal').getAnimations().every(a => a.playState === 'finished')",
     );
   };
   const geometry = () =>
     evaluate(`(() => {
-    const d = document.querySelector('#new-work-dialog');
+    const d = document.querySelector('#new-work-modal');
     const footer = [...d.querySelectorAll('button')].find(b => b.textContent.trim() === 'Continue');
     const r = d.getBoundingClientRect(), f = footer.getBoundingClientRect();
     return { gap: r.bottom - f.bottom, top: r.top, bottom: r.bottom, height: r.height, viewport: innerHeight };
@@ -91,7 +91,7 @@ test("New Work modal sizes to content and keeps standard dialog interactions", a
       for (const hovered of [false, true]) {
         if (hovered) browser("hover", 'button[form="new-work-capture"]');
         const audit = JSON.parse(
-          browser("a11y", "--selector", "#new-work-dialog", "--json"),
+          browser("a11y", "--selector", "#new-work-modal", "--json"),
         );
         assert.equal(
           audit.data.counts.violations,
@@ -115,7 +115,7 @@ test("New Work modal sizes to content and keeps standard dialog interactions", a
       "document.querySelector('#proposal-prompt-preview pre')?.textContent.includes('{{originalPrompt}}')",
     );
     const before = evaluate(`(() => {
-      const dialog = document.querySelector('#new-work-dialog');
+      const dialog = document.querySelector('#new-work-modal');
       const disclosure = document.querySelector('#proposal-prompt-preview');
       const preview = disclosure.querySelector('pre');
       window.__previewBeforeTyping = { dialog, disclosure, preview };
@@ -125,7 +125,7 @@ test("New Work modal sizes to content and keeps standard dialog interactions", a
       };
     })()`);
     const after = evaluate(`(() => {
-      const dialog = document.querySelector('#new-work-dialog');
+      const dialog = document.querySelector('#new-work-modal');
       const disclosure = document.querySelector('#proposal-prompt-preview');
       const preview = disclosure.querySelector('pre');
       const previous = window.__previewBeforeTyping;
@@ -154,7 +154,7 @@ test("New Work modal sizes to content and keeps standard dialog interactions", a
       assert.equal(evaluate("document.activeElement.id"), "new-work-prompt");
       assert.equal(
         evaluate(
-          "!!document.querySelector('#new-work-dialog button[aria-label=\"Close dialog\"]')",
+          "!!document.querySelector('#new-work-modal button[aria-label=\"Close dialog\"]')",
         ),
         true,
       );
@@ -162,7 +162,7 @@ test("New Work modal sizes to content and keeps standard dialog interactions", a
       browser("mouse", "down");
       browser("mouse", "up");
       assert.equal(
-        evaluate("document.querySelector('#new-work-dialog').open"),
+        evaluate("document.querySelector('#new-work-modal').open"),
         true,
         "Backdrop does not discard work",
       );
@@ -171,15 +171,15 @@ test("New Work modal sizes to content and keeps standard dialog interactions", a
       browser("press", "Shift+Tab");
       assert.equal(
         evaluate(
-          "document.querySelector('#new-work-dialog').contains(document.activeElement)",
+          "document.querySelector('#new-work-modal').contains(document.activeElement)",
         ),
         true,
       );
-      browser("click", '#new-work-dialog button[aria-label="Close dialog"]');
+      browser("click", '#new-work-modal button[aria-label="Close dialog"]');
       browser(
         "wait",
         "--fn",
-        "!document.querySelector('#new-work-dialog').open && document.activeElement.matches('#new-work-menu summary')",
+        "!document.querySelector('#new-work-modal').open && document.activeElement.matches('#new-work-menu summary')",
       );
       assert.equal(
         evaluate("document.activeElement.matches('#new-work-menu summary')"),
@@ -190,7 +190,7 @@ test("New Work modal sizes to content and keeps standard dialog interactions", a
       browser(
         "wait",
         "--fn",
-        "!document.querySelector('#new-work-dialog').open",
+        "!document.querySelector('#new-work-modal').open",
       );
     },
   );
@@ -222,7 +222,7 @@ test("New Work modal sizes to content and keeps standard dialog interactions", a
     "review grows only to its content and focuses an active field",
     () => {
       const state = evaluate(`(() => {
-      const d = document.querySelector('#new-work-dialog');
+      const d = document.querySelector('#new-work-modal');
       return { height: d.getBoundingClientRect().height, focus: document.activeElement.id };
     })()`);
       assert.ok(
@@ -237,7 +237,7 @@ test("New Work modal sizes to content and keeps standard dialog interactions", a
     () => {
       browser("set", "viewport", "390", "360");
       const state = evaluate(`(() => {
-      const d = document.querySelector('#new-work-dialog');
+      const d = document.querySelector('#new-work-modal');
       const body = d.querySelector('[data-modal-body]');
       const r = document.querySelector('#proposal-create').getBoundingClientRect();
       return { top: r.top, bottom: r.bottom, scrollable: !!body && body.scrollHeight > body.clientHeight, width: d.getBoundingClientRect().width };
@@ -277,7 +277,7 @@ test("New Work modal sizes to content and keeps standard dialog interactions", a
         "!document.querySelector('#new-work-review').hidden",
       );
       const state = evaluate(`(() => {
-      const d = document.querySelector('#new-work-dialog'), body = d.querySelector('[data-modal-body]');
+      const d = document.querySelector('#new-work-modal'), body = d.querySelector('[data-modal-body]');
       const before = document.querySelector('#proposal-create').getBoundingClientRect().bottom;
       body.scrollTop = body.scrollHeight;
       return { height: d.getBoundingClientRect().height, scroll: body.scrollTop, before, after: document.querySelector('#proposal-create').getBoundingClientRect().bottom, overflow: body.scrollWidth - body.clientWidth };

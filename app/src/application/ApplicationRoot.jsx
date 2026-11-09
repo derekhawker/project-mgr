@@ -1,6 +1,6 @@
 import { createSignal, onCleanup } from "solid-js";
 import styles from "./navigation.module.css";
-import { WorkspaceNavigation } from "../views/workbench/WorkspaceNavigation.jsx";
+import { WorkspaceNavigation } from "../views/workspace/navigation/WorkspaceNavigation.jsx";
 import {
   getUiDiagnostics,
   subscribeUiDiagnostics,
@@ -59,7 +59,7 @@ export function ApplicationRoot(props) {
             {props.newWorkMenu()}
           </aside>
           <section class="quick-view" aria-label="Selected work">
-            {props.workbench()}
+            {props.workspaceShell()}
             {props.rightContent()}
           </section>
         </div>
@@ -69,7 +69,7 @@ export function ApplicationRoot(props) {
         </section>
         {props.appNotice()}
       </main>
-      {props.newWorkDialog()}
+      {props.newWorkModal()}
     </>
   );
 }

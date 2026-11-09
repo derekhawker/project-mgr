@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createWorkspaceCreationController } from "../src/views/new-work/workspaceCreationController.js";
+import { createWorkspaceCreationController } from "../src/features/new-work/modal/workspaceCreationController.js";
 
 function setup(overrides = {}) {
   const calls = [];
@@ -39,7 +39,7 @@ function setup(overrides = {}) {
       calls.push(["prompt", ...args]),
     setOwnerStatus: (v) => calls.push(["ownerStatus", v]),
     clearProposal: () => calls.push(["clearProposal"]),
-    closeDialog: () => calls.push(["closeDialog"]),
+    closeModal: () => calls.push(["closeModal"]),
     closeProposalSession: async () => calls.push(["closeProposal"]),
     formatWorkspaceError: (label, error) => `${label}:${error.message}`,
     setOwnerSetupBusy: (v) => calls.push(["busy", v]),

@@ -1,9 +1,9 @@
 import { For, Show, createEffect, createMemo, createSignal } from "solid-js";
 import { Button } from "@ui-lib";
-import styles from "../../application/workArea.module.css";
+import styles from "../../../application/workArea.module.css";
 import { DiffView } from "./DiffView.jsx";
-import { FileTree } from "../../components/FileTree.jsx";
-import { FileNavigatorDivider } from "../../components/FileNavigatorDivider.jsx";
+import { FileTree } from "../../../components/file-navigation/FileTree.jsx";
+import { FileNavigatorDivider } from "../../../components/file-navigation/FileNavigatorDivider.jsx";
 
 export function ChangeReviewPanel(props) {
   const [selectedFile, setSelectedFile] = createSignal(null);

@@ -1,17 +1,17 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createNewWorkDialogController } from "../src/views/new-work/newWorkDialogController.js";
+import { createNewWorkModalController } from "../src/features/new-work/modal/newWorkModalController.js";
 
 function setup(session = null, failClose = false) {
   const calls = [];
-  const controller = createNewWorkDialogController({
+  const controller = createNewWorkModalController({
     getProposalSessionId: () => session,
     setRequestedType: (v) => calls.push(["requested", v]),
     setWorkType: (v) => calls.push(["type", v]),
     setView: (v) => calls.push(["view", v]),
     setPrompt: (v) => calls.push(["prompt", v]),
     setCaptureError: (v) => calls.push(["error", v]),
-    dialog: {
+    modal: {
       isOpen: () => false,
       showModal: () => calls.push(["show"]),
       close: () => calls.push(["close"]),
