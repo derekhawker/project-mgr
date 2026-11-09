@@ -33,6 +33,10 @@
 
 - When using Codesitter in this repository, keep the frontend and Rust indexes separate: index `app/` with `--lang js,ts,tsx`, and `app/src-tauri/` with `--lang rust`. These are distinct project roots, each with its own `.codesitter` index; run queries against the matching root and use file paths relative to that root. `app/` is the frontend root because it includes its source, tests, and HTML entry point; `app/src-tauri/` is the Rust root. Codesitter skips generated `target/` directories.
 
+## Delivery
+
+- For ticket work, do not create pull requests. Push the ticket branch and squash-merge directly into `main`.
+
 ## Testing
 - Avoid end-to-end tests; their cost is not justified.
 - Test application behavior below the Tauri command-handler layer. Do not call Tauri handlers from tests, since that duplicates framework testing.
