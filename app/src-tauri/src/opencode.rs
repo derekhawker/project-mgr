@@ -1,4 +1,4 @@
-//! The application's ownership boundary for the OpenCode v2 server.
+//! The application's client boundary for OpenCode's shared v2 background service.
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use reqwest::blocking::{Client, Response};
 use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION};
@@ -6,10 +6,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::ffi::OsStr;
-use std::io::Read;
-use std::net::TcpListener;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::Command;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Mutex;
 use std::thread;
@@ -248,10 +246,17 @@ pub struct PendingInputs {
 }
 
 struct Server {
-    child: Child,
     info: RuntimeInfo,
     _password: String,
     client: Client,
+}
+
+#[derive(Deserialize)]
+struct ServiceRegistration {
+    url: String,
+    version: Option<String>,
+    pid: u32,
+    password: Option<String>,
 }
 pub struct Runtime {
     server: Mutex<Option<Server>>,
@@ -308,54 +313,37 @@ impl Runtime {
             .lock()
             .map_err(|_| "OpenCode runtime lock is poisoned".to_owned())?;
         if let Some(server) = slot.as_mut() {
-            if server
-                .child
-                .try_wait()
-                .map_err(|e| e.to_string())?
-                .is_none()
-            {
-                return Ok(server.info.clone());
-            }
-            *slot = None;
+            return Ok(server.info.clone());
         }
         let executable = resolve_opencode()?;
         let cli_version = validate_help(&executable)?;
-        let password = generate_password()?;
-        let listener = TcpListener::bind(("127.0.0.1", 0))
-            .map_err(|e| format!("could not reserve OpenCode port: {e}"))?;
-        let port = listener.local_addr().map_err(|e| e.to_string())?.port();
-        drop(listener);
-        let mut child = Command::new(&executable)
-            .args([
-                "serve",
-                "--hostname",
-                "127.0.0.1",
-                "--port",
-                &port.to_string(),
-            ])
-            .env("OPENCODE_SERVER_PASSWORD", &password)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .map_err(|e| format!("could not start OpenCode server: {e}"))?;
-        let base_url = format!("http://127.0.0.1:{port}");
-        let client = match api_client(&password) {
-            Ok(client) => client,
-            Err(error) => {
-                return Err(with_cleanup_errors(error, stop_child(&mut child)));
-            }
-        };
-        let info = wait_for_health(&mut child, &client, &base_url, HEALTH_TIMEOUT)?;
+        validate_shared_service_support(&executable)?;
+        let state_dir = opencode_state_dir(&executable)?;
+        let registration = discover_or_start_service(&executable, &state_dir, HEALTH_TIMEOUT)?;
+        let base_url = validate_local_service_url(&registration.url)?;
+        let client = api_client_optional(registration.password.as_deref())?;
+        let info = get_json::<Info>(&client, &format!("{base_url}/api/info")).map_err(|error| {
+            format!("could not connect to the registered OpenCode service: {error}")
+        })?;
+        require_v2(&info.version)
+            .map_err(|error| format!("registered OpenCode service is incompatible: {error}"))?;
+        if registration
+            .version
+            .as_deref()
+            .is_some_and(|version| version != info.version)
+        {
+            return Err(
+                "registered OpenCode service version does not match its API version".into(),
+            );
+        }
         let result = RuntimeInfo {
             executable: executable.display().to_string(),
-            version: format!("{cli_version} · server {}", info.version),
+            version: format!("{cli_version} · shared server {}", info.version),
             base_url,
         };
         *slot = Some(Server {
-            child,
             info: result.clone(),
-            _password: password,
+            _password: registration.password.unwrap_or_default(),
             client,
         });
         Ok(result)
@@ -432,7 +420,11 @@ impl Runtime {
     /// Stores durable model-visible context for one exact OpenCode session.
     pub fn set_instruction_entry(&self, id: &str, key: &str, value: &str) -> Result<(), String> {
         let id = validate_session_id(id)?;
-        if key.is_empty() || !key.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+        if key.is_empty()
+            || !key
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        {
             return Err("Invalid OpenCode instruction entry key".into());
         }
         let (client, url) = self.client_url()?;
@@ -443,7 +435,9 @@ impl Runtime {
     pub fn allow_ticket_directory(&self, id: &str, directory: &Path) -> Result<(), String> {
         let id = validate_session_id(id)?;
         let directory = directory.canonicalize().map_err(|e| e.to_string())?;
-        let path = directory.to_str().ok_or("Ticket directory is not valid UTF-8")?;
+        let path = directory
+            .to_str()
+            .ok_or("Ticket directory is not valid UTF-8")?;
         if path.contains(['*', '?']) {
             return Err("Ticket directory cannot contain permission wildcard characters".into());
         }
@@ -645,11 +639,9 @@ impl Runtime {
         }
         self.terminals.shutdown();
         if let Ok(mut slot) = self.server.lock() {
-            if let Some(mut server) = slot.take() {
-                if let Err(error) = stop_child(&mut server.child) {
-                    eprintln!("{{\"event\":\"child-cleanup-error\",\"context\":\"runtime shutdown\",\"message\":{}}}", serde_json::to_string(&error).unwrap_or_else(|_| "\"unserializable\"".into()));
-                }
-            }
+            // The OpenCode CLI owns the shared background service. Dropping
+            // our client and credential must not stop it for other clients.
+            slot.take();
         }
     }
 
@@ -917,16 +909,45 @@ fn post_empty<T: Serialize>(client: &Client, url: &str, body: &T) -> Result<(), 
     .map(|_| ())
 }
 fn put_empty<T: Serialize>(client: &Client, url: &str, body: &T) -> Result<(), String> {
-    checked(client.put(url).json(body).send().map_err(|e| e.to_string())?).map(|_| ())
+    checked(
+        client
+            .put(url)
+            .json(body)
+            .send()
+            .map_err(|e| e.to_string())?,
+    )
+    .map(|_| ())
 }
-fn set_instruction_entry_at(client: &Client, base_url: &str, id: &str, key: &str, value: &str) -> Result<(), String> {
-    put_empty(client, &format!("{base_url}/api/experimental/session/{id}/instructions/entries/{key}"), &json!({"value": value}))
+fn set_instruction_entry_at(
+    client: &Client,
+    base_url: &str,
+    id: &str,
+    key: &str,
+    value: &str,
+) -> Result<(), String> {
+    put_empty(
+        client,
+        &format!("{base_url}/api/experimental/session/{id}/instructions/entries/{key}"),
+        &json!({"value": value}),
+    )
 }
 fn allow_directory_at(client: &Client, base_url: &str, id: &str, path: &str) -> Result<(), String> {
-    let permissions = ["external_directory", "read", "edit"].into_iter().flat_map(|action| {
-        [path.to_owned(), format!("{path}/*")].into_iter().map(move |resource| json!({"action": action, "resource": resource, "effect": "allow"}))
-    }).collect::<Vec<_>>();
-    checked(client.patch(format!("{base_url}/api/session/{id}")).json(&json!({"permissions": permissions})).send().map_err(|e| e.to_string())?).map(|_| ())
+    let permissions = ["external_directory", "read", "edit"]
+        .into_iter()
+        .flat_map(|action| {
+            [path.to_owned(), format!("{path}/*")].into_iter().map(
+                move |resource| json!({"action": action, "resource": resource, "effect": "allow"}),
+            )
+        })
+        .collect::<Vec<_>>();
+    checked(
+        client
+            .patch(format!("{base_url}/api/session/{id}"))
+            .json(&json!({"permissions": permissions}))
+            .send()
+            .map_err(|e| e.to_string())?,
+    )
+    .map(|_| ())
 }
 fn delete_empty(client: &Client, url: &str) -> Result<(), String> {
     checked(client.delete(url).send().map_err(|e| e.to_string())?).map(|_| ())
@@ -946,13 +967,20 @@ fn checked(response: Response) -> Result<Response, String> {
 pub fn is_not_found_api_error(error: &str) -> bool {
     error.starts_with("OpenCode API returned HTTP 404 ")
 }
+#[cfg(test)]
 fn api_client(password: &str) -> Result<Client, String> {
+    api_client_optional(Some(password))
+}
+
+fn api_client_optional(password: Option<&str>) -> Result<Client, String> {
     let mut headers = HeaderMap::new();
-    let token = STANDARD.encode(format!("opencode:{password}"));
-    headers.insert(
-        AUTHORIZATION,
-        HeaderValue::from_str(&format!("Basic {token}")).map_err(|e| e.to_string())?,
-    );
+    if let Some(password) = password {
+        let token = STANDARD.encode(format!("opencode:{password}"));
+        headers.insert(
+            AUTHORIZATION,
+            HeaderValue::from_str(&format!("Basic {token}")).map_err(|e| e.to_string())?,
+        );
+    }
     Client::builder()
         .default_headers(headers)
         .timeout(Duration::from_secs(30))
@@ -960,84 +988,121 @@ fn api_client(password: &str) -> Result<Client, String> {
         .map_err(|e| e.to_string())
 }
 
-fn wait_for_health(
-    child: &mut Child,
-    client: &Client,
-    base_url: &str,
+fn opencode_state_dir(executable: &Path) -> Result<PathBuf, String> {
+    let output = Command::new(executable)
+        .args(["debug", "paths", "state"])
+        .output()
+        .map_err(|error| format!("could not locate OpenCode service state: {error}"))?;
+    if !output.status.success() {
+        return Err("could not locate OpenCode service state (CLI debug paths failed)".into());
+    }
+    let path = String::from_utf8(output.stdout)
+        .map_err(|_| "OpenCode returned an invalid service state path".to_owned())?;
+    let path = PathBuf::from(path.trim());
+    if !path.is_absolute() {
+        return Err("OpenCode returned a non-absolute service state path".into());
+    }
+    Ok(path)
+}
+
+fn validate_shared_service_support(executable: &Path) -> Result<(), String> {
+    let output = Command::new(executable)
+        .args(["service", "--help"])
+        .output()
+        .map_err(|error| format!("could not inspect OpenCode shared-service support: {error}"))?;
+    let help = String::from_utf8_lossy(&output.stdout).to_string()
+        + &String::from_utf8_lossy(&output.stderr);
+    if !output.status.success() || !help.contains("start") {
+        return Err(
+            "Incompatible OpenCode CLI: shared-service management with `service start` is required"
+                .into(),
+        );
+    }
+    Ok(())
+}
+
+fn read_service_registration(path: &Path) -> Result<Option<ServiceRegistration>, String> {
+    let metadata = match std::fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => {
+            return Err(format!(
+                "could not inspect OpenCode service registration: {error}"
+            ))
+        }
+    };
+    if !metadata.is_file() {
+        return Err("OpenCode service registration is not a regular file".into());
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if metadata.permissions().mode() & 0o077 != 0 {
+            return Err("OpenCode service registration permissions are too broad".into());
+        }
+    }
+    let contents = std::fs::read(path)
+        .map_err(|error| format!("could not read OpenCode service registration: {error}"))?;
+    let registration: ServiceRegistration = serde_json::from_slice(&contents)
+        .map_err(|_| "OpenCode service registration is invalid".to_owned())?;
+    if registration.pid == 0 {
+        return Err("OpenCode service registration has an invalid process ID".into());
+    }
+    Ok(Some(registration))
+}
+
+fn validate_local_service_url(raw: &str) -> Result<String, String> {
+    let url = reqwest::Url::parse(raw)
+        .map_err(|_| "OpenCode service registration has an invalid URL".to_owned())?;
+    let local = url.host_str().is_some_and(|host| {
+        host.eq_ignore_ascii_case("localhost")
+            || host
+                .parse::<std::net::IpAddr>()
+                .is_ok_and(|address| address.is_loopback())
+    });
+    if url.scheme() != "http" || !local || url.username() != "" || url.password().is_some() {
+        return Err("OpenCode service registration must point to a local HTTP service".into());
+    }
+    Ok(url.as_str().trim_end_matches('/').to_owned())
+}
+
+fn start_shared_service(executable: &Path) -> Result<(), String> {
+    let output = Command::new(executable)
+        .args(["service", "start"])
+        .output()
+        .map_err(|error| format!("could not start the OpenCode shared service: {error}"))?;
+    if !output.status.success() {
+        return Err("OpenCode could not start its shared service".into());
+    }
+    Ok(())
+}
+
+fn discover_or_start_service(
+    executable: &Path,
+    state_dir: &Path,
     timeout: Duration,
-) -> Result<Info, String> {
+) -> Result<ServiceRegistration, String> {
+    let registration_path = state_dir.join("service.json");
+    if let Some(registration) = read_service_registration(&registration_path)? {
+        return Ok(registration);
+    }
+    start_shared_service(executable)?;
+    wait_for_registration(&registration_path, timeout)
+}
+
+fn wait_for_registration(path: &Path, timeout: Duration) -> Result<ServiceRegistration, String> {
     let deadline = Instant::now() + timeout;
     loop {
-        if let Some(status) = child
-            .try_wait()
-            .map_err(|e| format!("could not check OpenCode server: {e}"))?
-        {
-            return Err(with_cleanup_errors(
-                format!("OpenCode server exited during startup ({status})"),
-                stop_child(child),
-            ));
-        }
-        if let Ok(response) = client.get(format!("{base_url}/api/info")).send() {
-            if response.status().is_success() {
-                if let Ok(info) = response.json::<Info>() {
-                    if let Err(error) = require_v2(&info.version) {
-                        return Err(with_cleanup_errors(
-                            format!("OpenCode server is incompatible: {error}"),
-                            stop_child(child),
-                        ));
-                    }
-                    return Ok(info);
-                }
-            }
+        if let Some(registration) = read_service_registration(path)? {
+            return Ok(registration);
         }
         if Instant::now() >= deadline {
-            return Err(with_cleanup_errors(
-                format!(
-                    "OpenCode server did not become healthy before the {} second timeout",
-                    timeout.as_secs()
-                ),
-                stop_child(child),
-            ));
+            return Err(
+                "OpenCode shared service did not register before the startup timeout".into(),
+            );
         }
         thread::sleep(Duration::from_millis(100));
     }
-}
-
-fn stop_child(child: &mut Child) -> Result<(), String> {
-    let kill = child
-        .kill()
-        .map_err(|error| format!("kill failed: {error}"));
-    let wait = child
-        .wait()
-        .map(|_| ())
-        .map_err(|error| format!("wait failed: {error}"));
-    let mut errors = Vec::new();
-    if let Err(error) = kill {
-        errors.push(error);
-    }
-    if let Err(error) = wait {
-        errors.push(error);
-    }
-    if errors.is_empty() {
-        Ok(())
-    } else {
-        Err(errors.join("; "))
-    }
-}
-
-fn with_cleanup_errors(error: String, cleanup: Result<(), String>) -> String {
-    match cleanup {
-        Ok(()) => error,
-        Err(cleanup) => format!("{error}; cleanup: {cleanup}"),
-    }
-}
-fn generate_password() -> Result<String, String> {
-    let mut bytes = [0u8; 24];
-    std::fs::File::open("/dev/urandom")
-        .map_err(|e| e.to_string())?
-        .read_exact(&mut bytes)
-        .map_err(|e| e.to_string())?;
-    Ok(STANDARD.encode(bytes))
 }
 
 pub fn resolve_opencode() -> Result<PathBuf, String> {
@@ -1174,7 +1239,7 @@ mod tests {
     use super::test_resource_lock::ResourceLock;
     use super::*;
     use std::fs;
-    use std::io::{BufRead, BufReader, Write};
+    use std::io::{BufRead, BufReader, Read, Write};
     use std::net::TcpListener;
     use std::thread;
     use tempfile::tempdir;
@@ -1191,6 +1256,168 @@ mod tests {
             .expect_err("shutdown must be a hard gate");
         assert!(error.contains("shutting down"));
         assert!(runtime.write_terminal("ses_1", "x").is_err());
+    }
+
+    #[test]
+    fn service_registration_reads_private_password_without_serializing_it() {
+        let directory = tempdir().unwrap();
+        let path = directory.path().join("service.json");
+        fs::write(
+            &path,
+            r#"{"url":"http://127.0.0.1:49374","version":"2.1.4","pid":123,"password":"private-test-secret"}"#,
+        )
+        .unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+        }
+        let registration = read_service_registration(&path).unwrap().unwrap();
+        assert_eq!(registration.url, "http://127.0.0.1:49374");
+        assert_eq!(
+            registration.password.as_deref(),
+            Some("private-test-secret")
+        );
+        assert!(validate_local_service_url(&registration.url).is_ok());
+        assert!(validate_local_service_url("http://example.com:49374").is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn shared_service_requires_cli_lifecycle_support() {
+        let directory = tempdir().unwrap();
+        let executable = directory.path().join("opencode");
+        fs::write(
+            &executable,
+            "#!/bin/sh\n[ \"$1 $2\" = \"service --help\" ] || exit 1\nprintf 'start status\\n'\n",
+        )
+        .unwrap();
+        make_executable(&executable);
+        assert!(validate_shared_service_support(&executable).is_ok());
+
+        fs::write(&executable, "#!/bin/sh\nexit 1\n").unwrap();
+        make_executable(&executable);
+        assert!(validate_shared_service_support(&executable)
+            .unwrap_err()
+            .contains("service start"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn service_registration_rejects_broad_file_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+        let directory = tempdir().unwrap();
+        let path = directory.path().join("service.json");
+        fs::write(
+            &path,
+            r#"{"url":"http://127.0.0.1:49374","pid":123,"password":"secret"}"#,
+        )
+        .unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+        assert!(matches!(
+            read_service_registration(&path),
+            Err(error) if error.contains("permissions are too broad")
+        ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn shared_service_is_reused_without_running_start_command() {
+        use std::os::unix::fs::PermissionsExt;
+        let directory = tempdir().unwrap();
+        let executable = directory.path().join("opencode");
+        let state_dir = directory.path().join("state");
+        fs::create_dir_all(&state_dir).unwrap();
+        fs::write(
+            state_dir.join("service.json"),
+            r#"{"url":"http://127.0.0.1:49374","version":"2.1.4","pid":123,"password":"test-secret"}"#,
+        )
+        .unwrap();
+        fs::set_permissions(
+            state_dir.join("service.json"),
+            fs::Permissions::from_mode(0o600),
+        )
+        .unwrap();
+        fs::write(&executable, "#!/bin/sh\nexit 9\n").unwrap();
+        make_executable(&executable);
+
+        let registration = discover_or_start_service(&executable, &state_dir, Duration::ZERO)
+            .expect("registered service should be reused");
+        assert_eq!(registration.pid, 123);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unauthorized_registered_service_fails_without_starting_another_server() {
+        use std::os::unix::fs::PermissionsExt;
+        let directory = tempdir().unwrap();
+        let executable = directory.path().join("opencode");
+        let state_dir = directory.path().join("state");
+        fs::create_dir_all(&state_dir).unwrap();
+        let started_marker = directory.path().join("started");
+        let script = format!("#!/bin/sh\ntouch '{}'\nexit 1\n", started_marker.display());
+        fs::write(&executable, script).unwrap();
+        make_executable(&executable);
+
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let address = listener.local_addr().unwrap();
+        let registration_path = state_dir.join("service.json");
+        fs::write(
+            &registration_path,
+            format!(
+                r#"{{"url":"http://{address}","version":"2.1.4","pid":123,"password":"wrong-secret"}}"#
+            ),
+        )
+        .unwrap();
+        fs::set_permissions(&registration_path, fs::Permissions::from_mode(0o600)).unwrap();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut line = String::new();
+            loop {
+                line.clear();
+                reader.read_line(&mut line).unwrap();
+                if line == "\r\n" {
+                    break;
+                }
+            }
+            stream
+                .write_all(
+                    b"HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                )
+                .unwrap();
+        });
+
+        let registration = discover_or_start_service(&executable, &state_dir, Duration::ZERO)
+            .expect("registered server must be reused even when its API auth fails");
+        let client = api_client_optional(registration.password.as_deref()).unwrap();
+        let error =
+            get_json::<Info>(&client, &format!("{}/api/info", registration.url)).unwrap_err();
+        assert!(error.contains("HTTP 401"));
+        assert!(!started_marker.exists());
+        server.join().unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn absent_shared_service_is_started_and_registration_is_loaded() {
+        let directory = tempdir().unwrap();
+        let executable = directory.path().join("opencode");
+        let state_dir = directory.path().join("state");
+        fs::create_dir_all(&state_dir).unwrap();
+        let registration = state_dir.join("service.json");
+        let script = format!(
+            "#!/bin/sh\n[ \"$1 $2\" = \"service start\" ] || exit 9\nprintf '%s\\n' '{{\"url\":\"http://127.0.0.1:49374\",\"version\":\"2.1.4\",\"pid\":123,\"password\":\"test-secret\"}}' > '{}'\nchmod 600 '{}'\n",
+            registration.display(),
+            registration.display()
+        );
+        fs::write(&executable, script).unwrap();
+        make_executable(&executable);
+
+        let found = discover_or_start_service(&executable, &state_dir, Duration::from_secs(1))
+            .expect("service start should publish registration");
+        assert_eq!(found.pid, 123);
+        assert_eq!(found.password.as_deref(), Some("test-secret"));
     }
 
     #[test]
@@ -1465,10 +1692,8 @@ mod tests {
             }
         });
 
-        let child = Command::new("sh").args(["-c", "sleep 30"]).spawn().unwrap();
         let runtime = Runtime {
             server: Mutex::new(Some(Server {
-                child,
                 info: RuntimeInfo {
                     executable: "test".into(),
                     version: "test".into(),
@@ -1715,17 +1940,46 @@ mod tests {
         let address = listener.local_addr().unwrap();
         let server = thread::spawn(move || {
             for (method, path, expected_body, status) in [
-                ("PUT", "/api/experimental/session/ses_ticket-42/instructions/entries/workspace-ticket", r#"{"value":"Keep this ticket context."}"#, "204 No Content"),
-                ("PATCH", "/api/session/ses_ticket-42", r#"{"permissions":[{"action":"external_directory","effect":"allow","resource":"/tmp/ticket"},{"action":"external_directory","effect":"allow","resource":"/tmp/ticket/*"},{"action":"read","effect":"allow","resource":"/tmp/ticket"},{"action":"read","effect":"allow","resource":"/tmp/ticket/*"},{"action":"edit","effect":"allow","resource":"/tmp/ticket"},{"action":"edit","effect":"allow","resource":"/tmp/ticket/*"}]}"#, "403 Forbidden"),
+                (
+                    "PUT",
+                    "/api/experimental/session/ses_ticket-42/instructions/entries/workspace-ticket",
+                    r#"{"value":"Keep this ticket context."}"#,
+                    "204 No Content",
+                ),
+                (
+                    "PATCH",
+                    "/api/session/ses_ticket-42",
+                    r#"{"permissions":[{"action":"external_directory","effect":"allow","resource":"/tmp/ticket"},{"action":"external_directory","effect":"allow","resource":"/tmp/ticket/*"},{"action":"read","effect":"allow","resource":"/tmp/ticket"},{"action":"read","effect":"allow","resource":"/tmp/ticket/*"},{"action":"edit","effect":"allow","resource":"/tmp/ticket"},{"action":"edit","effect":"allow","resource":"/tmp/ticket/*"}]}"#,
+                    "403 Forbidden",
+                ),
             ] {
                 let (mut stream, _) = listener.accept().unwrap();
                 let mut reader = BufReader::new(stream.try_clone().unwrap());
-                let mut line = String::new(); reader.read_line(&mut line).unwrap();
-                assert_eq!(line.split_whitespace().take(2).collect::<Vec<_>>(), [method, path]);
+                let mut line = String::new();
+                reader.read_line(&mut line).unwrap();
+                assert_eq!(
+                    line.split_whitespace().take(2).collect::<Vec<_>>(),
+                    [method, path]
+                );
                 let mut headers = String::new();
-                loop { line.clear(); reader.read_line(&mut line).unwrap(); if line == "\r\n" { break; } headers.push_str(&line); }
-                let length = headers.lines().find_map(|h| h.to_ascii_lowercase().strip_prefix("content-length:").and_then(|n| n.trim().parse().ok())).unwrap_or(0);
-                let mut body = vec![0; length]; reader.read_exact(&mut body).unwrap();
+                loop {
+                    line.clear();
+                    reader.read_line(&mut line).unwrap();
+                    if line == "\r\n" {
+                        break;
+                    }
+                    headers.push_str(&line);
+                }
+                let length = headers
+                    .lines()
+                    .find_map(|h| {
+                        h.to_ascii_lowercase()
+                            .strip_prefix("content-length:")
+                            .and_then(|n| n.trim().parse().ok())
+                    })
+                    .unwrap_or(0);
+                let mut body = vec![0; length];
+                reader.read_exact(&mut body).unwrap();
                 assert_eq!(String::from_utf8(body).unwrap(), expected_body);
                 let response = format!("HTTP/1.1 {status}\r\nContent-Length: 20\r\nConnection: close\r\n\r\nsecret echoed body!");
                 stream.write_all(response.as_bytes()).unwrap();
@@ -1733,7 +1987,14 @@ mod tests {
         });
         let client = api_client("secret").unwrap();
         let base = format!("http://{address}");
-        set_instruction_entry_at(&client, &base, "ses_ticket-42", "workspace-ticket", "Keep this ticket context.").unwrap();
+        set_instruction_entry_at(
+            &client,
+            &base,
+            "ses_ticket-42",
+            "workspace-ticket",
+            "Keep this ticket context.",
+        )
+        .unwrap();
         let error = allow_directory_at(&client, &base, "ses_ticket-42", "/tmp/ticket").unwrap_err();
         assert!(error.contains("HTTP 403"));
         assert!(!error.contains("secret echoed"));
@@ -1835,7 +2096,6 @@ mod tests {
         });
         let runtime = Runtime {
             server: Mutex::new(Some(Server {
-                child: Command::new("sh").args(["-c", "sleep 2"]).spawn().unwrap(),
                 info: RuntimeInfo {
                     executable: "fake".into(),
                     version: "2.0.27".into(),
@@ -1908,40 +2168,6 @@ mod tests {
     }
 
     #[test]
-    fn health_timeout_and_child_exit_are_reported_and_reaped() {
-        let client = api_client("secret").unwrap();
-        let mut child = Command::new("sh").args(["-c", "sleep 2"]).spawn().unwrap();
-        let error = wait_for_health(
-            &mut child,
-            &client,
-            "http://127.0.0.1:1",
-            Duration::from_millis(10),
-        )
-        .unwrap_err();
-        assert!(error.contains("timeout"));
-        assert!(child.try_wait().unwrap().is_some());
-
-        let mut child = Command::new("sh").args(["-c", "exit 23"]).spawn().unwrap();
-        let error = wait_for_health(
-            &mut child,
-            &client,
-            "http://127.0.0.1:1",
-            Duration::from_secs(1),
-        )
-        .unwrap_err();
-        assert!(error.contains("exited during startup"));
-        assert!(child.try_wait().unwrap().is_some());
-    }
-
-    #[test]
-    fn deliberate_child_kill_wait_cleanup_is_idempotent() {
-        let mut child = Command::new("sh").args(["-c", "sleep 2"]).spawn().unwrap();
-        assert!(stop_child(&mut child).is_ok());
-        assert!(child.try_wait().unwrap().is_some());
-        assert!(stop_child(&mut child).is_ok());
-    }
-
-    #[test]
     fn session_runtime_routes_preserve_ids_queries_auth_wrappers_and_cursors() {
         let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
         let address = listener.local_addr().unwrap();
@@ -1996,7 +2222,6 @@ mod tests {
         });
         let runtime = Runtime {
             server: Mutex::new(Some(Server {
-                child: Command::new("sh").args(["-c", "sleep 2"]).spawn().unwrap(),
                 info: RuntimeInfo {
                     executable: "fake".into(),
                     version: "2.0.27".into(),

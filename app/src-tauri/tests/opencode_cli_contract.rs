@@ -197,7 +197,8 @@ fn production_runtime_authenticates_info_and_checks_v2_model_wrapper() {
 }
 
 #[test]
-fn production_runtime_drop_stops_and_reaps_its_server_child() {
+#[cfg(target_os = "linux")]
+fn production_runtime_reuses_shared_server_and_does_not_stop_it_on_drop() {
     let _resource_guard = resource_lock::ResourceLock::acquire("opencode-cli-runtime");
     let runtime = Runtime::new();
     let info = runtime
@@ -207,13 +208,11 @@ fn production_runtime_drop_stops_and_reaps_its_server_child() {
 
     drop(runtime);
 
-    // This production test runs on Linux, where /proc distinguishes a live
-    // child from a child that has been waited on (including a lingering
-    // zombie).  The assertion is deliberately after Drop, not just after an
-    // explicit shutdown call.
+    // The shared OpenCode service is owned by OpenCode. Dropping the app
+    // runtime must leave it available for other OpenCode clients.
     assert!(
-        !Path::new(&format!("/proc/{pid}")).exists(),
-        "app-owned OpenCode server child {pid} is still alive after Runtime::drop"
+        Path::new(&format!("/proc/{pid}")).exists(),
+        "shared OpenCode server {pid} was stopped when Runtime was dropped"
     );
 }
 

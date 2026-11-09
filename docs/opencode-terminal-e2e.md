@@ -39,7 +39,7 @@ follow-up also remain unvalidated.
 | xterm.js | Parse and visibly render the PTY byte stream; send keyboard input back to the PTY. |
 | Tauri events | Carry ordered PTY output and exit notifications from Rust to the matching frontend terminal. |
 
-Use the installed OpenCode CLI and verify its version and command contract at startup. For the installed v2.0.27 contract, use an app-owned `opencode serve`, authenticated `/api/...` routes, and the root TUI invocation `opencode --server <url> --session <id> <directory>`. The v1 `attach`, unprefixed `/session`, and `prompt_async` forms are historical prototype evidence and must not be mixed with v2. See [`opencode-v2-contract.md`](opencode-v2-contract.md).
+Use the installed OpenCode CLI and verify its version and command contract at startup. Production discovers the shared service from OpenCode's private registration file, starts it through `opencode service start` only when absent, and connects using its registered credential. Use authenticated `/api/...` routes and the root TUI invocation `opencode --server <url> --session <id> <directory>`. The app must not stop the shared service on quit. The v1 `attach`, unprefixed `/session`, and `prompt_async` forms are historical prototype evidence and must not be mixed with v2. See [`opencode-v2-contract.md`](opencode-v2-contract.md).
 
 Every terminal attachment requires an exact session ID and its correct working directory. The application layer resolves those values: a workspace with zero repositories has one session at its home; one repository has one session at its clone; multiple repositories have one session per clone; each task repo session uses that repository's task worktree; Quick Requests use the confirmed registered-repository directory or the shared `<configured OpenCode Projects root>/Quick Requests/` directory. Store exact session IDs, directories, and workspace/task repository associations. Keep this routing outside the terminal renderer. Each session gets its own PTY and xterm instance; never infer a session from whichever conversation is foreground or newest in a directory.
 
@@ -48,8 +48,8 @@ Every terminal attachment requires an exact session ID and its correct working d
 1. Register the `terminal-output` and `terminal-exit` listeners before enabling request submission. If either subscription fails, show the error and block the terminal workflow; do not silently continue with tabs that cannot receive output.
 2. The main Tauri window needs `core:event:allow-listen` and `core:event:allow-unlisten` in its capability. Rust successfully emitting events does not grant the WebView permission to listen.
 3. Check `opencode --version` and verify the matching TUI flags. For v2.0.27, root help must expose `--server` and `--session`; launch the root TUI as `opencode --server <url> --session <id> <directory>`.
-4. Start or reuse an app-owned `opencode serve` child bound to `127.0.0.1` for the resolved session context. For v2.0.27, wait for authenticated `GET /api/info`, create sessions through `/api/session` with `location.directory`, and use Basic authentication from Rust. Rust passes the password only to the server and TUI child processes that need it; never expose credentials to the WebView.
-5. Keep any server and PTY subprocesses owned by the Tauri process. Do not silently use OpenCode's independently managed shared background server.
+4. Reuse the registered shared OpenCode service or start it through the CLI if its registration is absent. Validate authenticated `GET /api/info`, create sessions through `/api/session` with `location.directory`, and use the registration password for Basic authentication in Rust. Pass it only to TUI child processes that need it; never expose credentials to the WebView.
+5. Keep attached TUI/PTY subprocesses owned by the Tauri process. The shared OpenCode service remains owned by OpenCode and is never stopped by Project Manager.
 
 ## New-session flow
 
@@ -97,7 +97,7 @@ The GUI acceptance check is visible existing prompt/response text in the xterm s
 
 - Hiding a terminal view or closing the Tauri window hides presentation only. Keep its PTY, TUI process, server-side session, and buffered output alive.
 - Reopen the existing app through its tray action. Do not start another app process to show a hidden window; duplicate app processes produce duplicate tray icons and separate terminal state. A clean implementation should enforce single-instance behavior.
-- Full application quit must explicitly stop every attached TUI and the app-owned server, then wait for those children to exit. The prototype's tray Quit code now calls a shared shutdown path that waits for tracked PTY/TUI and server direct children; Linux Rust tests cover reaping those children and pre-registration cleanup guards. Those tests do not exercise the Tauri tray callback, descendants/process groups, or the manual Wayland lifecycle. Verify those separately and do not assume managed-state destruction alone is sufficient.
+- Full application quit must explicitly stop attached TUI/PTY children and wait for them to exit, but leave the shared OpenCode service running for other clients. Verify the manual Wayland lifecycle separately and do not assume managed-state destruction alone is sufficient.
 
 ## Failure behavior
 
@@ -113,7 +113,7 @@ Keep errors associated with the session ID. Never send the initial prompt if the
 4. **New request:** submit a sufficiently long prompt and verify output becomes visible while the response is still being produced, not only after completion. Confirm the initial prompt belongs to the session shown in that terminal.
 5. **Follow-up:** enter a follow-up in xterm and verify it continues the same OpenCode session and appears in that same terminal history.
 6. **Context isolation:** open workspace, task, and Quick Request sessions through the same terminal runtime. Verify each uses its resolved directory and only its own session ID/history. Include two sessions sharing a directory.
-7. **Lifecycle:** hide and reopen a terminal view, hide and show the app through its tray, and verify the same session remains usable with only one app/tray instance. On full quit, verify no TUI or server child remains.
+7. **Lifecycle:** hide and reopen a terminal view, hide and show the app through its tray, and verify the same session remains usable with only one app/tray instance. On full quit, verify TUI children exit and the shared OpenCode service remains available.
 8. **Restart exited terminal:** press Ctrl+D in a tracked TUI, use **Restart terminal**, and verify the same session ID/history and exact directory return without sending a prompt.
 
-The saved-history GUI result used an existing Quick Request `2+3` session and visibly rendered the prompt and `5` without generating another model response. This is historical v1 evidence for Quick Requests only. The current v2 restore-selector unit tests are not GUI acceptance. Live v2 API/TUI behavior, model-backed streaming, follow-up behavior, regular workspace/task resolution, approval/user-input flows, event recovery, manual Wayland rendering, macOS rendering, and complete awaited quit cleanup remain open validation items.
+The saved-history GUI result used an existing Quick Request `2+3` session and visibly rendered the prompt and `5` without generating another model response. This is historical v1 evidence for Quick Requests only. The current v2 restore-selector unit tests are not GUI acceptance. Live v2 API/TUI behavior, model-backed streaming, follow-up behavior, regular workspace/task resolution, approval/user-input flows, event recovery, manual Wayland rendering, macOS rendering, and complete awaited TUI/PTY quit cleanup remain open validation items.
