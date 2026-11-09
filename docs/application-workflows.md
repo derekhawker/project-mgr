@@ -18,11 +18,13 @@ for the boundaries between the GUI, Rust core, OpenCode, Git, SQLite, and the
 filesystem.
 
 The application uses Tauri, Rust, raw HTML/CSS/JavaScript, a Rust-managed PTY,
-xterm.js, and a version-checked app-owned OpenCode server and CLI contract. The
-installed v2.0.27 contract is recorded in [`opencode-v2-contract.md`](opencode-v2-contract.md);
+xterm.js, and OpenCode's shared local background server. Rust discovers the
+server from OpenCode's private service registration and starts it through the
+OpenCode CLI only when no service is registered. The server/API and CLI
+contracts are recorded in [`opencode-v2-contract.md`](opencode-v2-contract.md);
 historical v1 evidence remains in the prototype notes. OpenCode conversation
-history remains in OpenCode; SQLite stores
-only application associations and lifecycle state.
+history remains in OpenCode; SQLite stores only application associations and
+lifecycle state.
 
 Rust creates and validates Workspace clones, Task branches/worktrees, and their
 associations before opening user-facing sessions. OpenCode owns conversation
@@ -35,7 +37,7 @@ application-managed repositories or worktrees.
 |---|---|---|
 | User | Chooses work, supplies prompts, reviews results, answers requests, and changes lifecycle state. | Direct database, process, or Git bookkeeping. |
 | GUI | Renders navigation, forms, status, terminal views, history, and lifecycle controls. Sends explicit commands to Rust. | OpenCode history, authoritative associations, or filesystem validation. |
-| Tauri/Rust core | Owns application commands, validation, SQLite writes, OpenCode child processes, PTYs, event forwarding, recovery, and cleanup scheduling. | Conversation content or model decisions. |
+| Tauri/Rust core | Owns application commands, validation, SQLite writes, attached TUI/PTY child processes, OpenCode API calls, event forwarding, recovery, and cleanup scheduling. | Shared OpenCode service lifecycle, conversation content, or model decisions. |
 | SQLite management store | Persists workspaces, tasks, repositories, associations, sessions, settings, lifecycle state, and cleanup state. | Notes, resources, Git history, or duplicate conversation transcripts. |
 | Filesystem | Stores workspace/task home folders, notes, resources, and the default Quick Request directory. | Lifecycle truth for records; SQLite remains authoritative for management state. |
 | Git | Identifies repositories and branches and reports worktree cleanliness and usage. | Workspace/task lifecycle or OpenCode conversation history. |
@@ -202,7 +204,7 @@ Requests** above the recent requests list.
 15. Removing a worktree never removes its branch.
 16. Dirty worktrees and worktrees containing new files remain in place.
 17. Hiding a terminal view or the main window does not stop OpenCode work.
-18. Full application quit stops app-owned TUI and server children.
+18. Full application quit stops app-owned TUI/PTY children but leaves the shared OpenCode service running for other clients.
 19. A failed event subscription, session creation, PTY attachment, or required
    validation stops the affected flow with a visible error.
 
@@ -238,16 +240,16 @@ opencode --server "$SERVER_URL" --session "$SESSION_ID" "$DIRECTORY"
 
 Only after the matching TUI is open and its output path is ready does Rust send
 the initial prompt with `POST /api/session/{sessionID}/prompt` and a
-`{"text":"..."}` body. Rust owns the server password and API client, passes
-the password only to the app-owned server and TUI child processes that need it,
-and never exposes it to the WebView.
+`{"text":"..."}` body. Rust reads the generated shared-service password from
+OpenCode's private registration and owns the API client. It passes the password
+only to TUI child processes that need it and never exposes it to the WebView.
 
 | Step | Actor | Action | Result |
 |---:|---|---|---|
 | 1 | User | Chooses an available model and submits a workspace, task, or Quick Request prompt. | The GUI disables duplicate submission and shows session startup. |
 | 2 | GUI | Sends a typed command to Rust containing the owner ID, prompt, selected model, and relevant preferences. | Rust receives explicit owner and model choices, not a foreground-session or OpenCode-default guess. |
 | 3 | Rust | Validates the owner, prompt, selected model, working directory, and repository/worktree context. Creates the directory if the flow requires it. | Invalid input fails before a model prompt is sent. |
-| 4 | Rust | Ensures the app-owned OpenCode server for the context is healthy. | The server is ready before session creation. |
+| 4 | Rust | Connects to OpenCode's registered shared service, starting it through the OpenCode CLI only when no service is registered; validates authenticated API health. | The shared server is ready before session creation, with no duplicate app-owned server. |
 | 5 | Rust | Calls authenticated OpenCode `POST /api/session` with the exact `location.directory` and selected `model`. | OpenCode returns an exact session ID in the `data` response wrapper. |
 | 6 | Rust | Writes the session association to SQLite before starting generation. | The owner can recover the exact session after a restart. |
 | 7 | Rust | Allocates a PTY and launches the root TUI as `opencode --server <url> --session <id> <directory>`. | One TUI process is attached to the exact session and directory. |
@@ -325,7 +327,7 @@ notices.
 | 2 | Rust | Opens SQLite and validates the schema. | The app knows the owners and associations before rendering them. |
 | 3 | Rust | Loads the user project-home setting and ensures the default `~/OpenCode Projects/` root exists when needed. | Regular work has a stable location. |
 | 4 | Rust | Checks the installed OpenCode version and its matching CLI/API contract. For v2.0.27 this is authenticated `/api/info`, `/api/session`, and the root TUI `--server`/`--session` contract. | Unsupported installation fails visibly at the integration boundary. |
-| 5 | Rust | Starts or reconnects to app-owned OpenCode server process state. | No independently managed background service is introduced. |
+| 5 | Rust | Discovers the registered shared OpenCode service, or starts it through the OpenCode CLI when absent. | Startup reconnects to one shared service instead of creating an app-owned duplicate. |
 | 6 | Rust | Inspects active sessions, cleanup jobs, and previously uncertain runtime records. | Recovery work is scheduled before normal actions are enabled. |
 | 7 | GUI | Registers event listeners before enabling session actions. | PTY output cannot be silently dropped due to missing capability. |
 | 8 | Rust/GUI | Reattaches visible or requested sessions and reconciles their state. | The GUI displays current work and uncertainty explicitly. |
@@ -637,7 +639,7 @@ recreates a missing worktree automatically.
 | 1 | User | Chooses **Quick Request**, reviews the prefilled default directory, optionally types or chooses another existing directory, and enters an original prompt. | The directory choice applies only to this request; the shared New-work modal preserves the current destination. |
 | 2 | GUI/Rust/OpenCode | Runs an internal directory proposal. An explicit directory must be returned unchanged, without supplying the repository catalog; otherwise the proposal may choose an enabled repository. | Rust validates the exact path or repository; no record or terminal is created. |
 | 3 | User | Reviews the directory, optionally types a path, chooses a folder, or resets to the default, then confirms. If no directory was explicitly chosen and no repository is identified, the default is `<configured OpenCode Projects root>/Quick Requests/`. | The original prompt remains unchanged; no workspace choice or starting-prompt rewrite is involved. |
-| 4 | Rust | Ensures the special Quick Requests workspace, resolved directory, and app-owned OpenCode server are ready. | The working directory is the identified repository or shared default. |
+| 4 | Rust | Ensures the special Quick Requests workspace and resolved directory, then connects to the shared OpenCode service (starting it only if absent). | The working directory is the identified repository or shared default. |
 | 5 | Rust | Creates the Quick Request task, stores its original prompt in `quick_request_prompts`, and records the OpenCode session ID, working directory, and creation time in one transaction. | The request and its exact prompt/session association are durable; the task's generic description remains unused. |
 | 6 | Rust/GUI | Attaches the exact session in a PTY and opens its dedicated Quick Request page. | The terminal fills the available main work area; app navigation remains visible and no session tabs or workspace/task controls are shown. |
 | 7 | Rust | Sends the original prompt unchanged through the session. | Generation starts in the matching TUI. |
@@ -705,7 +707,7 @@ change the request's execution status, or delete data.
 | 1 | User | Chooses **Quit** from the tray or application menu. | Rust begins an intentional shutdown. |
 | 2 | Rust | Stops accepting new management commands and marks shutdown in progress. | No new child process races with teardown. |
 | 3 | Rust | Stops or closes attached TUI/PTY children and waits for them. | No attached terminal is left orphaned. |
-| 4 | Rust | Stops the app-owned OpenCode server and waits for it. | No app-owned server remains after quit. |
+| 4 | Rust | Leaves the shared OpenCode service running; OpenCode owns its lifecycle. | Other OpenCode clients remain connected and can continue using the service. |
 | 5 | Rust | Flushes SQLite state and cleanup job state. | Recovery can distinguish completed shutdown from interruption. |
 | 6 | OS/Tauri | Exits the process. | The tray icon and application are gone. |
 

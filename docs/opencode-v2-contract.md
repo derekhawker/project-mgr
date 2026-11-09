@@ -18,7 +18,25 @@ opencode serve --help
 opencode attach --help       # absent; parsed as the root CLI and exits nonzero
 ```
 
-Observed app-owned server command:
+## Shared background server (OpenCode v2.1.4)
+
+The installed v2.1.4 CLI provides a user-scoped shared background service.
+`opencode service status` reports its URL; `opencode service start` starts it
+when it is absent. The service registration is stored at
+`<opencode debug paths state>/service.json` with mode `0600` on Unix. It records
+the service URL, version, PID, and private generated password. This registration
+is OpenCode's local discovery/authentication contract; clients must not probe
+arbitrary ports or ask the user to retrieve the generated password. Rust reads
+the registration only to make authenticated requests, validates its permissions
+and local URL, and never logs or exposes its password.
+
+The app reuses a healthy registered v2 service. If no registration exists, it
+starts the shared service through the CLI and waits for registration. It does
+not stop the shared service on application shutdown. A registered but
+unreachable, unauthenticated, or incompatible service is a visible error rather
+than a reason to launch a second server.
+
+Observed standalone server command from the v2.0.27 contract research:
 
 ```sh
 OPENCODE_SERVER_PASSWORD='secret' \
@@ -94,6 +112,10 @@ and (where acceptable) the experimental durable log.
 
 ## Prototype adaptation and boundary decision
 
+The app-owned-server implementation described below is historical prototype
+evidence. Production now connects to the shared background service as described
+in [Shared background server (OpenCode v2.1.4)](#shared-background-server-opencode-v214).
+
 The disposable prototype's code adaptation to the installed v2.0.27 seam is
 implemented without adding a daemon. It starts an app-owned `opencode serve`
 child, uses authenticated `/api/...` routes and `data` response wrappers,
@@ -167,16 +189,21 @@ cargo test --manifest-path app/src-tauri/Cargo.toml --test opencode_cli_contract
 
 The installed-CLI tests require OpenCode **v2**. They resolve the configured
 executable, verify `opencode --version` and root `--help` (including
-`--server` and `--session`), start the app-owned `opencode serve` child, and
+`--server` and `--session`), discover the shared-service registration, and
 authenticate `/api/info` and `/api/model`. The runtime smoke never sends a
-model prompt and kills/waits for the child on cleanup. A fixture test separately
-executes the exact `opencode v2.0.27` version output that exposed the parser bug.
+model prompt and verifies dropping the app runtime leaves the shared service
+running. Fixture tests separately execute the exact `opencode v2.0.27` version
+output that exposed the parser bug.
 
 ## Primary sources and local evidence
 
 * [v2 CLI source](https://github.com/anomalyco/opencode/blob/v2.0.27/packages/cli/src/commands/commands.ts)
   defines root `--server`, `--session`, `--standalone`, and `serve`; it has no
   `attach` command.
+* [v2.1.4 shared service client](https://github.com/anomalyco/opencode/blob/v2.1.4/packages/client/src/effect/service.ts)
+  defines discovery from the private state registration containing URL,
+  version, PID, and password; the [registration writer](https://github.com/anomalyco/opencode/blob/v2.1.4/packages/cli/src/services/service-registration.ts)
+  writes it with mode `0600`.
 * [v2 session protocol source](https://github.com/anomalyco/opencode/blob/v2.0.27/packages/protocol/src/groups/session.ts)
   owns route and payload definitions.
 * [v2 OpenAPI schema](https://opencode.ai/v2/openapi.json) and local
