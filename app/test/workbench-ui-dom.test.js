@@ -328,6 +328,44 @@ test("workspace views share one tablist and switching views never closes a sessi
   view.dispose();
 });
 
+test("ticket Workbench heading keeps workspace, Tickets, and shortened ticket context", () => {
+  const title = "A rather long ticket title that needs shortening in the breadcrumb";
+  let returnedToTickets = false;
+  const view = mount(WorkbenchShell, {
+    visible: () => true,
+    workspaceName: () => "Project Workspace",
+    ticketTitle: () => title,
+    onWorkspaceClick: () => { returnedToTickets = true; },
+    sessionTabs: () => [],
+    selectedSessionId: () => "",
+    docsButtonSelected: () => false,
+    docsDisabled: () => true,
+    changeReviewSelected: () => false,
+    changeReviewAvailable: () => false,
+    changeReviewDisabled: () => true,
+    repositoryTools: () => null,
+  });
+  try {
+    const heading = view.host.querySelector("#workspace-title");
+    const segments = heading.textContent.split("/").map((segment) => segment.trim());
+    assert.equal(segments[0], "Workspace");
+    assert.equal(segments[1], "Project Workspace");
+    assert.equal(segments[2], "Tickets");
+    assert.equal(segments[3].startsWith("A rather long ticket title"), true);
+    assert.equal(segments[3].endsWith("…"), true);
+    const shortened = [...heading.querySelectorAll("span")].find((span) => span.title === title);
+    assert.ok(shortened);
+    assert.equal(shortened.textContent.endsWith("…"), true);
+    const backButton = heading.querySelector('button[aria-label="Back to tickets for Project Workspace"]');
+    assert.ok(backButton);
+    assert.equal(backButton.textContent, "Project Workspace");
+    backButton.click();
+    assert.equal(returnedToTickets, true);
+  } finally {
+    view.dispose();
+  }
+});
+
 test("repository menu remains controlled and forwards selected tool", () => {
   const [open, setOpen] = createSignal(false);
   const calls = [];
@@ -381,12 +419,10 @@ test("repository menu omits the repository section when empty", () => {
   view.dispose();
 });
 
-test("owner visibility and form updates do not replace terminal host", () => {
+test("owner visibility preserves the terminal while removed workspace controls stay absent", () => {
   const [visible, setVisible] = createSignal(true);
   const [quickRequest, setQuickRequest] = createSignal(false);
-  let prompt = "",
-    workspaceSubmissions = 0,
-    quickSubmissions = 0,
+  let quickSubmissions = 0,
     keydowns = 0;
   const falseValue = () => false,
     empty = () => "",
@@ -438,48 +474,26 @@ test("owner visibility and form updates do not replace terminal host", () => {
   };
   const view = mount(WorkspaceOwnerPanel, props);
   const terminal = view.host.querySelector("#terminal-views");
-  const workspaceForm = view.host.querySelector("#workspace-session-form");
   const quickForm = view.host.querySelector("#quick-request-form");
-  assert.equal(workspaceForm.hidden, false);
+  assert.equal(view.host.querySelector("#workspace-session-form"), null);
+  assert.equal(view.host.querySelector("#workspace-prompt"), null);
   assert.equal(quickForm.hidden, true);
-  assert.equal(
-    view.host.querySelector("#workspace-prompt").tagName,
-    "TEXTAREA",
-  );
-  assert.equal(
-    view.host.querySelector("#workspace-prompt").getAttribute("rows"),
-    "2",
-  );
-  assert.equal(
-    view.host.querySelector("#workspace-session-submit").type,
-    "submit",
-  );
   assert.equal(view.host.querySelector("#quick-prompt").required, true);
   assert.equal(view.host.querySelector("#quick-model").required, true);
   assert.equal(view.host.querySelector("#quick-submit").type, "submit");
   const child = document.createElement("div");
   terminal.append(child);
-  const field = view.host.querySelector("#workspace-prompt");
-  field.value = "Plan";
-  field.dispatchEvent(new Event("input", { bubbles: true }));
-  workspaceForm.dispatchEvent(new Event("keydown", { bubbles: true }));
-  workspaceForm.dispatchEvent(
-    new Event("submit", { bubbles: true, cancelable: true }),
-  );
   quickForm.dispatchEvent(new Event("keydown", { bubbles: true }));
   quickForm.dispatchEvent(
     new Event("submit", { bubbles: true, cancelable: true }),
   );
   setQuickRequest(true);
-  assert.equal(workspaceForm.hidden, true);
   setQuickRequest(false);
   setVisible(false);
   setVisible(true);
-  assert.equal(prompt, "Plan");
   assert.equal(view.host.querySelector("#terminal-views"), terminal);
   assert.equal(terminal.firstChild, child);
-  assert.equal(workspaceSubmissions, 1);
   assert.equal(quickSubmissions, 1);
-  assert.equal(keydowns, 2);
+  assert.equal(keydowns, 1);
   view.dispose();
 });

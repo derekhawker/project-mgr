@@ -22,6 +22,7 @@ Application shell (fixed to the window)
 │   └── New work (Workspace or Quick Request; primary action pinned to bottom)
 └── Main work area (only this pane scrolls)
     ├── Settings / Repositories page (saved scan roots and enabled/disabled repositories)
+    ├── Workspace / name / Tickets masthead (compact list beside a ticket reader)
     ├── Workspace / name masthead and recessed tab strip (OpenCode, open terminals, Change Review, Docs)
     ├── Full-size interactive terminal occupying the available work area
     ├── Quick Request / name masthead and terminal (no tabs or task/workspace tools)

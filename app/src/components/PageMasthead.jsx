@@ -9,7 +9,22 @@ export function PageMasthead(props) {
         <span class={styles.separator} aria-hidden="true">
           /
         </span>
-        <span>{props.name}</span>
+        {props.onNameClick ? (
+          <button
+            type="button"
+            class={styles.nameButton}
+            aria-label={props.nameActionLabel || `Back to ${props.name} ticket list`}
+            onClick={props.onNameClick}
+          >
+            {props.name}
+          </button>
+        ) : (
+          <span>{props.name}</span>
+        )}
+        {props.segments?.map((segment) => <>
+          <span class={styles.separator} aria-hidden="true">/</span>
+          <span class={segment.title ? styles.ticketTitle : undefined} title={segment.title}>{segment.label}</span>
+        </>)}
         {props.adornment}
       </Heading>
     </div>

@@ -35,9 +35,10 @@ Choose the smallest weight that gives the content enough room.
 }
 ```
 
-- Shared Button and ActionMenu triggers own their padding through
-  `--ui-control-padding` (6px vertically, 12px horizontally). Compose those
-  primitives instead of restyling their padding in a screen.
+- Shared Button and default ActionMenu triggers own their padding through
+  `--ui-control-padding` (6px vertically, 12px horizontally); compact ActionMenu
+  triggers use the shared 4px/8px spacing. Compose those primitives instead of
+  restyling their padding in a screen.
 - Use spacing tokens in component CSS Modules and shell layout, including
   responsive rules. For viewport clearance use, for example,
   `calc(100vw - var(--ui-space-32))`.

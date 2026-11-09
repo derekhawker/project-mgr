@@ -9,6 +9,7 @@ export { Input } from "./Input.jsx";
 export { TextArea } from "./TextArea.jsx";
 export { Select } from "./Select.jsx";
 export { Checkbox } from "./Checkbox.jsx";
+export { Switch } from "./Switch.jsx";
 export { Notice } from "./Notice.jsx";
 export { Status } from "./Status.jsx";
 export { ActionMenu } from "./ActionMenu.jsx";

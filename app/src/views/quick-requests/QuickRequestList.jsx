@@ -1,7 +1,8 @@
 import { For, Show } from "solid-js";
-import { Checkbox, Icon, IconButton } from "@ui-lib";
+import { Button, Checkbox, Icon, IconButton } from "@ui-lib";
 import { DeleteButton } from "../../components/DeleteButton.jsx";
 import { NavigationItem } from "../../components/NavigationItem.jsx";
+import { OpenItemButton } from "../../components/OpenItemButton.jsx";
 import styles from "./QuickRequestList.module.css";
 
 export function QuickRequestList(props) {
@@ -47,13 +48,11 @@ export function QuickRequestList(props) {
                 <span class={styles.prompt}>{prompt()}</span>
               </Show>
               <Show when={props.history()}>
-                <IconButton
-                  label={`Open Quick Request: ${prompt()}`}
-                  title="Open Quick Request"
+                <OpenItemButton
+                  itemType="Quick Request"
+                  itemName={prompt()}
                   onClick={() => props.onOpen(record)}
-                >
-                  <Icon name="folder" />
-                </IconButton>
+                />
               </Show>
               <Show when={props.history() && !props.deleteMode?.()}>
                 <DeleteButton

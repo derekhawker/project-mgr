@@ -14,11 +14,6 @@
   justify-self: start;
 }
 
-.workspaceSessionForm {
-  gap: var(--ui-space-6);
-  margin-top: var(--ui-space-6);
-}
-
 .modelRow {
   display: grid;
   gap: var(--ui-space-6);

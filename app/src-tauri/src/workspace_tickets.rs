@@ -4,7 +4,6 @@ use serde::Serialize;
 use std::{
     fs,
     path::{Path, PathBuf},
-    time::UNIX_EPOCH,
 };
 
 /// External effects needed to open one ticket's work session.
@@ -180,6 +179,10 @@ pub fn list(directory: &Path) -> Result<Vec<Ticket>, String> {
         if path.extension().and_then(|s| s.to_str()) != Some("md") || !path.is_file() {
             continue;
         }
+        let modified_at = path.metadata().map_err(|e| e.to_string())?
+            .modified().map_err(|e| e.to_string())?
+            .duration_since(std::time::UNIX_EPOCH).unwrap_or_default()
+            .as_millis().min(u64::MAX as u128) as u64;
         let content = fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
         let (title, status) = ticket_metadata(
             &content,
@@ -192,11 +195,7 @@ pub fn list(directory: &Path) -> Result<Vec<Ticket>, String> {
             title,
             status,
             content,
-            modified_at: fs::metadata(&path)
-                .and_then(|metadata| metadata.modified())
-                .ok()
-                .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
-                .map_or(0, |duration| duration.as_millis()),
+            modified_at: modified_at as u128,
         });
     }
     tickets.sort_by(|a, b| a.filename.cmp(&b.filename));
@@ -425,7 +424,12 @@ mod tests {
             "---\ntitle: Sample\nstatus: draft\n---\n# Sample\nBody",
         )
         .unwrap();
-        assert_eq!(list(root.path()).unwrap()[0].status, "draft");
+        let listed = list(root.path()).unwrap();
+        assert_eq!(listed[0].status, "draft");
+        let expected = file.metadata().unwrap().modified().unwrap()
+            .duration_since(std::time::UNIX_EPOCH).unwrap().as_millis();
+        assert_eq!(listed[0].modified_at, expected);
+        assert_eq!(serde_json::to_value(&listed[0]).unwrap()["modifiedAt"], serde_json::json!(expected));
         fs::write(
             &file,
             "---\ntitle: Sample\nstatus: in_progress\n---\n# Sample\nBody",

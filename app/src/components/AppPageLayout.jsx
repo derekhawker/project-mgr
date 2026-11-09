@@ -13,7 +13,10 @@ export function AppPageLayout(props) {
       <PageMasthead
         type={props.type}
         name={props.name}
+        onNameClick={props.onNameClick}
+        nameActionLabel={props.nameActionLabel}
         id={props.id}
+        segments={props.segments}
         adornment={props.adornment}
         flush={props.edgeToEdge}
       />

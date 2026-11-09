@@ -14,17 +14,10 @@ import {
 export function createDirectories({
   invoke,
   picker,
-  getSelectedWorkspace,
-  getNavigationData,
-  getRepositoryCatalog,
   setRepositoryCatalog,
   refreshNavigation,
-  refreshDocsAvailability,
   confirm,
-  renderAttachedRepositories,
   destination,
-  attachment,
-  setOwnerStatus,
   beforeOpen,
 }) {
   const [repositoryLibraryPath, setRepositoryLibraryPath] = createSignal("");
@@ -41,14 +34,9 @@ export function createDirectories({
   const controller = createDirectoriesController({
     invoke,
     picker,
-    getSelectedWorkspace,
-    getNavigationData,
-    getRepositoryCatalog,
     setRepositoryCatalog,
     refreshNavigation,
-    refreshDocsAvailability,
     confirm,
-    renderAttachedRepositories,
     setters: {
       setRepositoryStatus,
       setRepositoryError,
@@ -58,9 +46,7 @@ export function createDirectories({
       repositoryLibraryPath,
       setRepositoryLibraryStatus,
       setRepositoryLibraryError,
-      ...attachment,
       ...destination.setters,
-      setOwnerStatus,
     },
   });
 

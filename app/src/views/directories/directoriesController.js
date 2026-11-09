@@ -1,6 +1,5 @@
 import {
   addRepositoryDirectories,
-  attachRepository,
   formatWorkspaceError,
   listRepositoryCatalog,
   loadRepositoryDirectoryPage,
@@ -13,14 +12,9 @@ import {
 export function createDirectoriesController({
   invoke,
   picker,
-  getSelectedWorkspace,
-  getNavigationData,
-  getRepositoryCatalog,
   setRepositoryCatalog,
   refreshNavigation,
-  refreshDocsAvailability,
   confirm,
-  renderAttachedRepositories,
   setters,
   scheduleTimeout = setTimeout,
   cancelTimeout = clearTimeout,
@@ -34,10 +28,6 @@ export function createDirectoriesController({
     repositoryLibraryPath,
     setRepositoryLibraryStatus,
     setRepositoryLibraryError,
-    setAttachRepositoryOptions,
-    selectedAttachRepository,
-    setSelectedAttachRepository,
-    setOwnerStatus,
     setFullRequestVisible,
     setDirectoriesVisible,
     setPortsVisible,
@@ -70,16 +60,6 @@ export function createDirectoriesController({
   async function refreshCatalog() {
     const repositories = await listRepositoryCatalog(invoke);
     setRepositoryCatalog(repositories);
-    const options = repositories.map((repository) => ({
-      id: repository.id,
-      label: `${repository.name} — ${repository.repositoryPath}`,
-    }));
-    setAttachRepositoryOptions(options);
-    if (!options.some((option) => option.id === selectedAttachRepository()))
-      setSelectedAttachRepository("");
-    const workspace = getSelectedWorkspace();
-    if (workspace)
-      renderAttachedRepositories(workspace.id, getNavigationData());
     return repositories;
   }
 
@@ -140,34 +120,6 @@ export function createDirectoriesController({
       );
     } finally {
       setRepositoryDirectoriesBusy(false);
-    }
-  }
-
-  async function attach() {
-    const workspace = getSelectedWorkspace();
-    if (!workspace) {
-      setOwnerStatus("Select a workspace first.");
-      return;
-    }
-    const repository = (getRepositoryCatalog() || []).find(
-      (entry) => entry.id === selectedAttachRepository(),
-    );
-    if (!repository) {
-      setOwnerStatus("Select an enabled repository first.");
-      return;
-    }
-    setOwnerStatus("Attaching repository…");
-    try {
-      const setup = await attachRepository(invoke, workspace.id, repository.id);
-      setOwnerStatus(
-        setup.setupStatus === "ready"
-          ? `Attached independent workspace clone of ${repository.name}.`
-          : `Repository setup needs attention: ${setup.errorDetail || setup.setupStatus}`,
-      );
-      await refreshNavigation();
-      void refreshDocsAvailability();
-    } catch (error) {
-      setOwnerStatus(formatWorkspaceError("Attach", error));
     }
   }
 
@@ -246,7 +198,6 @@ export function createDirectoriesController({
     refreshDirectories,
     addDirectories,
     deleteRepositories,
-    attach,
     saveLibrary,
     updateLibraryPath,
     chooseLibrary,

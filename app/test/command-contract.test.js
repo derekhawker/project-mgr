@@ -208,151 +208,11 @@ test("Directories repository toggle pending and checked state are Solid-owned", 
   assert.doesNotMatch(main, /checkbox\.(?:disabled|checked)\s*=/);
 });
 
-test("Workspace lifecycle clicks bind through the Solid owner panel to guarded controller callbacks", () => {
+test("ticket Workbench selection does not expose tools until row Work is activated", () => {
   const main = readFileSync(join(process.cwd(), "src", "main.js"), "utf8");
-  const lifecycle = readFileSync(
-    join(process.cwd(), "src/views/workbench/workspaceLifecycleController.js"),
-    "utf8",
-  );
-  assert.match(
-    ownerPanel,
-    /id="complete-workspace"[^>]*onClick=\{props\.onCompleteWorkspace\}/,
-  );
-  assert.match(
-    ownerPanel,
-    /id="reactivate-workspace"[^>]*onClick=\{props\.onReactivateWorkspace\}/,
-  );
-  assert.match(
-    ownerPanel,
-    /id="complete-workspace"[^>]*disabled=\{props\.completeWorkspaceDisabled\(\)\}/,
-  );
-  assert.match(
-    ownerPanel,
-    /id="reactivate-workspace"[^>]*disabled=\{props\.reactivateWorkspaceDisabled\(\)\}/,
-  );
-  assert.match(
-    main,
-    /setCompleteWorkspaceDisabled\(workspace\.status !== 'active'\)/,
-  );
-  assert.match(
-    main,
-    /setReactivateWorkspaceDisabled\(workspace\.status !== 'completed'\)/,
-  );
-  assert.doesNotMatch(
-    main,
-    /#(?:complete|reactivate)-workspace['"]\)\.disabled\s*=/,
-  );
-  assert.match(
-    main,
-    /onCompleteWorkspace: \(\) => handleCompleteWorkspace\(\)/,
-  );
-  assert.match(
-    main,
-    /onReactivateWorkspace: \(\) => handleReactivateWorkspace\(\)/,
-  );
-  assert.doesNotMatch(
-    main,
-    /#(?:complete|reactivate)-workspace['"]\)\.addEventListener/,
-  );
-  assert.match(main, /handleCompleteWorkspace, handleReactivateWorkspace/);
-  assert.match(
-    lifecycle,
-    /workspace\.status !== 'active'[\s\S]*completeWorkspace\(invoke, workspace\.id\)[\s\S]*await refreshNavigation\(\)[\s\S]*selectWorkspace\(result, getNavigationData\(\)\)/,
-  );
-  assert.match(
-    lifecycle,
-    /workspace\.status !== 'completed'[\s\S]*reactivateWorkspace\(invoke, workspace\.id\)[\s\S]*await refreshNavigation\(\)[\s\S]*selectWorkspace\(result, getNavigationData\(\)\)/,
-  );
-});
-
-test("repository attach click binds through the Solid owner panel to its controller workflow", () => {
-  const main = readFileSync(join(process.cwd(), "src", "main.js"), "utf8");
-  const directoriesController = readFileSync(
-    join(process.cwd(), "src/views/directories/directoriesController.js"),
-    "utf8",
-  );
-  assert.match(
-    ownerPanel,
-    /id="attach-repository"[^>]*hidden=\{props\.quickRequest\(\)\} disabled=\{props\.attachRepositoryDisabled\(\)\} onClick=\{props\.onAttachRepository\}/,
-  );
-  assert.match(main, /onAttachRepository: handleAttachRepository/);
-  assert.doesNotMatch(main, /#attach-repository['"]\)\?\.addEventListener/);
-  assert.match(
-    ownerPanel,
-    /id="attach-repository-select"[^>]*value=\{props\.selectedAttachRepository\(\)\} onChange=\{props\.onAttachRepositoryChange\}/,
-  );
-  assert.match(
-    ownerPanel,
-    /Select an enabled repository[\s\S]*For each=\{props\.attachRepositoryOptions\(\)\}/,
-  );
-  assert.match(
-    main,
-    /async function refreshCatalog\(\) \{ return directoriesController\.refreshCatalog\(\); \}/,
-  );
-  assert.match(
-    directoriesController,
-    /repositories\.map\(\(repository\) => \(\{ id: repository\.id, label: `\$\{repository\.name\} — \$\{repository\.repositoryPath\}` \}\)\)[\s\S]*setAttachRepositoryOptions\(options\)[\s\S]*setSelectedAttachRepository\(''\)/,
-  );
-  assert.doesNotMatch(
-    main,
-    /#attach-repository-select|repositorySelect\.(?:replaceChildren|value)/,
-  );
-  assert.match(
-    main,
-    /async function handleAttachRepository\(\) \{ return directoriesController\.attach\(\); \}/,
-  );
-  assert.match(
-    directoriesController,
-    /if \(!workspace\)[\s\S]*Select a workspace first\.[\s\S]*getRepositoryCatalog\(\)[\s\S]*selectedAttachRepository\(\)[\s\S]*Select an enabled repository first\.[\s\S]*Attaching repository…[\s\S]*attachRepository\(invoke, workspace\.id, repository\.id\)[\s\S]*Attached independent workspace clone of \$\{repository\.name\}[\s\S]*Repository setup needs attention[\s\S]*await refreshNavigation\(\)[\s\S]*void refreshDocsAvailability\(\)[\s\S]*formatWorkspaceError\('Attach', error\)/,
-  );
-});
-
-test("Workspace action disabled state is presented by owner-panel Solid signals", () => {
-  const main = readFileSync(join(process.cwd(), "src", "main.js"), "utf8");
-  assert.match(
-    ownerPanel,
-    /id="attach-repository"[^>]*disabled=\{props\.attachRepositoryDisabled\(\)\}/,
-  );
-  assert.match(
-    ownerPanel,
-    /id="workspace-session-submit"[^>]*disabled=\{props\.workspaceSessionSubmitDisabled\(\) \|\| props\.terminalRuntimeStartupFailed\(\)\}/,
-  );
-  assert.match(
-    main,
-    /function syncWorkspaceActionDisabled\(\)[\s\S]*setAttachRepositoryDisabled\(!activeWorkspace\)[\s\S]*setWorkspaceSessionSubmitDisabled\(!modelsReady \|\| !activeWorkspace \|\| workspaceSessionSubmissionBusy\)/,
-  );
-  assert.doesNotMatch(
-    main,
-    /(?:#attach-repository|#workspace-session-submit)['"]\)\.disabled\s*=/,
-  );
-});
-
-test("Workspace planning prompt is Solid-owned and passed unchanged to session creation", () => {
-  const main = readFileSync(join(process.cwd(), "src", "main.js"), "utf8");
-  assert.match(
-    ownerPanel,
-    /id="workspace-prompt"[^>]*placeholder="Inspect the workspace and plan the next step"[^>]*value=\{props\.workspacePrompt\(\)\} onInput=\{\(event\) => props\.onWorkspacePromptInput\(event\.currentTarget\.value\)\}/,
-  );
-  assert.match(
-    main,
-    /const \[workspacePrompt, setWorkspacePrompt\] = createSignal\(''\)/,
-  );
-  assert.match(main, /onWorkspacePromptInput: setWorkspacePrompt/);
-  assert.match(
-    main,
-    /createWorkspaceSession, invoke, getSelectedWorkspace: \(\) => selectedWorkspace/,
-  );
-  assert.match(
-    readFileSync(
-      new URL(
-        "../src/views/workbench/workspaceSessionFormController.js",
-        import.meta.url,
-      ),
-      "utf8",
-    ),
-    /createWorkspaceSession\(invoke, workspace\.id, getPrompt\(\), selectedModel\)/,
-  );
-  assert.doesNotMatch(main, /#workspace-prompt/);
+  assert.doesNotMatch(ownerPanel, /Workspace options|attach-repository|complete-workspace|reactivate-workspace|workspace-session-form/);
+  assert.match(main, /onSelect: \(filename\) => \{[\s\S]*setWorkbenchVisible\(false\)/);
+  assert.match(main, /onWork: async \(filename\) => \{[\s\S]*setWorkbenchVisible\(true\)[\s\S]*await showSession\(session\.openCodeSessionId\)[\s\S]*ownerStatus\(\) === "Loading workspace…"\) setOwnerStatus\(""\)/);
 });
 
 test("proposal owner mode is presented and identified through the Solid signal", () => {
@@ -943,7 +803,7 @@ test("Quick Requests use a dedicated available-height page with a visible way ba
   );
   assert.match(
     quickLists,
-    /<IconButton label=\{`Open Quick Request:[\s\S]*onClick=\{\(\) => props\.onOpen\(record\)\}/,
+    /<OpenItemButton\s+itemType="Quick Request"\s+itemName=\{prompt\(\)\}\s+onClick=\{\(\) => props\.onOpen\(record\)\}/,
   );
   assert.match(main, /deleteQuickRequestRecord\(record, true\)/);
   assert.doesNotMatch(quickLists, /dismiss|promote|retry/);
@@ -997,7 +857,7 @@ test("Quick Request navigation aligns its history icon button with the heading a
   );
   assert.match(
     quickLists,
-    /<IconButton label=\{`Open Quick Request:[\s\S]*<DeleteButton itemName=/,
+    /<OpenItemButton\s+itemType="Quick Request"[\s\S]*<DeleteButton itemName=/,
   );
   assert.match(main, /records: recentQuickRequests/);
   assert.doesNotMatch(quickLists, /item\.append\(button, remove\)/);

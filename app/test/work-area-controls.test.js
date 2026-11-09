@@ -482,7 +482,7 @@ test("Docs source selection stays scoped to its repository and follows clicks", 
   view.dispose();
 });
 
-test("Workspace options are compact and precede a title-free terminal", () => {
+test("workspace terminal panel omits removed Workspace options", () => {
   const values = {
     visible: true,
     proposalMode: false,
@@ -502,22 +502,11 @@ test("Workspace options are compact and precede a title-free terminal", () => {
     { get: (_target, key) => () => values[key] ?? "" },
   );
   const view = mount(WorkspaceOwnerPanel, props);
-  const options = view.host.querySelector(".owner-management");
   const terminal = view.host.querySelector(".terminal-card");
-  assert.equal(
-    view.host.querySelector("#selected-owner").firstElementChild,
-    options,
-  );
-  assert.ok(
-    options.compareDocumentPosition(terminal) &
-      Node.DOCUMENT_POSITION_FOLLOWING,
-  );
-  assert.equal(options.open, false);
-  const trigger = options.querySelector("summary");
-  assert.ok(trigger.querySelector('svg[aria-hidden="true"]'));
-  assert.match(trigger.textContent, /Workspace options/);
-  trigger.click();
-  assert.equal(options.open, true);
+  assert.equal(view.host.querySelector(".owner-management"), null);
+  assert.equal(view.host.querySelector("summary"), null);
+  assert.equal(view.host.querySelector("#attach-repository"), null);
+  assert.equal(view.host.querySelector("#complete-workspace"), null);
   assert.equal(view.host.querySelector(".terminal-context"), null);
   assert.equal(terminal.querySelector("#terminal-views") !== null, true);
   view.dispose();

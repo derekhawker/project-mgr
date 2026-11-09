@@ -18,8 +18,9 @@ await writeFile(
   `
   export { render } from ${JSON.stringify(resolve(appRoot, "node_modules/solid-js/web/dist/web.js"))};
   export { createSignal, createComponent } from ${JSON.stringify(resolve(appRoot, "node_modules/solid-js/dist/solid.js"))};
-  export { Button, IconButton, Icon, Heading, ErrorMessage, Input, ActionMenu, Modal, Drawer, Notice, Status } from "@ui-lib";
+  export { Button, IconButton, Icon, Heading, ErrorMessage, Input, ActionMenu, Modal, Drawer, Notice, Status, Switch } from "@ui-lib";
   export { DeleteButton } from ${JSON.stringify(resolve(appRoot, "src/components/DeleteButton.jsx"))};
+  export { OpenItemButton } from ${JSON.stringify(resolve(appRoot, "src/components/OpenItemButton.jsx"))};
   export { QuickRequestHistoryButton } from ${JSON.stringify(resolve(appRoot, "src/views/quick-requests/QuickRequestHistoryButton.jsx"))};
   export { AppNotice } from ${JSON.stringify(resolve(appRoot, "src/application/AppNotice.jsx"))};
   export { NoSelection } from ${JSON.stringify(resolve(appRoot, "src/application/NoSelection.jsx"))};
@@ -94,6 +95,8 @@ const {
   Drawer,
   Notice,
   Status,
+  Switch,
+  OpenItemButton,
   DirectoriesLibraryForm,
   RepositoryDirectories,
   NewWorkDialog,
@@ -167,6 +170,34 @@ test("IconButton requires an accessible label and preserves its action and icon"
   assert.ok(button.querySelector('svg[aria-hidden="true"]'));
   button.click();
   assert.equal(clicks, 1);
+  mounted.dispose();
+});
+
+test("Switch is a labelled native binary control and OpenItemButton gives folder actions a shared name", () => {
+  let checked = false;
+  const mounted = mount(() => [
+    component(Switch, {
+      "aria-label": "Show archived tickets",
+      checked,
+      onChange: (event) => { checked = event.currentTarget.checked; },
+    }),
+    component(OpenItemButton, {
+      itemType: "ticket",
+      itemName: "Fix layout",
+      title: "Read ticket",
+      onClick: () => {},
+    }),
+  ]);
+  const toggle = mounted.host.querySelector('input[role="switch"]');
+  assert.equal(toggle.type, "checkbox");
+  assert.equal(toggle.getAttribute("aria-label"), "Show archived tickets");
+  toggle.checked = true;
+  toggle.dispatchEvent(new Event("change", { bubbles: true }));
+  assert.equal(checked, true);
+  const open = mounted.host.querySelector("button");
+  assert.equal(open.getAttribute("aria-label"), "Open ticket: Fix layout");
+  assert.equal(open.title, "Read ticket");
+  assert.ok(open.querySelector('svg[aria-hidden="true"]'));
   mounted.dispose();
 });
 

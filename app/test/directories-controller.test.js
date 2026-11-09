@@ -12,7 +12,6 @@ test("Directories controller refreshes repository/library state through producti
         (_target, name) =>
         (...args) => {
           if (name === "repositoryLibraryPath") return "/library";
-          if (name === "selectedAttachRepository") return "repo-1";
           if (name === "setRestoringLegacyArchives") {
             state.restoring = args[0](state.restoring || new Set());
             return;
@@ -43,24 +42,16 @@ test("Directories controller refreshes repository/library state through producti
       return [];
     },
     picker: async () => null,
-    getRepositoryCatalog: () => [],
     setRepositoryCatalog: (repositories) => {
       state.catalog = repositories;
     },
-    getSelectedWorkspace: () => null,
-    getNavigationData: () => ({}),
     refreshNavigation: async () => {},
-    refreshDocsAvailability: () => {},
-    renderAttachedRepositories: () => {},
     setters,
   });
   await controller.refreshDirectories();
   await controller.refreshCatalog();
   assert.equal(state.setRepositoryLibraryPath, "/library");
   assert.equal(state.setDirectoryGroups[0].path, "/code");
-  assert.deepEqual(state.setAttachRepositoryOptions, [
-    { id: "repo-1", label: "Code — /code/repo" },
-  ]);
   assert.equal(state.catalog[0].id, "repo-1");
   assert.deepEqual(
     calls.map(([name]) => name),
@@ -97,7 +88,6 @@ test("Directories remains open when initial loading fails and exposes a page-lev
     setRepositoryCatalog: () => {},
     refreshNavigation: async () => {},
     refreshDocsAvailability: () => {},
-    renderAttachedRepositories: () => {},
     setters,
   });
 
@@ -142,7 +132,6 @@ test("repository library path saves after five idle seconds or immediately on bl
     setRepositoryCatalog: () => {},
     refreshNavigation: async () => {},
     refreshDocsAvailability: () => {},
-    renderAttachedRepositories: () => {},
     setters,
     scheduleTimeout: (callback, milliseconds) => {
       delay = milliseconds;
@@ -206,7 +195,6 @@ test("bulk repository deletion confirms once, soft-deletes selected IDs, and ref
     setRepositoryCatalog: () => {},
     refreshNavigation: async () => calls.push(["navigation"]),
     refreshDocsAvailability: () => {},
-    renderAttachedRepositories: () => {},
     confirm: (message) => {
       calls.push(["confirm", message]);
       return allowDelete;
