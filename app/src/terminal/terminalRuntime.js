@@ -307,13 +307,15 @@ export class TerminalRuntime {
         if (event.key !== "Enter" || !event.shiftKey || event.isComposing) {
           return true;
         }
-        this.write(sessionId, "\u001b[13;2u", commandPrefix).catch((error) =>
-          this.onError({
-            sessionId,
-            operation: "write",
-            message: String(error),
-          }),
-        );
+        if (event.type === "keydown") {
+          this.write(sessionId, "\u001b[13;2u", commandPrefix).catch((error) =>
+            this.onError({
+              sessionId,
+              operation: "write",
+              message: String(error),
+            }),
+          );
+        }
         return false;
       });
     }
