@@ -3403,15 +3403,15 @@
                 "status": {
                   "type": "string"
                 },
-                "content": {
-                  "type": "string"
+                "modifiedAt": {
+                  "type": "number"
                 }
               },
               "required": [
                 "filename",
                 "title",
                 "status",
-                "content"
+                "modifiedAt"
               ],
               "additionalProperties": false
             }
@@ -6620,13 +6620,17 @@
           },
           "content": {
             "type": "string"
+          },
+          "modifiedAt": {
+            "type": "number"
           }
         },
         "required": [
           "filename",
           "title",
           "status",
-          "content"
+          "content",
+          "modifiedAt"
         ],
         "additionalProperties": false
       }

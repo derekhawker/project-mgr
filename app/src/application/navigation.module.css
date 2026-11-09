@@ -20,40 +20,6 @@
   min-width: 0;
 }
 
-:global(.navigation li) .workspaceButton {
-  display: flex;
-  width: 100%;
-  justify-content: space-between;
-  gap: var(--ui-space-6);
-  padding: var(--ui-control-padding);
-  border-radius: var(--ui-control-radius, 0.25rem);
-  font-weight: 400;
-}
-:global(.navigation li) .workspaceButton:hover:not([aria-current="page"]) {
-  background: var(--ui-surface-pressed);
-}
-:global(.navigation li) .workspaceButton[aria-current="page"] {
-  color: var(--ui-text);
-  background: #fff;
-  font-weight: 700;
-}
-:global(.navigation li) .workspaceButton[aria-current="page"]:hover {
-  color: var(--ui-text);
-  background: #fff;
-}
-.workspaceName {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.emptyState {
-  margin: var(--ui-space-2) 0 var(--ui-space-6);
-  padding: var(--ui-space-6);
-  color: var(--ui-muted);
-  font-size: 12px;
-  line-height: 1.45;
-}
 .destinations {
   display: flex;
   gap: var(--ui-space-8);

@@ -17,6 +17,7 @@ export function ApplicationRoot(props) {
             </section>
             <div class="navigation-heading">
               <h2>Workspaces</h2>
+              {props.workspaceViewToggle?.()}
             </div>
             {props.workspaceNavigation()}
             <div class={styles.destinations}>

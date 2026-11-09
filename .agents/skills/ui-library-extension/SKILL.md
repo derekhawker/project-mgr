@@ -23,7 +23,7 @@ the shared whole-CSS-pixel scale for the library and its consumers.
 
 1. Inspect the existing Solid UI and library for the pattern being extended. Preserve useful native behavior and avoid copying app-specific state into a shared component.
 2. Add unit tests for component behavior and meaningful interaction states using the project's existing test tools. Test observable behavior, not CSS declarations or layout.
-3. Check the visual result manually on Wayland, including relevant interaction states. Report what was not checked.
+3. Check the visual result manually, including relevant interaction states. Report what was not checked.
 
 ## Existing patterns to inspect
 

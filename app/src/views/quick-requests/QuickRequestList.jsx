@@ -1,6 +1,7 @@
 import { For, Show } from "solid-js";
-import { Button, Checkbox, Icon, IconButton } from "@ui-lib";
+import { Checkbox, Icon, IconButton } from "@ui-lib";
 import { DeleteButton } from "../../components/DeleteButton.jsx";
+import { NavigationItem } from "../../components/NavigationItem.jsx";
 import styles from "./QuickRequestList.module.css";
 
 export function QuickRequestList(props) {
@@ -24,16 +25,13 @@ export function QuickRequestList(props) {
               }}
             >
               <Show when={!props.history()}>
-                <Button
-                  class={styles.navigationItem}
-                  aria-current={
-                    props.selectedId() === record.task.id ? "page" : undefined
-                  }
+                <NavigationItem
+                  current={props.selectedId() === record.task.id}
                   title={prompt()}
                   onClick={() => props.onOpen(record)}
                 >
-                  {prompt()}
-                </Button>
+                  <span class={styles.navigationPrompt}>{prompt()}</span>
+                </NavigationItem>
               </Show>
               <Show when={props.history() && props.deleteMode?.()}>
                 <label class={styles.select}>

@@ -4,6 +4,7 @@ use serde::Serialize;
 use std::{
     fs,
     path::{Path, PathBuf},
+    time::UNIX_EPOCH,
 };
 
 /// External effects needed to open one ticket's work session.
@@ -104,6 +105,16 @@ pub struct Ticket {
     pub title: String,
     pub status: String,
     pub content: String,
+    pub modified_at: u128,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NavigationTicket {
+    pub filename: String,
+    pub title: String,
+    pub status: String,
+    pub modified_at: u128,
 }
 
 pub fn workspace_ticket_dir(app_data: &Path, workspace_slug: &str) -> Result<PathBuf, String> {
@@ -181,10 +192,62 @@ pub fn list(directory: &Path) -> Result<Vec<Ticket>, String> {
             title,
             status,
             content,
+            modified_at: fs::metadata(&path)
+                .and_then(|metadata| metadata.modified())
+                .ok()
+                .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
+                .map_or(0, |duration| duration.as_millis()),
         });
     }
     tickets.sort_by(|a, b| a.filename.cmp(&b.filename));
     Ok(tickets)
+}
+
+/// Lists only tickets shown in persistent Workspace navigation.
+pub fn list_for_navigation(directory: &Path) -> Result<Vec<NavigationTicket>, String> {
+    let mut tickets: Vec<_> = list(directory)?
+        .into_iter()
+        .filter(|ticket| matches!(ticket.status.as_str(), "in_progress" | "blocked"))
+        .map(|ticket| NavigationTicket {
+            filename: ticket.filename,
+            title: ticket.title,
+            status: ticket.status,
+            modified_at: ticket.modified_at,
+        })
+        .collect();
+    tickets.sort_by(|a, b| {
+        b.modified_at
+            .cmp(&a.modified_at)
+            .then_with(|| a.filename.cmp(&b.filename))
+    });
+    Ok(tickets)
+}
+
+pub fn is_ticket_markdown_event(event: &notify::Event) -> bool {
+    event.paths.iter().any(|path| {
+        path.extension().and_then(|extension| extension.to_str()) == Some("md")
+    })
+}
+
+pub fn watch_directory(
+    directory: &Path,
+    on_change: impl Fn() + Send + 'static,
+) -> Result<notify::RecommendedWatcher, String> {
+    use notify::Watcher;
+
+    let mut watcher = notify::recommended_watcher(move |result: notify::Result<notify::Event>| {
+        if result
+            .as_ref()
+            .is_ok_and(is_ticket_markdown_event)
+        {
+            on_change();
+        }
+    })
+    .map_err(|error| error.to_string())?;
+    watcher
+        .watch(directory, notify::RecursiveMode::Recursive)
+        .map_err(|error| error.to_string())?;
+    Ok(watcher)
 }
 
 /// Lists closed tickets separately; archived files never leak into the default list.
@@ -369,6 +432,63 @@ mod tests {
         )
         .unwrap();
         assert_eq!(list(root.path()).unwrap()[0].status, "in_progress");
+    }
+    #[test]
+    fn navigation_lists_only_active_statuses_newest_first_by_file_mtime() {
+        use std::time::{Duration, SystemTime};
+
+        let root = tempfile::tempdir().unwrap();
+        let files = [
+            ("older.md", "in_progress", 10),
+            ("blocked.md", "blocked", 30),
+            ("draft.md", "draft", 40),
+            ("newer.md", "in_progress", 20),
+        ];
+        for (name, status, seconds) in files {
+            let path = root.path().join(name);
+            fs::write(&path, format!("---\ntitle: {name}\nstatus: {status}\n---\n"))
+                .unwrap();
+            fs::File::open(path)
+                .unwrap()
+                .set_times(
+                    fs::FileTimes::new().set_modified(
+                        SystemTime::UNIX_EPOCH + Duration::from_secs(seconds),
+                    ),
+                )
+                .unwrap();
+        }
+
+        let tickets = list_for_navigation(root.path()).unwrap();
+        assert_eq!(
+            tickets.iter().map(|ticket| ticket.filename.as_str()).collect::<Vec<_>>(),
+            ["blocked.md", "newer.md", "older.md"],
+        );
+        assert!(tickets.iter().all(|ticket| ticket.status != "draft"));
+    }
+
+    #[test]
+    fn ticket_watcher_recognizes_markdown_files_only() {
+        let markdown = notify::Event::new(notify::EventKind::Any)
+            .add_path(PathBuf::from("/tickets/active.md"));
+        let ignored = notify::Event::new(notify::EventKind::Any)
+            .add_path(PathBuf::from("/tickets/readme.txt"));
+        assert!(is_ticket_markdown_event(&markdown));
+        assert!(!is_ticket_markdown_event(&ignored));
+    }
+
+    #[test]
+    fn ticket_watcher_notifies_after_markdown_changes() {
+        use std::sync::mpsc;
+        use std::time::Duration;
+
+        let root = tempfile::tempdir().unwrap();
+        let (sender, receiver) = mpsc::channel();
+        let _watcher = watch_directory(root.path(), move || {
+            let _ = sender.send(());
+        })
+        .unwrap();
+        fs::write(root.path().join("ticket.md"), "status: in_progress\n").unwrap();
+        receiver.recv_timeout(Duration::from_secs(5)).unwrap();
     }
     #[test]
     fn archived_markdown_is_separate_from_open_tickets() {

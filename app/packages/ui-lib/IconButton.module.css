@@ -11,3 +11,7 @@
   width: 1rem;
   height: 1rem;
 }
+
+.iconButton[aria-expanded="true"] :global(svg) {
+  transform: rotate(180deg);
+}
