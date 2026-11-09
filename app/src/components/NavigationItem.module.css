@@ -1,0 +1,17 @@
+.item {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  justify-content: flex-start;
+  gap: var(--ui-space-4);
+  padding: var(--ui-control-padding);
+  border-radius: var(--ui-control-radius);
+  text-align: left;
+}
+
+:global(.navigation li) .item[aria-current="page"],
+:global(.navigation li) .item[aria-current="page"]:hover:not(:disabled) {
+  color: var(--ui-text);
+  background: #fff;
+  font-weight: 700;
+}

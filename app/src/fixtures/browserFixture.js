@@ -215,11 +215,28 @@ export async function invokeBrowserFixture(name, payload = {}) {
             repositoryId: null,
           })),
         quickRequests,
-        workspaceTickets: {},
+        workspaceTickets: {
+          [example.id]: [
+            {
+              filename: "example-active.md",
+              title: "Example active ticket",
+              status: "in_progress",
+              modifiedAt: timestamp,
+            },
+            {
+              filename: "example-blocked.md",
+              title: "Example blocked ticket",
+              status: "blocked",
+              modifiedAt: timestamp - 1,
+            },
+          ],
+        },
       };
       break;
     case "workspace_tickets_list":
-      result = payload.archived ? [] : [{ filename: "example.md", title: "Example ticket", status: "draft", content: "# Example ticket\n\nA fixture ticket for the Workspace." }];
+      result = payload.archived
+        ? []
+        : [{ filename: "example.md", title: "Example ticket", status: "draft", content: "# Example ticket\n\nA fixture ticket for the Workspace.", modifiedAt: timestamp }];
       break;
     case "workspace_ticket_creation_start": {
       const workspace = workspaces.find((item) => item.id === payload.workspaceId);

@@ -19,6 +19,8 @@ await writeFile(
   export { createComponent, createSignal } from ${JSON.stringify(resolve(root, "node_modules/solid-js/dist/solid.js"))};
   export { NewWorkMenu } from ${JSON.stringify(resolve(root, "src/views/new-work/NewWorkMenu.jsx"))};
   export { WorkspaceNavigation } from ${JSON.stringify(resolve(root, "src/views/workbench/WorkspaceNavigation.jsx"))};
+  export { WorkspaceTicketViewToggle } from ${JSON.stringify(resolve(root, "src/views/workbench/WorkspaceTicketViewToggle.jsx"))};
+  export { QuickRequestList } from ${JSON.stringify(resolve(root, "src/views/quick-requests/QuickRequestList.jsx"))};
   export { DirectoriesNavigationButton } from ${JSON.stringify(resolve(root, "src/views/directories/DirectoriesNavigationButton.jsx"))};
 `,
 );
@@ -61,6 +63,8 @@ const {
   createSignal,
   NewWorkMenu,
   WorkspaceNavigation,
+  WorkspaceTicketViewToggle,
+  QuickRequestList,
   DirectoriesNavigationButton,
 } = await import(pathToFileURL(join(temp, "dist/navigation.js")));
 function mount(Component, props) {
@@ -145,6 +149,8 @@ test("workspace navigation filters and selects active regular workspaces", () =>
     busy: () => false,
     selected,
     onSelect: setSelected,
+    viewMode: () => "grouped",
+    onWork: () => {},
   });
   const buttons = view.host.querySelectorAll("button");
   assert.equal(buttons.length, 1);
@@ -153,5 +159,116 @@ test("workspace navigation filters and selects active regular workspaces", () =>
   buttons[0].click();
   assert.equal(selected(), active);
   assert.equal(buttons[0].getAttribute("aria-current"), "page");
+  view.dispose();
+});
+
+test("workspace tickets group, collapse, mark blocked, and flatten newest first", () => {
+  const first = { id: "a", name: "Alpha", kind: "regular", status: "active" };
+  const second = { id: "b", name: "Beta", kind: "regular", status: "active" };
+  const [selected, setSelected] = createSignal(null);
+  const [viewMode, setViewMode] = createSignal("grouped");
+  const [currentTicket, setCurrentTicket] = createSignal(null);
+  const worked = [];
+  const view = mount(WorkspaceNavigation, {
+    data: () => ({
+      workspaces: [first, second],
+      workspaceTickets: {
+        a: [
+          { filename: "blocked.md", title: "Blocked ticket", status: "blocked", modifiedAt: 30 },
+          { filename: "active.md", title: "Active ticket", status: "in_progress", modifiedAt: 10 },
+        ],
+        b: [{ filename: "newest.md", title: "Newest ticket", status: "in_progress", modifiedAt: 40 }],
+      },
+    }),
+    busy: () => false,
+    selected,
+    onSelect: setSelected,
+    viewMode,
+    isTicketCurrent: (_workspace, ticket) => currentTicket() === ticket.filename,
+    onWork: (workspace, filename) => {
+      setSelected(workspace);
+      setCurrentTicket(filename);
+      worked.push([workspace.id, filename]);
+    },
+  });
+
+  assert.equal(view.host.querySelectorAll('[aria-expanded="true"]').length, 2);
+  assert.equal(view.host.querySelectorAll('[aria-label$="tickets"]').length, 2);
+  assert.match(
+    view.host.querySelector('button[aria-label="Collapse Alpha tickets"] svg').className,
+    /muted/,
+    "Workspace disclosure icon uses the shared muted icon style",
+  );
+  assert.equal(view.host.querySelectorAll("svg").length, 3);
+  view.host.querySelector('button[aria-label="Collapse Alpha tickets"]').click();
+  assert.doesNotMatch(view.host.textContent, /Blocked ticket|Active ticket/);
+  assert.match(view.host.textContent, /BetaNewest ticket/);
+  assert.equal(selected(), null, "disclosure does not select a Workspace");
+  assert.deepEqual(worked, [], "disclosure does not activate a ticket");
+  [...view.host.querySelectorAll("button")].find((button) => button.textContent.includes("Alpha")).click();
+  assert.equal(selected(), first);
+  assert.equal(
+    view.host.querySelector('button[aria-current="page"]')?.textContent.trim(),
+    "Alpha",
+  );
+
+  setViewMode("flat");
+  assert.equal(view.host.querySelectorAll('[aria-label$="tickets"]').length, 0);
+  assert.deepEqual(
+    [...view.host.querySelectorAll("li")].map((item) => item.textContent.trim()),
+    ["Alpha", "Beta", "Tickets", "Newest ticket", "Blocked ticket", "Active ticket"],
+  );
+  assert.equal(
+    [...view.host.querySelectorAll("h3")].find((heading) => heading.textContent === "Tickets")?.textContent,
+    "Tickets",
+  );
+  assert.equal(view.host.textContent.includes("Alpha ·"), false);
+  assert.equal(view.host.querySelectorAll("svg").length, 1);
+  [...view.host.querySelectorAll("button")].find((button) => button.textContent.includes("Newest ticket")).click();
+  assert.deepEqual(worked, [["b", "newest.md"]]);
+  assert.equal(
+    view.host.querySelector('button[aria-current="page"]')?.textContent.trim(),
+    "Newest ticket",
+  );
+  assert.equal(
+    [...view.host.querySelectorAll("button[aria-current='page']")].some((button) => button.textContent.includes("Beta")),
+    false,
+    "the owning Workspace is not active while its ticket is active",
+  );
+  view.dispose();
+});
+
+test("Quick Request navigation item exposes its selected state and opens the record", () => {
+  const record = { task: { id: "request-1" }, prompt: "A request" };
+  const [selectedId] = createSignal(record.task.id);
+  let opened;
+  const view = mount(QuickRequestList, {
+    records: () => [record],
+    history: () => false,
+    query: () => "",
+    selectedId,
+    onOpen: (value) => (opened = value),
+  });
+  const item = view.host.querySelector('button[aria-current="page"]');
+  assert.equal(item.textContent.trim(), "A request");
+  item.click();
+  assert.equal(opened, record);
+  view.dispose();
+});
+
+test("Workspace view toggle is icon-only and names the available mode", () => {
+  const [viewMode, setViewMode] = createSignal("grouped");
+  const view = mount(WorkspaceTicketViewToggle, {
+    viewMode,
+    onToggle: () => setViewMode(viewMode() === "grouped" ? "flat" : "grouped"),
+  });
+  const button = view.host.querySelector("button");
+  assert.equal(button.textContent.trim(), "");
+  assert.equal(button.getAttribute("aria-label"), "Show flat ticket list");
+  assert.equal(button.getAttribute("aria-pressed"), "false");
+  assertDecorativeIcon(button);
+  button.click();
+  assert.equal(button.getAttribute("aria-label"), "Group tickets by Workspace");
+  assert.equal(button.getAttribute("aria-pressed"), "true");
   view.dispose();
 });

@@ -16,7 +16,7 @@ Application shell (fixed to the window)
 │   ├── Quick Requests (top section)
 │   │   ├── See all Quick Requests
 │   │   └── Recent Quick Requests (created in the last 24 hours)
-│   ├── Workspaces (sole regular work record)
+│   ├── Workspaces (grouped or flat Workspace-ticket navigation)
 │   ├── Ports (immediately above Repositories)
 │   ├── Repositories
 │   └── New work (Workspace or Quick Request; primary action pinned to bottom)

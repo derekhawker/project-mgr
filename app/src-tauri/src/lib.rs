@@ -150,6 +150,21 @@ pub fn run() {
                     .app_data_dir()
                     .map_err(|error| error.to_string())?;
                 std::fs::create_dir_all(&app_data_dir).map_err(|error| error.to_string())?;
+                let ticket_directory = app_data_dir.join("workspace-tickets");
+                std::fs::create_dir_all(&ticket_directory).map_err(|error| error.to_string())?;
+                match workspace_tickets::watch_directory(&ticket_directory, {
+                    let app = app.handle().clone();
+                    move || {
+                        if let Err(error) = app.emit("workspace-tickets-changed", ()) {
+                            eprintln!("workspace ticket change event delivery failed: {error}");
+                        }
+                    }
+                }) {
+                    Ok(watcher) => {
+                        app.manage(watcher);
+                    }
+                    Err(error) => eprintln!("Workspace ticket watcher could not start: {error}"),
+                }
                 let user_home = app.path().home_dir().map_err(|error| error.to_string())?;
                 ManagementStore::open_with_paths(
                     app_data_dir.join("management.sqlite3"),
@@ -511,7 +526,7 @@ struct WorkspaceNavigation {
     workspace_repositories: Vec<management::WorkspaceRepositoryBinding>,
     workspace_session_contexts: Vec<management::WorkspaceSessionContext>,
     quick_requests: Vec<management::QuickRequestRecord>,
-    workspace_tickets: HashMap<String, Vec<workspace_tickets::Ticket>>,
+    workspace_tickets: HashMap<String, Vec<workspace_tickets::NavigationTicket>>,
 }
 
 #[tauri::command]
@@ -559,7 +574,7 @@ fn workspace_navigation_inner(app: &AppHandle) -> Result<WorkspaceNavigation, St
     let mut workspace_tickets = HashMap::new();
     for workspace in &workspaces {
         let directory = workspace_tickets::workspace_ticket_dir(&app_data, &workspace.slug)?;
-        workspace_tickets.insert(workspace.id.clone(), workspace_tickets::list(&directory)?);
+        workspace_tickets.insert(workspace.id.clone(), workspace_tickets::list_for_navigation(&directory)?);
     }
     Ok(WorkspaceNavigation {
         workspaces,

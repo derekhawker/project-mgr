@@ -46,6 +46,7 @@ import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import { createApplicationLifetime } from "./application/applicationLifetime.js";
 import { WorkspaceNavigation } from "./views/workbench/WorkspaceNavigation.jsx";
+import { WorkspaceTicketViewToggle } from "./views/workbench/WorkspaceTicketViewToggle.jsx";
 import { WorkspaceTicketViewer } from "./views/workbench/WorkspaceTicketViewer.jsx";
 import { ChangeReviewPanel } from "./views/change-review/ChangeReviewPanel.jsx";
 import { DocsPane } from "./views/docs/DocsPane.jsx";
@@ -264,6 +265,7 @@ const [ticketError, setTicketError] = createSignal("");
 const [selectedTicketFilename, setSelectedTicketFilename] = createSignal(null);
 const [ticketSessionScope, setTicketSessionScope] = createSignal(null);
 const [ticketArchived, setTicketArchived] = createSignal(false);
+const [workspaceTicketView, setWorkspaceTicketView] = createSignal("grouped");
 async function refreshTicketList(archived = ticketArchived()) {
   const workspaceId = selectedWorkspace?.id;
   if (!workspaceId) return;
@@ -276,6 +278,34 @@ async function refreshTicketList(archived = ticketArchived()) {
     setTicketError(String(error));
   } finally {
     setTicketLoading(false);
+  }
+}
+async function workWorkspaceTicket(workspaceId, filename) {
+  if (ticketWorking() || !workspaceId) return;
+  const workspace = navigationData.workspaces.find(
+    (item) => item.id === workspaceId && item.kind === "regular" && item.status === "active",
+  );
+  if (!workspace) return;
+  if (selectedWorkspace?.id !== workspaceId) selectWorkspace(workspace, navigationData);
+  setSelectedTicketFilename(filename);
+  setTicketWorking(true);
+  setTicketError("");
+  try {
+    const session = await workOnWorkspaceTicket(invoke, workspaceId, filename);
+    await refreshNavigation();
+    if (selectedWorkspace?.id !== workspaceId || selectedTicketFilename() !== filename) return;
+    setTicketSessionScope(filename);
+    setTicketViewerVisible(false);
+    setWorkbenchVisible(true);
+    setSelectedOwnerVisible(true);
+    await showSession(session.openCodeSessionId);
+  } catch (error) {
+    if (selectedWorkspace?.id !== workspaceId || selectedTicketFilename() !== filename) return;
+    setTicketViewerVisible(true);
+    setWorkbenchVisible(false);
+    setTicketError(String(error));
+  } finally {
+    setTicketWorking(false);
   }
 }
 const workspaceTicketViewer = () => ticketViewerVisible() && WorkspaceTicketViewer({
@@ -299,23 +329,7 @@ const workspaceTicketViewer = () => ticketViewerVisible() && WorkspaceTicketView
   },
   onArchiveChange: (archived) => { setTicketArchived(archived); void refreshTicketList(archived); },
   onRefresh: () => void refreshTicketList(),
-  onWork: async (filename) => {
-    if (ticketWorking() || !selectedWorkspace) return;
-    const workspaceId = selectedWorkspace.id;
-    setTicketWorking(true);
-    setTicketError("");
-    try {
-      const session = await workOnWorkspaceTicket(invoke, workspaceId, filename);
-      await refreshNavigation();
-      if (selectedWorkspace?.id !== workspaceId || selectedTicketFilename() !== filename) return;
-      setTicketSessionScope(filename);
-      setTicketViewerVisible(false);
-      setWorkbenchVisible(true);
-      setSelectedOwnerVisible(true);
-      await showSession(session.openCodeSessionId);
-    } catch (error) { setTicketViewerVisible(true); setWorkbenchVisible(false); setTicketError(String(error)); }
-    finally { setTicketWorking(false); }
-  },
+  onWork: (filename) => workWorkspaceTicket(selectedWorkspace?.id, filename),
   onCreate: async () => {
     const workspaceId = selectedWorkspace?.id;
     try {
@@ -338,14 +352,30 @@ const [workspaceNavigation, setWorkspaceNavigation] = createSignal({
   data: navigationData,
   selected: null,
 });
+const workspaceViewToggle = () =>
+  WorkspaceTicketViewToggle({
+    viewMode: workspaceTicketView,
+    onToggle: () => setWorkspaceTicketView(workspaceTicketView() === "grouped" ? "flat" : "grouped"),
+  });
 const [navigationBusy, setNavigationBusy] = createSignal(true);
 const workspaceNavigationView = () =>
   WorkspaceNavigation({
     data: () => workspaceNavigation().data,
     selected: () => workspaceNavigation().selected,
     busy: navigationBusy,
+    viewMode: workspaceTicketView,
     onSelect: (workspace) => selectWorkspace(workspace, navigationData),
+    onWork: (workspace, filename) => workWorkspaceTicket(workspace.id, filename),
+    isTicketCurrent: (workspace, ticket) =>
+      selectedWorkspace?.id === workspace.id &&
+      selectedTicketFilename() === ticket.filename,
   });
+
+function clearActiveNavigationItems() {
+  setSelectedQuickRequest(null);
+  setSelectedTicketFilename(null);
+  setWorkspaceNavigation({ data: navigationData, selected: null });
+}
 // One page-scoped session presentation, shared by all work destinations.
 const sessions = createWorkbenchSessions({
   invoke,
@@ -646,6 +676,7 @@ const directories = createDirectories({
   confirm: (message) => window.confirm(message),
   renderAttachedRepositories,
   beforeOpen: () => {
+    clearActiveNavigationItems();
     setTicketViewerVisible(false);
     changeReviewController.cancelPendingReview();
     docsController.showTerminal();
@@ -678,6 +709,7 @@ const ports = createPortsController({
   visible: portsVisible,
   setVisible: setPortsVisible,
   onOpen: () => {
+    clearActiveNavigationItems();
     setTicketViewerVisible(false);
     changeReviewController.cancelPendingReview();
     docsController.showTerminal();
@@ -706,6 +738,7 @@ function selectWorkspace(workspace, data = navigationData) {
   setRightContentOwnerActive(true);
   selectedWorkspace = workspace;
   setSelectedQuickRequest(null);
+  setSelectedTicketFilename(null);
   setWorkspaceNavigation({ data, selected: workspace });
   setNoSelectionVisible(false);
   setWorkspaceSelected(true);
@@ -759,6 +792,7 @@ function selectQuickRequest(task, workspace, data = navigationData, { deferResto
   setOwnerStatus("");
   selectedWorkspace = workspace;
   setSelectedQuickRequest(task);
+  setSelectedTicketFilename(null);
   setWorkspaceNavigation({ data, selected: null });
   selectedOwnerRepositoryCount = 0;
   showOwnerTerminal();
@@ -896,6 +930,7 @@ const quickRequests = createQuickRequests({
       setWorkbenchVisible(false);
     },
     showHistory: () => {
+      clearActiveNavigationItems();
       setTicketViewerVisible(false);
       changeReviewController.cancelPendingReview();
       docsController.showTerminal();
@@ -938,6 +973,7 @@ appLifetime.mount(
       quickRequestHistoryButton: quickRequests.historyButton,
       quickRequestList: quickRequests.recentList,
       workspaceNavigation: workspaceNavigationView,
+      workspaceViewToggle,
       directoriesNavigationButton: directories.navigationButton,
       portsNavigationButton: () => PortsNavigationButton({ onOpen: () => void ports.open() }),
       newWorkMenu: newWork.menu,
@@ -962,6 +998,14 @@ export const terminalRuntime = appLifetime
       },
     },
     subscriptions: [
+      [
+        "workspace-tickets-changed",
+        () => {
+          void refreshNavigation().catch((error) =>
+            setAppNotice(`Workspace ticket refresh failed: ${error}`),
+          );
+        },
+      ],
       [
         "workspace-setup-progress",
         ({ payload }) => {

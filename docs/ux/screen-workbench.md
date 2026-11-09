@@ -69,6 +69,20 @@ their own destination masthead instead.
 
 ## Workspace behavior
 
+The persistent left navigation offers an icon-only control beside **Workspaces**
+to switch between grouped Workspace → ticket rows and a flat ticket list.
+Grouped mode starts each Workspace expanded; only Workspaces with `in_progress`
+or `blocked` tickets show a right-side disclosure control. The Workspace name
+continues to select that Workspace; the separate disclosure changes only ticket
+visibility. Ticket rows show the title, clamped to two lines, and a left circle-X
+only for blocked tickets. Selecting a row runs that ticket's existing **Work**
+action. Flat mode keeps Workspace rows first, shows a divider, then lists matching
+tickets across Workspaces by newest filesystem modification time; ticket rows do
+not show Workspace names or timestamps, and Workspace disclosures are hidden.
+Rust watches ticket Markdown files and refreshes the navigation data when they
+change. The visual controls, truncation and native Wayland appearance remain
+manual acceptance.
+
 - The New work menu offers Workspace and Quick Request. Workspace confirmation
   selects the new Workspace and opens every required session, even when the
   optional starting prompt is blank.

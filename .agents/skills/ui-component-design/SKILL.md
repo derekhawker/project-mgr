@@ -50,5 +50,5 @@ The recent cleanup exposed duplicate legacy/final style layers, broad shell-wide
 ## Validate behavior and appearance
 
 - Test observable semantics and behavior: accessible name, native element behavior, callbacks, state changes, and disabled states. Do not test CSS declarations, class names, or layout in unit tests.
-- Use browser DOM or screenshot checks when useful. Native Wayland rendering, focus, overlays, and lifecycle still require manual acceptance; a Chromium screenshot is not native acceptance.
+- Use browser DOM or screenshot checks when useful. Check relevant rendering, focus, overlays, and lifecycle behavior in an appropriate environment, and report what was not checked.
 - Review the final cascade for the edited component and report visual or native paths that were not checked.
