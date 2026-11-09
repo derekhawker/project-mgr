@@ -967,6 +967,10 @@ test("New-work offers only Workspace and Quick Request creation, not legacy Task
 
 test("regular Workspace navigation does not render retained legacy Task records", () => {
   const main = readFileSync(join(process.cwd(), "src", "main.js"), "utf8");
+  const applicationRoot = readFileSync(
+    join(process.cwd(), "src/application/ApplicationRoot.jsx"),
+    "utf8",
+  );
   const navigation = readFileSync(
     join(process.cwd(), "src/views/workbench/WorkspaceNavigation.jsx"),
     "utf8",
@@ -977,7 +981,11 @@ test("regular Workspace navigation does not render retained legacy Task records"
     navigation,
     /\(props\.data\(\)\?\.workspaces \|\| \[\]\)\.filter/,
   );
-  assert.match(main, /renderSolid\(\(\) => WorkspaceNavigation/);
+  assert.match(main, /const workspaceNavigationProps = \{/);
+  assert.match(
+    applicationRoot,
+    /<WorkspaceNavigation \{\.\.\.props\.workspaceNavigation\} \/>/,
+  );
   assert.doesNotMatch(renderNavigation, /data\.tasks|renderTasks|selectTask/);
   assert.doesNotMatch(html, /id="owner-tabs"/);
   assert.doesNotMatch(
@@ -987,6 +995,20 @@ test("regular Workspace navigation does not render retained legacy Task records"
   assert.doesNotMatch(
     main,
     /refreshTaskSetup|createTaskSession|completeTask\(|cancelTaskSetup|resumeTaskSetup|retryTaskSetup/,
+  );
+});
+
+test("Workspace ticket viewer is mounted as a Solid component", () => {
+  const main = readFileSync(join(process.cwd(), "src/main.js"), "utf8");
+  const shell = readFileSync(
+    join(process.cwd(), "src/application/RightContentShell.jsx"),
+    "utf8",
+  );
+  assert.match(main, /const workspaceTicketViewerProps = \{/);
+  assert.doesNotMatch(main, /WorkspaceTicketViewer\(/);
+  assert.match(
+    shell,
+    /<Show when=\{props\.ticketViewerVisible\(\)\}>\s*<WorkspaceTicketViewer \{\.\.\.props\.ticketViewerProps\} \/>/,
   );
 });
 

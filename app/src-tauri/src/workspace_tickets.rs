@@ -3,6 +3,7 @@
 use serde::Serialize;
 use std::{
     fs,
+    io::{BufRead, BufReader, Read},
     path::{Path, PathBuf},
 };
 
@@ -179,10 +180,7 @@ pub fn list(directory: &Path) -> Result<Vec<Ticket>, String> {
         if path.extension().and_then(|s| s.to_str()) != Some("md") || !path.is_file() {
             continue;
         }
-        let modified_at = path.metadata().map_err(|e| e.to_string())?
-            .modified().map_err(|e| e.to_string())?
-            .duration_since(std::time::UNIX_EPOCH).unwrap_or_default()
-            .as_millis().min(u64::MAX as u128) as u64;
+        let modified_at = ticket_modified_at(&path);
         let content = fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
         let (title, status) = ticket_metadata(
             &content,
@@ -204,22 +202,98 @@ pub fn list(directory: &Path) -> Result<Vec<Ticket>, String> {
 
 /// Lists only tickets shown in persistent Workspace navigation.
 pub fn list_for_navigation(directory: &Path) -> Result<Vec<NavigationTicket>, String> {
-    let mut tickets: Vec<_> = list(directory)?
-        .into_iter()
-        .filter(|ticket| matches!(ticket.status.as_str(), "in_progress" | "blocked"))
-        .map(|ticket| NavigationTicket {
-            filename: ticket.filename,
-            title: ticket.title,
-            status: ticket.status,
-            modified_at: ticket.modified_at,
-        })
-        .collect();
+    if !directory.exists() {
+        return Ok(Vec::new());
+    }
+    let mut tickets = Vec::new();
+    for entry in fs::read_dir(directory).map_err(|e| e.to_string())? {
+        let path = entry.map_err(|e| e.to_string())?.path();
+        if path.extension().and_then(|s| s.to_str()) != Some("md") || !path.is_file() {
+            continue;
+        }
+        let modified_at = ticket_modified_at(&path);
+        let fallback = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("Ticket");
+        let file = fs::File::open(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let (title, status) = navigation_metadata(file, fallback)
+            .map_err(|e| format!("{}: {e}", path.display()))?;
+        if !matches!(status.as_str(), "in_progress" | "blocked") {
+            continue;
+        }
+        tickets.push(NavigationTicket {
+            filename: path.file_name().unwrap().to_string_lossy().into_owned(),
+            title,
+            status,
+            modified_at,
+        });
+    }
     tickets.sort_by(|a, b| {
         b.modified_at
             .cmp(&a.modified_at)
             .then_with(|| a.filename.cmp(&b.filename))
     });
     Ok(tickets)
+}
+
+/// Reads only the metadata needed for navigation. With valid front matter, the
+/// reader stops at its closing delimiter instead of loading ticket bodies.
+fn navigation_metadata(reader: impl Read, fallback: &str) -> std::io::Result<(String, String)> {
+    let mut lines = BufReader::new(reader).lines();
+    let first = lines.next().transpose()?.unwrap_or_default();
+    if first.trim() == "---" {
+        let mut title = None;
+        let mut status = None;
+        let mut closed = false;
+        while let Some(line) = lines.next() {
+            let line = line?;
+            if line.trim() == "---" {
+                closed = true;
+                break;
+            }
+            if let Some(value) = line.strip_prefix("title:") {
+                title = Some(value.trim().trim_matches(['\"', '\'']).to_owned());
+            }
+            if let Some(value) = line.strip_prefix("status:") {
+                status = Some(value.trim().trim_matches(['\"', '\'']).to_owned());
+            }
+        }
+        if let Some(title) = title {
+            return Ok((title, status.unwrap_or_else(|| "unknown".to_owned())));
+        }
+        if closed {
+            for line in lines {
+                if let Some(title) = line?.strip_prefix("# ") {
+                    return Ok((
+                        title.to_owned(),
+                        status.unwrap_or_else(|| "unknown".to_owned()),
+                    ));
+                }
+            }
+        }
+        return Ok((fallback.to_owned(), status.unwrap_or_else(|| "unknown".to_owned())));
+    }
+
+    if let Some(title) = first.strip_prefix("# ") {
+        return Ok((title.to_owned(), "unknown".to_owned()));
+    }
+    for line in lines {
+        if let Some(title) = line?.strip_prefix("# ") {
+            return Ok((title.to_owned(), "unknown".to_owned()));
+        }
+    }
+    Ok((fallback.to_owned(), "unknown".to_owned()))
+}
+
+/// A timestamp is only a sorting hint; unavailable metadata must not fail
+/// the Workspace navigation command.
+fn ticket_modified_at(path: &Path) -> u128 {
+    fs::metadata(path)
+        .and_then(|metadata| metadata.modified())
+        .ok()
+        .and_then(|modified| modified.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or(0, |duration| duration.as_millis())
 }
 
 pub fn is_ticket_markdown_event(event: &notify::Event) -> bool {
@@ -468,6 +542,54 @@ mod tests {
             ["blocked.md", "newer.md", "older.md"],
         );
         assert!(tickets.iter().all(|ticket| ticket.status != "draft"));
+    }
+
+    #[test]
+    fn unavailable_ticket_mtime_does_not_fail_navigation() {
+        let root = tempfile::tempdir().unwrap();
+        let missing = root.path().join("ticket.md");
+        assert_eq!(ticket_modified_at(&missing), 0);
+    }
+
+    #[test]
+    fn navigation_metadata_stops_reading_after_ticket_front_matter() {
+        use std::io::{self, Read};
+
+        struct HeaderOnlyReader {
+            lines: std::io::Cursor<&'static [u8]>,
+            body_started: bool,
+        }
+        impl Read for HeaderOnlyReader {
+            fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+                if self.body_started {
+                    return Err(io::Error::other("navigation read the ticket body"));
+                }
+                let remaining = &self.lines.get_ref()[self.lines.position() as usize..];
+                let line_length = remaining
+                    .iter()
+                    .position(|byte| *byte == b'\n')
+                    .map_or(remaining.len(), |index| index + 1);
+                let count = line_length.min(buffer.len());
+                let read = self.lines.read(&mut buffer[..count])?;
+                let position = self.lines.position() as usize;
+                if position > 4 && self.lines.get_ref()[..position].ends_with(b"---\n")
+                {
+                    self.body_started = true;
+                }
+                Ok(read)
+            }
+        }
+
+        let reader = HeaderOnlyReader {
+            lines: std::io::Cursor::new(
+                b"---\ntitle: Fast navigation\nstatus: in_progress\n---\nlarge body",
+            ),
+            body_started: false,
+        };
+        assert_eq!(
+            navigation_metadata(reader, "fallback").unwrap(),
+            ("Fast navigation".into(), "in_progress".into()),
+        );
     }
 
     #[test]

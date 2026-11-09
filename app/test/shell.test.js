@@ -985,6 +985,14 @@ test("workspace command failures remain visible and identify the failed action",
     formatWorkspaceError("Attach", new Error("identity mismatch")),
     "Attach failed: Error: identity mismatch",
   );
+  assert.equal(
+    formatWorkspaceError("Refresh", { message: "ticket read failed", code: "io" }),
+    "Refresh failed: ticket read failed",
+  );
+  assert.equal(
+    formatWorkspaceError("Refresh", { code: "io" }),
+    'Refresh failed: {"code":"io"}',
+  );
 });
 
 test("completed task history remains selectable under its owning workspace", () => {

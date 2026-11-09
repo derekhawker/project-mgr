@@ -162,6 +162,36 @@ test("workspace navigation filters and selects active regular workspaces", () =>
   view.dispose();
 });
 
+test("workspace refreshes update row data without replacing the hovered DOM node", () => {
+  const workspace = (name) => ({
+    id: "stable-id",
+    name,
+    kind: "regular",
+    status: "active",
+  });
+  const initialData = { workspaces: [workspace("Before refresh")] };
+  const [data, setData] = createSignal(initialData);
+  const [selected, setSelected] = createSignal(null);
+  const view = mount(WorkspaceNavigation, {
+    data,
+    busy: () => false,
+    selected,
+    onSelect: setSelected,
+    viewMode: () => "grouped",
+    onWork: () => {},
+  });
+  const row = view.host.querySelector("button");
+
+  const refreshedWorkspace = workspace("After refresh");
+  setData({ workspaces: [refreshedWorkspace] });
+
+  assert.strictEqual(view.host.querySelector("button"), row);
+  assert.equal(row.textContent.trim(), "After refresh");
+  row.click();
+  assert.equal(selected(), refreshedWorkspace);
+  view.dispose();
+});
+
 test("workspace tickets group, collapse, mark blocked, and flatten newest first", () => {
   const first = { id: "a", name: "Alpha", kind: "regular", status: "active" };
   const second = { id: "b", name: "Beta", kind: "regular", status: "active" };
@@ -253,6 +283,34 @@ test("Quick Request navigation item exposes its selected state and opens the rec
   assert.equal(item.textContent.trim(), "A request");
   item.click();
   assert.equal(opened, record);
+  view.dispose();
+});
+
+test("Quick Request refreshes preserve the positional row and update click data", () => {
+  const [records, setRecords] = createSignal([
+    { task: { id: "request-1" }, prompt: "Before refresh" },
+  ]);
+  const [selectedId] = createSignal(null);
+  let opened;
+  const view = mount(QuickRequestList, {
+    records,
+    history: () => false,
+    query: () => "",
+    selectedId,
+    onOpen: (value) => (opened = value),
+  });
+  const row = view.host.querySelector("button");
+  const refreshedRecord = {
+    task: { id: "request-1" },
+    prompt: "After refresh",
+  };
+
+  setRecords([refreshedRecord]);
+
+  assert.strictEqual(view.host.querySelector("button"), row);
+  assert.equal(row.textContent.trim(), "After refresh");
+  row.click();
+  assert.equal(opened, refreshedRecord);
   view.dispose();
 });
 

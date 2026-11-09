@@ -1,5 +1,6 @@
 import { Show } from "solid-js";
 import { PageMasthead } from "../components/PageMasthead.jsx";
+import { WorkspaceTicketViewer } from "../views/workbench/WorkspaceTicketViewer.jsx";
 
 export function RightContentShell(props) {
   return (
@@ -24,7 +25,9 @@ export function RightContentShell(props) {
       {props.directoriesPage?.()}
       {props.portsPage?.()}
       {props.noSelection?.()}
-      {props.ticketViewer?.()}
+      <Show when={props.ticketViewerVisible()}>
+        <WorkspaceTicketViewer {...props.ticketViewerProps} />
+      </Show>
       {props.docsPane?.()}
       {props.workspaceOwnerPanel?.()}
     </div>

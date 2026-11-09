@@ -6,6 +6,7 @@ function fixture({
   workspace = { id: "w1" },
   count = 1,
   quick = null,
+  ticketViewerVisible = false,
   load = async () => [],
 } = {}) {
   const state = {};
@@ -40,6 +41,7 @@ function fixture({
   deps.getSelectedWorkspace = () => workspace;
   deps.getSelectedOwnerRepositoryCount = () => count;
   deps.getSelectedQuickRequest = () => quick;
+  deps.isTicketViewerVisible = () => ticketViewerVisible;
   deps.getRepositoryToolsOwner = () => null;
   deps.syncRepositoryToolsAvailability = () => calls.push("sync-tools");
   deps.invoke = () => {};
@@ -68,6 +70,16 @@ test("availability and Docs refresh preserve unavailable guards and terminal tra
   assert.deepEqual(f.calls, ["terminal", "sync-tools"]);
   await f.controller.refreshDocsAvailability();
   assert.equal(await f.controller.handleChangeReviewClick(), undefined);
+  assert.deepEqual(f.calls, ["terminal", "sync-tools"]);
+});
+
+test("unavailable workspace tools do not replace the ticket viewer with the owner terminal", () => {
+  const f = fixture({ workspace: { id: "w1" }, count: 0, ticketViewerVisible: true });
+  f.controller.syncChangeReviewAvailability();
+
+  assert.equal(f.state.Available, false);
+  assert.equal(f.state.Visible, false);
+  assert.equal(f.state.ownerVisible, undefined);
   assert.deepEqual(f.calls, ["terminal", "sync-tools"]);
 });
 

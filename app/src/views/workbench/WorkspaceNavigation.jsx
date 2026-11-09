@@ -1,10 +1,13 @@
-import { For, Show, createSignal } from "solid-js";
+import { Index, Show, createSignal, onCleanup, onMount } from "solid-js";
 import { Icon, IconButton } from "@ui-lib";
 import { NavigationItem } from "../../components/NavigationItem.jsx";
+import { recordUiDiagnostic } from "../../lib/uiDiagnostics.js";
 import styles from "./WorkspaceNavigation.module.css";
 
 /** Reactive Workspace navigation list; selection remains owned by the app shell. */
 export function WorkspaceNavigation(props) {
+  onMount(() => recordUiDiagnostic("WorkspaceNavigation", "mount"));
+  onCleanup(() => recordUiDiagnostic("WorkspaceNavigation", "dispose"));
   const expandedByWorkspace = new Map();
   const expansionFor = (workspaceId) => {
     if (!expandedByWorkspace.has(workspaceId)) {
@@ -39,13 +42,18 @@ export function WorkspaceNavigation(props) {
     <li>
       <NavigationItem
         class={mode === "grouped" ? styles.groupedTicketButton : styles.flatTicketButton}
-        current={props.isTicketCurrent?.(workspace, ticket)}
-        onClick={() => props.onWork(workspace, ticket.filename)}
+        current={props.isTicketCurrent?.(workspace(), ticket())}
+        onPointerEnter={() => recordUiDiagnostic("WorkspaceNavigation", "ticket-pointer-enter")}
+        onPointerLeave={() => recordUiDiagnostic("WorkspaceNavigation", "ticket-pointer-leave")}
+        onClick={() => {
+          recordUiDiagnostic("WorkspaceNavigation", "ticket-click");
+          props.onWork(workspace(), ticket().filename);
+        }}
       >
-        <Show when={ticket.status === "blocked"}>
+        <Show when={ticket().status === "blocked"}>
           <Icon name="circleX" muted />
         </Show>
-        <span class={styles.ticketTitle}>{ticket.title}</span>
+        <span class={styles.ticketTitle}>{ticket().title}</span>
       </NavigationItem>
     </li>
   );
@@ -64,46 +72,57 @@ export function WorkspaceNavigation(props) {
           when={props.viewMode() === "grouped"}
           fallback={
             <>
-              <For each={workspaces()}>
+              <Index each={workspaces()}>
                 {(workspace) => (
                   <li>
                     <NavigationItem
                       class={styles.flatWorkspaceButton}
-                      current={workspaceIsCurrent(workspace)}
-                      onClick={() => props.onSelect(workspace)}
+                      current={workspaceIsCurrent(workspace())}
+                      onPointerEnter={() => recordUiDiagnostic("WorkspaceNavigation", "workspace-pointer-enter")}
+                      onPointerLeave={() => recordUiDiagnostic("WorkspaceNavigation", "workspace-pointer-leave")}
+                      onClick={() => {
+                        recordUiDiagnostic("WorkspaceNavigation", "workspace-click");
+                        props.onSelect(workspace());
+                      }}
                     >
-                      <span class={styles.workspaceName}>{workspace.name}</span>
+                      <span class={styles.workspaceName}>{workspace().name}</span>
                     </NavigationItem>
                   </li>
                 )}
-              </For>
+              </Index>
               <li class={styles.ticketHeading}>
                 <h3>Tickets</h3>
               </li>
-              <For each={flatTickets()}>
-                {(item) => ticketRow(item, item.workspace, "flat")}
-              </For>
+              <Index each={flatTickets()}>
+                {(item) => ticketRow(item, () => item().workspace, "flat")}
+              </Index>
             </>
           }
         >
-          <For each={workspaces()}>
+          <Index each={workspaces()}>
             {(workspace) => {
-              const tickets = () => workspaceTickets(workspace.id);
-              const [isExpanded, setExpanded] = expansionFor(workspace.id);
+              const tickets = () => workspaceTickets(workspace().id);
+              const isExpanded = () => expansionFor(workspace().id)[0]();
+              const setExpanded = (value) => expansionFor(workspace().id)[1](value);
               return (
                 <li class={styles.workspaceGroup}>
                   <div class={styles.workspaceRow}>
                     <NavigationItem
                       class={styles.workspaceButton}
-                      current={workspaceIsCurrent(workspace)}
-                      onClick={() => props.onSelect(workspace)}
+                      current={workspaceIsCurrent(workspace())}
+                      onPointerEnter={() => recordUiDiagnostic("WorkspaceNavigation", "workspace-pointer-enter")}
+                      onPointerLeave={() => recordUiDiagnostic("WorkspaceNavigation", "workspace-pointer-leave")}
+                      onClick={() => {
+                        recordUiDiagnostic("WorkspaceNavigation", "workspace-click");
+                        props.onSelect(workspace());
+                      }}
                     >
-                      <span class={styles.workspaceName}>{workspace.name}</span>
+                      <span class={styles.workspaceName}>{workspace().name}</span>
                     </NavigationItem>
                     <Show when={tickets().length > 0}>
                       <IconButton
                         class={styles.workspaceDisclosure}
-                        label={`${isExpanded() ? "Collapse" : "Expand"} ${workspace.name} tickets`}
+                        label={`${isExpanded() ? "Collapse" : "Expand"} ${workspace().name} tickets`}
                         aria-expanded={String(isExpanded())}
                         onClick={() => setExpanded((current) => !current)}
                       >
@@ -113,15 +132,15 @@ export function WorkspaceNavigation(props) {
                   </div>
                   <Show when={isExpanded() && tickets().length > 0}>
                     <ul class={styles.ticketChildren}>
-                      <For each={tickets()}>
+                      <Index each={tickets()}>
                         {(ticket) => ticketRow(ticket, workspace)}
-                      </For>
+                      </Index>
                     </ul>
                   </Show>
                 </li>
               );
             }}
-          </For>
+          </Index>
         </Show>
       </Show>
     </ul>
