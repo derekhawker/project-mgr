@@ -279,6 +279,7 @@ async function refreshTicketList(archived = ticketArchived()) {
   }
 }
 const workspaceTicketViewer = () => ticketViewerVisible() && WorkspaceTicketViewer({
+  workspaceName: ownerTitle,
   tickets: ticketItems,
   selectedFilename: selectedTicketFilename,
   loading: ticketLoading,

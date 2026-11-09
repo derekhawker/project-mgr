@@ -18,7 +18,7 @@ export function AppPageLayout(props) {
         flush={props.edgeToEdge}
       />
       <div
-        class={styles.content}
+        class={`${styles.content} ${props.contentClass ?? ""}`}
         classList={{
           [styles.fullWidth]: props.fullWidth || props.edgeToEdge,
           [styles.fillContent]: props.fillContent,

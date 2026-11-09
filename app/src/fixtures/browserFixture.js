@@ -218,9 +218,21 @@ export async function invokeBrowserFixture(name, payload = {}) {
         workspaceTickets: {},
       };
       break;
-    case "workspace_tickets_list":
-      result = payload.archived ? [] : [{ filename: "example.md", title: "Example ticket", status: "draft", content: "# Example ticket\n\nA fixture ticket for the Workspace." }];
+    case "workspace_tickets_list": {
+      const tickets = [{ filename: "example.md", title: "Example ticket", status: "draft", content: "# Example ticket\n\nA fixture ticket for the Workspace." }];
+      if (typeof window !== "undefined" && new URLSearchParams(window.location.search).has("ticketOverflow")) {
+        for (let index = 1; index <= 40; index++) {
+          tickets.push({
+            filename: `overflow-${index}.md`,
+            title: `Overflow ticket ${index}`,
+            status: "open",
+            content: `# Overflow ticket ${index}\n\n${"Long fixture content for ticket scrolling. ".repeat(100)}`,
+          });
+        }
+      }
+      result = payload.archived ? [] : tickets;
       break;
+    }
     case "workspace_ticket_creation_start": {
       const workspace = workspaces.find((item) => item.id === payload.workspaceId);
       if (!workspace) throw new Error("Workspace was not found");

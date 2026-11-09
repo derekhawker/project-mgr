@@ -107,10 +107,10 @@ test("archive toggle reports state and clears selection; create and refresh forw
     view.host.querySelector('button').click();
     [...view.host.querySelectorAll("button")].find((button) => button.textContent === "Refresh tickets").click();
     [...view.host.querySelectorAll("button")].find((button) => button.textContent === "Browse archived tickets").click();
-    assert.equal(view.host.querySelector("h2").textContent, "Archived tickets");
+    assert.match(view.host.querySelector("#workspace-ticket-title").textContent, /Archived tickets/);
     assert.deepEqual(calls, [["create"], ["refresh"], ["archive", true], ["select", null]]);
     [...view.host.querySelectorAll("button")].find((button) => button.textContent === "Show active tickets").click();
     assert.deepEqual(calls.slice(-2), [["archive", false], ["select", null]]);
-    assert.equal(view.host.querySelector("h2").textContent, "Tickets");
+    assert.match(view.host.querySelector("#workspace-ticket-title").textContent, /Tickets/);
   } finally { view.dispose(); }
 });
