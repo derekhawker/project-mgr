@@ -7,55 +7,229 @@ use std::{
     path::{Path, PathBuf},
 };
 
-/// External effects needed to open one ticket's work session.
+/// External effects needed to open ticket-bound work sessions.
 pub trait TicketWorkRuntime {
     type Session;
     fn exists(&mut self, id: &str) -> Result<bool, String>;
     fn create(&mut self, title: &str, repository: &Path) -> Result<String, String>;
     fn prepare(&mut self, id: &str, directory: &Path, instructions: &str) -> Result<(), String>;
     fn attach(&mut self, id: &str, repository: &Path) -> Result<Self::Session, String>;
+    fn session_directory(&mut self, _id: &str) -> Result<Option<PathBuf>, String> {
+        Ok(None)
+    }
 }
 
-/// Open the session named in the Markdown ticket, or create one if absent.
-/// The lock covers the entire operation, not only the final file write.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TicketWorkResult<S> {
+    pub sessions: Vec<S>,
+    pub active_session_id: String,
+}
+
+fn ticket_work_lock() -> Result<std::sync::MutexGuard<'static, ()>, String> {
+    static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
+    LOCK.get_or_init(|| std::sync::Mutex::new(()))
+        .lock()
+        .map_err(|error| error.to_string())
+}
+
+/// Restore every retained session, creating a replacement only when the active
+/// OpenCode session is confirmed missing. The lock covers this whole flow.
 pub fn work<R: TicketWorkRuntime>(
     directory: &Path,
     repository: &Path,
     workspace_name: &str,
     filename: &str,
     runtime: &mut R,
-) -> Result<R::Session, String> {
-    static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
-    let _guard = LOCK.get_or_init(|| std::sync::Mutex::new(())).lock().map_err(|e| e.to_string())?;
-    let repository = repository.canonicalize().map_err(|e| format!("Workspace repository unavailable: {e}"))?;
+) -> Result<TicketWorkResult<R::Session>, String> {
+    let _guard = ticket_work_lock()?;
+    let repository = repository
+        .canonicalize()
+        .map_err(|e| format!("Workspace repository unavailable: {e}"))?;
     let ticket = canonical_ticket(directory, filename)?;
     let ticket_dir = directory.canonicalize().map_err(|e| e.to_string())?;
-    if ticket_dir.starts_with(&repository) { return Err("Workspace ticket storage must be outside the repository".into()); }
-    let markdown = fs::read_to_string(&ticket).map_err(|e| format!("Could not read ticket: {e}"))?;
+    if ticket_dir.starts_with(&repository) {
+        return Err("Workspace ticket storage must be outside the repository".into());
+    }
+    let markdown =
+        fs::read_to_string(&ticket).map_err(|e| format!("Could not read ticket: {e}"))?;
     let (title, status) = ticket_metadata(&markdown, filename);
-    let id = match work_session_id(&markdown)? {
-        Some(id) if runtime.exists(&id)? => id,
-        _ => {
-            let id = runtime.create(&format!("{workspace_name}: {title}"), &repository)?;
-            write_session_id_safely(&ticket, &markdown, &id)?;
-            id
+    let target = resolve_ticket_directory(&repository, ticket_worktree(&markdown)?.as_ref())?;
+    let original_ids = ticket_session_ids(&markdown)?;
+    let mut ids = Vec::new();
+    for id in original_ids {
+        if runtime.exists(&id)? {
+            ids.push(id);
         }
-    };
-    let instructions = format!("Work on ticket {title} ({filename}). Canonical ticket Markdown: {}. Current status: {status}. Workspace ticket directory: {}. Repository root: {}. Follow the globally available ticket-management skill. Read the canonical Markdown for the complete assignment and latest status; it is authoritative. Do not infer another ticket from repository contents or UI selection.", ticket.display(), ticket_dir.display(), repository.display());
+    }
+    let mut active =
+        work_session_id(&markdown)?.filter(|id| ids.iter().any(|retained| retained == id));
+    if active.is_none() {
+        let id = runtime.create(&format!("{workspace_name}: {title}"), &target)?;
+        ids.push(id.clone());
+        active = Some(id);
+    }
+    if ticket_session_ids(&markdown)? != ids || work_session_id(&markdown)? != active {
+        let updated = record_ticket_sessions(&markdown, &ids, active.as_deref())?;
+        write_ticket_markdown_safely(&ticket, &markdown, &updated)?;
+    }
+    let active_id = active.expect("active session was retained or created");
+    let mut sessions = Vec::new();
+    for id in ids {
+        let instructions = ticket_instructions(
+            &title,
+            filename,
+            &status,
+            &ticket,
+            &ticket_dir,
+            &repository,
+            &id,
+        );
+        runtime.prepare(&id, &ticket_dir, &instructions)?;
+        sessions.push(runtime.attach(&id, &target)?);
+        record_session_worktree(directory, &repository, filename, &id, runtime)?;
+    }
+    Ok(TicketWorkResult {
+        sessions,
+        active_session_id: active_id,
+    })
+}
+
+pub fn new_session<R: TicketWorkRuntime>(
+    directory: &Path,
+    repository: &Path,
+    workspace_name: &str,
+    filename: &str,
+    runtime: &mut R,
+) -> Result<R::Session, String> {
+    let _guard = ticket_work_lock()?;
+    let repository = repository
+        .canonicalize()
+        .map_err(|error| format!("Workspace repository unavailable: {error}"))?;
+    let ticket = canonical_ticket(directory, filename)?;
+    let ticket_dir = directory
+        .canonicalize()
+        .map_err(|error| error.to_string())?;
+    if ticket_dir.starts_with(&repository) {
+        return Err("Workspace ticket storage must be outside the repository".into());
+    }
+    let original =
+        fs::read_to_string(&ticket).map_err(|error| format!("Could not read ticket: {error}"))?;
+    let (title, status) = ticket_metadata(&original, filename);
+    let target = resolve_ticket_directory(&repository, ticket_worktree(&original)?.as_ref())?;
+    let id = runtime.create(&format!("{workspace_name}: {title}"), &target)?;
+    let mut ids = ticket_session_ids(&original)?;
+    ids.push(id.clone());
+    let updated = record_ticket_sessions(&original, &ids, Some(&id))?;
+    write_ticket_markdown_safely(&ticket, &original, &updated)?;
+    let instructions = ticket_instructions(
+        &title,
+        filename,
+        &status,
+        &ticket,
+        &ticket_dir,
+        &repository,
+        &id,
+    );
     runtime.prepare(&id, &ticket_dir, &instructions)?;
-    runtime.attach(&id, &repository)
+    let session = runtime.attach(&id, &target)?;
+    record_session_worktree(directory, &repository, filename, &id, runtime)?;
+    Ok(session)
+}
+
+fn record_session_worktree<R: TicketWorkRuntime>(
+    directory: &Path,
+    repository: &Path,
+    filename: &str,
+    session_id: &str,
+    runtime: &mut R,
+) -> Result<(), String> {
+    let Some(session_directory) = runtime.session_directory(session_id)? else {
+        return Ok(());
+    };
+    let repository = repository
+        .canonicalize()
+        .map_err(|error| format!("Workspace repository unavailable: {error}"))?;
+    if session_directory.canonicalize().ok().as_deref() == Some(repository.as_path()) {
+        return Ok(());
+    }
+    // OpenCode can assign a worktree when the session is created, before any
+    // agent tool call exists to observe. Read its live session location after
+    // attachment and persist it through the same ticket/Git validation path.
+    record_observed_worktree(
+        directory,
+        &repository,
+        filename,
+        session_id,
+        &session_directory,
+    )?;
+    Ok(())
+}
+
+pub fn close_session(
+    directory: &Path,
+    filename: &str,
+    session_id: &str,
+) -> Result<Option<String>, String> {
+    if !valid_ticket_session_id(session_id) {
+        return Err("Invalid OpenCode session ID".into());
+    }
+    let _guard = ticket_work_lock()?;
+    let ticket = canonical_ticket(directory, filename)?;
+    let original =
+        fs::read_to_string(&ticket).map_err(|error| format!("Could not read ticket: {error}"))?;
+    let mut ids = ticket_session_ids(&original)?;
+    if !ids.iter().any(|id| id == session_id) {
+        return Err("Session is not associated with this ticket".into());
+    }
+    ids.retain(|id| id != session_id);
+    let active = work_session_id(&original)?;
+    let next_active = if active.as_deref() == Some(session_id) {
+        ids.last().map(String::as_str)
+    } else {
+        active.as_deref()
+    };
+    let updated = record_ticket_sessions(&original, &ids, next_active)?;
+    write_ticket_markdown_safely(&ticket, &original, &updated)?;
+    Ok(next_active.map(str::to_owned))
+}
+
+fn ticket_instructions(
+    title: &str,
+    filename: &str,
+    status: &str,
+    ticket: &Path,
+    ticket_dir: &Path,
+    repository: &Path,
+    session_id: &str,
+) -> String {
+    format!("Work on ticket {title} ({filename}). Exact OpenCode session ID: {session_id}. Canonical ticket Markdown: {}. Current status: {status}. Workspace ticket directory: {}. Workspace repository root: {}. Follow the globally available ticket-management skill. Read the canonical Markdown for the complete assignment and latest status; it is authoritative. Do not infer another ticket from repository contents or UI selection.", ticket.display(), ticket_dir.display(), repository.display())
 }
 
 /// Resolve only a direct Markdown child of the canonical ticket directory.
 pub fn canonical_ticket(directory: &Path, filename: &str) -> Result<PathBuf, String> {
-    if filename.is_empty() || filename != Path::new(filename).file_name().and_then(|n| n.to_str()).unwrap_or("") || !filename.ends_with(".md") || filename == "archived" {
+    if filename.is_empty()
+        || filename
+            != Path::new(filename)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("")
+        || !filename.ends_with(".md")
+        || filename == "archived"
+    {
         return Err("Invalid Workspace ticket filename".into());
     }
-    let root = directory.canonicalize().map_err(|e| format!("Ticket directory: {e}"))?;
+    let root = directory
+        .canonicalize()
+        .map_err(|e| format!("Ticket directory: {e}"))?;
     let path = root.join(filename);
-    let canonical = path.canonicalize().map_err(|e| format!("Ticket file: {e}"))?;
+    let canonical = path
+        .canonicalize()
+        .map_err(|e| format!("Ticket file: {e}"))?;
     if canonical.parent() != Some(root.as_path()) || !canonical.is_file() {
-        return Err("Ticket must be a Markdown file directly inside the Workspace ticket directory".into());
+        return Err(
+            "Ticket must be a Markdown file directly inside the Workspace ticket directory".into(),
+        );
     }
     Ok(canonical)
 }
@@ -63,16 +237,507 @@ pub fn canonical_ticket(directory: &Path, filename: &str) -> Result<PathBuf, Str
 /// Replace the sole `work_session_id` front-matter key, preserving all other
 /// bytes (including the body). Refuses malformed/missing YAML front matter.
 pub fn record_work_session(markdown: &str, id: &str) -> Result<String, String> {
-    if id.is_empty() || id.contains(['\n', '\r', '\'', '"']) { return Err("Invalid OpenCode session ID".into()); }
+    if id.is_empty() || id.contains(['\n', '\r', '\'', '"']) {
+        return Err("Invalid OpenCode session ID".into());
+    }
     let mut lines: Vec<String> = markdown.split_inclusive('\n').map(str::to_owned).collect();
-    if lines.first().map(|s| s.trim_end_matches(['\r','\n'])) != Some("---") { return Err("Ticket must begin with YAML front matter".into()); }
-    let end = lines.iter().enumerate().position(|(i, line)| i > 0 && line.trim_end_matches(['\r','\n']) == "---").ok_or("Ticket YAML front matter is not closed")?;
-    let keys: Vec<usize> = (1..end).filter(|&i| lines[i].split_once(':').map(|(k,_)| k.trim() == "work_session_id").unwrap_or(false)).collect();
-    if keys.len() > 1 { return Err("Ticket has duplicate work_session_id fields".into()); }
+    if lines.first().map(|s| s.trim_end_matches(['\r', '\n'])) != Some("---") {
+        return Err("Ticket must begin with YAML front matter".into());
+    }
+    let end = lines
+        .iter()
+        .enumerate()
+        .position(|(i, line)| i > 0 && line.trim_end_matches(['\r', '\n']) == "---")
+        .ok_or("Ticket YAML front matter is not closed")?;
+    let keys: Vec<usize> = (1..end)
+        .filter(|&i| {
+            lines[i]
+                .split_once(':')
+                .map(|(k, _)| k.trim() == "work_session_id")
+                .unwrap_or(false)
+        })
+        .collect();
+    if keys.len() > 1 {
+        return Err("Ticket has duplicate work_session_id fields".into());
+    }
     let value = format!("work_session_id: {id}\n");
-    if let Some(index) = keys.first().copied() { lines[index] = value; }
-    else { lines.insert(end, value); }
+    if let Some(index) = keys.first().copied() {
+        lines[index] = value;
+    } else {
+        lines.insert(end, value);
+    }
     Ok(lines.concat())
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TicketWorktree {
+    pub path: String,
+    pub branch: Option<String>,
+}
+
+fn frontmatter_bounds(lines: &[String]) -> Result<usize, String> {
+    if lines
+        .first()
+        .map(|line| line.trim_end_matches(['\r', '\n']))
+        != Some("---")
+    {
+        return Err("Ticket must begin with YAML front matter".into());
+    }
+    lines
+        .iter()
+        .enumerate()
+        .skip(1)
+        .find(|(_, line)| line.trim_end_matches(['\r', '\n']) == "---")
+        .map(|(index, _)| index)
+        .ok_or_else(|| "Ticket YAML front matter is not closed".into())
+}
+
+fn valid_ticket_session_id(id: &str) -> bool {
+    id.starts_with("ses_")
+        && id.len() > 4
+        && id
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '_' | '-'))
+}
+
+pub fn ticket_session_ids(markdown: &str) -> Result<Vec<String>, String> {
+    let lines: Vec<String> = markdown.split_inclusive('\n').map(str::to_owned).collect();
+    let end = frontmatter_bounds(&lines)?;
+    let mut active = None;
+    let mut list_start = None;
+    let mut ids = Vec::new();
+    for (index, line) in lines.iter().enumerate().take(end).skip(1) {
+        let content = line.trim_end_matches(['\r', '\n']);
+        if let Some(value) = content.strip_prefix("work_session_id:") {
+            if active.is_some() {
+                return Err("Ticket has duplicate work_session_id fields".into());
+            }
+            let value = value.trim();
+            if !value.is_empty() {
+                if !valid_ticket_session_id(value) {
+                    return Err("Invalid work_session_id in ticket front matter".into());
+                }
+                active = Some(value.to_owned());
+            }
+        }
+        if content.trim() == "work_session_ids:" {
+            if list_start.is_some() {
+                return Err("Ticket has duplicate work_session_ids fields".into());
+            }
+            list_start = Some(index);
+            continue;
+        }
+        if let Some(start) = list_start {
+            if index > start && content.starts_with("  - ") {
+                let id = content[4..].trim();
+                if !valid_ticket_session_id(id) {
+                    return Err("Invalid session ID in work_session_ids front matter".into());
+                }
+                if ids.iter().any(|existing| existing == id) {
+                    return Err("Ticket has duplicate work_session_ids entries".into());
+                }
+                ids.push(id.to_owned());
+            } else if index > start && !content.starts_with(' ') && !content.is_empty() {
+                list_start = None;
+            }
+        }
+    }
+    if list_start.is_none() && ids.is_empty() {
+        if let Some(active) = active.as_ref() {
+            ids.push(active.clone());
+        }
+    }
+    if let Some(active) = active.as_ref() {
+        if !ids.iter().any(|id| id == active) {
+            return Err("Active work_session_id is not present in work_session_ids".into());
+        }
+    }
+    Ok(ids)
+}
+
+fn yaml_string(value: &str) -> String {
+    // JSON strings are valid YAML 1.2 double-quoted scalars.
+    serde_json::to_string(value).expect("serializing a string cannot fail")
+}
+
+fn frontmatter_value(markdown: &str, key: &str) -> Result<Option<String>, String> {
+    let lines: Vec<String> = markdown.split_inclusive('\n').map(str::to_owned).collect();
+    let end = frontmatter_bounds(&lines)?;
+    let values: Vec<_> = lines
+        .iter()
+        .take(end)
+        .skip(1)
+        .filter_map(|line| {
+            line.trim_end_matches(['\r', '\n'])
+                .strip_prefix(&format!("{key}:"))
+        })
+        .map(str::trim)
+        .collect();
+    if values.len() > 1 {
+        return Err(format!("Ticket has duplicate {key} fields"));
+    }
+    let Some(value) = values.first() else {
+        return Ok(None);
+    };
+    if value.starts_with('"') {
+        serde_json::from_str::<String>(value)
+            .map(Some)
+            .map_err(|_| format!("Invalid {key} in ticket front matter"))
+    } else {
+        Ok(Some(value.trim_matches(['\'', '"']).to_owned()))
+    }
+}
+
+pub fn ticket_worktree(markdown: &str) -> Result<Option<TicketWorktree>, String> {
+    let path = frontmatter_value(markdown, "worktree_path")?;
+    let branch = frontmatter_value(markdown, "worktree_branch")?;
+    match path {
+        Some(path) if !path.is_empty() => Ok(Some(TicketWorktree {
+            path,
+            branch: branch.filter(|value| !value.is_empty()),
+        })),
+        Some(_) => Err("worktree_path in ticket front matter must not be empty".into()),
+        None if branch.is_some() => Err("worktree_branch is present without worktree_path".into()),
+        None => Ok(None),
+    }
+}
+
+fn replace_frontmatter_fields(
+    markdown: &str,
+    fields: &[(&str, Option<String>)],
+) -> Result<String, String> {
+    let mut lines: Vec<String> = markdown.split_inclusive('\n').map(str::to_owned).collect();
+    let end = frontmatter_bounds(&lines)?;
+    let keys: Vec<_> = fields.iter().map(|(key, _)| *key).collect();
+    let mut remove = vec![false; end];
+    let mut list_block = false;
+    for index in 1..end {
+        let content = lines[index].trim_end_matches(['\r', '\n']);
+        let field = content.split_once(':').map(|(key, _)| key.trim());
+        if field.is_some_and(|key| keys.contains(&key)) {
+            remove[index] = true;
+            list_block = field == Some("work_session_ids");
+            continue;
+        }
+        if list_block {
+            if content.starts_with("  - ") || content.trim().is_empty() {
+                remove[index] = true;
+                continue;
+            }
+            list_block = false;
+        }
+    }
+    let mut kept = Vec::with_capacity(lines.len());
+    for (index, line) in lines.drain(..).enumerate() {
+        if index < end && remove[index] {
+            continue;
+        }
+        kept.push(line);
+    }
+    let closing = frontmatter_bounds(&kept)?;
+    let mut additions = Vec::new();
+    for (key, value) in fields {
+        if let Some(value) = value {
+            if value.starts_with('\n') {
+                additions.push(format!("{key}:{value}"));
+            } else {
+                additions.push(format!("{key}: {value}\n"));
+            }
+        }
+    }
+    kept.splice(closing..closing, additions);
+    Ok(kept.concat())
+}
+
+pub fn record_ticket_sessions(
+    markdown: &str,
+    ids: &[String],
+    active: Option<&str>,
+) -> Result<String, String> {
+    let mut seen = std::collections::HashSet::new();
+    for id in ids {
+        if !valid_ticket_session_id(id) {
+            return Err("Invalid OpenCode session ID".into());
+        }
+        if !seen.insert(id) {
+            return Err("Duplicate OpenCode session ID".into());
+        }
+    }
+    if let Some(active) = active {
+        if !seen.iter().any(|id| id.as_str() == active) {
+            return Err("Active session must be present in the retained session list".into());
+        }
+    } else if !ids.is_empty() {
+        return Err("A non-empty session list must have an active session".into());
+    }
+    let list = if ids.is_empty() {
+        None
+    } else {
+        Some(format!(
+            "\n{}",
+            ids.iter()
+                .map(|id| format!("  - {id}\n"))
+                .collect::<String>()
+        ))
+    };
+    let mut fields = Vec::new();
+    if let Some(active) = active {
+        fields.push(("work_session_id", Some(active.to_owned())));
+    } else {
+        fields.push(("work_session_id", None));
+    }
+    fields.push(("work_session_ids", list));
+    replace_frontmatter_fields(markdown, &fields)
+}
+
+pub fn record_ticket_worktree(
+    markdown: &str,
+    worktree: Option<&TicketWorktree>,
+) -> Result<String, String> {
+    let (path, branch) = if let Some(worktree) = worktree {
+        if !Path::new(&worktree.path).is_absolute() || worktree.path.chars().any(char::is_control) {
+            return Err(
+                "Ticket worktree path must be an absolute path without control characters".into(),
+            );
+        }
+        (
+            Some(yaml_string(&worktree.path)),
+            worktree.branch.as_deref().map(yaml_string),
+        )
+    } else {
+        (None, None)
+    };
+    replace_frontmatter_fields(
+        markdown,
+        &[("worktree_path", path), ("worktree_branch", branch)],
+    )
+}
+
+/// Resolve the one ticket-associated worktree, or the Workspace repository if
+/// none is recorded. A recorded path must still be a Git worktree in the same
+/// Git repository or a separate checkout with the same origin; stale or foreign
+/// paths fail closed.
+pub fn resolve_ticket_directory(
+    repository: &Path,
+    worktree: Option<&TicketWorktree>,
+) -> Result<PathBuf, String> {
+    let repository = repository
+        .canonicalize()
+        .map_err(|error| format!("Workspace repository unavailable: {error}"))?;
+    let Some(worktree) = worktree else {
+        return Ok(repository);
+    };
+    let path = Path::new(&worktree.path)
+        .canonicalize()
+        .map_err(|error| format!("Recorded ticket worktree is unavailable: {error}"))?;
+    if !path.is_dir() {
+        return Err("Recorded ticket worktree is not a directory".into());
+    }
+    let root = git_text(&path, ["rev-parse", "--show-toplevel"])?;
+    let root = PathBuf::from(root)
+        .canonicalize()
+        .map_err(|error| format!("Could not resolve recorded worktree root: {error}"))?;
+    if root != path {
+        return Err("Recorded ticket worktree path is not the Git worktree root".into());
+    }
+    if !same_git_repository(&repository, &path)? {
+        return Err("Recorded ticket worktree belongs to a different Git repository".into());
+    }
+    if let Some(expected_branch) = worktree.branch.as_deref() {
+        let actual_branch = git_text(&path, ["branch", "--show-current"])?;
+        if !actual_branch.is_empty() && actual_branch != expected_branch {
+            return Err("Recorded ticket worktree branch has changed".into());
+        }
+    }
+    Ok(path)
+}
+
+fn git_text<const N: usize>(directory: &Path, args: [&str; N]) -> Result<String, String> {
+    let output = std::process::Command::new("git")
+        .args(args)
+        .current_dir(directory)
+        .env("GIT_OPTIONAL_LOCKS", "0")
+        .output()
+        .map_err(|error| format!("Could not inspect Git worktree: {error}"))?;
+    if !output.status.success() {
+        return Err("Could not verify the recorded ticket worktree".into());
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
+}
+
+fn same_git_repository(repository: &Path, candidate: &Path) -> Result<bool, String> {
+    let common_directory = |directory: &Path| -> Result<PathBuf, String> {
+        let common = git_text(directory, ["rev-parse", "--git-common-dir"])?;
+        let common = PathBuf::from(common);
+        let common = if common.is_absolute() {
+            common
+        } else {
+            directory.join(common)
+        };
+        common
+            .canonicalize()
+            .map_err(|error| format!("Could not resolve Git common directory: {error}"))
+    };
+    if common_directory(repository)? == common_directory(candidate)? {
+        return Ok(true);
+    }
+
+    // OpenCode may create its session worktree from another checkout of the
+    // same configured repository. Such worktrees have separate common dirs,
+    // but still belong to this Workspace when their origin identity matches.
+    let repository_origin = git_text(repository, ["remote", "get-url", "origin"]).ok();
+    let candidate_origin = git_text(candidate, ["remote", "get-url", "origin"]).ok();
+    Ok(repository_origin.is_some() && repository_origin == candidate_origin)
+}
+
+/// Persist a plugin-observed worktree only when the exact session is already
+/// durably bound to this ticket. The plugin is an adapter; Rust validates Git
+/// identity and owns the Markdown update.
+pub fn record_observed_worktree(
+    directory: &Path,
+    repository: &Path,
+    filename: &str,
+    session_id: &str,
+    candidate_path: &Path,
+) -> Result<TicketWorktree, String> {
+    if !valid_ticket_session_id(session_id) {
+        return Err("Invalid OpenCode session ID".into());
+    }
+    let ticket = canonical_ticket(directory, filename)?;
+    let repository = repository
+        .canonicalize()
+        .map_err(|error| format!("Workspace repository unavailable: {error}"))?;
+    if ticket.starts_with(&repository) {
+        return Err("Workspace ticket storage must be outside the repository".into());
+    }
+    let original =
+        fs::read_to_string(&ticket).map_err(|error| format!("Could not read ticket: {error}"))?;
+    let ids = ticket_session_ids(&original)?;
+    if !ids.iter().any(|id| id == session_id) {
+        return Err("OpenCode session is not associated with this ticket".into());
+    }
+    let path = candidate_path
+        .canonicalize()
+        .map_err(|error| format!("Observed worktree is unavailable: {error}"))?;
+    if !same_git_repository(&repository, &path)? {
+        return Err("Observed worktree belongs to a different Git repository".into());
+    }
+    let root = git_text(&path, ["rev-parse", "--show-toplevel"])?;
+    if PathBuf::from(root)
+        .canonicalize()
+        .map_err(|error| error.to_string())?
+        != path
+    {
+        return Err("Observed worktree path is not its Git worktree root".into());
+    }
+    let branch = git_text(&path, ["branch", "--show-current"])?;
+    let worktree = TicketWorktree {
+        path: path.to_string_lossy().into_owned(),
+        branch: (!branch.is_empty()).then_some(branch),
+    };
+    let updated = record_ticket_worktree(&original, Some(&worktree))?;
+    write_ticket_markdown_safely(&ticket, &original, &updated)?;
+    Ok(worktree)
+}
+
+/// Resolve a binding from the durable ticket Markdown and SQLite session owner.
+/// Unbound/Quick Request sessions are a no-op; duplicate ticket bindings fail
+/// closed rather than selecting one based on directory order.
+pub fn record_observed_worktree_for_session(
+    app_data: &Path,
+    store: &crate::management::ManagementStore,
+    session_id: &str,
+    candidate_path: &Path,
+) -> Result<Option<TicketWorktree>, String> {
+    if !valid_ticket_session_id(session_id) {
+        return Err("Invalid OpenCode session ID".into());
+    }
+    let Some(session) = store
+        .get_session(session_id)
+        .map_err(|error| error.to_string())?
+    else {
+        return Ok(None);
+    };
+    let crate::management::SessionOwner::Workspace(workspace_id) = session.owner else {
+        return Ok(None);
+    };
+    let workspace = store
+        .get_workspace(&workspace_id)
+        .map_err(|error| error.to_string())?
+        .ok_or("Bound Workspace was not found")?;
+    let ticket_dir = workspace_ticket_dir(app_data, &workspace.slug)?;
+    if !ticket_dir.is_dir() {
+        return Ok(None);
+    }
+    let mut binding = None;
+    for entry in fs::read_dir(&ticket_dir).map_err(|error| error.to_string())? {
+        let entry = entry.map_err(|error| error.to_string())?;
+        if !entry
+            .file_type()
+            .map_err(|error| error.to_string())?
+            .is_file()
+            || entry
+                .path()
+                .extension()
+                .and_then(|extension| extension.to_str())
+                != Some("md")
+        {
+            continue;
+        }
+        let markdown = fs::read_to_string(entry.path()).map_err(|error| error.to_string())?;
+        if ticket_session_ids(&markdown)?
+            .iter()
+            .any(|id| id == session_id)
+        {
+            if binding.is_some() {
+                return Err("OpenCode session is bound to multiple tickets".into());
+            }
+            binding = Some((entry.file_name().to_string_lossy().into_owned(), markdown));
+        }
+    }
+    let Some((filename, _)) = binding else {
+        return Ok(None);
+    };
+    let result = record_observed_worktree(
+        &ticket_dir,
+        Path::new(&session.directory),
+        &filename,
+        session_id,
+        candidate_path,
+    )?;
+    Ok(Some(result))
+}
+
+fn write_ticket_markdown_safely(path: &Path, original: &str, updated: &str) -> Result<(), String> {
+    static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
+    let _guard = LOCK
+        .get_or_init(|| std::sync::Mutex::new(()))
+        .lock()
+        .map_err(|error| error.to_string())?;
+    if fs::read_to_string(path).map_err(|error| error.to_string())? != original {
+        return Err("Ticket changed while recording session/worktree metadata; no ticket content was overwritten. Retry.".into());
+    }
+    let temporary_path = path.with_extension(format!("md.{}.tmp", std::process::id()));
+    use std::io::Write;
+    let mut temporary = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&temporary_path)
+        .map_err(|error| format!("Could not create temporary ticket file: {error}"))?;
+    if let Err(error) = temporary.write_all(updated.as_bytes()) {
+        drop(temporary);
+        let _ = fs::remove_file(&temporary_path);
+        return Err(error.to_string());
+    }
+    drop(temporary);
+    if fs::read_to_string(path).map_err(|error| error.to_string())? != original {
+        let _ = fs::remove_file(&temporary_path);
+        return Err("Ticket changed while recording session/worktree metadata; no ticket content was overwritten. Retry.".into());
+    }
+    fs::rename(&temporary_path, path).map_err(|error| {
+        let _ = fs::remove_file(&temporary_path);
+        error.to_string()
+    })
 }
 
 /// Compare-before-replace with an atomic rename. A process-wide lock prevents
@@ -80,13 +745,24 @@ pub fn record_work_session(markdown: &str, id: &str) -> Result<String, String> {
 /// before replacement, but cannot exclude non-cooperating external writers.
 pub fn write_session_id_safely(path: &Path, original: &str, id: &str) -> Result<(), String> {
     static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
-    let _guard = LOCK.get_or_init(|| std::sync::Mutex::new(())).lock().map_err(|e| e.to_string())?;
+    let _guard = LOCK
+        .get_or_init(|| std::sync::Mutex::new(()))
+        .lock()
+        .map_err(|e| e.to_string())?;
     let current = fs::read_to_string(path).map_err(|e| e.to_string())?;
-    if current != original { return Err("Ticket changed while starting work; no ticket content was overwritten. Retry Work.".into()); }
+    if current != original {
+        return Err(
+            "Ticket changed while starting work; no ticket content was overwritten. Retry Work."
+                .into(),
+        );
+    }
     let updated = record_work_session(original, id)?;
     let tmp = path.with_extension(format!("md.{}.tmp", std::process::id()));
     use std::io::Write;
-    let mut temporary = fs::OpenOptions::new().write(true).create_new(true).open(&tmp)
+    let mut temporary = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&tmp)
         .map_err(|e| format!("Could not create temporary ticket file: {e}"))?;
     if let Err(error) = temporary.write_all(updated.as_bytes()) {
         drop(temporary);
@@ -94,8 +770,17 @@ pub fn write_session_id_safely(path: &Path, original: &str, id: &str) -> Result<
         return Err(error.to_string());
     }
     drop(temporary);
-    if fs::read_to_string(path).map_err(|e| e.to_string())? != original { let _ = fs::remove_file(&tmp); return Err("Ticket changed while starting work; no ticket content was overwritten. Retry Work.".into()); }
-    fs::rename(&tmp, path).map_err(|e| { let _ = fs::remove_file(&tmp); e.to_string() })
+    if fs::read_to_string(path).map_err(|e| e.to_string())? != original {
+        let _ = fs::remove_file(&tmp);
+        return Err(
+            "Ticket changed while starting work; no ticket content was overwritten. Retry Work."
+                .into(),
+        );
+    }
+    fs::rename(&tmp, path).map_err(|e| {
+        let _ = fs::remove_file(&tmp);
+        e.to_string()
+    })
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -130,10 +815,13 @@ pub fn selected_ticket_repository(
     workspace_id: &str,
     filename: &str,
 ) -> Result<(PathBuf, String), String> {
-    let workspace = store.get_workspace(workspace_id).map_err(|e| e.to_string())?
+    let workspace = store
+        .get_workspace(workspace_id)
+        .map_err(|e| e.to_string())?
         .ok_or_else(|| "Workspace was not found.".to_owned())?;
     if workspace.kind != crate::management::WorkspaceKind::Regular
-        || workspace.status != crate::management::WorkspaceStatus::Active {
+        || workspace.status != crate::management::WorkspaceStatus::Active
+    {
         return Err("A selected ticket in an active regular Workspace is required.".into());
     }
     let directory = workspace_ticket_dir(app_data, &workspace.slug)?;
@@ -141,8 +829,12 @@ pub fn selected_ticket_repository(
     if !ticket.starts_with(directory.canonicalize().map_err(|e| e.to_string())?) {
         return Err("Invalid Workspace ticket selection.".into());
     }
-    let bindings = store.list_workspace_repository_bindings(workspace_id).map_err(|e| e.to_string())?;
-    if bindings.len() != 1 || bindings[0].verification_status != crate::management::VerificationStatus::Verified {
+    let bindings = store
+        .list_workspace_repository_bindings(workspace_id)
+        .map_err(|e| e.to_string())?;
+    if bindings.len() != 1
+        || bindings[0].verification_status != crate::management::VerificationStatus::Verified
+    {
         return Err("Workspace must have exactly one verified repository for ticket work.".into());
     }
     let binding = &bindings[0];
@@ -161,7 +853,9 @@ pub fn validate_workbench_context(
     filename: Option<&str>,
     repository_id: Option<&str>,
 ) -> Result<(), String> {
-    if owner_type != "workspace" { return Ok(()); }
+    if owner_type != "workspace" {
+        return Ok(());
+    }
     let filename = filename.ok_or("Select a ticket before opening Workspace tools.")?;
     let (_, actual_id) = selected_ticket_repository(store, app_data, owner_id, filename)?;
     if repository_id.is_some_and(|id| id != actual_id) {
@@ -217,8 +911,8 @@ pub fn list_for_navigation(directory: &Path) -> Result<Vec<NavigationTicket>, St
             .and_then(|s| s.to_str())
             .unwrap_or("Ticket");
         let file = fs::File::open(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-        let (title, status) = navigation_metadata(file, fallback)
-            .map_err(|e| format!("{}: {e}", path.display()))?;
+        let (title, status) =
+            navigation_metadata(file, fallback).map_err(|e| format!("{}: {e}", path.display()))?;
         if !matches!(status.as_str(), "in_progress" | "blocked") {
             continue;
         }
@@ -272,7 +966,10 @@ fn navigation_metadata(reader: impl Read, fallback: &str) -> std::io::Result<(St
                 }
             }
         }
-        return Ok((fallback.to_owned(), status.unwrap_or_else(|| "unknown".to_owned())));
+        return Ok((
+            fallback.to_owned(),
+            status.unwrap_or_else(|| "unknown".to_owned()),
+        ));
     }
 
     if let Some(title) = first.strip_prefix("# ") {
@@ -297,9 +994,10 @@ fn ticket_modified_at(path: &Path) -> u128 {
 }
 
 pub fn is_ticket_markdown_event(event: &notify::Event) -> bool {
-    event.paths.iter().any(|path| {
-        path.extension().and_then(|extension| extension.to_str()) == Some("md")
-    })
+    event
+        .paths
+        .iter()
+        .any(|path| path.extension().and_then(|extension| extension.to_str()) == Some("md"))
 }
 
 pub fn watch_directory(
@@ -309,10 +1007,7 @@ pub fn watch_directory(
     use notify::Watcher;
 
     let mut watcher = notify::recommended_watcher(move |result: notify::Result<notify::Event>| {
-        if result
-            .as_ref()
-            .is_ok_and(is_ticket_markdown_event)
-        {
+        if result.as_ref().is_ok_and(is_ticket_markdown_event) {
             on_change();
         }
     })
@@ -367,11 +1062,35 @@ pub fn ticket_metadata(text: &str, fallback: &str) -> (String, String) {
 }
 
 pub fn work_session_id(text: &str) -> Result<Option<String>, String> {
-    if !text.starts_with("---\n") { return Err("Ticket must begin with YAML front matter".into()); }
-    let end = text[4..].find("\n---").map(|i| i + 4).ok_or("Ticket YAML front matter is not closed")?;
-    let values: Vec<_> = text[4..end].lines().filter_map(|line| line.strip_prefix("work_session_id:").map(str::trim)).collect();
-    if values.len() > 1 { return Err("Ticket has duplicate work_session_id fields".into()); }
-    values.first().map(|v| { if v.is_empty() || !v.starts_with("ses_") || !v.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') { Err("Invalid work_session_id in ticket front matter".into()) } else { Ok((*v).to_owned()) }}).transpose()
+    if !text.starts_with("---\n") {
+        return Err("Ticket must begin with YAML front matter".into());
+    }
+    let end = text[4..]
+        .find("\n---")
+        .map(|i| i + 4)
+        .ok_or("Ticket YAML front matter is not closed")?;
+    let values: Vec<_> = text[4..end]
+        .lines()
+        .filter_map(|line| line.strip_prefix("work_session_id:").map(str::trim))
+        .collect();
+    if values.len() > 1 {
+        return Err("Ticket has duplicate work_session_id fields".into());
+    }
+    values
+        .first()
+        .map(|v| {
+            if v.is_empty()
+                || !v.starts_with("ses_")
+                || !v
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+            {
+                Err("Invalid work_session_id in ticket front matter".into())
+            } else {
+                Ok((*v).to_owned())
+            }
+        })
+        .transpose()
 }
 
 #[cfg(test)]
@@ -381,19 +1100,28 @@ mod tests {
     #[derive(Default)]
     struct FakeRuntime {
         creates: usize,
-        exists: bool,
         fail_exists: bool,
+        known_sessions: std::collections::HashSet<String>,
         prepared: Vec<(String, String)>,
         attached: Vec<(String, PathBuf)>,
+        created_directories: Vec<PathBuf>,
+        session_directory: Option<PathBuf>,
     }
     impl TicketWorkRuntime for FakeRuntime {
         type Session = String;
-        fn exists(&mut self, _: &str) -> Result<bool, String> {
-            if self.fail_exists { Err("network unavailable".into()) } else { Ok(self.exists) }
+        fn exists(&mut self, id: &str) -> Result<bool, String> {
+            if self.fail_exists {
+                Err("network unavailable".into())
+            } else {
+                Ok(self.known_sessions.contains(id))
+            }
         }
-        fn create(&mut self, _: &str, _: &Path) -> Result<String, String> {
+        fn create(&mut self, _: &str, directory: &Path) -> Result<String, String> {
             self.creates += 1;
-            Ok(format!("ses_{}", self.creates))
+            self.created_directories.push(directory.into());
+            let id = format!("ses_{}", self.creates);
+            self.known_sessions.insert(id.clone());
+            Ok(id)
         }
         fn prepare(&mut self, id: &str, _: &Path, instructions: &str) -> Result<(), String> {
             self.prepared.push((id.into(), instructions.into()));
@@ -402,6 +1130,9 @@ mod tests {
         fn attach(&mut self, id: &str, repository: &Path) -> Result<String, String> {
             self.attached.push((id.into(), repository.into()));
             Ok(id.into())
+        }
+        fn session_directory(&mut self, _: &str) -> Result<Option<PathBuf>, String> {
+            Ok(self.session_directory.clone())
         }
     }
 
@@ -413,28 +1144,77 @@ mod tests {
         fs::create_dir(&repo).unwrap();
         fs::create_dir(&dir).unwrap();
         let path = dir.join("test.md");
-        fs::write(&path, "---\ntitle: Test\nstatus: draft\n---\n# Test\nPrivate body\n").unwrap();
+        fs::write(
+            &path,
+            "---\ntitle: Test\nstatus: draft\n---\n# Test\nPrivate body\n",
+        )
+        .unwrap();
         let mut runtime = FakeRuntime::default();
-        assert_eq!(work(&dir, &repo, "Workspace", "test.md", &mut runtime).unwrap(), "ses_1");
+        let opened = work(&dir, &repo, "Workspace", "test.md", &mut runtime).unwrap();
+        assert_eq!(opened.active_session_id, "ses_1");
+        assert_eq!(opened.sessions, ["ses_1"]);
         let first = fs::read_to_string(&path).unwrap();
         assert!(first.contains("status: draft") && first.ends_with("# Test\nPrivate body\n"));
         assert!(!runtime.prepared[0].1.contains("Private body"));
         assert_eq!(runtime.attached[0].1, repo.canonicalize().unwrap());
-        runtime.exists = true;
         fs::write(&path, first.replace("status: draft", "status: in_progress")).unwrap();
-        assert_eq!(work(&dir, &repo, "Workspace", "test.md", &mut runtime).unwrap(), "ses_1");
+        let opened = work(&dir, &repo, "Workspace", "test.md", &mut runtime).unwrap();
+        assert_eq!(opened.active_session_id, "ses_1");
+        assert_eq!(opened.sessions, ["ses_1"]);
         assert_eq!(runtime.creates, 1);
-        assert!(runtime.prepared[1].1.contains("Current status: in_progress"));
+        assert!(runtime.prepared[1]
+            .1
+            .contains("Current status: in_progress"));
         runtime.fail_exists = true;
         let before = fs::read_to_string(&path).unwrap();
         assert!(work(&dir, &repo, "Workspace", "test.md", &mut runtime).is_err());
         assert_eq!(runtime.creates, 1);
         assert_eq!(fs::read_to_string(&path).unwrap(), before);
         runtime.fail_exists = false;
-        runtime.exists = false;
-        assert_eq!(work(&dir, &repo, "Workspace", "test.md", &mut runtime).unwrap(), "ses_2");
+        runtime.known_sessions.remove("ses_1");
+        let opened = work(&dir, &repo, "Workspace", "test.md", &mut runtime).unwrap();
+        assert_eq!(opened.active_session_id, "ses_2");
+        assert_eq!(opened.sessions, ["ses_2"]);
         let last = fs::read_to_string(&path).unwrap();
         assert!(last.contains("status: in_progress") && last.ends_with("# Test\nPrivate body\n"));
+    }
+
+    #[test]
+    fn work_restores_every_retained_session_and_new_session_activates_latest() {
+        let root = tempfile::tempdir().unwrap();
+        let tickets = root.path().join("tickets");
+        let repository = root.path().join("repository");
+        fs::create_dir(&tickets).unwrap();
+        fs::create_dir(&repository).unwrap();
+        let path = tickets.join("multi.md");
+        fs::write(
+            &path,
+            "---\ntitle: Multi\nstatus: in_progress\nwork_session_id: ses_active\nwork_session_ids:\n  - ses_old\n  - ses_active\n---\nBody\n",
+        )
+        .unwrap();
+        let mut runtime = FakeRuntime::default();
+        runtime
+            .known_sessions
+            .extend(["ses_old".into(), "ses_active".into()]);
+        let restored = work(&tickets, &repository, "Workspace", "multi.md", &mut runtime).unwrap();
+        assert_eq!(restored.active_session_id, "ses_active");
+        assert_eq!(restored.sessions, ["ses_old", "ses_active"]);
+        assert_eq!(runtime.creates, 0);
+
+        let created =
+            new_session(&tickets, &repository, "Workspace", "multi.md", &mut runtime).unwrap();
+        assert_eq!(created, "ses_1");
+        let markdown = fs::read_to_string(path).unwrap();
+        assert_eq!(
+            ticket_session_ids(&markdown).unwrap(),
+            ["ses_old", "ses_active", "ses_1"]
+        );
+        assert_eq!(
+            work_session_id(&markdown).unwrap().as_deref(),
+            Some("ses_1")
+        );
+        assert_eq!(runtime.created_directories, [repository]);
+        assert_eq!(runtime.attached.last().unwrap().0, "ses_1");
     }
 
     #[test]
@@ -442,24 +1222,58 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let home = root.path().join("home");
         fs::create_dir(&home).unwrap();
-        let store = crate::management::ManagementStore::in_memory_with_paths(&home, root.path()).unwrap();
+        let store =
+            crate::management::ManagementStore::in_memory_with_paths(&home, root.path()).unwrap();
         let input = crate::management::NewWorkspace {
-            id: "ticket-workspace".into(), name: "Ticket Workspace".into(), slug: "ticket-workspace".into(),
-            description: None, kind: crate::management::WorkspaceKind::Regular, created_at: 42,
+            id: "ticket-workspace".into(),
+            name: "Ticket Workspace".into(),
+            slug: "ticket-workspace".into(),
+            description: None,
+            kind: crate::management::WorkspaceKind::Regular,
+            created_at: 42,
         };
-        let (workspace, repository) = store.create_single_repository_workspace(&input, None).unwrap();
+        let (workspace, repository) = store
+            .create_single_repository_workspace(&input, None)
+            .unwrap();
         let app_data = root.path().join("app-data");
         let dir = workspace_ticket_dir(&app_data, &workspace.slug).unwrap();
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join("one.md"), "---\ntitle: One\nstatus: draft\n---\n").unwrap();
-        let (actual_path, actual_id) = selected_ticket_repository(&store, &app_data, &workspace.id, "one.md").unwrap();
+        let (actual_path, actual_id) =
+            selected_ticket_repository(&store, &app_data, &workspace.id, "one.md").unwrap();
         assert_eq!(actual_path, PathBuf::from(&repository.repository_path));
         assert_eq!(actual_id, repository.id);
-        assert!(selected_ticket_repository(&store, &app_data, &workspace.id, "missing.md").is_err());
+        assert!(
+            selected_ticket_repository(&store, &app_data, &workspace.id, "missing.md").is_err()
+        );
         assert!(selected_ticket_repository(&store, &app_data, &workspace.id, "../one.md").is_err());
-        assert!(validate_workbench_context(&store, &app_data, "workspace", &workspace.id, None, None).is_err());
-        assert!(validate_workbench_context(&store, &app_data, "workspace", &workspace.id, Some("one.md"), Some("other-repo")).is_err());
-        assert!(validate_workbench_context(&store, &app_data, "workspace", &workspace.id, Some("one.md"), Some(&repository.id)).is_ok());
+        assert!(validate_workbench_context(
+            &store,
+            &app_data,
+            "workspace",
+            &workspace.id,
+            None,
+            None
+        )
+        .is_err());
+        assert!(validate_workbench_context(
+            &store,
+            &app_data,
+            "workspace",
+            &workspace.id,
+            Some("one.md"),
+            Some("other-repo")
+        )
+        .is_err());
+        assert!(validate_workbench_context(
+            &store,
+            &app_data,
+            "workspace",
+            &workspace.id,
+            Some("one.md"),
+            Some(&repository.id)
+        )
+        .is_ok());
     }
 
     #[test]
@@ -472,10 +1286,325 @@ mod tests {
         let written = fs::read_to_string(&path).unwrap();
         assert!(written.contains("status: draft"));
         assert!(written.ends_with("# T\nBody stays exact\n"));
-        assert_eq!(work_session_id(&written).unwrap().as_deref(), Some("ses_first"));
+        assert_eq!(
+            work_session_id(&written).unwrap().as_deref(),
+            Some("ses_first")
+        );
         fs::write(&path, written.replace("Body stays exact", "external edit")).unwrap();
         assert!(write_session_id_safely(&path, &written, "ses_second").is_err());
         assert!(fs::read_to_string(path).unwrap().contains("external edit"));
+    }
+
+    #[test]
+    fn ticket_session_metadata_migrates_legacy_id_and_tracks_active_session() {
+        let legacy =
+            "---\ntitle: T\nstatus: in_progress\nwork_session_id: ses_old\n---\n# T\nBody\n";
+        assert_eq!(ticket_session_ids(legacy).unwrap(), ["ses_old"]);
+        let updated = record_ticket_sessions(
+            legacy,
+            &["ses_old".into(), "ses_new".into()],
+            Some("ses_new"),
+        )
+        .unwrap();
+        assert!(updated.contains("work_session_id: ses_new\n"));
+        assert!(updated.contains("work_session_ids:\n  - ses_old\n  - ses_new\n"));
+        assert!(updated.ends_with("# T\nBody\n"));
+        assert_eq!(
+            ticket_session_ids(&updated).unwrap(),
+            ["ses_old", "ses_new"]
+        );
+        assert_eq!(
+            work_session_id(&updated).unwrap().as_deref(),
+            Some("ses_new")
+        );
+        let closed =
+            record_ticket_sessions(&updated, &["ses_old".into()], Some("ses_old")).unwrap();
+        assert_eq!(ticket_session_ids(&closed).unwrap(), ["ses_old"]);
+        assert_eq!(
+            work_session_id(&closed).unwrap().as_deref(),
+            Some("ses_old")
+        );
+    }
+
+    #[test]
+    fn ticket_session_metadata_rejects_invalid_or_inconsistent_ids() {
+        let source = "---\ntitle: T\n---\nBody\n";
+        assert!(record_ticket_sessions(source, &["bad id".into()], Some("bad id")).is_err());
+        assert!(record_ticket_sessions(source, &["ses_one".into()], Some("ses_other")).is_err());
+        assert!(record_ticket_sessions(
+            source,
+            &["ses_one".into(), "ses_one".into()],
+            Some("ses_one")
+        )
+        .is_err());
+        assert!(ticket_session_ids("---\nwork_session_ids:\n  - invalid\n---\n").is_err());
+    }
+
+    #[test]
+    fn ticket_worktree_frontmatter_round_trips_quoted_paths_and_preserves_body() {
+        let source = "---\ntitle: T\nstatus: in_progress\n---\n# T\nBody\n";
+        let worktree = TicketWorktree {
+            path: "/tmp/feature: branch\\worktree".into(),
+            branch: Some("feature/session".into()),
+        };
+        let updated = record_ticket_worktree(source, Some(&worktree)).unwrap();
+        assert_eq!(ticket_worktree(&updated).unwrap(), Some(worktree));
+        assert!(updated.contains("worktree_path: \"/tmp/feature: branch\\\\worktree\"\n"));
+        assert!(updated.ends_with("# T\nBody\n"));
+        let removed = record_ticket_worktree(&updated, None).unwrap();
+        assert_eq!(ticket_worktree(&removed).unwrap(), None);
+        assert!(removed.ends_with("# T\nBody\n"));
+    }
+
+    #[test]
+    fn observed_worktree_requires_a_bound_session_and_same_git_repository() {
+        use std::process::Command;
+        let root = tempfile::tempdir().unwrap();
+        let repository = root.path().join("repo");
+        let tickets = root.path().join("tickets");
+        let worktree = root.path().join("worktree");
+        let foreign = root.path().join("foreign");
+        fs::create_dir(&repository).unwrap();
+        fs::create_dir(&tickets).unwrap();
+        let run = |directory: &Path, args: &[&str]| {
+            let output = Command::new("git")
+                .args(args)
+                .current_dir(directory)
+                .env("GIT_CONFIG_GLOBAL", "/dev/null")
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "git {args:?}: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        };
+        run(&repository, &["init", "--quiet"]);
+        run(&repository, &["config", "user.name", "Ticket Test"]);
+        run(
+            &repository,
+            &["config", "user.email", "ticket@example.invalid"],
+        );
+        fs::write(repository.join("README.md"), "fixture\n").unwrap();
+        run(&repository, &["add", "README.md"]);
+        run(&repository, &["commit", "--quiet", "-m", "fixture"]);
+        run(
+            &repository,
+            &[
+                "worktree",
+                "add",
+                "--quiet",
+                "-b",
+                "ticket-fixture",
+                worktree.to_str().unwrap(),
+            ],
+        );
+        fs::write(
+            tickets.join("ticket.md"),
+            "---\ntitle: T\nstatus: in_progress\nwork_session_id: ses_bound\n---\nBody\n",
+        )
+        .unwrap();
+
+        assert!(record_observed_worktree(
+            &tickets,
+            &repository,
+            "ticket.md",
+            "ses_unbound",
+            &worktree
+        )
+        .is_err());
+        assert_eq!(
+            ticket_worktree(&fs::read_to_string(tickets.join("ticket.md")).unwrap()).unwrap(),
+            None
+        );
+        let observed =
+            record_observed_worktree(&tickets, &repository, "ticket.md", "ses_bound", &worktree)
+                .unwrap();
+        assert_eq!(
+            observed.path,
+            worktree.canonicalize().unwrap().to_string_lossy()
+        );
+        assert_eq!(observed.branch.as_deref(), Some("ticket-fixture"));
+        assert_eq!(
+            ticket_worktree(&fs::read_to_string(tickets.join("ticket.md")).unwrap()).unwrap(),
+            Some(observed.clone())
+        );
+        assert!(!fs::read_to_string(tickets.join("ticket.md"))
+            .unwrap()
+            .contains("creator_session"));
+        assert_eq!(
+            resolve_ticket_directory(&repository, Some(&observed)).unwrap(),
+            worktree.canonicalize().unwrap()
+        );
+        let mut runtime = FakeRuntime::default();
+        runtime.known_sessions.insert("ses_bound".into());
+        let opened = work(
+            &tickets,
+            &repository,
+            "Workspace",
+            "ticket.md",
+            &mut runtime,
+        )
+        .unwrap();
+        assert_eq!(opened.active_session_id, "ses_bound");
+        assert_eq!(runtime.attached[0].1, worktree.canonicalize().unwrap());
+
+        fs::create_dir(&foreign).unwrap();
+        run(&foreign, &["init", "--quiet"]);
+        let foreign_tree = root.path().join("foreign-tree");
+        run(&foreign, &["config", "user.name", "Ticket Test"]);
+        run(
+            &foreign,
+            &["config", "user.email", "ticket@example.invalid"],
+        );
+        fs::write(foreign.join("file"), "foreign\n").unwrap();
+        run(&foreign, &["add", "file"]);
+        run(&foreign, &["commit", "--quiet", "-m", "foreign"]);
+        run(
+            &foreign,
+            &[
+                "worktree",
+                "add",
+                "--quiet",
+                "-b",
+                "foreign",
+                foreign_tree.to_str().unwrap(),
+            ],
+        );
+        assert!(record_observed_worktree(
+            &tickets,
+            &repository,
+            "ticket.md",
+            "ses_bound",
+            &foreign_tree
+        )
+        .is_err());
+        assert!(resolve_ticket_directory(
+            &repository,
+            Some(&TicketWorktree {
+                path: foreign_tree.to_string_lossy().into_owned(),
+                branch: Some("foreign".into())
+            })
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn ticket_session_tracks_worktree_reported_by_opencode_on_attach() {
+        use std::process::Command;
+        let root = tempfile::tempdir().unwrap();
+        let repository = root.path().join("workspace-repository");
+        let opencode_clone = root.path().join("opencode-clone");
+        let tickets = root.path().join("tickets");
+        fs::create_dir(&repository).unwrap();
+        fs::create_dir(&opencode_clone).unwrap();
+        fs::create_dir(&tickets).unwrap();
+        let run = |directory: &Path, args: &[&str]| {
+            let output = Command::new("git")
+                .args(args)
+                .current_dir(directory)
+                .env("GIT_CONFIG_GLOBAL", "/dev/null")
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "git {args:?}: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        };
+        for directory in [&repository, &opencode_clone] {
+            run(directory, &["init", "--quiet"]);
+            run(directory, &["config", "user.name", "Ticket Test"]);
+            run(
+                directory,
+                &["config", "user.email", "ticket@example.invalid"],
+            );
+            run(
+                directory,
+                &[
+                    "remote",
+                    "add",
+                    "origin",
+                    "git@github.com:example/ticket-test.git",
+                ],
+            );
+            fs::write(directory.join("README.md"), "fixture\n").unwrap();
+            run(directory, &["add", "README.md"]);
+            run(directory, &["commit", "--quiet", "-m", "fixture"]);
+        }
+        let ticket = tickets.join("ticket.md");
+        fs::write(
+            &ticket,
+            "---\ntitle: Test\nstatus: in_progress\n---\n# Test\n",
+        )
+        .unwrap();
+        let mut runtime = FakeRuntime {
+            session_directory: Some(opencode_clone.clone()),
+            ..FakeRuntime::default()
+        };
+
+        new_session(
+            &tickets,
+            &repository,
+            "Workspace",
+            "ticket.md",
+            &mut runtime,
+        )
+        .unwrap();
+
+        let markdown = fs::read_to_string(ticket).unwrap();
+        let worktree = ticket_worktree(&markdown).unwrap().unwrap();
+        assert_eq!(
+            worktree.path,
+            opencode_clone.canonicalize().unwrap().to_string_lossy()
+        );
+        assert_eq!(
+            worktree.branch.as_deref(),
+            Some(
+                git_text(&opencode_clone, ["branch", "--show-current"])
+                    .unwrap()
+                    .as_str()
+            )
+        );
+        assert_eq!(ticket_session_ids(&markdown).unwrap(), ["ses_1"]);
+    }
+
+    #[test]
+    fn unbound_workspace_session_is_a_noop_for_ticket_worktree_tracking() {
+        let root = tempfile::tempdir().unwrap();
+        let app_data = root.path().join("app-data");
+        let home = root.path().join("home");
+        fs::create_dir_all(&app_data).unwrap();
+        fs::create_dir_all(&home).unwrap();
+        let store = crate::management::ManagementStore::open_with_paths(
+            app_data.join("management.sqlite3"),
+            home,
+            root.path().join("tmp"),
+        )
+        .unwrap();
+        let workspace = store
+            .create_workspace(&crate::management::NewWorkspace {
+                id: "workspace-ticket-plugin".into(),
+                name: "Ticket plugin test".into(),
+                slug: "ticket-plugin-test".into(),
+                description: None,
+                kind: crate::management::WorkspaceKind::Regular,
+                created_at: 1,
+            })
+            .unwrap();
+        store
+            .create_session(&crate::management::NewSession {
+                open_code_session_id: "ses_unbound".into(),
+                owner: crate::management::SessionOwner::Workspace(workspace.id),
+                directory: root.path().to_string_lossy().into_owned(),
+                last_known_status: "running".into(),
+                created_at: 1,
+            })
+            .unwrap();
+        let observed =
+            record_observed_worktree_for_session(&app_data, &store, "ses_unbound", root.path())
+                .unwrap();
+        assert_eq!(observed, None);
     }
     #[test]
     fn work_session_temp_collision_never_overwrites_existing_file() {
@@ -489,6 +1618,27 @@ mod tests {
         assert_eq!(fs::read_to_string(&temp).unwrap(), "existing user data");
         assert_eq!(fs::read_to_string(&path).unwrap(), source);
     }
+
+    #[test]
+    fn closing_ticket_session_unlinks_it_and_selects_previous_active() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("ticket.md");
+        fs::write(&path, "---\ntitle: T\nstatus: in_progress\nwork_session_id: ses_two\nwork_session_ids:\n  - ses_one\n  - ses_two\n---\nBody\n").unwrap();
+        assert_eq!(
+            close_session(root.path(), "ticket.md", "ses_two")
+                .unwrap()
+                .as_deref(),
+            Some("ses_one")
+        );
+        let updated = fs::read_to_string(&path).unwrap();
+        assert_eq!(ticket_session_ids(&updated).unwrap(), ["ses_one"]);
+        assert_eq!(
+            work_session_id(&updated).unwrap().as_deref(),
+            Some("ses_one")
+        );
+        assert!(updated.ends_with("Body\n"));
+        assert!(close_session(root.path(), "ticket.md", "ses_two").is_err());
+    }
     #[test]
     fn lists_markdown_and_reads_current_status_after_file_edit() {
         let root = tempfile::tempdir().unwrap();
@@ -500,10 +1650,19 @@ mod tests {
         .unwrap();
         let listed = list(root.path()).unwrap();
         assert_eq!(listed[0].status, "draft");
-        let expected = file.metadata().unwrap().modified().unwrap()
-            .duration_since(std::time::UNIX_EPOCH).unwrap().as_millis();
+        let expected = file
+            .metadata()
+            .unwrap()
+            .modified()
+            .unwrap()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis();
         assert_eq!(listed[0].modified_at, expected);
-        assert_eq!(serde_json::to_value(&listed[0]).unwrap()["modifiedAt"], serde_json::json!(expected));
+        assert_eq!(
+            serde_json::to_value(&listed[0]).unwrap()["modifiedAt"],
+            serde_json::json!(expected)
+        );
         fs::write(
             &file,
             "---\ntitle: Sample\nstatus: in_progress\n---\n# Sample\nBody",
@@ -524,21 +1683,26 @@ mod tests {
         ];
         for (name, status, seconds) in files {
             let path = root.path().join(name);
-            fs::write(&path, format!("---\ntitle: {name}\nstatus: {status}\n---\n"))
-                .unwrap();
+            fs::write(
+                &path,
+                format!("---\ntitle: {name}\nstatus: {status}\n---\n"),
+            )
+            .unwrap();
             fs::File::open(path)
                 .unwrap()
                 .set_times(
-                    fs::FileTimes::new().set_modified(
-                        SystemTime::UNIX_EPOCH + Duration::from_secs(seconds),
-                    ),
+                    fs::FileTimes::new()
+                        .set_modified(SystemTime::UNIX_EPOCH + Duration::from_secs(seconds)),
                 )
                 .unwrap();
         }
 
         let tickets = list_for_navigation(root.path()).unwrap();
         assert_eq!(
-            tickets.iter().map(|ticket| ticket.filename.as_str()).collect::<Vec<_>>(),
+            tickets
+                .iter()
+                .map(|ticket| ticket.filename.as_str())
+                .collect::<Vec<_>>(),
             ["blocked.md", "newer.md", "older.md"],
         );
         assert!(tickets.iter().all(|ticket| ticket.status != "draft"));
@@ -572,8 +1736,7 @@ mod tests {
                 let count = line_length.min(buffer.len());
                 let read = self.lines.read(&mut buffer[..count])?;
                 let position = self.lines.position() as usize;
-                if position > 4 && self.lines.get_ref()[..position].ends_with(b"---\n")
-                {
+                if position > 4 && self.lines.get_ref()[..position].ends_with(b"---\n") {
                     self.body_started = true;
                 }
                 Ok(read)
