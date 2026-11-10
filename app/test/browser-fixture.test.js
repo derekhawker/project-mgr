@@ -154,12 +154,36 @@ test("fixture creates and reopens a workspace and tool without external operatio
       created.workspace.id,
     );
     assert.deepEqual(created.sessions, []);
-    const ticketSession = await invokeBrowserFixture("workspace_ticket_work", {
+    const ticketWork = await invokeBrowserFixture("workspace_ticket_work", {
       workspaceId: created.workspace.id, filename: "example.md",
     });
     assert.deepEqual(
-      await invokeBrowserFixture("opencode_session_restore", { sessionId: ticketSession.openCodeSessionId }),
-      ticketSession,
+      await invokeBrowserFixture("opencode_session_restore", { sessionId: ticketWork.sessions[0].openCodeSessionId }),
+      ticketWork.sessions[0],
+    );
+    assert.equal(ticketWork.activeSessionId, ticketWork.sessions[0].openCodeSessionId);
+    const extraSession = await invokeBrowserFixture("workspace_ticket_session_create", {
+      workspaceId: created.workspace.id, filename: "example.md",
+    });
+    const afterCreate = await invokeBrowserFixture("workspace_ticket_work", {
+      workspaceId: created.workspace.id, filename: "example.md",
+    });
+    assert.equal(afterCreate.sessions.length, 2);
+    assert.equal(afterCreate.activeSessionId, extraSession.openCodeSessionId);
+    assert.equal(
+      await invokeBrowserFixture("workspace_ticket_session_close", {
+        workspaceId: created.workspace.id,
+        filename: "example.md",
+        sessionId: extraSession.openCodeSessionId,
+      }),
+      ticketWork.activeSessionId,
+    );
+    assert.equal(
+      (await invokeBrowserFixture("opencode_session_restore", {
+        sessionId: extraSession.openCodeSessionId,
+      })).openCodeSessionId,
+      extraSession.openCodeSessionId,
+      "unlinking a ticket session leaves its OpenCode conversation history intact",
     );
     const tools = await invokeBrowserFixture("repo_tools_list", {
       request: { ownerId: "fixture-workspace" },

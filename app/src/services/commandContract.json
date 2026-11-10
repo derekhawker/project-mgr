@@ -849,71 +849,63 @@
     "result": {
       "type": "object",
       "properties": {
-        "openCodeSessionId": {
-          "type": "string"
-        },
-        "owner": {
-          "type": "object",
-          "properties": {
-            "owner_type": {
-              "type": "string"
-            },
-            "owner_id": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "owner_type",
-            "owner_id"
-          ],
-          "additionalProperties": false
-        },
-        "directory": {
-          "type": "string"
-        },
-        "lastKnownStatus": {
-          "type": "string"
-        },
-        "createdAt": {
-          "type": "number"
-        },
-        "updatedAt": {
-          "type": "number"
-        },
-        "eventCursor": {
-          "type": "string",
-          "nullable": true
-        },
-        "reconciliationStatus": {
-          "type": "string"
-        },
-        "reconciliationUncertain": {
-          "type": "boolean"
-        },
-        "pendingInputJson": {
-          "type": "string",
-          "nullable": true
-        },
-        "selectedModel": {
-          "type": "string",
-          "nullable": true
-        }
+        "openCodeSessionId": { "type": "string" },
+        "owner": { "type": "object", "properties": { "owner_type": { "type": "string" }, "owner_id": { "type": "string" } }, "required": ["owner_type", "owner_id"], "additionalProperties": false },
+        "directory": { "type": "string" },
+        "lastKnownStatus": { "type": "string" },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" },
+        "eventCursor": { "type": "string", "nullable": true },
+        "reconciliationStatus": { "type": "string" },
+        "reconciliationUncertain": { "type": "boolean" },
+        "pendingInputJson": { "type": "string", "nullable": true },
+        "selectedModel": { "type": "string", "nullable": true }
       },
-      "required": [
-        "openCodeSessionId",
-        "owner",
-        "directory",
-        "lastKnownStatus",
-        "createdAt",
-        "updatedAt",
-        "eventCursor",
-        "reconciliationStatus",
-        "reconciliationUncertain",
-        "pendingInputJson",
-        "selectedModel"
-      ],
+      "required": ["openCodeSessionId", "owner", "directory", "lastKnownStatus", "createdAt", "updatedAt", "eventCursor", "reconciliationStatus", "reconciliationUncertain", "pendingInputJson", "selectedModel"],
       "additionalProperties": false
     }
+  },
+  "workspace_ticket_session_create": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "workspaceId": { "type": "string" },
+        "filename": { "type": "string" }
+      },
+      "required": ["workspaceId", "filename"],
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "object",
+      "properties": {
+        "openCodeSessionId": { "type": "string" },
+        "owner": { "type": "object", "properties": { "owner_type": { "type": "string" }, "owner_id": { "type": "string" } }, "required": ["owner_type", "owner_id"], "additionalProperties": false },
+        "directory": { "type": "string" },
+        "lastKnownStatus": { "type": "string" },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" },
+        "eventCursor": { "type": "string", "nullable": true },
+        "reconciliationStatus": { "type": "string" },
+        "reconciliationUncertain": { "type": "boolean" },
+        "pendingInputJson": { "type": "string", "nullable": true },
+        "selectedModel": { "type": "string", "nullable": true }
+      },
+      "required": ["openCodeSessionId", "owner", "directory", "lastKnownStatus", "createdAt", "updatedAt", "eventCursor", "reconciliationStatus", "reconciliationUncertain", "pendingInputJson", "selectedModel"],
+      "additionalProperties": false
+    }
+  },
+  "workspace_ticket_session_close": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "workspaceId": { "type": "string" },
+        "filename": { "type": "string" },
+        "sessionId": { "type": "string" }
+      },
+      "required": ["workspaceId", "filename", "sessionId"],
+      "additionalProperties": false
+    },
+    "result": { "type": "string", "nullable": true }
   },
   "opencode_terminal_attach": {
     "payload": {
@@ -6565,69 +6557,30 @@
     "result": {
       "type": "object",
       "properties": {
-        "openCodeSessionId": {
-          "type": "string"
-        },
-        "owner": {
-          "type": "object",
-          "properties": {
-            "owner_type": {
-              "type": "string"
+        "activeSessionId": { "type": "string" },
+        "sessions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "openCodeSessionId": { "type": "string" },
+              "owner": { "type": "object", "properties": { "owner_type": { "type": "string" }, "owner_id": { "type": "string" } }, "required": ["owner_type", "owner_id"], "additionalProperties": false },
+              "directory": { "type": "string" },
+              "lastKnownStatus": { "type": "string" },
+              "createdAt": { "type": "number" },
+              "updatedAt": { "type": "number" },
+              "eventCursor": { "type": "string", "nullable": true },
+              "reconciliationStatus": { "type": "string" },
+              "reconciliationUncertain": { "type": "boolean" },
+              "pendingInputJson": { "type": "string", "nullable": true },
+              "selectedModel": { "type": "string", "nullable": true }
             },
-            "owner_id": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "owner_type",
-            "owner_id"
-          ],
-          "additionalProperties": false
-        },
-        "directory": {
-          "type": "string"
-        },
-        "lastKnownStatus": {
-          "type": "string"
-        },
-        "createdAt": {
-          "type": "number"
-        },
-        "updatedAt": {
-          "type": "number"
-        },
-        "eventCursor": {
-          "type": "string",
-          "nullable": true
-        },
-        "reconciliationStatus": {
-          "type": "string"
-        },
-        "reconciliationUncertain": {
-          "type": "boolean"
-        },
-        "pendingInputJson": {
-          "type": "string",
-          "nullable": true
-        },
-        "selectedModel": {
-          "type": "string",
-          "nullable": true
+            "required": ["openCodeSessionId", "owner", "directory", "lastKnownStatus", "createdAt", "updatedAt", "eventCursor", "reconciliationStatus", "reconciliationUncertain", "pendingInputJson", "selectedModel"],
+            "additionalProperties": false
+          }
         }
       },
-      "required": [
-        "openCodeSessionId",
-        "owner",
-        "directory",
-        "lastKnownStatus",
-        "createdAt",
-        "updatedAt",
-        "eventCursor",
-        "reconciliationStatus",
-        "reconciliationUncertain",
-        "pendingInputJson",
-        "selectedModel"
-      ],
+      "required": ["activeSessionId", "sessions"],
       "additionalProperties": false
     }
   },

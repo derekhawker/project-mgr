@@ -161,6 +161,12 @@ export function resultForCommand(name) {
       return cleanupJobs;
     case "workspace_navigation":
       return navigation;
+    case "workspace_ticket_work":
+      return { sessions: [session], activeSessionId: session.openCodeSessionId };
+    case "workspace_ticket_session_create":
+      return { ...session, openCodeSessionId: "ses-ticket-new" };
+    case "workspace_ticket_session_close":
+      return "ses-ticket-old";
     case "workspace_tickets_list":
       return [{
         filename: "example.md",

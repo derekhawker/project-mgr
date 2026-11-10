@@ -782,7 +782,7 @@ or changed by this document.
 - **S1:** [Session audit](idea-first-session-audit.md), especially the setup/move,
   child delegation, and closeout message references.
 - **S2:** `~/programs/simgame/rust-main/AGENTS.md:53–88`;
-  `.agents/skills/ticket-management/SKILL.md:13–35`;
+  `opencode/skills/ticket-management/SKILL.md:13–35`;
   `references/repository-workflow.md:44–78`, `execution.md:8–56`, and
   `closeout.md:3–8`. Paths after `AGENTS.md` are relative to that skill directory.
 - **S3:** [Pinned OpenCode v2.1.4 research](opencode-workflow-integration-research.md),

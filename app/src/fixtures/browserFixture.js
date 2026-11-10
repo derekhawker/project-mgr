@@ -73,6 +73,7 @@ const repository = {
 };
 const workspaces = [example];
 const sessions = [makeSession(example)];
+const ticketSessions = new Map();
 const seededQuickRequestId = "fixture-quick-seeded";
 const seededQuickRequestSession = {
   ...makeSession({
@@ -311,14 +312,37 @@ export async function invokeBrowserFixture(name, payload = {}) {
     case "workspace_ticket_work": {
       const workspace = workspaces.find((item) => item.id === payload.workspaceId);
       if (!workspace) throw new Error("Workspace was not found");
+      const key = `${workspace.id}:${payload.filename}`;
       const id = workspace.id === example.id && payload.filename === "example.md"
         ? `session-${workspace.id}`
         : `fixture-ticket-work-${workspace.id}-${payload.filename}`;
-      result = sessions.find((item) => item.openCodeSessionId === id);
-      if (!result) {
-        result = { ...makeSession(workspace), openCodeSessionId: id };
-        sessions.push(result);
-      }
+      const ids = ticketSessions.get(key) || [id];
+      ticketSessions.set(key, ids);
+      const entries = ids.map((sessionId) => {
+        let session = sessions.find((item) => item.openCodeSessionId === sessionId);
+        if (!session) { session = { ...makeSession(workspace), openCodeSessionId: sessionId }; sessions.push(session); }
+        return session;
+      });
+      result = { sessions: entries, activeSessionId: ids.at(-1) };
+      break;
+    }
+    case "workspace_ticket_session_create": {
+      const workspace = workspaces.find((item) => item.id === payload.workspaceId);
+      if (!workspace) throw new Error("Workspace was not found");
+      const key = `${workspace.id}:${payload.filename}`;
+      const ids = [...(ticketSessions.get(key) || [])];
+      const sessionId = `fixture-ticket-session-${ids.length + 1}`;
+      result = { ...makeSession(workspace), openCodeSessionId: sessionId };
+      sessions.push(result);
+      ids.push(sessionId);
+      ticketSessions.set(key, ids);
+      break;
+    }
+    case "workspace_ticket_session_close": {
+      const key = `${payload.workspaceId}:${payload.filename}`;
+      const ids = (ticketSessions.get(key) || []).filter((id) => id !== payload.sessionId);
+      ticketSessions.set(key, ids);
+      result = ids.at(-1) || null;
       break;
     }
     case "repository_catalog":

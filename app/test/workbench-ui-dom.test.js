@@ -230,10 +230,12 @@ test("workspace views share one tablist and switching views never closes a sessi
   const [docsDisabled, setDocsDisabled] = createSignal(false);
   const [reviewAvailable, setReviewAvailable] = createSignal(true);
   const [reviewDisabled, setReviewDisabled] = createSignal(false);
+  const [newSessionDisabled, setNewSessionDisabled] = createSignal(false);
   let selects = 0,
     closes = 0,
     docsOpens = 0,
-    reviewOpens = 0;
+    reviewOpens = 0,
+    newSessionStarts = 0;
   const tabs = () =>
     createComponent(SessionTabList, {
       tabs: () => [
@@ -257,6 +259,8 @@ test("workspace views share one tablist and switching views never closes a sessi
   const view = mount(WorkspaceShell, {
     visible: () => true,
     sessionTabs: tabs,
+    newSessionDisabled,
+    onNewSession: () => newSessionStarts++,
     selectedSessionId: () => "code",
     docsButtonSelected: docsSelected,
     docsDisabled,
@@ -278,6 +282,18 @@ test("workspace views share one tablist and switching views never closes a sessi
   const code = view.host.querySelector('[data-session-id="code"]');
   const docs = view.host.querySelector("#show-docs");
   const review = view.host.querySelector("#show-change-review");
+  const newSession = view.host.querySelector("#new-ticket-session");
+  assert.ok(newSession);
+  assert.equal(newSession.getAttribute("aria-label"), "New session");
+  assert.equal(
+    newSession.querySelector("svg path").getAttribute("d"),
+    "M8 3v10M3 8h10",
+  );
+  assert.equal(Boolean(newSession.compareDocumentPosition(review) & 4), true);
+  newSession.click();
+  assert.equal(newSessionStarts, 1);
+  setNewSessionDisabled(true);
+  assert.equal(newSession.disabled, true);
   assert.equal(view.host.querySelectorAll('[role="tablist"]').length, 1);
   assert.equal(docs.getAttribute("role"), "tab");
   assert.equal(review.getAttribute("role"), "tab");

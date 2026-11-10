@@ -7,11 +7,11 @@
 **Implementation tasks:** 1–5 approved by the user in this conversation on
 2026-11-08; task 6 is not approved for execution.
 
-1. [x] Make the `rust-main` ticket skill available in `~/.agents/skills/`.
+1. [x] Make the `rust-main` ticket skill globally available.
    **Proof:** OpenCode discovers it from a repository-rooted session.
-   **Outcome:** Installed adapted `ticket-management` and its workflow references
-   globally. OpenCode announced the skill as available in this repository-rooted
-   session on 2026-11-08; the skill is also present in the available skill catalog.
+   **Outcome:** The adapted `ticket-management` skill and workflow references are
+   maintained in `opencode/skills/ticket-management/`; the global OpenCode skill
+   entry is a symlink to that repository source.
 2. [x] Create Workspace ticket files and make them visible in the app.
    **Proof:** create a draft, restart the app, and confirm it appears with its
    Markdown status; change the file's status and confirm the list reflects it.
@@ -205,15 +205,29 @@ the revised requirements are shaped and approved.
   sufficient; no second ticket-content copy or ticket registry is required.
   Never infer the assigned ticket from the shared repository directory or
   current UI selection.
-- Create or refresh the entry after session creation and before opening the
-  interactive terminal; refresh the current status from the Markdown file when
-  a ticket session is selected/resumed. A replacement session gets a new entry
-  keyed to its new session ID. The session cwd remains the Workspace's shared
-  repository directory.
-- Every ticket work session for a Workspace uses that Workspace's same
-  repository directory and working tree. Tickets do not get separate
-  repositories, branches, or worktrees by default; session instructions select
-  the ticket record, not an isolated code checkout.
+- Create or refresh the entry for each exact ticket session before opening its
+  interactive terminal; refresh the current status from Markdown when restoring
+  sessions. `work_session_id` remains the active session for compatibility and
+  `work_session_ids` retains all ticket-linked sessions. The new-session control
+  creates and activates an additional session without discarding older IDs.
+- New ticket sessions use the ticket's associated verified worktree when present;
+  otherwise they use the Workspace's verified repository checkout. After
+  attaching a ticket session, read OpenCode's actual session directory and record
+  any worktree OpenCode assigned during session creation. A stale or unrelated
+  recorded worktree is an error, not a fallback. Existing OpenCode conversation
+  history remains OpenCode-owned.
+- Closing a ticket tab closes its terminal and removes that session ID from the
+  ticket. If the active ID closes, the most recently retained ID becomes active.
+  Closing does not delete the OpenCode conversation. Quick Requests and other
+  unbound sessions never receive ticket-specific plugin behavior.
+- OpenCode-assigned worktrees are read from the exact ticket session's live
+  location after attach. The shared plugin also observes later native worktree
+  creation and passes the exact runtime session ID and native result to the Rust
+  bridge. Rust records a path only after verifying the durable ticket/session
+  binding and Git repository identity (shared Git common directory or matching
+  origin URL). The latest verified worktree replaces the ticket's current path
+  and branch; no creator-session field is stored. Shell-created worktrees are not
+  automatically attributed.
 - Make the ticket-management skill and the guidance needed for its workflows
   globally available as part of this task; this is a required dependency for
   ticket creation and progress flows, not optional follow-up work.
@@ -229,13 +243,11 @@ the revised requirements are shaped and approved.
 - Tickets remain open to clarification and detail improvements. Use OpenCode and
   the ticket guidance to update the Markdown ticket; do not make draft status a
   barrier to refining its contents.
-- Each ticket has one OpenCode work session. When a user chooses to work on a
-  ticket, open its repository-rooted interactive terminal and associate the
-  session with the ticket. Record the session identity in the ticket's YAML
-  front matter so the exact session can be resumed later. Keep ticket status
-  authoritative in Markdown according to the global ticket skill's format.
-- If the recorded session is unavailable, start a new session and replace the
-  session identity in front matter.
+- A ticket retains multiple OpenCode work sessions and one active-session
+  pointer. Work restores retained sessions, creates a replacement if the active
+  session is missing, and makes a new ticket session active when requested.
+  Record exact IDs in ticket YAML front matter so they can be restored later.
+  Keep ticket status authoritative in Markdown according to the global skill.
 - The precise status transition, if any, is performed in OpenCode and persisted
   in the Markdown ticket; the app's Work action does not change status.
 
@@ -271,11 +283,16 @@ an implementation detail, not a second authority.
   Confirmed in conversation.
 - **Database reset:** deletion is already complete; no database task is included.
   Prior repository associations are out of scope. Confirmed in conversation.
-- **Sessions per ticket:** one work/resume session. Confirmed in conversation.
-- **Session metadata:** record the work-session identity in YAML front matter.
-  Confirmed in conversation.
-- **Unavailable work session:** start a new one and replace its recorded ID.
-  Confirmed in conversation.
+- **Sessions per ticket:** originally one work/resume session; expanded on
+  2026-11-09 to retain multiple sessions with one active pointer. The ticket
+  investigation record is authoritative for that implementation.
+- **Session metadata:** preserve `work_session_id` as the active ID and add
+  `work_session_ids` for retained sessions. Closing unlinks but does not delete
+  OpenCode history.
+- **Worktree association:** one current verified path/branch in front matter;
+  latest native OpenCode worktree creation replaces it. Shell-created trees are
+  out of automatic attribution. New sessions use it or fall back to the verified
+  Workspace checkout.
 - **Ticket status:** OpenCode changes status; the Markdown file is authoritative.
   Confirmed in conversation.
 - **Ticket storage:** `<app_data_dir>/workspace-tickets/<workspace-slug>/`, outside

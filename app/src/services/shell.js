@@ -777,3 +777,11 @@ export function listWorkspaceTickets(invoke, workspaceId, archived = false) {
 export function workOnWorkspaceTicket(invoke, workspaceId, filename) {
   return invokeCommand(invoke, "workspace_ticket_work", { workspaceId, filename });
 }
+
+export function createWorkspaceTicketSession(invoke, workspaceId, filename) {
+  return invokeCommand(invoke, "workspace_ticket_session_create", { workspaceId, filename });
+}
+
+export function closeWorkspaceTicketSession(invoke, workspaceId, filename, sessionId) {
+  return invokeCommand(invoke, "workspace_ticket_session_close", { workspaceId, filename, sessionId });
+}

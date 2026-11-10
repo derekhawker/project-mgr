@@ -142,6 +142,36 @@ test("checked-in command inventory has one contract for every registered Rust co
   assert.deepEqual([...COMMAND_NAMES].sort(), [...rustAttributes].sort());
 });
 
+test("ticket session commands validate the multi-session and close wire shapes", async () => {
+  const payloads = [];
+  const invoke = async (name, payload) => {
+    payloads.push([name, payload]);
+    return resultForCommand(name);
+  };
+  const work = await invokeCommand(invoke, "workspace_ticket_work", {
+    workspaceId: "workspace-1",
+    filename: "ticket.md",
+  });
+  assert.deepEqual(Object.keys(work).sort(), ["activeSessionId", "sessions"]);
+  assert.equal(work.sessions[0].openCodeSessionId, "ses-1");
+  const created = await invokeCommand(invoke, "workspace_ticket_session_create", {
+    workspaceId: "workspace-1",
+    filename: "ticket.md",
+  });
+  assert.equal(created.openCodeSessionId, "ses-ticket-new");
+  const next = await invokeCommand(invoke, "workspace_ticket_session_close", {
+    workspaceId: "workspace-1",
+    filename: "ticket.md",
+    sessionId: "ses-ticket-new",
+  });
+  assert.equal(next, "ses-ticket-old");
+  assert.deepEqual(payloads.map(([name]) => name), [
+    "workspace_ticket_work",
+    "workspace_ticket_session_create",
+    "workspace_ticket_session_close",
+  ]);
+});
+
 test("the production screen mounts one component tree without selector-based mount targets", () => {
   const main = readFileSync(join(process.cwd(), "src", "main.js"), "utf8");
   assert.match(html, /<div id="app-root"><\/div>/);
