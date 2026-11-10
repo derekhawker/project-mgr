@@ -51,6 +51,7 @@ pub struct ModelCatalogEntry {
 }
 
 const KNOWN_STALE_MODELS: &[&str] = &["opencode/exo-free"];
+const MAX_SESSION_HISTORY_LIMIT: u32 = 200;
 
 pub fn parse_model_catalog(value: Value) -> Result<Vec<ModelCatalogEntry>, String> {
     let data = value
@@ -589,6 +590,7 @@ impl Runtime {
         limit: u32,
     ) -> Result<SessionHistory, String> {
         let id = validate_session_id(id)?;
+        let limit = limit.clamp(1, MAX_SESSION_HISTORY_LIMIT);
         let (client, url) = self.client_url()?;
         let value = get_data_with_cursor(
             &client,
@@ -685,7 +687,9 @@ impl Runtime {
         cursor: Option<&str>,
     ) -> Result<SessionReconciliation, String> {
         let id = validate_session_id(id)?;
-        let history = self.session_history(&id, "asc", 500)?;
+        // Reconciliation only needs to know whether any history exists to
+        // distinguish a completed, empty session from one with output.
+        let history = self.session_history(&id, "asc", 1)?;
         let active = self.session_status(&id)?.active;
         let permissions = self.permissions(&id)?;
         let forms = self.forms(&id)?;
@@ -2497,12 +2501,78 @@ mod tests {
     }
 
     #[test]
+    fn session_reconciliation_fetches_only_the_history_evidence_it_needs() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = thread::spawn(move || {
+            for expected_path in [
+                "/api/session/ses_exact/message?order=asc&limit=1",
+                "/api/session/active",
+                "/api/session/ses_exact/permission",
+                "/api/session/ses_exact/form",
+                "/api/experimental/session/ses_exact/log?follow=false",
+            ] {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                let mut request_line = String::new();
+                reader.read_line(&mut request_line).unwrap();
+                assert_eq!(
+                    request_line.split_whitespace().collect::<Vec<_>>(),
+                    vec!["GET", expected_path, "HTTP/1.1"]
+                );
+                loop {
+                    let mut line = String::new();
+                    reader.read_line(&mut line).unwrap();
+                    if line == "\r\n" {
+                        break;
+                    }
+                }
+                let body = if expected_path.ends_with("/log?follow=false") {
+                    "data: {\"seq\":18}\n\n"
+                } else if expected_path.ends_with("/message?order=asc&limit=1") {
+                    r#"{"data":[{"id":"m1"}],"cursor":{"next":"2"}}"#
+                } else if expected_path.ends_with("/active") {
+                    r#"{"data":{}}"#
+                } else {
+                    r#"{"data":[]}"#
+                };
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                stream.write_all(response.as_bytes()).unwrap();
+            }
+        });
+        let runtime = Runtime {
+            server: Mutex::new(Some(Server {
+                info: RuntimeInfo {
+                    executable: "fake".into(),
+                    version: "2.1.4".into(),
+                    base_url: format!("http://{address}"),
+                },
+                _password: "secret".into(),
+                client: api_client("secret").unwrap(),
+            })),
+            terminals: TerminalManager::default(),
+            lifecycle: AtomicU8::new(0),
+            lifecycle_gate: Mutex::new(()),
+        };
+
+        let result = runtime.reconcile_session("ses_exact", None).unwrap();
+        assert_eq!(result.history.data, [json!({"id":"m1"})]);
+        assert_eq!(result.status, SessionApplicationStatus::Unknown);
+        server.join().unwrap();
+        runtime.shutdown();
+    }
+
+    #[test]
     fn session_runtime_routes_preserve_ids_queries_auth_wrappers_and_cursors() {
         let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
         let address = listener.local_addr().unwrap();
         let server = thread::spawn(move || {
             let expected = [
-                "/api/session/ses_exact/message?order=asc&limit=2",
+                "/api/session/ses_exact/message?order=asc&limit=200",
                 "/api/session/active",
                 "/api/session/ses_exact/permission",
                 "/api/session/ses_exact/form",
@@ -2530,7 +2600,7 @@ mod tests {
                     "authorization: basic {}",
                     STANDARD.encode("opencode:secret").to_ascii_lowercase()
                 )));
-                let body = if path.ends_with("message?order=asc&limit=2") {
+                let body = if path.ends_with("message?order=asc&limit=200") {
                     r#"{"data":[{"id":"m1"}],"cursor":{"previous":null,"next":"3"}}"#
                 } else if path.ends_with("/active") {
                     r#"{"data":{"ses_exact":{"type":"running"}}}"#
@@ -2563,7 +2633,7 @@ mod tests {
             lifecycle: AtomicU8::new(0),
             lifecycle_gate: Mutex::new(()),
         };
-        let history = runtime.session_history("ses_exact", "asc", 2).unwrap();
+        let history = runtime.session_history("ses_exact", "asc", 500).unwrap();
         assert_eq!(history.session_id, "ses_exact");
         assert_eq!(history.cursor.next.as_deref(), Some("3"));
         assert_eq!(

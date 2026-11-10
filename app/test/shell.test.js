@@ -1233,7 +1233,7 @@ test("restoring a session reconciles history without invoking the prompt command
   assert.deepEqual(calls, [
     [
       "opencode_session_history",
-      { sessionId: "ses_restore", order: "asc", limit: 500 },
+      { sessionId: "ses_restore", order: "asc", limit: 200 },
     ],
     ["opencode_session_status", { sessionId: "ses_restore" }],
     ["opencode_session_reconcile", { sessionId: "ses_restore", cursor: "17" }],

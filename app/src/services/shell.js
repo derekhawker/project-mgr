@@ -192,7 +192,7 @@ export function cancelForm(invoke, sessionId, requestId) {
 export function getSessionHistory(
   invoke,
   sessionId,
-  { order = "asc", limit = 500 } = {},
+  { order = "asc", limit = 200 } = {},
 ) {
   return invokeCommand(invoke, "opencode_session_history", {
     sessionId,

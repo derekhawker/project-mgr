@@ -54,7 +54,6 @@ pub fn work<R: TicketWorkRuntime>(
     let markdown =
         fs::read_to_string(&ticket).map_err(|e| format!("Could not read ticket: {e}"))?;
     let (title, status) = ticket_metadata(&markdown, filename);
-    let target = resolve_ticket_directory(&repository, ticket_worktree(&markdown)?.as_ref())?;
     let original_ids = ticket_session_ids(&markdown)?;
     let mut ids = Vec::new();
     for id in original_ids {
@@ -62,10 +61,31 @@ pub fn work<R: TicketWorkRuntime>(
             ids.push(id);
         }
     }
+    // A retained OpenCode session already has an exact, persisted working
+    // directory. Do not make restoring it depend on ticket worktree metadata:
+    // that path may have been removed after delivery while the session remains
+    // valid. Resolve the ticket worktree only when a replacement is needed.
     let mut active =
         work_session_id(&markdown)?.filter(|id| ids.iter().any(|retained| retained == id));
+    let recorded_worktree = ticket_worktree(&markdown)?;
+    let removed_worktree = active.is_some()
+        && recorded_worktree.as_ref().is_some_and(|worktree| {
+            fs::symlink_metadata(&worktree.path)
+                .is_err_and(|error| error.kind() == std::io::ErrorKind::NotFound)
+        });
+    let target = if removed_worktree {
+        None
+    } else {
+        Some(resolve_ticket_directory(
+            &repository,
+            recorded_worktree.as_ref(),
+        )?)
+    };
     if active.is_none() {
-        let id = runtime.create(&format!("{workspace_name}: {title}"), &target)?;
+        let id = runtime.create(
+            &format!("{workspace_name}: {title}"),
+            target.as_deref().expect("replacement target was resolved"),
+        )?;
         ids.push(id.clone());
         active = Some(id);
     }
@@ -86,7 +106,7 @@ pub fn work<R: TicketWorkRuntime>(
             &id,
         );
         runtime.prepare(&id, &ticket_dir, &instructions)?;
-        sessions.push(runtime.attach(&id, &target)?);
+        sessions.push(runtime.attach(&id, target.as_deref().unwrap_or(repository.as_path()))?);
         record_session_worktree(directory, &repository, filename, &id, runtime)?;
     }
     Ok(TicketWorkResult {
@@ -1334,6 +1354,39 @@ mod tests {
         );
         assert_eq!(runtime.created_directories, [repository]);
         assert_eq!(runtime.attached.last().unwrap().0, "ses_1");
+    }
+
+    #[test]
+    fn work_restores_existing_session_when_ticket_worktree_was_removed() {
+        let root = tempfile::tempdir().unwrap();
+        let tickets = root.path().join("tickets");
+        let repository = root.path().join("repository");
+        fs::create_dir(&tickets).unwrap();
+        fs::create_dir(&repository).unwrap();
+        let ticket = tickets.join("stale-worktree.md");
+        fs::write(
+            &ticket,
+            "---\ntitle: Stale worktree\nstatus: in_progress\nwork_session_id: ses_existing\nwork_session_ids:\n  - ses_existing\nworktree_path: /path/that/was/removed\nworktree_branch: ticket/removed\n---\n",
+        )
+        .unwrap();
+        let mut runtime = FakeRuntime::default();
+        runtime.known_sessions.insert("ses_existing".into());
+
+        let result = work(
+            &tickets,
+            &repository,
+            "Workspace",
+            "stale-worktree.md",
+            &mut runtime,
+        )
+        .expect("an existing session should be restored from its own recorded directory");
+
+        assert_eq!(result.active_session_id, "ses_existing");
+        assert_eq!(runtime.creates, 0);
+        assert_eq!(
+            runtime.attached,
+            [("ses_existing".into(), repository.canonicalize().unwrap())]
+        );
     }
 
     #[test]
