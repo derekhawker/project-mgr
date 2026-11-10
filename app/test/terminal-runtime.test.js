@@ -286,10 +286,29 @@ test("OpenCode terminal encodes Shift+Enter as the modified Enter key without ch
   runtime.listenersReady = true;
   await runtime.attachExisting("session-a", {});
 
-  assert.equal(onKeyEvent({ key: "Enter", shiftKey: true }), false);
-  assert.equal(onKeyEvent({ key: "Enter", shiftKey: false }), true);
   assert.equal(
-    onKeyEvent({ key: "Enter", shiftKey: true, isComposing: true }),
+    onKeyEvent({ type: "keydown", key: "Enter", shiftKey: true }),
+    false,
+  );
+  assert.equal(
+    onKeyEvent({ type: "keypress", key: "Enter", shiftKey: true }),
+    false,
+  );
+  assert.equal(
+    onKeyEvent({ type: "keyup", key: "Enter", shiftKey: true }),
+    false,
+  );
+  assert.equal(
+    onKeyEvent({ type: "keydown", key: "Enter", shiftKey: false }),
+    true,
+  );
+  assert.equal(
+    onKeyEvent({
+      type: "keydown",
+      key: "Enter",
+      shiftKey: true,
+      isComposing: true,
+    }),
     true,
   );
   onData("\r");
