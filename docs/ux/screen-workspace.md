@@ -32,6 +32,13 @@ Activating **Work** opens or resumes its interactive session. The heading is
 workspace name is a button that returns to the ticket list without closing the
 session.
 
+The ticket workbench starts with a **New session** button immediately before the
+session/view tab strip. It creates a fresh conversation bound to the selected
+ticket, makes it active, and keeps earlier ticket sessions available as tabs.
+Ticket tabs use stable session labels. Closing a tab closes its terminal and
+removes its ID from that ticket; it does not delete OpenCode's conversation
+history. Closing the active tab selects the most recently retained session.
+
 ## Purpose and layout
 
 The workspace screen is the main application surface for a Workspace and its
@@ -48,6 +55,12 @@ terminal. The terminal viewport reaches the work-area edges without an extra
 title strip or inset padding. C64-inspired color is reserved for navigation selection
 and focused controls. It remains the primary work area without an app transcript
 or persistent status panel.
+
+New ticket-session terminals open in the ticket's recorded, Git-verified
+worktree, or in the Workspace repository checkout when no worktree is recorded.
+A stale or foreign recorded path is reported instead of silently routing to a
+different checkout. Native OpenCode worktree creation may update the ticket's
+current associated path; shell-created worktrees are not automatically tracked.
 The ticket workspace after Work has no Workspace options collapsible or its
 controls. Clear the workspace-loading status after the terminal opens.
 

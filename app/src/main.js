@@ -9,6 +9,8 @@ import {
   startWorkspaceTicketCreation,
   listWorkspaceTickets,
   workOnWorkspaceTicket,
+  createWorkspaceTicketSession,
+  closeWorkspaceTicketSession,
   submitNewWorkStartingPrompt,
   formatWorkspaceError,
 } from "./services/shell.js";
@@ -301,21 +303,42 @@ async function workWorkspaceTicket(workspaceId, filename) {
   setTicketError("");
   try {
     recordUiDiagnostic("WorkspaceTicketWork", "command-start");
-    const session = await workOnWorkspaceTicket(invoke, workspaceId, filename);
+    const result = await workOnWorkspaceTicket(invoke, workspaceId, filename);
     recordUiDiagnostic("WorkspaceTicketWork", "command-success");
     if (selectedWorkspace?.id !== workspaceId || selectedTicketFilename() !== filename) return;
-    rememberWorkspaceSession(session);
+    for (const session of result.sessions) rememberWorkspaceSession(session);
     setTicketSessionScope(filename);
     setTicketViewerVisible(false);
     setWorkspaceShellVisible(true);
     setSelectedOwnerVisible(true);
-    await showSession(session.openCodeSessionId);
+    for (const session of result.sessions) await showSession(session.openCodeSessionId);
+    await showSession(result.activeSessionId);
   } catch (error) {
     recordUiDiagnostic("WorkspaceTicketWork", "command-error");
     if (selectedWorkspace?.id !== workspaceId || selectedTicketFilename() !== filename) return;
     setTicketViewerVisible(true);
     setWorkspaceShellVisible(false);
     setTicketError(formatWorkspaceError("Work on ticket", error));
+  } finally {
+    setTicketWorking(false);
+  }
+}
+async function startNewWorkspaceTicketSession() {
+  const workspaceId = selectedWorkspace?.id;
+  const filename = selectedTicketFilename();
+  if (ticketWorking() || !workspaceId || !filename || ticketArchived()) return;
+  setTicketWorking(true);
+  try {
+    const session = await createWorkspaceTicketSession(invoke, workspaceId, filename);
+    if (selectedWorkspace?.id !== workspaceId || selectedTicketFilename() !== filename) return;
+    rememberWorkspaceSession(session);
+    setTicketSessionScope(filename);
+    setTicketViewerVisible(false);
+    setWorkspaceShellVisible(true);
+    setSelectedOwnerVisible(true);
+    await sessions.showSession(session.openCodeSessionId);
+  } catch (error) {
+    setOwnerStatus(formatWorkspaceError("Create ticket session", error));
   } finally {
     setTicketWorking(false);
   }
@@ -465,6 +488,8 @@ const workspaceShell = () =>
     onOpenChangeReview: (event) => { setTicketViewerVisible(false); void handleChangeReviewClick(event); },
     selectedSessionId: sessions.selectedSessionId,
     sessionTabs: sessions.tabs,
+    newSessionDisabled: ticketWorking,
+    onNewSession: startNewWorkspaceTicketSession,
     repositoryTools,
   });
 const [changeReviewVisible, setChangeReviewVisible] = createSignal(false);

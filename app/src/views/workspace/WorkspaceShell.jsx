@@ -1,4 +1,4 @@
-import { Icon, Tab, TabList } from "@ui-lib";
+import { Button, Icon, Tab, TabList } from "@ui-lib";
 import { AppPageLayout } from "../../components/page/AppPageLayout.jsx";
 import repositoryToolsStyles from "./repository-tools/RepositoryToolsMenu.module.css";
 import styles from "./WorkspaceShell.module.css";
@@ -40,6 +40,15 @@ export function WorkspaceShell(props) {
           role="group"
           aria-label="Session and workspace views"
         >
+          <Button
+            id="new-ticket-session"
+            type="button"
+            disabled={props.newSessionDisabled?.()}
+            aria-label="Start a new OpenCode session for this ticket"
+            onClick={props.onNewSession}
+          >
+            New session
+          </Button>
           <TabList
             id="session-tabs"
             class={styles.tabs}

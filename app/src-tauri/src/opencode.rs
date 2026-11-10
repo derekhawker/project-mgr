@@ -397,6 +397,20 @@ impl Runtime {
         let (client, url) = self.client_url()?;
         session_exists_at(&client, &url, &id)
     }
+    pub fn session_directory(&self, id: &str) -> Result<PathBuf, String> {
+        let id = validate_session_id(id)?;
+        let (client, url) = self.client_url()?;
+        let session = get_data_value(&client, &format!("{url}/api/session/{id}"))?;
+        let directory = session
+            .pointer("/location/directory")
+            .and_then(Value::as_str)
+            .ok_or("invalid OpenCode session response: missing location directory")?;
+        let directory = PathBuf::from(directory);
+        if !directory.is_absolute() {
+            return Err("OpenCode session directory is not absolute".into());
+        }
+        Ok(directory)
+    }
     pub fn set_session_model(&self, id: &str, model: ModelReference) -> Result<(), String> {
         validate_model(&self.catalog()?, &model)?;
         let (client, url) = self.client_url()?;
@@ -1724,6 +1738,52 @@ mod tests {
             .is_err());
         assert!(runtime.set_session_model("ses_1", good).is_ok());
         assert!(runtime.set_session_model("ses_1", invalid).is_err());
+        runtime.shutdown();
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn session_directory_reads_open_codes_assigned_worktree_location() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = String::new();
+            BufReader::new(stream.try_clone().unwrap())
+                .read_line(&mut request)
+                .unwrap();
+            assert_eq!(
+                request.split_whitespace().nth(1).unwrap(),
+                "/api/session/ses_worktree"
+            );
+            let body = r#"{"data":{"id":"ses_worktree","location":{"directory":"/tmp/opencode-worktree"}}}"#;
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            )
+            .unwrap();
+        });
+        let runtime = Runtime {
+            server: Mutex::new(Some(Server {
+                info: RuntimeInfo {
+                    executable: "test".into(),
+                    version: "test".into(),
+                    base_url: format!("http://{address}"),
+                },
+                _password: "secret".into(),
+                client: api_client("secret").unwrap(),
+            })),
+            terminals: TerminalManager::default(),
+            lifecycle: AtomicU8::new(0),
+            lifecycle_gate: Mutex::new(()),
+        };
+
+        assert_eq!(
+            runtime.session_directory("ses_worktree").unwrap(),
+            PathBuf::from("/tmp/opencode-worktree")
+        );
         runtime.shutdown();
         server.join().unwrap();
     }

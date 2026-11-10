@@ -3,7 +3,11 @@ import { recordUiDiagnostic } from "../../../lib/uiDiagnostics.js";
 import { invokeCommand } from "../../../services/commandContract.js";
 import { SessionTabList } from "./SessionTabList.jsx";
 import { PendingInputList } from "./PendingInputList.jsx";
-import { scopedSessionOwnerKey, sessionInTicketScope } from "./ticketSessionScope.js";
+import {
+  linkedTicketFilename,
+  scopedSessionOwnerKey,
+  sessionInTicketScope,
+} from "./ticketSessionScope.js";
 import {
   ownerSessionTabState,
   restoreOwnerSessionTabs,
@@ -23,6 +27,7 @@ import {
   terminalAccessibilityAttributes,
   workspaceSessionTabLabel,
   cleanupTerminal,
+  closeWorkspaceTicketSession,
   formatWorkspaceError,
   getSessionStatus,
   listPendingInputs,
@@ -184,12 +189,28 @@ export function createWorkspaceSessions({
 
   async function closeWorkspaceSession(sessionId) {
     if (sessionId === proposalSessionId()) return;
+    const ownerKey = sessionOwners.get(sessionId);
+    const owningTab = sessionTabEntries().find((entry) => entry.sessionId === sessionId);
+    const ticketScope = ownerKey?.startsWith("workspace:") &&
+      owningTab?.ticketScope === getSessionScope()
+      ? linkedTicketFilename(owningTab.ticketScope)
+      : undefined;
+    let nextTicketSessionId;
     try {
       if (repositoryToolTerminals.has(sessionId))
         await repoToolTerminalCommand(invoke, "cleanup", {
           terminalId: sessionId,
         });
       else await cleanupTerminal(invoke, sessionId);
+      if (ticketScope) {
+        const workspaceId = ownerKey.slice("workspace:".length);
+        nextTicketSessionId = await closeWorkspaceTicketSession(
+          invoke,
+          workspaceId,
+          ticketScope,
+          sessionId,
+        );
+      }
     } catch (error) {
       const message = formatWorkspaceError("Close terminal", error);
       setOwnerStatus(message);
@@ -200,14 +221,15 @@ export function createWorkspaceSessions({
     if (appLifetime.disposed) return;
     runtime?.forget(sessionId);
     terminalSurfaces.remove(sessionId);
-    const ownerKey = sessionOwners.get(sessionId);
     removeSessionTab(sessionId);
     openSessions.delete(sessionId);
     sessionOwners.delete(sessionId);
     repositoryToolTerminals.delete(sessionId);
     releaseInstall(sessionId);
-    if (selectedSessionByOwner.get(selectionKey(ownerKey)) === sessionId)
-      selectedSessionByOwner.delete(selectionKey(ownerKey));
+    if (selectedSessionByOwner.get(selectionKey(ownerKey)) === sessionId) {
+      if (nextTicketSessionId) selectedSessionByOwner.set(selectionKey(ownerKey), nextTicketSessionId);
+      else selectedSessionByOwner.delete(selectionKey(ownerKey));
+    }
     const selectedId = syncOwnerSessions({ focus: false });
     if (ownerKey === selectedOwnerKey() && !selectedId) setSessionStatus("");
   }
@@ -285,6 +307,8 @@ export function createWorkspaceSessions({
         if (!requestOwner) {
           const label = proposal
             ? "Proposal"
+            : ownerKey?.startsWith("workspace:") && getSessionScope()
+              ? `Session ${sessionTabEntries().filter((entry) => entry.ownerKey === ownerKey && entry.ticketScope === getSessionScope()).length + 1}`
             : workspaceSessionTabLabel(
                 restored,
                 data.workspaceSessionContexts,
