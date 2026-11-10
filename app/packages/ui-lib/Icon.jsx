@@ -2,6 +2,7 @@ import { splitProps } from "solid-js";
 import styles from "./Icon.module.css";
 
 const icons = {
+  plus: "M8 3v10M3 8h10",
   chevron: "M4 6l4 4 4-4",
   close: "M4 4l8 8M12 4l-8 8",
   branch:

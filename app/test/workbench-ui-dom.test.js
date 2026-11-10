@@ -284,6 +284,11 @@ test("workspace views share one tablist and switching views never closes a sessi
   const review = view.host.querySelector("#show-change-review");
   const newSession = view.host.querySelector("#new-ticket-session");
   assert.ok(newSession);
+  assert.equal(newSession.getAttribute("aria-label"), "New session");
+  assert.equal(
+    newSession.querySelector("svg path").getAttribute("d"),
+    "M8 3v10M3 8h10",
+  );
   assert.equal(Boolean(newSession.compareDocumentPosition(review) & 4), true);
   newSession.click();
   assert.equal(newSessionStarts, 1);
