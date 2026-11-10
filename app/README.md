@@ -30,12 +30,16 @@ modal sizing, scrolling, validation, dismissal, and keyboard focus. It does not
 launch Tauri or use application data; native Wayland acceptance remains separate.
 
 **Live data:** `npm run live --prefix app` launches the current native Tauri
-build in development mode. It opens the normal application database and may
-start OpenCode, modify files, run tools, and use network services. The Tauri
-CLI's direct `tauri dev` command is also live. `beforeDevCommand` uses
-`dev:server` to avoid recursively invoking the native command. Installed and
-release builds remain live; `npm run tauri:build --prefix app` builds them but
-is not an isolated runtime. Do not run a live mode without intending its effects.
+build in development mode. It picks a stable, worktree-specific local port so
+multiple worktrees can run live at once; if that port is already occupied, it
+tries subsequent ports. It opens the normal application database and may start
+OpenCode, modify files, run tools, and use network services. The Tauri CLI's
+direct `tauri dev` command is also live but uses the fixed port 1420 and the
+single-instance handoff; use `npm run live` for concurrent worktrees.
+`beforeDevCommand` uses `dev:server` to avoid recursively invoking the native
+command. Installed and release builds remain live; `npm run tauri:build --prefix
+app` builds them but is not an isolated runtime. Do not run a live mode without
+intending its effects.
 
 ### Diagnostics
 

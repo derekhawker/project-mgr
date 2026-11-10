@@ -3,7 +3,9 @@ import assert from "node:assert/strict";
 import { invokeBrowserFixture } from "../src/fixtures/browserFixture.js";
 import {
   createQuickRequest,
+  createWorkspaceTicket,
   deleteQuickRequest,
+  listWorkspaceTickets,
   listQuickRequests,
   resolveQuickRequestDirectory,
   restoreQuickRequest,
@@ -184,4 +186,22 @@ test("fixture creates and reopens a workspace and tool without external operatio
   } finally {
     globalThis.fetch = oldFetch;
   }
+});
+
+test("created ticket fixtures stay scoped to their owning workspace", async () => {
+  const created = await invokeBrowserFixture("workspace_create_initialized", {
+    request: { name: "Ticket fixture scope" },
+  });
+  const workspaceId = created.workspace.id;
+  const ticket = await createWorkspaceTicket(
+    invokeBrowserFixture,
+    workspaceId,
+    "Scoped ticket",
+    "Scoped body",
+  );
+
+  const ownerTickets = await listWorkspaceTickets(invokeBrowserFixture, workspaceId);
+  const otherTickets = await listWorkspaceTickets(invokeBrowserFixture, "fixture-workspace");
+  assert.equal(ownerTickets.some((item) => item.filename === ticket.filename), true);
+  assert.equal(otherTickets.some((item) => item.filename === ticket.filename), false);
 });

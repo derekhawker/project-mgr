@@ -56,7 +56,8 @@ icon-only delete affordances remain neutral. Modal uses the ghost variant for
 its close control.
 Icon renders shared inline 16×16 SVGs at a consistent 1rem size, with an optional
 muted treatment for icons paired with text. Keep its SVG artwork inline in
-`Icon.jsx`, not scattered through screen markup or external files.
+`Icon.jsx`, not scattered through screen markup or external files. Use the shared
+check icon to mark selected ActionMenu options rather than a text glyph.
 Tooltip renders a labelled question-mark trigger by default and a non-native,
 viewport-positioned `role="tooltip"` bubble in a document portal. It appears
 after 250ms of hover or keyboard focus and dismisses 250ms after pointer leave
@@ -91,7 +92,9 @@ ActionMenu defaults to the primary-color accent surface used by New work and Too
 `ActionMenuItem` for flat, left-aligned, full-width rows instead of ordinary
 Button controls. Rows have no button border or rounding; hover/focus highlights
 the row. They retain native button attributes, disabled behavior, Tab navigation,
-and Enter/Space activation. These disclosures are not ARIA arrow-key menus.
+and Enter/Space activation. Long action lists are capped at 60vh and scroll
+vertically without scrolling the content behind them. These disclosures are not
+ARIA arrow-key menus.
 `ActionMenuGroup label="Open in…"` provides a semantic section and compact
 heading, with its contents indented below it. Nest groups with `headingLevel={3}`
 for subheadings: group labels need special colors for hierarchy and contrast;

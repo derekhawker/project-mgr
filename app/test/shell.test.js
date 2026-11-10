@@ -29,6 +29,9 @@ import {
   startQuickRequestPrompt,
   listAvailableModels,
   getDefaultModel,
+  setDefaultModel,
+  proposeWorkspaceTicket,
+  createWorkspaceTicket,
   followUpQuickRequest,
   restoreQuickRequest,
   listQuickRequests,
@@ -1305,11 +1308,29 @@ test("Quick Request startup and model catalog adapters use explicit contracts", 
   const model = { providerId: "openai", id: "gpt-6-luna" };
   await listAvailableModels(invoke);
   await getDefaultModel(invoke);
+  await setDefaultModel(invoke, model);
   await startQuickRequestPrompt(invoke, "quick-1", model);
   assert.deepEqual(calls, [
     ["opencode_models"],
     ["opencode_model_default"],
+    ["opencode_model_default_set", { request: model }],
     ["quick_request_start_prompt", { requestId: "quick-1", model }],
+  ]);
+});
+
+test("Workspace ticket proposal and confirmation adapters preserve their explicit payloads", async () => {
+  const calls = [];
+  const invoke = (...args) => {
+    calls.push(args);
+    return Promise.resolve(resultForCommand(args[0]));
+  };
+  const proposal = await proposeWorkspaceTicket(invoke, "workspace-1", "An idea");
+  const ticket = await createWorkspaceTicket(invoke, "workspace-1", "Fixture proposal", "Edited body");
+  assert.equal(proposal.title, "Fixture proposal");
+  assert.equal(ticket.status, "draft");
+  assert.deepEqual(calls, [
+    ["workspace_ticket_proposal", { workspaceId: "workspace-1", idea: "An idea" }],
+    ["workspace_ticket_create", { workspaceId: "workspace-1", title: "Fixture proposal", body: "Edited body" }],
   ]);
 });
 

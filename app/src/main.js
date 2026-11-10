@@ -6,9 +6,11 @@ import { open as tauriOpenDirectoryPicker } from "@tauri-apps/plugin-dialog";
 import {
   loadApplicationShell,
   loadWorkspaceNavigation,
-  startWorkspaceTicketCreation,
+  proposeWorkspaceTicket,
+  createWorkspaceTicket,
   listWorkspaceTickets,
   workOnWorkspaceTicket,
+  setDefaultModel,
   submitNewWorkStartingPrompt,
   formatWorkspaceError,
 } from "./services/shell.js";
@@ -160,6 +162,9 @@ const [quickSelectedModel, setQuickSelectedModel] = createSignal("");
 const [quickModelDisabled, setQuickModelDisabled] = createSignal(true);
 const [quickModelBusy, setQuickModelBusy] = createSignal(true);
 const [quickModelError, setQuickModelError] = createSignal("");
+const [ticketModelSelected, setTicketModelSelected] = createSignal("");
+const [ticketModelBusy, setTicketModelBusy] = createSignal(true);
+const [ticketModelError, setTicketModelError] = createSignal("");
 const [quickRequestError, setQuickRequestError] = createSignal("");
 const quickRequestFormView = createQuickRequestFormView();
 const [terminalRuntimeStartupFailed, setTerminalRuntimeStartupFailed] =
@@ -320,6 +325,23 @@ async function workWorkspaceTicket(workspaceId, filename) {
     setTicketWorking(false);
   }
 }
+async function saveTicketDefaultModel(value) {
+  if (!value || ticketModelBusy()) return;
+  const model = JSON.parse(value);
+  setTicketModelBusy(true);
+  setTicketModelError("");
+  try {
+    const saved = await setDefaultModel(invoke, model);
+    const selected = JSON.stringify({ providerId: saved.providerId, id: saved.id });
+    setTicketModelSelected(selected);
+    setQuickSelectedModel(selected);
+    newWork.setModels(quickModelOptions(), selected);
+  } catch (error) {
+    setTicketModelError(`Could not save the default model: ${String(error)}`);
+  } finally {
+    setTicketModelBusy(false);
+  }
+}
 const workspaceTicketViewerProps = {
   workspaceName: ownerTitle,
   tickets: ticketItems,
@@ -328,6 +350,11 @@ const workspaceTicketViewerProps = {
   archived: ticketArchived,
   working: ticketWorking,
   error: ticketError,
+  modelOptions: quickModelOptions,
+  selectedModel: ticketModelSelected,
+  modelBusy: ticketModelBusy,
+  modelError: ticketModelError,
+  onModelChange: (value) => { void saveTicketDefaultModel(value); },
   onSelect: (filename) => {
     setSelectedTicketFilename(filename);
     setTicketSessionScope(filename);
@@ -343,26 +370,21 @@ const workspaceTicketViewerProps = {
   onArchiveChange: (archived) => { setTicketArchived(archived); showCachedTicketList(archived); },
   onRefresh: () => void refreshTicketList(),
   onWork: (filename) => workWorkspaceTicket(selectedWorkspace?.id, filename),
-  onCreate: async () => {
+  onProposeTicket: async (idea) => {
     const workspaceId = selectedWorkspace?.id;
-    setSelectedTicketFilename(null);
-    try {
-      if (!workspaceId) throw new Error("Select a Workspace first.");
-      const model = quickSelectedModel();
-      if (!model) throw new Error("Choose an enabled OpenCode model before creating a ticket.");
-      const session = await startWorkspaceTicketCreation(invoke, workspaceId, JSON.parse(model));
-      if (selectedWorkspace?.id !== workspaceId) return;
-      setTicketSessionScope("__ticket_creation__");
-      setTicketViewerVisible(false);
-      setWorkspaceShellVisible(true);
-      setSelectedOwnerVisible(true);
-      rememberWorkspaceSession(session);
-      await showSession(session.openCodeSessionId);
-    } catch (error) {
-      setTicketViewerVisible(true);
-      setWorkspaceShellVisible(false);
-      setTicketError(formatWorkspaceError("Create Workspace ticket", error));
-    }
+    if (!workspaceId) throw new Error("Select a Workspace first.");
+    if (!ticketModelSelected()) throw new Error("Choose an enabled OpenCode model before creating a ticket.");
+    return proposeWorkspaceTicket(invoke, workspaceId, idea);
+  },
+  onCreateTicket: async (title, body) => {
+    const workspaceId = selectedWorkspace?.id;
+    if (!workspaceId) throw new Error("Select a Workspace first.");
+    const ticket = await createWorkspaceTicket(invoke, workspaceId, title, body);
+    if (selectedWorkspace?.id !== workspaceId) return;
+    setTicketArchived(false);
+    workspaceTicketCache.invalidate();
+    await refreshTicketList(false);
+    setSelectedTicketFilename(ticket.filename);
   },
 };
 const [fullRequestVisible, setFullRequestVisible] = createSignal(false);
@@ -1070,9 +1092,14 @@ void initializeModelSelector({
       setQuickModelDisabled(true);
     },
     ready: (models, defaultModel) => {
-      const { options, selected } = modelSelectorChoices(models, defaultModel);
+      const { options, selected, configuredDefaultIsAvailable } = modelSelectorChoices(models, defaultModel);
       setQuickModelOptions(options);
       setQuickSelectedModel(selected);
+      setTicketModelSelected(configuredDefaultIsAvailable ? selected : "");
+      setTicketModelError(configuredDefaultIsAvailable
+        ? ""
+        : `Configured default model ${defaultModel.providerId}/${defaultModel.id} is unavailable; choose an available model.`);
+      setTicketModelBusy(false);
       setQuickModelBusy(false);
       setQuickModelDisabled(false);
       setQuickModelError("");
@@ -1082,6 +1109,9 @@ void initializeModelSelector({
     error: (error) => {
       setQuickModelOptions([]);
       setQuickSelectedModel("");
+      setTicketModelSelected("");
+      setTicketModelBusy(false);
+      setTicketModelError(`Models unavailable: ${String(error)}`);
       setQuickModelBusy(false);
       setQuickModelDisabled(true);
       setQuickModelError(`Models unavailable: ${String(error)}`);

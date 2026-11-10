@@ -1,8 +1,9 @@
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
-import { ActionMenu, ActionMenuItem, Button, Icon, IconButton, Switch } from "@ui-lib";
+import { ActionMenu, ActionMenuItem, ErrorMessage, Icon, IconButton, Switch } from "@ui-lib";
 import { AppPageLayout } from "../../../components/page/AppPageLayout.jsx";
 import { OpenItemButton } from "../../../components/OpenItemButton.jsx";
 import { TicketStatusBadge } from "./TicketStatusBadge.jsx";
+import { CreateTicketIdeaModal } from "./CreateTicketIdeaModal.jsx";
 import { recordUiDiagnostic } from "../../../lib/uiDiagnostics.js";
 import { renderTicketMarkdown, splitTicketFrontmatter } from "./ticketContent.js";
 import styles from "./WorkspaceTicketViewer.module.css";
@@ -35,6 +36,9 @@ export function WorkspaceTicketViewer(props) {
   const [sort, setSort] = createSignal("status");
   const archived = () => props.archived ? props.archived() : localArchived();
   const sortLabel = () => sortOptions.find(([value]) => value === sort())?.[1] ?? "Status";
+  const selectedModelLabel = () =>
+    (props.modelOptions?.() ?? []).find((option) => option.value === props.selectedModel?.())?.label ??
+    "Choose an available model";
   const orderedTickets = createMemo(() => sortedTickets(props.tickets(), sort()));
   const selected = createMemo(() =>
     props.tickets().find((ticket) => ticket.filename === props.selectedFilename()),
@@ -57,9 +61,40 @@ export function WorkspaceTicketViewer(props) {
     >
       <section aria-label="Workspace tickets" class={styles.viewer}>
         <header class={styles.header}>
-          <Button type="button" variant="primary" onClick={props.onCreate}>Create ticket</Button>
+          <div class={styles.modelControl}>
+            <span>Default Model</span>
+            <ActionMenu
+              label={selectedModelLabel()}
+              actionsLabel="Default Model"
+              triggerVariant="compact"
+              surfaceVariant="neutral"
+              disabled={props.modelBusy?.() ?? true}
+            >
+              <Show when={!props.selectedModel?.()}>
+                <ActionMenuItem disabled>Choose an available model</ActionMenuItem>
+              </Show>
+              <For each={props.modelOptions?.() ?? []}>{(option) =>
+                <ActionMenuItem
+                  class={styles.menuOption}
+                  aria-pressed={props.selectedModel?.() === option.value}
+                  onClick={() => props.onModelChange(option.value)}
+                >
+                  {option.label}
+                  <Show when={props.selectedModel?.() === option.value}>
+                    <Icon name="check" />
+                  </Show>
+                </ActionMenuItem>
+              }</For>
+            </ActionMenu>
+          </div>
+          <CreateTicketIdeaModal
+            disabled={() => Boolean(props.modelBusy?.() || !props.selectedModel?.())}
+            onPropose={props.onProposeTicket}
+            onCreate={props.onCreateTicket}
+          />
         </header>
-        <Show when={props.error()}>{(error) => <p role="alert">{error()}</p>}</Show>
+        <ErrorMessage message={props.modelError?.()} />
+        <ErrorMessage message={props.error()} />
         <Show when={!props.loading()} fallback={<p role="status">Loading tickets…</p>}>
         <div class={styles.columns}>
           <section class={styles.listPane} aria-label="Ticket list">
@@ -94,12 +129,12 @@ export function WorkspaceTicketViewer(props) {
                 >
                   <For each={sortOptions}>{([value, label]) =>
                     <ActionMenuItem
-                      class={styles.sortOption}
+                      class={styles.menuOption}
                       aria-pressed={sort() === value}
                       onClick={() => setSort(value)}
                     >
                       {label}
-                      <Show when={sort() === value}><span aria-hidden="true">✓</span></Show>
+                      <Show when={sort() === value}><Icon name="check" /></Show>
                     </ActionMenuItem>
                   }</For>
                 </ActionMenu>
@@ -128,7 +163,7 @@ export function WorkspaceTicketViewer(props) {
                           itemName={ticket.title}
                           action="Work on"
                           title="Work on ticket"
-                          disabled={props.working?.() ?? false}
+                          disabled={Boolean(props.working?.() || props.modelBusy?.() || !props.selectedModel?.())}
                           onClick={() => { props.onSelect(ticket.filename); props.onWork?.(ticket.filename); }}
                         />
                       </Show>

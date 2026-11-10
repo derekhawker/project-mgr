@@ -26,6 +26,19 @@ without forcing horizontal page overflow.
 The browser uses the shared page masthead, `Workspace / <workspace name> / Tickets`;
 the selected ticket title appears in the reader, not in this container heading.
 
+Above the browser, show the app-wide **Default Model** control from OpenCode's
+enabled catalog. Use the shared ActionMenu for the model dropdown. If its saved
+value is unavailable, show an explicit choose-model state instead of silently
+selecting another model. The primary **Create ticket** action opens a two-step
+dialog. Its progress indicator shows connected numbered circles **1** and **2**,
+outlines the active circle, fills the other, and places one summary below:
+**Description** or **Review**. The first
+step captures an idea; the second displays an editable title and Markdown body
+with the app-managed `draft` status read-only. Cancel creates no file.
+Confirmation creates the ticket in external Workspace storage; success closes
+the dialog and selects the refreshed ticket, while failure keeps the review step
+and edits visible.
+
 Selecting a ticket establishes context but does not show the session tabs or tools.
 Activating **Work** opens or resumes its interactive session. The heading is
 `Workspace / <workspace name> / Tickets / <shortened ticket title>`; the

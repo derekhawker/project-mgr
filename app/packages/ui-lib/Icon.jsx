@@ -3,6 +3,7 @@ import styles from "./Icon.module.css";
 
 const icons = {
   chevron: "M4 6l4 4 4-4",
+  check: "M3 8.5 6.5 12 13 4",
   close: "M4 4l8 8M12 4l-8 8",
   branch:
     "M4 3v10m8-10v3a2.5 2.5 0 0 1-2.5 2.5H6.5A2.5 2.5 0 0 0 4 11m8-4a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5ZM4 15a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z",

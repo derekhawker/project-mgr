@@ -13,8 +13,8 @@
     "test:browser": "node --test test/icon-button-layout.browser.test.js test/ui-control-fonts.browser.test.js test/modal-ux.browser.test.js test/reader-layout.browser.test.js",
     "tauri:dev": "npm run dev",
     "tauri:build": "tauri build",
-    "dev:server": "vite --host 127.0.0.1 --port 1420 --strictPort",
-    "live": "tauri dev",
+    "dev:server": "vite --host 127.0.0.1 --strictPort",
+    "live": "node scripts/live.js",
     "test:all": "node --test"
   },
   "dependencies": {

@@ -17,6 +17,38 @@ the application. It is the durable reference for application behavior and
 for the boundaries between the GUI, Rust core, OpenCode, Git, SQLite, and the
 filesystem.
 
+## Workspace ticket browser and ticket creation
+
+The ticket browser shows the app-wide remembered OpenCode default used for
+ticket work. Its model list comes from OpenCode's enabled catalog. Work on a
+ticket uses the saved model only when Rust creates a new session; a valid
+recorded session is resumed without model lookup or change. If the saved model
+is no longer available, the user must select an available model.
+
+Creating a ticket uses a two-step dialog. The first step captures the user's
+idea and asks OpenCode for a proposal in the Workspace's sole verified
+repository. The request explicitly invokes the ticket-management skill's
+capture and format guidance, treats the idea as untrusted input, and requests
+JSON ticket content only. Rust creates a non-interactive OpenCode proposal
+session with tool permissions denied, submits the request through the normal
+session prompt endpoint, and collects the completed assistant text from session
+history. This avoids the generation endpoint, which returned HTTP 200 with empty
+text for the selected provider during diagnosis. Rust deletes the temporary
+session after collecting the response and validates the returned title/body
+schema. It does not attach a terminal, add an application session association,
+or write a ticket during proposal generation. Prompt content is transient and
+is not written to application logs; failures log only session and error-category
+metadata.
+
+The review step lets the user edit the title and Markdown body; `status: draft`
+is displayed read-only. Canceling creates no ticket. Confirmation rechecks the
+active regular Workspace and verified repository, derives a safe filename from
+the reviewed title, and creates a new Markdown file exclusively under the
+Workspace's canonical external ticket directory. Existing files are never
+overwritten. The dialog closes after the create command succeeds and remains
+open with the reviewed edits if creation fails; the ticket list then refreshes
+and selects the created draft.
+
 The application uses Tauri, Rust, raw HTML/CSS/JavaScript, a Rust-managed PTY,
 xterm.js, and OpenCode's shared local background server. Rust discovers the
 server from OpenCode's private service registration and starts it through the

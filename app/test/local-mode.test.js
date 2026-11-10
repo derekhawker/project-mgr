@@ -16,9 +16,9 @@ test("local entry points do not start Tauri and live is explicit without recursi
     "vite --host 127.0.0.1 --port 1420 --strictPort",
   );
   assert.equal(pkg.scripts["tauri:dev"], "npm run dev");
-  assert.equal(pkg.scripts.live, "tauri dev");
+  assert.equal(pkg.scripts.live, "node scripts/live.js");
   assert.equal(tauri.build.beforeDevCommand, "npm run dev:server");
-  assert.equal(pkg.scripts["dev:server"], pkg.scripts.dev);
+  assert.notEqual(pkg.scripts["dev:server"], pkg.scripts.dev);
   assert.equal(pkg.scripts.test, "node scripts/test-safe.js");
   assert.match(
     readFileSync(new URL("../scripts/test-safe.js", import.meta.url), "utf8"),

@@ -72,6 +72,9 @@
   left: 0;
   display: grid;
   min-width: max-content;
+  max-height: 60vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .menu[data-direction="up"] > .actions {
