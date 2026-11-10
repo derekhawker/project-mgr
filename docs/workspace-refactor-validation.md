@@ -16,10 +16,8 @@ Tauri rendering, PTY behavior, window/tray lifecycle, or OpenCode plugin loading
   **Orchestrator** outside both repos and one empty worker per repository start;
   labels and directories match the persisted associations.
 - Repeat multi-repository creation with a starting prompt. Confirm it is sent
-  only to the orchestrator. In the orchestrator TUI, invoke
-  `workspace.send_to_repository_worker` for each repo and verify admission is
-  acknowledged for the exact worker. Confirm unknown repository IDs and blank
-  prompts fail, and no worker transcript is copied into app storage.
+  only to the orchestrator. The app does not install a repository-worker
+  coordination plugin or provide an orchestrator-to-worker prompt tool.
 - Induce a setup/session-start failure and retry. Confirm the same persisted
   library, worktree, branch, and alias paths are reused without duplicates.
 

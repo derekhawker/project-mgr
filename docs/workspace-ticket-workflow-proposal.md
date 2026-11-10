@@ -7,11 +7,11 @@
 **Implementation tasks:** 1–5 approved by the user in this conversation on
 2026-11-08; task 6 is not approved for execution.
 
-1. [x] Make the `rust-main` ticket skill available in `~/.agents/skills/`.
+1. [x] Make the `rust-main` ticket skill globally available.
    **Proof:** OpenCode discovers it from a repository-rooted session.
-   **Outcome:** Installed adapted `ticket-management` and its workflow references
-   globally. OpenCode announced the skill as available in this repository-rooted
-   session on 2026-11-08; the skill is also present in the available skill catalog.
+   **Outcome:** The adapted `ticket-management` skill and workflow references are
+   maintained in `opencode/skills/ticket-management/`; the global OpenCode skill
+   entry is a symlink to that repository source.
 2. [x] Create Workspace ticket files and make them visible in the app.
    **Proof:** create a draft, restart the app, and confirm it appears with its
    Markdown status; change the file's status and confirm the list reflects it.

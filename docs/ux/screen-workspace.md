@@ -126,7 +126,7 @@ manual acceptance.
   optional starting prompt is blank.
 - Workspace sessions use persisted roles and repository associations for their
   tab labels: **Workspace** with no repositories, the repository name for each
-  worker, and **Orchestrator** for the multi-repository coordinator.
+  worker, and **Orchestrator** for multi-repository workspaces.
 - Tabs belong to the selected Workspace. Restore exact recorded OpenCode session
   IDs and working directories; do not guess from the newest session in a
   directory. Navigate to the Workspace immediately, show loading status in its

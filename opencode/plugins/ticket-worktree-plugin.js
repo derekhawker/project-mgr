@@ -1,9 +1,39 @@
-// project-mgr managed plugin. Do not edit; the application refreshes this file.
+// project-mgr managed plugin. Keep this source in the repository.
 import { Plugin } from "@opencode/plugin";
 import { spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join, win32 } from "node:path";
 
-const EXECUTABLE = __PROJECT_MGR_EXECUTABLE__;
-const APP_DATA_DIRECTORY = __PROJECT_MGR_APP_DATA__;
+const CONFIG_FILENAME = "project-mgr-ticket-worktree.json";
+
+export function runtimeConfigPath({
+  platform = process.platform,
+  env = process.env,
+  home = homedir(),
+} = {}) {
+  const pathJoin = platform === "win32" ? win32.join : join;
+  const configRoot =
+    platform === "win32"
+      ? env.APPDATA || pathJoin(home, "AppData", "Roaming")
+      : platform === "darwin"
+        ? pathJoin(home, "Library", "Application Support")
+        : env.XDG_CONFIG_HOME || pathJoin(home, ".config");
+  return pathJoin(configRoot, "opencode", "plugins", CONFIG_FILENAME);
+}
+
+function readRuntimeConfig() {
+  const config = JSON.parse(readFileSync(runtimeConfigPath(), "utf8"));
+  if (
+    config.schemaVersion !== 1 ||
+    config.managedBy !== "opencode-project-manager-ticket-plugin" ||
+    typeof config.executable !== "string" ||
+    typeof config.appDataDirectory !== "string"
+  ) {
+    throw new Error("Invalid project-mgr ticket plugin configuration");
+  }
+  return config;
+}
 
 export function observedWorktreeDirectory(result) {
   const seen = new Set();
@@ -17,7 +47,8 @@ export function observedWorktreeDirectory(result) {
     seen.add(value);
     for (const key of ["directory", "worktree", "path"]) {
       const candidate = value[key];
-      if (typeof candidate === "string" && candidate.startsWith("/")) return candidate;
+      if (typeof candidate === "string" && candidate.startsWith("/"))
+        return candidate;
     }
     for (const key of ["output", "metadata", "content", "result"]) {
       const candidate = visit(value[key], depth + 1);
@@ -35,8 +66,8 @@ export function observedWorktreeDirectory(result) {
 }
 
 export function createTicketWorktreeObserver({
-  executable = EXECUTABLE,
-  appDataDirectory = APP_DATA_DIRECTORY,
+  executable,
+  appDataDirectory,
   spawnProcess = runBridge,
 } = {}) {
   return async ({ tool }) => {
@@ -60,7 +91,9 @@ export function createTicketWorktreeObserver({
             } catch {
               // Native creation already succeeded; don't present a failed
               // observation receipt as a rollback of that external effect.
-              console.error("project-mgr could not record an observed worktree");
+              console.error(
+                "project-mgr could not record an observed worktree",
+              );
             }
           }
           return result;
@@ -76,23 +109,41 @@ export function createTicketWorktreeObserver({
 
 function runBridge(executable, args) {
   return new Promise((resolve, reject) => {
-    const child = spawn(executable, args, { shell: false, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(executable, args, {
+      shell: false,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
     let stdout = "";
     let stderr = "";
-    const limit = (current, chunk) => (current + chunk.toString()).slice(0, 4096);
-    child.stdout.on("data", (chunk) => { stdout = limit(stdout, chunk); });
-    child.stderr.on("data", (chunk) => { stderr = limit(stderr, chunk); });
+    const limit = (current, chunk) =>
+      (current + chunk.toString()).slice(0, 4096);
+    child.stdout.on("data", (chunk) => {
+      stdout = limit(stdout, chunk);
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr = limit(stderr, chunk);
+    });
     const timeout = setTimeout(() => child.kill(), 5000);
-    child.once("error", (error) => { clearTimeout(timeout); reject(error); });
+    child.once("error", (error) => {
+      clearTimeout(timeout);
+      reject(error);
+    });
     child.once("close", (code) => {
       clearTimeout(timeout);
       if (code === 0) resolve(stdout);
-      else reject(new Error(`Ticket worktree bridge exited (${code ?? "signal"}): ${stderr.slice(0, 256)}`));
+      else
+        reject(
+          new Error(
+            `Ticket worktree bridge exited (${code ?? "signal"}): ${stderr.slice(0, 256)}`,
+          ),
+        );
     });
   });
 }
 
 export default Plugin.define({
   id: "project-mgr-ticket-worktree",
-  setup: createTicketWorktreeObserver(),
+  async setup(ctx) {
+    return createTicketWorktreeObserver(readRuntimeConfig())(ctx);
+  },
 });

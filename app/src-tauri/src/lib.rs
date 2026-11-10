@@ -25,7 +25,6 @@ pub mod session_restore;
 pub mod task_setup;
 pub mod terminal;
 pub mod ticket_worktree_plugin;
-pub mod workspace_coordinator;
 pub mod workspace_setup;
 pub mod workspace_tickets;
 
@@ -2640,21 +2639,6 @@ fn workspace_create_initialized_legacy(
                 "running",
                 None,
             );
-            if repository_id.is_none() && bindings.len() > 1 {
-                if let Err(error) = workspace_coordinator::install_for_workspace(&store, &workspace)
-                {
-                    session_errors.push(format!("Configure multi-repository coordinator: {error}"));
-                    emit_workspace_setup_progress(
-                        &progress_app,
-                        &proposal_session_id,
-                        "coordinator",
-                        "Configure multi-repository coordinator",
-                        "failed",
-                        Some(&error),
-                    );
-                    continue;
-                }
-            }
             let started = if let Some(existing) = existing_sessions
                 .iter()
                 .find(|record| record.directory == directory.to_string_lossy())
