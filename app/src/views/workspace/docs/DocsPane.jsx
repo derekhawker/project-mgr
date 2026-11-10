@@ -1,9 +1,9 @@
 import { createMemo, For, Show } from "solid-js";
 import { createDocContentAdapter } from "./docContent.js";
 import { Heading } from "@ui-lib";
-import { FileTree } from "../../components/FileTree.jsx";
-import { FileNavigatorDivider } from "../../components/FileNavigatorDivider.jsx";
-import styles from "../../application/workArea.module.css";
+import { FileTree } from "../../../components/file-navigation/FileTree.jsx";
+import { FileNavigatorDivider } from "../../../components/file-navigation/FileNavigatorDivider.jsx";
+import styles from "../../../application/workArea.module.css";
 
 export function DocsPane(props) {
   const prepareContent = createDocContentAdapter(document.defaultView);

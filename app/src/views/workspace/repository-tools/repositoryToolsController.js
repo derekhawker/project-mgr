@@ -19,8 +19,8 @@ export function createRepositoryToolsController({
   setError,
   setActions,
   openRepositoryToolTerminal,
-  openWorkbenchShellTerminal,
-  launchWorkbenchOsHandoff,
+  openWorkspaceShellTerminal,
+  launchWorkspaceOsHandoff,
   installStarted,
 }) {
   async function toggleRepositoryTools() {
@@ -61,13 +61,13 @@ export function createRepositoryToolsController({
           );
           try {
             if (action === "shell") {
-              const started = await openWorkbenchShellTerminal(owner);
+              const started = await openWorkspaceShellTerminal(owner);
               if (!started)
                 throw new Error(
-                  "Terminal could not be started; see the workbench error.",
+                  "Terminal could not be started; see the workspace error.",
                 );
             } else
-              await launchWorkbenchOsHandoff(
+              await launchWorkspaceOsHandoff(
                 invoke,
                 owner.type,
                 owner.id,

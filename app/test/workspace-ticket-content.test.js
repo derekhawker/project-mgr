@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { JSDOM } from "jsdom";
-import { renderTicketMarkdown, splitTicketFrontmatter } from "../src/views/workbench/ticketContent.js";
+import { renderTicketMarkdown, splitTicketFrontmatter } from "../src/views/workspace/tickets/ticketContent.js";
 
 test("ticket reader separates formatted frontmatter and sanitizes complete Markdown", () => {
   const dom = new JSDOM("");

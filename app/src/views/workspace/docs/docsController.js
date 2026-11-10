@@ -1,4 +1,4 @@
-import { loadDocs, readDoc } from "../../services/docsUi.js";
+import { loadDocs, readDoc } from "./docsUi.js";
 
 function ownerKey(owner) {
   return owner ? `${owner.type}:${owner.id}` : null;

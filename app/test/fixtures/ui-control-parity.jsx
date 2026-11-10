@@ -2,8 +2,8 @@ import { render } from "solid-js/web";
 import { createSignal } from "solid-js";
 import { ActionMenu, ActionMenuItem, Button, Input } from "@ui-lib";
 import { AppNotice } from "../../src/application/AppNotice.jsx";
-import { NewWorkMenu } from "../../src/views/new-work/NewWorkMenu.jsx";
-import { RepositoryToolsMenu } from "../../src/views/repository-tools/RepositoryToolsMenu.jsx";
+import { NewWorkMenu } from "../../src/features/new-work/NewWorkMenu.jsx";
+import { RepositoryToolsMenu } from "../../src/views/workspace/repository-tools/RepositoryToolsMenu.jsx";
 
 function UpwardMenu() {
   const [open, setOpen] = createSignal(false);

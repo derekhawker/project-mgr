@@ -19,48 +19,48 @@ import {
   createQuickRequestSubmitHandler,
 } from "./views/quick-requests/quickRequestForm.js";
 import { createQuickRequestSelection } from "./views/quick-requests/quickRequestSelection.js";
-import { createWorkspaceNavigationController } from "./views/workbench/workspaceNavigationController.js";
-import { createPendingStartingPromptController } from "./views/workbench/pendingStartingPromptController.js";
+import { createWorkspaceNavigationController } from "./views/workspace/navigation/workspaceNavigationController.js";
+import { createPendingStartingPromptController } from "./views/workspace/sessions/pendingStartingPromptController.js";
 import {
   initializeModelSelector,
   modelSelectorChoices,
 } from "./lib/modelSelector.js";
-import { loadChangeReview, loadFullDiff } from "./services/changeReviewUi.js";
+import { loadChangeReview, loadFullDiff } from "./views/workspace/change-review/changeReviewUi.js";
 import { loadPresentationPreferences, saveFileNavigatorWidth, saveChangeReviewMode } from "./services/presentationPreferences.js";
-import { createChangeReviewController } from "./views/change-review/changeReviewController.js";
+import { createChangeReviewController } from "./views/workspace/change-review/changeReviewController.js";
 import {
   createRepositoryToolsActionForwarders,
   createRepositoryToolsController,
-} from "./views/repository-tools/repositoryToolsController.js";
-import { createDocsController } from "./views/docs/docsController.js";
-import { createDocsView } from "./views/docs/docsView.js";
+} from "./views/workspace/repository-tools/repositoryToolsController.js";
+import { createDocsController } from "./views/workspace/docs/docsController.js";
+import { createDocsView } from "./views/workspace/docs/docsView.js";
 import {
   listRepositoryTools,
-  launchWorkbenchOsHandoff,
+  launchWorkspaceOsHandoff,
 } from "./services/repoToolsUi.js";
 import { handleEnterToSubmit } from "./lib/formKeyboard.js";
 import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import { createApplicationLifetime } from "./application/applicationLifetime.js";
-import { createWorkspaceTicketCache } from "./views/workbench/workspaceTicketCache.js";
+import { createWorkspaceTicketCache } from "./views/workspace/tickets/workspaceTicketCache.js";
 import { recordUiDiagnostic } from "./lib/uiDiagnostics.js";
-import { WorkspaceTicketViewToggle } from "./views/workbench/WorkspaceTicketViewToggle.jsx";
-import { ChangeReviewPanel } from "./views/change-review/ChangeReviewPanel.jsx";
-import { DocsPane } from "./views/docs/DocsPane.jsx";
-import { RepositoryToolsMenu } from "./views/repository-tools/RepositoryToolsMenu.jsx";
-import { WorkspaceOwnerPanel } from "./views/workbench/WorkspaceOwnerPanel.jsx";
+import { WorkspaceTicketViewToggle } from "./views/workspace/navigation/WorkspaceTicketViewToggle.jsx";
+import { ChangeReviewPanel } from "./views/workspace/change-review/ChangeReviewPanel.jsx";
+import { DocsPane } from "./views/workspace/docs/DocsPane.jsx";
+import { RepositoryToolsMenu } from "./views/workspace/repository-tools/RepositoryToolsMenu.jsx";
+import { WorkspaceOwnerPanel } from "./views/workspace/sessions/WorkspaceOwnerPanel.jsx";
 import { ApplicationShellStatus } from "./application/ApplicationShellStatus.jsx";
 import { createApplicationShellView } from "./application/applicationShellView.js";
 import { AppNotice } from "./application/AppNotice.jsx";
-import { WorkbenchShell } from "./views/workbench/WorkbenchShell.jsx";
+import { WorkspaceShell } from "./views/workspace/WorkspaceShell.jsx";
 import { NoSelection } from "./application/NoSelection.jsx";
 import { RightContentShell } from "./application/RightContentShell.jsx";
 import { isBrowserFixture } from "./lib/runtimeMode.js";
 import { ApplicationRoot } from "./application/ApplicationRoot.jsx";
-import { createNewWork } from "./views/new-work/createNewWork.js";
+import { createNewWork } from "./features/new-work/createNewWork.js";
 import { createDirectories } from "./views/directories/createDirectories.js";
 import { createQuickRequests } from "./views/quick-requests/createQuickRequests.js";
-import { createWorkbenchSessions } from "./views/workbench/createWorkbenchSessions.js";
+import { createWorkspaceSessions } from "./views/workspace/sessions/createWorkspaceSessions.js";
 import { createPortsController } from "./views/ports/portsController.js";
 import { PortsPage } from "./views/ports/PortsPage.jsx";
 import { PortsNavigationButton } from "./views/ports/PortsNavigationButton.jsx";
@@ -129,7 +129,7 @@ function handleQuickRequestSubmit(event) {
   return quickRequestSubmitHandler?.(event);
 }
 
-// Workspace workbench presentation and the retained Quick Request form adapter.
+// Workspace presentation and the retained Quick Request form adapter.
 const [ownerTitle, setOwnerTitle] = createSignal("");
 const [ownerStatus, setOwnerStatus] = createSignal("");
 const [sessionStatusMessage, setSessionStatusMessage] = createSignal("");
@@ -307,14 +307,14 @@ async function workWorkspaceTicket(workspaceId, filename) {
     rememberWorkspaceSession(session);
     setTicketSessionScope(filename);
     setTicketViewerVisible(false);
-    setWorkbenchVisible(true);
+    setWorkspaceShellVisible(true);
     setSelectedOwnerVisible(true);
     await showSession(session.openCodeSessionId);
   } catch (error) {
     recordUiDiagnostic("WorkspaceTicketWork", "command-error");
     if (selectedWorkspace?.id !== workspaceId || selectedTicketFilename() !== filename) return;
     setTicketViewerVisible(true);
-    setWorkbenchVisible(false);
+    setWorkspaceShellVisible(false);
     setTicketError(formatWorkspaceError("Work on ticket", error));
   } finally {
     setTicketWorking(false);
@@ -332,7 +332,7 @@ const workspaceTicketViewerProps = {
     setSelectedTicketFilename(filename);
     setTicketSessionScope(filename);
     sessions.hide();
-    setWorkbenchVisible(false);
+    setWorkspaceShellVisible(false);
     setSelectedOwnerVisible(false);
     syncOwnerSessions({ focus: false });
     syncChangeReviewAvailability();
@@ -354,13 +354,13 @@ const workspaceTicketViewerProps = {
       if (selectedWorkspace?.id !== workspaceId) return;
       setTicketSessionScope("__ticket_creation__");
       setTicketViewerVisible(false);
-      setWorkbenchVisible(true);
+      setWorkspaceShellVisible(true);
       setSelectedOwnerVisible(true);
       rememberWorkspaceSession(session);
       await showSession(session.openCodeSessionId);
     } catch (error) {
       setTicketViewerVisible(true);
-      setWorkbenchVisible(false);
+      setWorkspaceShellVisible(false);
       setTicketError(formatWorkspaceError("Create Workspace ticket", error));
     }
   },
@@ -394,7 +394,7 @@ function clearActiveNavigationItems() {
   setWorkspaceNavigation({ data: navigationData, selected: null });
 }
 // One page-scoped session presentation, shared by all work destinations.
-const sessions = createWorkbenchSessions({
+const sessions = createWorkspaceSessions({
   invoke,
   appLifetime,
   getRuntime: () => terminalRuntime,
@@ -428,7 +428,7 @@ const [noSelectionVisible, setNoSelectionVisible] = createSignal(true);
 const [workspaceSelected, setWorkspaceSelected] = createSignal(false);
 const noSelection = () =>
   NoSelection({ visible: noSelectionVisible, workspaceSelected });
-const [workbenchVisible, setWorkbenchVisible] = createSignal(false);
+const [workspaceShellVisible, setWorkspaceShellVisible] = createSignal(false);
 // Workspace-only readers and tools use the same selected owner and terminal host.
 const [changeReviewAvailable, setChangeReviewAvailable] = createSignal(false);
 const [changeReviewSelected, setChangeReviewSelected] = createSignal(false);
@@ -439,13 +439,13 @@ const {
   buttonSelected: docsButtonSelected,
   setButtonSelected: setDocsButtonSelected,
 } = docsView;
-const workbench = () =>
-  WorkbenchShell({
-    visible: workbenchVisible,
+const workspaceShell = () =>
+  WorkspaceShell({
+    visible: workspaceShellVisible,
     workspaceName: ownerTitle,
     ticketTitle: () => ticketItems().find((ticket) => ticket.filename === selectedTicketFilename())?.title,
     onWorkspaceClick: () => {
-      setWorkbenchVisible(false);
+      setWorkspaceShellVisible(false);
       setTicketViewerVisible(true);
       setSelectedOwnerVisible(false);
       sessions.hide();
@@ -571,8 +571,8 @@ const repositoryToolsController = createRepositoryToolsController({
   setError: setRepositoryToolLoadError,
   setActions: setRepositoryToolActions,
   openRepositoryToolTerminal: sessions.openRepositoryToolTerminal,
-  openWorkbenchShellTerminal: sessions.openWorkbenchShellTerminal,
-  launchWorkbenchOsHandoff,
+  openWorkspaceShellTerminal: sessions.openWorkspaceShellTerminal,
+  launchWorkspaceOsHandoff,
   installStarted: sessions.installStarted,
 });
 let selectedOwnerRepositoryCount = 0;
@@ -690,7 +690,7 @@ const directories = createDirectories({
       setPortsVisible,
       setNoSelectionVisible,
       setSelectedOwnerVisible,
-      setWorkbenchVisible,
+      setWorkspaceShellVisible,
       setRightContentOwnerActive,
       setQuickRequestTerminalPage,
       setWorkspaceSelected,
@@ -712,7 +712,7 @@ const ports = createPortsController({
     setFullRequestVisible(false);
     setNoSelectionVisible(false);
     setSelectedOwnerVisible(false);
-    setWorkbenchVisible(false);
+    setWorkspaceShellVisible(false);
     setRightContentOwnerActive(false);
     setQuickRequestTerminalPage(false);
   },
@@ -726,7 +726,7 @@ function selectWorkspace(workspace, data = navigationData) {
   setDirectoriesVisible(false);
   setPortsVisible(false);
   setFullRequestVisible(false);
-  setWorkbenchVisible(false);
+  setWorkspaceShellVisible(false);
   setChangeReviewVisible(false);
   setChangeReviewSelected(false);
   setQuickRequestTerminalPage(false);
@@ -739,7 +739,7 @@ function selectWorkspace(workspace, data = navigationData) {
   setWorkspaceNavigation({ data, selected: workspace });
   setNoSelectionVisible(false);
   setWorkspaceSelected(true);
-  setWorkbenchVisible(false);
+  setWorkspaceShellVisible(false);
   setSelectedOwnerVisible(false);
   setTicketArchived(false);
   setSelectedTicketFilename(null);
@@ -771,7 +771,7 @@ function selectQuickRequest(task, workspace, data = navigationData, { deferResto
   setPortsVisible(false);
   setFullRequestVisible(false);
   const isQuickRequest = Boolean(task.quickRequest);
-  setWorkbenchVisible(!isQuickRequest);
+  setWorkspaceShellVisible(!isQuickRequest);
   setQuickRequestTerminalPage(isQuickRequest);
   setProposalMode(false);
   setRightContentOwnerActive(true);
@@ -787,7 +787,7 @@ function selectQuickRequest(task, workspace, data = navigationData, { deferResto
   syncRepositoryToolsAvailability();
   setNoSelectionVisible(false);
   setWorkspaceSelected(false);
-  setWorkbenchVisible(!isQuickRequest);
+  setWorkspaceShellVisible(!isQuickRequest);
   setSelectedOwnerVisible(true);
   newWork.hide();
   setOwnerTitle(task.name);
@@ -923,7 +923,7 @@ const quickRequests = createQuickRequests({
       setSelectedOwnerVisible(false);
       setNoSelectionVisible(!fullRequestVisible());
       setWorkspaceSelected(false);
-      setWorkbenchVisible(false);
+      setWorkspaceShellVisible(false);
     },
     showHistory: () => {
       clearActiveNavigationItems();
@@ -936,7 +936,7 @@ const quickRequests = createQuickRequests({
       setFullRequestVisible(true);
       setNoSelectionVisible(false);
       setSelectedOwnerVisible(false);
-      setWorkbenchVisible(false);
+      setWorkspaceShellVisible(false);
       setRightContentOwnerActive(false);
       setQuickRequestTerminalPage(false);
     },
@@ -973,11 +973,11 @@ appLifetime.mount(
       directoriesNavigationButton: directories.navigationButton,
       portsNavigationButton: () => PortsNavigationButton({ onOpen: () => void ports.open() }),
       newWorkMenu: newWork.menu,
-      workbench,
+      workspaceShell,
       rightContent,
       applicationStatus,
       appNotice,
-      newWorkDialog: newWork.dialog,
+      newWorkModal: newWork.modal,
     }),
   document.getElementById("app-root"),
 );

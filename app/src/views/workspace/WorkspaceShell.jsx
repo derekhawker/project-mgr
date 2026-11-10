@@ -1,15 +1,15 @@
 import { Icon, Tab, TabList } from "@ui-lib";
-import { AppPageLayout } from "../../components/AppPageLayout.jsx";
-import repositoryToolsStyles from "../repository-tools/RepositoryToolsMenu.module.css";
-import styles from "./WorkbenchShell.module.css";
-export function WorkbenchShell(props) {
+import { AppPageLayout } from "../../components/page/AppPageLayout.jsx";
+import repositoryToolsStyles from "./repository-tools/RepositoryToolsMenu.module.css";
+import styles from "./WorkspaceShell.module.css";
+export function WorkspaceShell(props) {
   const ticketTitle = () => props.ticketTitle?.();
   const shortenedTicketTitle = () => {
     const title = ticketTitle();
     return title && title.length > 38 ? `${title.slice(0, 35).trimEnd()}…` : title;
   };
   return (
-    <div id="workbench" hidden={!props.visible()}>
+    <div id="workspace-shell" hidden={!props.visible()}>
       <AppPageLayout
         type="Workspace"
         name={props.workspaceName?.()}

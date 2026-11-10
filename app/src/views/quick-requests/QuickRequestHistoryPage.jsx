@@ -1,6 +1,6 @@
 import { createSignal, Show } from "solid-js";
 import { Button, Checkbox, Input } from "@ui-lib";
-import { AppPageLayout } from "../../components/AppPageLayout.jsx";
+import { AppPageLayout } from "../../components/page/AppPageLayout.jsx";
 import { QuickRequestList } from "./QuickRequestList.jsx";
 import pageStyles from "./QuickRequestHistoryPage.module.css";
 import styles from "../../application/workArea.module.css";

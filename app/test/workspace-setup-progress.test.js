@@ -4,7 +4,7 @@ import {
   hideWorkspaceRepositoryIds,
   workspaceProgressPresentation,
   workspaceSetupFailureDetails,
-} from "../src/views/new-work/workspaceSetupProgress.js";
+} from "../src/features/new-work/modal/workspaceSetupProgress.js";
 
 const proposalRepositories = [
   { repositoryId: "repo-123", name: "Custom Tools" },

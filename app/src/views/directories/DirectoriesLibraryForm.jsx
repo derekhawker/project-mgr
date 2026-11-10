@@ -1,5 +1,5 @@
 import { Button, ErrorMessage, Input } from "@ui-lib";
-import { PageError } from "../../components/PageError.jsx";
+import { PageError } from "../../components/page/PageError.jsx";
 import styles from "./directories.module.css";
 
 export function DirectoriesLibraryForm(props) {

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { newWorkProgressDestination } from "../src/views/new-work/newWorkProgress.js";
+import { newWorkProgressDestination } from "../src/features/new-work/modal/newWorkProgress.js";
 
 test("progress follows the active New-work pane, not the retained proposal type", () => {
   // Back/reopen can retain a prior proposal. Capture must still own progress.

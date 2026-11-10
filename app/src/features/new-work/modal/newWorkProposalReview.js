@@ -1,7 +1,7 @@
 import {
   workspaceReviewDetails,
   workspaceStartingPrompt,
-} from "../../services/shell.js";
+} from "../../../services/shell.js";
 
 export function prepareProposalReview(
   proposal,

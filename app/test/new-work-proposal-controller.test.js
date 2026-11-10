@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createNewWorkProposalController } from "../src/views/new-work/newWorkProposalController.js";
+import { createNewWorkProposalController } from "../src/features/new-work/modal/newWorkProposalController.js";
 
 function setup(overrides = {}) {
   const calls = [];

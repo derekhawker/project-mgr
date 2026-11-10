@@ -1,6 +1,6 @@
 import { Show } from "solid-js";
-import { PageMasthead } from "../components/PageMasthead.jsx";
-import { WorkspaceTicketViewer } from "../views/workbench/WorkspaceTicketViewer.jsx";
+import { PageMasthead } from "../components/page/PageMasthead.jsx";
+import { WorkspaceTicketViewer } from "../views/workspace/tickets/WorkspaceTicketViewer.jsx";
 
 export function RightContentShell(props) {
   return (

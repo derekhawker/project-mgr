@@ -1,7 +1,7 @@
 import { Index, Show, createSignal, onCleanup, onMount } from "solid-js";
 import { Icon, IconButton } from "@ui-lib";
-import { NavigationItem } from "../../components/NavigationItem.jsx";
-import { recordUiDiagnostic } from "../../lib/uiDiagnostics.js";
+import { NavigationItem } from "../../../components/NavigationItem.jsx";
+import { recordUiDiagnostic } from "../../../lib/uiDiagnostics.js";
 import styles from "./WorkspaceNavigation.module.css";
 
 /** Reactive Workspace navigation list; selection remains owned by the app shell. */

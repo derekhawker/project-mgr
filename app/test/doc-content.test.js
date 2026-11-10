@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createDocContentAdapter } from "../src/views/docs/docContent.js";
+import { createDocContentAdapter } from "../src/views/workspace/docs/docContent.js";
 
 test("content adapter binds one window sanitizer and exposes only its result for Markdown", () => {
   // Boundary doubles only: this does not execute a sanitizer, DOM, or JSX.

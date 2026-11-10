@@ -3,7 +3,7 @@ import test from "node:test";
 import {
   ownerSessionTabState,
   restoreOwnerSessionTabs,
-} from "../src/views/workbench/sessionTabState.js";
+} from "../src/views/workspace/sessions/sessionTabState.js";
 
 const tab = (sessionId, ownerKey, selected = false) => ({
   sessionId,

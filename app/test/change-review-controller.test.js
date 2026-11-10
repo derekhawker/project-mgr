@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createChangeReviewController } from "../src/views/change-review/changeReviewController.js";
+import { createChangeReviewController } from "../src/views/workspace/change-review/changeReviewController.js";
 
 function fixture({
   workspace = { id: "w1" },

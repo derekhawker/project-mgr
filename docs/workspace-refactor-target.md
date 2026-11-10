@@ -8,7 +8,7 @@
 
 This is the accepted target contract for the Workspace refactor. It supersedes
 the current Workspace/Task behavior described in `application-workflows.md` and
-the existing New-work and workbench UX specifications until those documents
+the existing New-work and workspace screen UX specifications until those documents
 are rewritten to match this contract. The refactor plan tracks delivery order.
 
 ## Product model

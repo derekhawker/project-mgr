@@ -15,7 +15,7 @@ await writeFile(
   `
 export { render } from ${JSON.stringify(resolve(root, "node_modules/solid-js/web/dist/web.js"))};
 export { createComponent, createSignal } from ${JSON.stringify(resolve(root, "node_modules/solid-js/dist/solid.js"))};
-export { FileTree } from ${JSON.stringify(resolve(root, "src/components/FileTree.jsx"))};
+export { FileTree } from ${JSON.stringify(resolve(root, "src/components/file-navigation/FileTree.jsx"))};
 `,
 );
 await build({

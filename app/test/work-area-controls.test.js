@@ -18,9 +18,9 @@ await writeFile(
   export { render } from ${JSON.stringify(resolve(root, "node_modules/solid-js/web/dist/web.js"))};
   export { createComponent, createSignal } from ${JSON.stringify(resolve(root, "node_modules/solid-js/dist/solid.js"))};
   export { QuickRequestHistoryPage } from ${JSON.stringify(resolve(root, "src/views/quick-requests/QuickRequestHistoryPage.jsx"))};
-  export { DocsPane } from ${JSON.stringify(resolve(root, "src/views/docs/DocsPane.jsx"))};
-  export { ChangeReviewPanel } from ${JSON.stringify(resolve(root, "src/views/change-review/ChangeReviewPanel.jsx"))};
-  export { WorkspaceOwnerPanel } from ${JSON.stringify(resolve(root, "src/views/workbench/WorkspaceOwnerPanel.jsx"))};
+  export { DocsPane } from ${JSON.stringify(resolve(root, "src/views/workspace/docs/DocsPane.jsx"))};
+  export { ChangeReviewPanel } from ${JSON.stringify(resolve(root, "src/views/workspace/change-review/ChangeReviewPanel.jsx"))};
+  export { WorkspaceOwnerPanel } from ${JSON.stringify(resolve(root, "src/views/workspace/sessions/WorkspaceOwnerPanel.jsx"))};
 `,
 );
 try {

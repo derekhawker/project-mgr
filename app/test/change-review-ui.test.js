@@ -3,7 +3,7 @@ import test from "node:test";
 import {
   loadChangeReview,
   loadFullDiff,
-} from "../src/services/changeReviewUi.js";
+} from "../src/views/workspace/change-review/changeReviewUi.js";
 
 const sample = [
   {

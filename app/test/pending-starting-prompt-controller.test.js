@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createPendingStartingPromptController } from "../src/views/workbench/pendingStartingPromptController.js";
+import { createPendingStartingPromptController } from "../src/views/workspace/sessions/pendingStartingPromptController.js";
 
 function setup(
   action = { type: "workspace", sessionId: "s1" },

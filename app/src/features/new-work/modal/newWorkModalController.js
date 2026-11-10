@@ -1,13 +1,13 @@
 const acceptedTypes = new Set(["workspace", "quick_request"]);
 
-export function createNewWorkDialogController({
+export function createNewWorkModalController({
   getProposalSessionId,
   setRequestedType,
   setWorkType,
   setView,
   setPrompt,
   setCaptureError,
-  dialog,
+  modal,
   focusPrompt,
   closeProposalSession,
 }) {
@@ -20,7 +20,7 @@ export function createNewWorkDialogController({
       }
     }
     setView("closed");
-    dialog.close();
+    modal.close();
   }
   return {
     open(workType = "workspace") {
@@ -30,7 +30,7 @@ export function createNewWorkDialogController({
       setView("capture");
       setPrompt("");
       setCaptureError("");
-      if (!dialog.isOpen()) dialog.showModal();
+      if (!modal.isOpen()) modal.showModal();
       focusPrompt();
     },
     cancel,

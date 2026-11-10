@@ -27,8 +27,8 @@ the shared whole-CSS-pixel scale for the library and its consumers.
 
 ## Existing patterns to inspect
 
-- Dialog and form: `app/src/views/new-work/NewWorkDialog.jsx`.
-- Disclosure menu: `app/src/views/new-work/NewWorkMenu.jsx`; controlled tools panel: `app/src/views/repository-tools/RepositoryToolsMenu.jsx`.
-- Tabs: shared `app/packages/ui-lib/TabList.jsx`, `Tab.jsx`, and `test/tabList.test.js`; Workspace composition: `app/src/views/workbench/SessionTabList.jsx` and `WorkbenchShell.jsx`.
-- Status and errors: `app/src/application/AppNotice.jsx`, `app/src/application/CommandResult.jsx`, and `app/src/views/new-work/SetupProgressPanel.jsx`.
+- Modal and form: `app/src/features/new-work/modal/NewWorkModal.jsx`.
+- Disclosure menu: `app/src/features/new-work/NewWorkMenu.jsx`; controlled tools panel: `app/src/views/workspace/repository-tools/RepositoryToolsMenu.jsx`.
+- Tabs: shared `app/packages/ui-lib/TabList.jsx`, `Tab.jsx`, and `test/tabList.test.js`; Workspace composition: `app/src/views/workspace/SessionTabList.jsx` and `WorkspaceShell.jsx`.
+- Status and errors: `app/src/application/AppNotice.jsx`, `app/src/application/CommandResult.jsx`, and `app/src/features/new-work/modal/SetupProgressPanel.jsx`.
 - Shared UI styling and conventions: `app/packages/ui-lib/README.md`, `app/packages/ui-lib/theme.css`, and the component CSS Modules beside each primitive; import from `@ui-lib`. Vite configuration: `app/vite.config.js`; editor paths: `app/jsconfig.json`.

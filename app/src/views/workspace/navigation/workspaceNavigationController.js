@@ -1,4 +1,4 @@
-import { recordUiDiagnostic } from "../../lib/uiDiagnostics.js";
+import { recordUiDiagnostic } from "../../../lib/uiDiagnostics.js";
 
 export function createWorkspaceNavigationController({
   getSelectedWorkspace,

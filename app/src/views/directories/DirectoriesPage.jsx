@@ -1,5 +1,5 @@
 import styles from "./directories.module.css";
-import { AppPageLayout } from "../../components/AppPageLayout.jsx";
+import { AppPageLayout } from "../../components/page/AppPageLayout.jsx";
 
 export function DirectoriesPage(props) {
   return (

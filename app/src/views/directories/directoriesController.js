@@ -33,7 +33,7 @@ export function createDirectoriesController({
     setPortsVisible,
     setNoSelectionVisible,
     setSelectedOwnerVisible,
-    setWorkbenchVisible,
+    setWorkspaceShellVisible,
     setRightContentOwnerActive,
     setQuickRequestTerminalPage,
     setWorkspaceSelected,
@@ -174,7 +174,7 @@ export function createDirectoriesController({
     setDirectoriesVisible(true);
     setNoSelectionVisible(false);
     setSelectedOwnerVisible(false);
-    setWorkbenchVisible(false);
+    setWorkspaceShellVisible(false);
     setRightContentOwnerActive(false);
     setQuickRequestTerminalPage(false);
     setRepositoryError("");

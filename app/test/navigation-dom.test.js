@@ -17,9 +17,9 @@ await writeFile(
   `
   export { render } from ${JSON.stringify(resolve(root, "node_modules/solid-js/web/dist/web.js"))};
   export { createComponent, createSignal } from ${JSON.stringify(resolve(root, "node_modules/solid-js/dist/solid.js"))};
-  export { NewWorkMenu } from ${JSON.stringify(resolve(root, "src/views/new-work/NewWorkMenu.jsx"))};
-  export { WorkspaceNavigation } from ${JSON.stringify(resolve(root, "src/views/workbench/WorkspaceNavigation.jsx"))};
-  export { WorkspaceTicketViewToggle } from ${JSON.stringify(resolve(root, "src/views/workbench/WorkspaceTicketViewToggle.jsx"))};
+  export { NewWorkMenu } from ${JSON.stringify(resolve(root, "src/features/new-work/NewWorkMenu.jsx"))};
+  export { WorkspaceNavigation } from ${JSON.stringify(resolve(root, "src/views/workspace/navigation/WorkspaceNavigation.jsx"))};
+  export { WorkspaceTicketViewToggle } from ${JSON.stringify(resolve(root, "src/views/workspace/navigation/WorkspaceTicketViewToggle.jsx"))};
   export { QuickRequestList } from ${JSON.stringify(resolve(root, "src/views/quick-requests/QuickRequestList.jsx"))};
   export { DirectoriesNavigationButton } from ${JSON.stringify(resolve(root, "src/views/directories/DirectoriesNavigationButton.jsx"))};
 `,

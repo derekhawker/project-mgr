@@ -1,5 +1,5 @@
 import { For, Show } from "solid-js";
-import { TreeFolder } from "./TreeFolder.jsx";
+import { TreeFolder } from "../TreeFolder.jsx";
 import styles from "./FileTree.module.css";
 
 export function FileTreeBranch(props) {

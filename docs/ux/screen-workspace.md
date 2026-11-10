@@ -1,11 +1,11 @@
-# Workspace Workbench
+# Workspace screen
 
 > **Workspace-only refactor in progress:** Workspace is the sole regular work
 > record. Legacy Task metadata is retained internally for compatibility, but
 > archived records are not listed or restored in the UI. See
 > [`../workspace-refactor-target.md`](../workspace-refactor-target.md).
 
-## Ticket browser and Workbench
+## Ticket browser and workspace
 
 Selecting a Workspace opens its ticket browser. The browser presents a compact,
 sortable list beside a separate selected-ticket reader. Each row starts with a
@@ -26,7 +26,7 @@ without forcing horizontal page overflow.
 The browser uses the shared page masthead, `Workspace / <workspace name> / Tickets`;
 the selected ticket title appears in the reader, not in this container heading.
 
-Selecting a ticket establishes context but does not show Workbench tabs/tools.
+Selecting a ticket establishes context but does not show the session tabs or tools.
 Activating **Work** opens or resumes its interactive session. The heading is
 `Workspace / <workspace name> / Tickets / <shortened ticket title>`; the
 workspace name is a button that returns to the ticket list without closing the
@@ -34,7 +34,7 @@ session.
 
 ## Purpose and layout
 
-The workbench is the main application surface for a Workspace and its
+The workspace screen is the main application surface for a Workspace and its
 Workspace-owned interactive sessions. The persistent left navigation lists
 Workspaces directly; legacy Task rows are not shown as work destinations.
 Quick Requests remain a separate tracked flow above the Workspace list.
@@ -48,7 +48,7 @@ terminal. The terminal viewport reaches the work-area edges without an extra
 title strip or inset padding. C64-inspired color is reserved for navigation selection
 and focused controls. It remains the primary work area without an app transcript
 or persistent status panel.
-The post-Work ticket Workbench has no Workspace options collapsible or its
+The ticket workspace after Work has no Workspace options collapsible or its
 controls. Clear the workspace-loading status after the terminal opens.
 
 The navigation is a quiet gray rail with a subtle divider. Quick Requests and
@@ -165,7 +165,7 @@ Workspace tabs, repository controls, or Workspace lifecycle actions.
 ## Compatibility boundary
 
 Legacy Task records and backend commands remain during the staged refactor, but
-the regular workbench does not select or operate on those records. Their
+the regular workspace screen does not select or operate on those records. Their
 legacy-data compatibility behavior is specified in
 [`../workspace-refactor-target.md`](../workspace-refactor-target.md) and is
 deferred to the final migration stage.

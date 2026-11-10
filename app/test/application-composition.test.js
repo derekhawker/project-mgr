@@ -152,7 +152,7 @@ test("application areas compose once and retain terminals across navigation and 
       () => $("#workspace-list").getAttribute("aria-busy") === "false",
     );
 
-    assert.equal($("#workbench").hidden, true);
+    assert.equal($("#workspace-shell").hidden, true);
     $("#workspace-list button").click();
     await waitFor(() => window.document.querySelector('[aria-label="Tickets"] button'));
     assert.equal(window.document.getElementById("terminal-session-fixture-workspace"), null);
@@ -163,7 +163,7 @@ test("application areas compose once and retain terminals across navigation and 
     );
     const host = $("#terminal-views");
     const workspaceTerminal = $("#terminal-session-fixture-workspace");
-    const workspaceHeading = $("#workbench h1");
+    const workspaceHeading = $("#workspace-shell h1");
     assert.deepEqual(
       [...workspaceHeading.children]
         .slice(0, 3)
@@ -202,8 +202,8 @@ test("application areas compose once and retain terminals across navigation and 
     $("#show-docs").click();
     await waitFor(() => !$("#docs-page").hidden && !$("#show-docs").disabled);
     assert.equal($("#show-docs").getAttribute("aria-selected"), "true");
-    assert.equal($("#workbench").hidden, false);
-    assert.equal($("#workbench h1"), workspaceHeading);
+    assert.equal($("#workspace-shell").hidden, false);
+    assert.equal($("#workspace-shell h1"), workspaceHeading);
     assert.equal(window.document.activeElement, $("#show-docs"));
     assert.equal(toolTab.getAttribute("aria-selected"), "false");
     assert.equal($("#terminal-views"), host);
@@ -256,7 +256,7 @@ test("application areas compose once and retain terminals across navigation and 
 
     $("#show-directories").click();
     await waitFor(() => !$("#directories-page").hidden);
-    assert.equal($("#workbench").hidden, true);
+    assert.equal($("#workspace-shell").hidden, true);
     assert.equal($("#terminal-views"), host);
     $("#workspace-list button").click();
     await waitFor(() => window.document.querySelector('[aria-label="Tickets"] button'));
@@ -276,7 +276,7 @@ test("application areas compose once and retain terminals across navigation and 
       window.document.getElementById("terminal-session-fixture-quick-seeded"),
     );
     const quickTerminal = $("#terminal-session-fixture-quick-seeded");
-    assert.equal($("#workbench").hidden, true);
+    assert.equal($("#workspace-shell").hidden, true);
     assert.deepEqual(
       [...$("#quick-request-title").children]
         .slice(0, 3)
@@ -291,7 +291,7 @@ test("application areas compose once and retain terminals across navigation and 
     $('[data-new-work-type="quick_request"]').click();
     input("#new-work-prompt", "Cancelled fixture prompt");
     $("#new-work-cancel").click();
-    assert.equal($("#new-work-dialog").open, false);
+    assert.equal($("#new-work-modal").open, false);
     assert.equal(quickTerminal.isConnected, true);
 
     $('[data-new-work-type="quick_request"]').click();
@@ -322,7 +322,7 @@ test("application areas compose once and retain terminals across navigation and 
     assert.equal($("#quick-request-original").textContent, originalPrompt);
     assert.equal($("#proposal-create").disabled, false);
     $("#proposal-create").click();
-    await waitFor(() => !$("#new-work-dialog").open);
+    await waitFor(() => !$("#new-work-modal").open);
     assert.equal(globalThis.__quickRequestCreateCalls, 2);
     assert.equal(globalThis.__quickRequestCreatePrompts[1], originalPrompt);
     assert.match(
@@ -333,7 +333,7 @@ test("application areas compose once and retain terminals across navigation and 
     await waitFor(() => !$("#quick-request-full-list").hidden);
 
     $('[data-new-work-type="workspace"]').click();
-    assert.equal($("#new-work-dialog").open, true);
+    assert.equal($("#new-work-modal").open, true);
     assert.equal($("#quick-request-full-list").hidden, false);
     input("#new-work-prompt", "Create a fixture workspace");
     $("#new-work-capture").dispatchEvent(
@@ -344,10 +344,10 @@ test("application areas compose once and retain terminals across navigation and 
     await waitFor(() => !$("#proposal-model").disabled);
     input("#workspace-review-name", "Composition Workspace");
     $("#proposal-create").click();
-    await waitFor(() => !$("#new-work-dialog").open);
+    await waitFor(() => !$("#new-work-modal").open);
     assert.match($("#workspace-list").textContent, /Composition Workspace/);
-    assert.equal($("#workbench").hidden, true);
-    assert.equal($("#workbench h1"), workspaceHeading);
+    assert.equal($("#workspace-shell").hidden, true);
+    assert.equal($("#workspace-shell h1"), workspaceHeading);
     assert.equal(
       workspaceHeading.children[2].textContent,
       "Composition Workspace",

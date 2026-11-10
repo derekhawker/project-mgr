@@ -185,8 +185,9 @@ directly under `src/`:
 | Directory | Owns |
 |---|---|
 | `application/` | Application root, shell/status/empty-state components, lifetime, and shared shell styles |
-| `views/<area>/` | Screen components, local controllers, presentation state, helpers, and CSS Modules |
-| `components/` | Reusable application-specific controls such as `DeleteButton` and `PageError` |
+| `views/<area>/` | Destinations and their nested features, local controllers, presentation state, helpers, and CSS Modules |
+| `features/` | Cross-destination features such as the New Work menu and modal |
+| `components/` | Reusable application-specific controls, grouped page layouts, and file navigation |
 | `services/` | Tauri command contract, manifest, and command adapters |
 | `terminal/` | xterm runtime, terminal protocol, and stable surface registry |
 | `fixtures/` | In-memory browser command fixture |
@@ -211,11 +212,15 @@ Component-owned tab interaction and accessibility tests live under
 application test command includes that workspace suite. Screen tests retain
 only application wiring and terminal-preservation scenarios.
 
-View areas are `new-work`, `directories`, `quick-requests`, `workbench`, `docs`,
-`change-review`, and `repository-tools`. Keep each area's components and helpers
-together rather than creating parallel global component/controller directories.
+Top-level view areas are `directories`, `ports`, `quick-requests`, and `workspace`.
+New Work is a cross-destination feature in `features/new-work/`, with its modal
+under `modal/`. Workspace navigation, tickets, sessions, Docs, Change Review,
+and Repository Tools each have a folder under `views/workspace/`. The Docs and
+Change Review command adapters live with their respective features.
+Keep feature-local components with their owner rather than treating every
+component as a destination or creating parallel global component/controller directories.
 The `createNewWork.js`, `createDirectories.js`, `createQuickRequests.js`, and
-`createWorkbenchSessions.js` modules return named views/actions to compose under
+`createWorkspaceSessions.js` modules return named views/actions to compose under
 `ApplicationRoot`; no feature mounts a separate DOM root. Cross-area dependencies
 remain explicit callbacks, and the catalog stays local rather than on `window`.
 Rust still owns validation, durable state, Git, and processes.

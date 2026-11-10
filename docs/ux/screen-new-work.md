@@ -37,7 +37,7 @@ directory selector; Back returns focus to Original prompt and resets body
 scroll. Tab and Shift+Tab stay within the dialog's visible enabled controls.
 Closing returns focus to the New work menu trigger.
 
-Keep the surrounding workbench gray. The New-work popup may use a concentrated
+Keep the surrounding workspace screen gray. The New-work popup may use a concentrated
 C64-inspired blue/lavender surface, with readable light labels, dark text fields,
 and a distinct primary action. Back and Cancel remain secondary.
 The modal animates on opening unless the user prefers reduced motion.

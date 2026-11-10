@@ -4,8 +4,8 @@ import {
   listRepositoryTools,
   repoToolTerminalCommand,
   startRepositoryTool,
-  startWorkbenchShell,
-  launchWorkbenchOsHandoff,
+  startWorkspaceShell,
+  launchWorkspaceOsHandoff,
 } from "../src/services/repoToolsUi.js";
 
 const groups = [
@@ -100,14 +100,14 @@ test("Workbench handoff commands send owner identity and strictly validate their
     return null;
   };
   assert.deepEqual(
-    await startWorkbenchShell(invoke, "workspace", "workspace-1"),
+    await startWorkspaceShell(invoke, "workspace", "workspace-1"),
     {
       terminalId: "workbench-shell-1",
       label: "Terminal",
       directory: "/workspace",
     },
   );
-  await launchWorkbenchOsHandoff(invoke, "task", "task-1", "idea");
+  await launchWorkspaceOsHandoff(invoke, "task", "task-1", "idea");
   assert.deepEqual(calls, [
     {
       name: "workbench_shell_terminal_start",
@@ -122,7 +122,7 @@ test("Workbench handoff commands send owner identity and strictly validate their
   ]);
   await assert.rejects(
     () =>
-      launchWorkbenchOsHandoff(
+      launchWorkspaceOsHandoff(
         async () => ({ unexpected: true }),
         "workspace",
         "workspace-1",

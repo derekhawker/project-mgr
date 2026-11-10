@@ -2,21 +2,21 @@ import { createEffect, For, Show } from "solid-js";
 import { Button, Collapsible, Input, Modal, Select, TextArea } from "@ui-lib";
 import { SetupProgressPanel } from "./SetupProgressPanel.jsx";
 import { newWorkProgressDestination } from "./newWorkProgress.js";
-import styles from "./NewWorkDialog.module.css";
+import styles from "./NewWorkModal.module.css";
 
-export function NewWorkDialog(props) {
-  let dialog;
+export function NewWorkModal(props) {
+  let modal;
   createEffect(() => {
     const review = props.reviewVisible();
     queueMicrotask(() => {
-      if (!dialog?.open) return;
-      dialog.querySelector("[data-modal-body]").scrollTop = 0;
+      if (!modal?.open) return;
+      modal.querySelector("[data-modal-body]").scrollTop = 0;
       const selector = review
         ? props.proposal().workType === "workspace"
           ? "#workspace-review-name"
           : "#quick-request-directory"
         : "#new-work-prompt";
-      dialog.querySelector(selector)?.focus({ preventScroll: true });
+      modal.querySelector(selector)?.focus({ preventScroll: true });
     });
   });
   const proposal = () => props.proposal();
@@ -40,10 +40,10 @@ export function NewWorkDialog(props) {
         ];
   return (
     <Modal
-      id="new-work-dialog"
+      id="new-work-modal"
       ref={(element) => {
-        dialog = element;
-        props.setDialog(element);
+        modal = element;
+        props.setModal(element);
       }}
       title={props.reviewVisible() ? proposal().title : labels()[2]}
       titleId={props.reviewVisible() ? "proposal-title" : "new-work-title"}
@@ -99,7 +99,7 @@ export function NewWorkDialog(props) {
         </>
       }
     >
-      <div id="new-work-dialog-content" class={styles.content}>
+      <div id="new-work-modal-content" class={styles.content}>
         <section
           id="new-work"
           hidden={!props.captureVisible()}
