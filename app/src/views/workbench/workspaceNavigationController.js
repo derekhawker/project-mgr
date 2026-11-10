@@ -1,3 +1,5 @@
+import { recordUiDiagnostic } from "../../lib/uiDiagnostics.js";
+
 export function createWorkspaceNavigationController({
   getSelectedWorkspace,
   getSelectedQuickRequest,
@@ -11,6 +13,7 @@ export function createWorkspaceNavigationController({
   syncChangeReviewAvailability,
 }) {
   function renderNavigation(data) {
+    recordUiDiagnostic("WorkspaceNavigation", "data-update");
     setNavigationData(data);
     const selectedWorkspace = getSelectedWorkspace();
     const selectedQuickRequest = getSelectedQuickRequest();

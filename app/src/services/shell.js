@@ -721,7 +721,19 @@ export function softDeleteRepositories(invoke, repositoryIds) {
 }
 
 export function formatWorkspaceError(action, error) {
-  return `${action} failed: ${String(error)}`;
+  let detail = String(error);
+  if (error && typeof error === "object" && !(error instanceof Error)) {
+    if (typeof error.message === "string" && error.message.length > 0) {
+      detail = error.message;
+    } else {
+      try {
+        detail = JSON.stringify(error) || detail;
+      } catch {
+        // Keep the fallback string for non-serializable bridge errors.
+      }
+    }
+  }
+  return `${action} failed: ${detail}`;
 }
 
 export function attachRepository(invoke, workspaceId, repositoryId) {

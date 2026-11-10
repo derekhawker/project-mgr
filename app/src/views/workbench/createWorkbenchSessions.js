@@ -1,4 +1,5 @@
 import { createSignal } from "solid-js";
+import { recordUiDiagnostic } from "../../lib/uiDiagnostics.js";
 import { invokeCommand } from "../../services/commandContract.js";
 import { SessionTabList } from "./SessionTabList.jsx";
 import { PendingInputList } from "./PendingInputList.jsx";
@@ -327,6 +328,7 @@ export function createWorkbenchSessions({
 
   async function restoreTrackedOwnerSession(owner) {
     const ownerKey = `${owner.type}:${owner.id}`;
+    recordUiDiagnostic("OwnerSessionRestore", "start");
     const loadingMessage =
       owner.type === "workspace"
         ? "Loading workspace…"
@@ -344,12 +346,16 @@ export function createWorkbenchSessions({
         showSession,
       });
     } catch (error) {
-      if (selectedOwnerKey() === ownerKey)
+      if (selectedOwnerKey() === ownerKey) {
+        recordUiDiagnostic("OwnerSessionRestore", "error");
         setOwnerStatus(formatWorkspaceError("Restore tracked session", error));
+      }
       return;
     }
-    if (selectedOwnerKey() === ownerKey && ownerStatus() === loadingMessage)
+    if (selectedOwnerKey() === ownerKey && ownerStatus() === loadingMessage) {
+      recordUiDiagnostic("OwnerSessionRestore", "complete");
       setOwnerStatus("");
+    }
   }
 
   async function forgetSession(

@@ -42,9 +42,9 @@ import { handleEnterToSubmit } from "./lib/formKeyboard.js";
 import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import { createApplicationLifetime } from "./application/applicationLifetime.js";
-import { WorkspaceNavigation } from "./views/workbench/WorkspaceNavigation.jsx";
+import { createWorkspaceTicketCache } from "./views/workbench/workspaceTicketCache.js";
+import { recordUiDiagnostic } from "./lib/uiDiagnostics.js";
 import { WorkspaceTicketViewToggle } from "./views/workbench/WorkspaceTicketViewToggle.jsx";
-import { WorkspaceTicketViewer } from "./views/workbench/WorkspaceTicketViewer.jsx";
 import { ChangeReviewPanel } from "./views/change-review/ChangeReviewPanel.jsx";
 import { DocsPane } from "./views/docs/DocsPane.jsx";
 import { RepositoryToolsMenu } from "./views/repository-tools/RepositoryToolsMenu.jsx";
@@ -104,7 +104,8 @@ const rightContent = () =>
     directoriesPage: directories.page,
     portsPage: () => PortsPage(ports),
     noSelection,
-    ticketViewer: workspaceTicketViewer,
+    ticketViewerVisible,
+    ticketViewerProps: workspaceTicketViewerProps,
     docsPane,
     workspaceOwnerPanel,
   });
@@ -229,18 +230,62 @@ const [selectedTicketFilename, setSelectedTicketFilename] = createSignal(null);
 const [ticketSessionScope, setTicketSessionScope] = createSignal(null);
 const [ticketArchived, setTicketArchived] = createSignal(false);
 const [workspaceTicketView, setWorkspaceTicketView] = createSignal("grouped");
+const workspaceTicketCache = createWorkspaceTicketCache(
+  async (workspaceId, archived) => {
+    recordUiDiagnostic("WorkspaceTicketList", "load-start");
+    try {
+      const tickets = await listWorkspaceTickets(invoke, workspaceId, archived);
+      recordUiDiagnostic("WorkspaceTicketList", "load-success");
+      return tickets;
+    } catch (error) {
+      recordUiDiagnostic("WorkspaceTicketList", "load-error");
+      throw error;
+    }
+  },
+  (workspaceId, archived, tickets) => {
+    if (selectedWorkspace?.id === workspaceId && ticketArchived() === archived) {
+      setTicketItems(tickets);
+      setTicketLoading(false);
+      setTicketError("");
+    }
+  },
+);
+function showCachedTicketList(archived = ticketArchived()) {
+  const workspaceId = selectedWorkspace?.id;
+  if (!workspaceId) return;
+  const tickets = workspaceTicketCache.get(workspaceId, archived);
+  setTicketError("");
+  if (tickets) {
+    setTicketItems(tickets);
+    setTicketLoading(false);
+  } else {
+    setTicketItems([]);
+    setTicketLoading(true);
+  }
+}
+async function preloadWorkspaceTicketLists(workspaces) {
+  const results = await workspaceTicketCache.preload(workspaces);
+  showCachedTicketList(ticketArchived());
+  const failed = results.find(
+    (result) => result.error && result.workspaceId === selectedWorkspace?.id && result.archived === ticketArchived(),
+  );
+  if (failed) {
+    setTicketLoading(false);
+    setTicketError(formatWorkspaceError("Load Workspace tickets", failed.error));
+  }
+}
 async function refreshTicketList(archived = ticketArchived()) {
   const workspaceId = selectedWorkspace?.id;
   if (!workspaceId) return;
   setTicketLoading(true);
   setTicketError("");
   try {
-    const tickets = await listWorkspaceTickets(invoke, workspaceId, archived);
-    if (selectedWorkspace?.id === workspaceId && ticketArchived() === archived) setTicketItems(tickets);
+    await workspaceTicketCache.load(workspaceId, archived, { force: true });
   } catch (error) {
-    setTicketError(String(error));
-  } finally {
-    setTicketLoading(false);
+    if (selectedWorkspace?.id === workspaceId && ticketArchived() === archived) {
+      setTicketError(formatWorkspaceError("Load Workspace tickets", error));
+      setTicketLoading(false);
+    }
   }
 }
 async function workWorkspaceTicket(workspaceId, filename) {
@@ -249,29 +294,33 @@ async function workWorkspaceTicket(workspaceId, filename) {
     (item) => item.id === workspaceId && item.kind === "regular" && item.status === "active",
   );
   if (!workspace) return;
-  if (selectedWorkspace?.id !== workspaceId) selectWorkspace(workspace, navigationData);
+  if (selectedWorkspace?.id !== workspaceId)
+    selectWorkspace(workspace, navigationData);
   setSelectedTicketFilename(filename);
   setTicketWorking(true);
   setTicketError("");
   try {
+    recordUiDiagnostic("WorkspaceTicketWork", "command-start");
     const session = await workOnWorkspaceTicket(invoke, workspaceId, filename);
-    await refreshNavigation();
+    recordUiDiagnostic("WorkspaceTicketWork", "command-success");
     if (selectedWorkspace?.id !== workspaceId || selectedTicketFilename() !== filename) return;
+    rememberWorkspaceSession(session);
     setTicketSessionScope(filename);
     setTicketViewerVisible(false);
     setWorkbenchVisible(true);
     setSelectedOwnerVisible(true);
     await showSession(session.openCodeSessionId);
   } catch (error) {
+    recordUiDiagnostic("WorkspaceTicketWork", "command-error");
     if (selectedWorkspace?.id !== workspaceId || selectedTicketFilename() !== filename) return;
     setTicketViewerVisible(true);
     setWorkbenchVisible(false);
-    setTicketError(String(error));
+    setTicketError(formatWorkspaceError("Work on ticket", error));
   } finally {
     setTicketWorking(false);
   }
 }
-const workspaceTicketViewer = () => ticketViewerVisible() && WorkspaceTicketViewer({
+const workspaceTicketViewerProps = {
   workspaceName: ownerTitle,
   tickets: ticketItems,
   selectedFilename: selectedTicketFilename,
@@ -291,7 +340,7 @@ const workspaceTicketViewer = () => ticketViewerVisible() && WorkspaceTicketView
     if (filename && !ticketArchived()) void refreshDocsAvailability();
     else setSelectedOwnerVisible(false);
   },
-  onArchiveChange: (archived) => { setTicketArchived(archived); void refreshTicketList(archived); },
+  onArchiveChange: (archived) => { setTicketArchived(archived); showCachedTicketList(archived); },
   onRefresh: () => void refreshTicketList(),
   onWork: (filename) => workWorkspaceTicket(selectedWorkspace?.id, filename),
   onCreate: async () => {
@@ -307,11 +356,15 @@ const workspaceTicketViewer = () => ticketViewerVisible() && WorkspaceTicketView
       setTicketViewerVisible(false);
       setWorkbenchVisible(true);
       setSelectedOwnerVisible(true);
-      await refreshNavigation();
+      rememberWorkspaceSession(session);
       await showSession(session.openCodeSessionId);
-    } catch (error) { setTicketViewerVisible(true); setWorkbenchVisible(false); setTicketError(String(error)); }
+    } catch (error) {
+      setTicketViewerVisible(true);
+      setWorkbenchVisible(false);
+      setTicketError(formatWorkspaceError("Create Workspace ticket", error));
+    }
   },
-});
+};
 const [fullRequestVisible, setFullRequestVisible] = createSignal(false);
 const [workspaceNavigation, setWorkspaceNavigation] = createSignal({
   data: navigationData,
@@ -323,18 +376,17 @@ const workspaceViewToggle = () =>
     onToggle: () => setWorkspaceTicketView(workspaceTicketView() === "grouped" ? "flat" : "grouped"),
   });
 const [navigationBusy, setNavigationBusy] = createSignal(true);
-const workspaceNavigationView = () =>
-  WorkspaceNavigation({
-    data: () => workspaceNavigation().data,
-    selected: () => workspaceNavigation().selected,
-    busy: navigationBusy,
-    viewMode: workspaceTicketView,
-    onSelect: (workspace) => selectWorkspace(workspace, navigationData),
-    onWork: (workspace, filename) => workWorkspaceTicket(workspace.id, filename),
-    isTicketCurrent: (workspace, ticket) =>
-      selectedWorkspace?.id === workspace.id &&
-      selectedTicketFilename() === ticket.filename,
-  });
+const workspaceNavigationProps = {
+  data: () => workspaceNavigation().data,
+  selected: () => workspaceNavigation().selected,
+  busy: navigationBusy,
+  viewMode: workspaceTicketView,
+  onSelect: (workspace) => selectWorkspace(workspace, navigationData),
+  onWork: (workspace, filename) => workWorkspaceTicket(workspace.id, filename),
+  isTicketCurrent: (workspace, ticket) =>
+    selectedWorkspace?.id === workspace.id &&
+    selectedTicketFilename() === ticket.filename,
+};
 
 function clearActiveNavigationItems() {
   setSelectedQuickRequest(null);
@@ -534,6 +586,7 @@ const changeReviewController = createChangeReviewController({
   loadChangeReview,
   getSelectedWorkspace: () => selectedWorkspace,
   getSelectedOwnerRepositoryCount: () => selectedTicketFilename() && !ticketArchived() ? selectedOwnerRepositoryCount : 0,
+  isTicketViewerVisible: ticketViewerVisible,
   getSelectedQuickRequest: selectedQuickRequest,
   getRepositoryToolsOwner: repositoryToolsOwner,
   syncRepositoryToolsAvailability,
@@ -674,10 +727,13 @@ function selectWorkspace(workspace, data = navigationData) {
   setPortsVisible(false);
   setFullRequestVisible(false);
   setWorkbenchVisible(false);
+  setChangeReviewVisible(false);
+  setChangeReviewSelected(false);
   setQuickRequestTerminalPage(false);
   setProposalMode(false);
   setRightContentOwnerActive(true);
   selectedWorkspace = workspace;
+  recordUiDiagnostic("WorkspaceNavigation", "workspace-selected");
   setSelectedQuickRequest(null);
   setSelectedTicketFilename(null);
   setWorkspaceNavigation({ data, selected: workspace });
@@ -689,10 +745,10 @@ function selectWorkspace(workspace, data = navigationData) {
   setSelectedTicketFilename(null);
   setTicketSessionScope(null);
   setTicketViewerVisible(true);
-  void refreshTicketList(false);
+  showCachedTicketList(false);
   newWork.hide();
   setOwnerTitle(workspace.name);
-  setOwnerStatus("Loading workspace…");
+  setOwnerStatus("");
   sessions.hide();
   setTimeout(() => {
     if (selectedWorkspace?.id !== workspace.id || selectedQuickRequest())
@@ -705,9 +761,6 @@ function selectWorkspace(workspace, data = navigationData) {
     syncChangeReviewAvailability();
     syncRepositoryToolsAvailability();
     renderNavigation(data);
-    syncOwnerSessions();
-    syncPendingPrompt();
-    if (!selectedTicketFilename()) setSelectedOwnerVisible(false);
   }, 0);
 }
 
@@ -724,6 +777,7 @@ function selectQuickRequest(task, workspace, data = navigationData, { deferResto
   setRightContentOwnerActive(true);
   setOwnerStatus("");
   selectedWorkspace = workspace;
+  recordUiDiagnostic("WorkspaceNavigation", "quick-request-selected");
   setSelectedQuickRequest(task);
   setSelectedTicketFilename(null);
   setWorkspaceNavigation({ data, selected: null });
@@ -743,10 +797,61 @@ function selectQuickRequest(task, workspace, data = navigationData, { deferResto
   if (!isQuickRequest) void refreshDocsAvailability();
   if (!deferRestore) void restoreTrackedOwnerSession({ type: "task", id: task.id });
 }
-async function refreshNavigation() {
-  const data = await loadWorkspaceNavigation(invoke);
-  renderNavigation(data);
+let navigationRefreshInFlight = null;
+let navigationRefreshQueued = false;
+async function runNavigationRefresh() {
+  let data;
+  do {
+    navigationRefreshQueued = false;
+    data = await loadWorkspaceNavigation(invoke);
+    recordUiDiagnostic("WorkspaceNavigation", "command-response");
+    renderNavigation(data);
+    void preloadWorkspaceTicketLists(data.workspaces);
+  } while (navigationRefreshQueued);
   return data;
+}
+function refreshNavigation() {
+  recordUiDiagnostic("WorkspaceNavigation", "refresh-request");
+  if (navigationRefreshInFlight) {
+    recordUiDiagnostic("WorkspaceNavigation", "refresh-coalesced");
+    navigationRefreshQueued = true;
+    return navigationRefreshInFlight;
+  }
+  const request = runNavigationRefresh();
+  navigationRefreshInFlight = request;
+  const clearInFlight = () => {
+    if (navigationRefreshInFlight === request) navigationRefreshInFlight = null;
+  };
+  void request.then(clearInFlight, clearInFlight);
+  return request;
+}
+function rememberWorkspaceSession(session) {
+  const sessionId = session?.openCodeSessionId;
+  if (!sessionId) return;
+  const sessions = (navigationData.sessions || []).filter(
+    (item) => item.openCodeSessionId !== sessionId,
+  );
+  navigationData = { ...navigationData, sessions: [...sessions, session] };
+  renderNavigation(navigationData);
+}
+let ticketChangeRefreshTimer = null;
+let lastTicketRefreshAt = 0;
+function handleWorkspaceTicketChange() {
+  recordUiDiagnostic("WorkspaceNavigation", "ticket-change-event");
+  if (ticketChangeRefreshTimer !== null) return;
+  const delay = Math.max(250, 1000 - (Date.now() - lastTicketRefreshAt));
+  ticketChangeRefreshTimer = setTimeout(() => {
+    ticketChangeRefreshTimer = null;
+    lastTicketRefreshAt = Date.now();
+    recordUiDiagnostic("WorkspaceNavigation", "ticket-refresh-start");
+    // Invalidate once per coalesced filesystem burst, not once per raw watcher
+    // notification. Invalidating in the event handler can stale every in-flight
+    // ticket fetch before it has a chance to populate the cache.
+    workspaceTicketCache.invalidate();
+    void refreshNavigation().catch((error) =>
+      setAppNotice(formatWorkspaceError("Workspace ticket refresh", error)),
+    );
+  }, delay);
 }
 // New Work owns capture/review state; the application connects its outcomes to
 // shared navigation and the page-scoped terminal presentation.
@@ -863,7 +968,7 @@ appLifetime.mount(
     ApplicationRoot({
       quickRequestHistoryButton: quickRequests.historyButton,
       quickRequestList: quickRequests.recentList,
-      workspaceNavigation: workspaceNavigationView,
+      workspaceNavigation: workspaceNavigationProps,
       workspaceViewToggle,
       directoriesNavigationButton: directories.navigationButton,
       portsNavigationButton: () => PortsNavigationButton({ onOpen: () => void ports.open() }),
@@ -891,11 +996,7 @@ export const terminalRuntime = appLifetime
     subscriptions: [
       [
         "workspace-tickets-changed",
-        () => {
-          void refreshNavigation().catch((error) =>
-            setAppNotice(`Workspace ticket refresh failed: ${error}`),
-          );
-        },
+        handleWorkspaceTicketChange,
       ],
       [
         "workspace-setup-progress",

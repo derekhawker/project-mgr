@@ -117,6 +117,7 @@ export function createQuickRequestHistoryController(deps) {
   }
 
   async function showQuickRequestList() {
+    setOwnerStatus?.("");
     await refreshRequests(true);
     showHistoryDestination();
   }

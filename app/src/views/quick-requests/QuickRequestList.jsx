@@ -1,4 +1,4 @@
-import { For, Show } from "solid-js";
+import { Index, Show } from "solid-js";
 import { Button, Checkbox, Icon, IconButton } from "@ui-lib";
 import { DeleteButton } from "../../components/DeleteButton.jsx";
 import { NavigationItem } from "../../components/NavigationItem.jsx";
@@ -15,9 +15,9 @@ export function QuickRequestList(props) {
       : "-";
   return (
     <Show when={records().length > 0} fallback={null}>
-      <For each={records()}>
+      <Index each={records()}>
         {(record) => {
-          const prompt = () => record.prompt ?? "Prompt unavailable";
+          const prompt = () => record().prompt ?? "Prompt unavailable";
           return (
             <li
               classList={{
@@ -27,9 +27,9 @@ export function QuickRequestList(props) {
             >
               <Show when={!props.history()}>
                 <NavigationItem
-                  current={props.selectedId() === record.task.id}
+                  current={props.selectedId() === record().task.id}
                   title={prompt()}
-                  onClick={() => props.onOpen(record)}
+                  onClick={() => props.onOpen(record())}
                 >
                   <span class={styles.navigationPrompt}>{prompt()}</span>
                 </NavigationItem>
@@ -38,8 +38,8 @@ export function QuickRequestList(props) {
                 <label class={styles.select}>
                   <Checkbox
                     aria-label={`Select Quick Request for deletion: ${prompt()}`}
-                    checked={props.selectedDeleteIds().has(record.task.id)}
-                    onChange={() => props.onToggleDelete(record.task.id)}
+                    checked={props.selectedDeleteIds().has(record().task.id)}
+                    onChange={() => props.onToggleDelete(record().task.id)}
                   />
                   <span class={styles.prompt}>{prompt()}</span>
                 </label>
@@ -51,19 +51,19 @@ export function QuickRequestList(props) {
                 <OpenItemButton
                   itemType="Quick Request"
                   itemName={prompt()}
-                  onClick={() => props.onOpen(record)}
+                  onClick={() => props.onOpen(record())}
                 />
               </Show>
               <Show when={props.history() && !props.deleteMode?.()}>
                 <DeleteButton
                   itemName={`Quick Request: ${prompt()}`}
-                  onClick={() => props.onDelete(record)}
+                  onClick={() => props.onDelete(record())}
                 />
               </Show>
             </li>
           );
         }}
-      </For>
+      </Index>
     </Show>
   );
 }

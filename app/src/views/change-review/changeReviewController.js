@@ -4,6 +4,7 @@ export function createChangeReviewController({
   getSelectedWorkspace,
   getSelectedOwnerRepositoryCount,
   getSelectedQuickRequest,
+  isTicketViewerVisible = () => false,
   getRepositoryToolsOwner,
   syncRepositoryToolsAvailability,
   docsController,
@@ -40,7 +41,16 @@ export function createChangeReviewController({
     );
     setChangeReviewAvailable(available);
     setDocsButtonSelected(false);
-    if (!available) showOwnerTerminal();
+    if (!available) {
+      if (isTicketViewerVisible()) {
+        cancelPendingReview();
+        setChangeReviewVisible(false);
+        docsController.showTerminal();
+        setChangeReviewSelected(false);
+      } else {
+        showOwnerTerminal();
+      }
+    }
     syncRepositoryToolsAvailability();
   }
 
