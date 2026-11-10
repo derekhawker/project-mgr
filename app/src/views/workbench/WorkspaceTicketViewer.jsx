@@ -141,10 +141,6 @@ export function WorkspaceTicketViewer(props) {
           <Show when={selected()} fallback={<div class={styles.emptyDetail}>Select a ticket to read it.</div>}>{(ticket) => {
               const fields = createMemo(() => splitTicketFrontmatter(ticket().content).fields);
               return <article class={styles.detail} aria-label={`Selected ticket: ${ticket().title}`}>
-                <div class={styles.detailHeading}>
-                  <TicketStatusBadge status={ticket().status} />
-                  <h3>{ticket().title}</h3>
-                </div>
                 <div class={styles.markdown} ref={(element) => createEffect(() => { element.innerHTML = markdown() ?? ""; })} />
                 <Show when={fields().length}>
                   <section class={styles.frontmatter} aria-label="Ticket metadata">

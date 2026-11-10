@@ -96,12 +96,14 @@ test("ticket browser keeps selection separate from Work, renders the complete sa
     assert.deepEqual(calls.at(-1), ["select", "one.md"]);
     const detail = view.host.querySelector("article");
     assert.equal(detail.getAttribute("aria-label"), "Selected ticket: First");
-    assert.equal(detail.children[1].textContent.includes("First body"), true);
-    assert.equal(detail.children[1].textContent.includes(longContent), true);
+    assert.equal(detail.querySelector(".detailHeading"), null);
+    assert.equal(detail.querySelector("h3"), null);
+    assert.equal(detail.children[0].textContent.includes("First body"), true);
+    assert.equal(detail.children[0].textContent.includes(longContent), true);
     assert.equal(detail.querySelector("script"), null);
     assert.equal(detail.querySelector('[aria-label="Ticket metadata"] dt').textContent, "title");
     assert.equal(detail.querySelector('[aria-label="Ticket metadata"] dd').textContent, "First");
-    assert.equal(detail.children[1].compareDocumentPosition(detail.querySelector('[aria-label="Ticket metadata"]')) & Node.DOCUMENT_POSITION_FOLLOWING, Node.DOCUMENT_POSITION_FOLLOWING);
+    assert.equal(detail.children[0].compareDocumentPosition(detail.querySelector('[aria-label="Ticket metadata"]')) & Node.DOCUMENT_POSITION_FOLLOWING, Node.DOCUMENT_POSITION_FOLLOWING);
     assert.equal(selectFirst.getAttribute("aria-pressed"), "true");
     const sort = view.host.querySelector('summary[aria-label="Sort: Status"]');
     sort.click();
