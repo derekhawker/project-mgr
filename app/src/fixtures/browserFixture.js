@@ -3,6 +3,8 @@
 const timestamp = 1700000000000;
 let navigatorWidth = 300;
 let changeReviewMode = "unified";
+let defaultModel = { providerId: "fixture", id: "model" };
+let createdWorkspaceTickets = [];
 let portSelection = "3000-3010,4200,4321,5000-5010,5173-5180,5432,6379,8000-8010,8080-8090,9229,27017";
 let fixtureListeners = [
   { pid: 18432, identity: "fixture-node-18432", name: "node", owner: "derekhawker", addresses: ["127.0.0.1:3000"], ports: [3000], cwd: "/fixture/repository", command: "node ./node_modules/.bin/vite --host 127.0.0.1", startTime: "2026-10-30 09:14:22" },
@@ -183,7 +185,11 @@ export async function invokeBrowserFixture(name, payload = {}) {
       ];
       break;
     case "opencode_model_default":
-      result = { providerId: "fixture", id: "model" };
+      result = defaultModel;
+      break;
+    case "opencode_model_default_set":
+      defaultModel = request;
+      result = defaultModel;
       break;
     case "opencode_pending_inputs_all":
       result = [];
@@ -235,7 +241,7 @@ export async function invokeBrowserFixture(name, payload = {}) {
       };
       break;
     case "workspace_tickets_list":
-      result = payload.archived
+      result = request.archived
         ? [{
             filename: "archived-example.md",
             title: "Archived example",
@@ -272,13 +278,35 @@ export async function invokeBrowserFixture(name, payload = {}) {
               modifiedAt: 1_793_650_000_000,
               content: "---\ntitle: Other-status example\nstatus: review\n---\nAn unknown status follows draft.",
             },
-          ];
+          ].concat(
+            createdWorkspaceTickets
+              .filter((ticket) => ticket.workspaceId === request.workspaceId)
+              .map(({ workspaceId, ...ticket }) => ticket),
+          );
       break;
-    case "workspace_ticket_creation_start": {
-      const workspace = workspaces.find((item) => item.id === payload.workspaceId);
+    case "workspace_ticket_proposal": {
+      if (!workspaces.some((item) => item.id === request.workspaceId)) throw new Error("Workspace was not found");
+      result = {
+        title: "Improve workspace onboarding",
+        body: "# Improve workspace onboarding\n\n## Idea\n\nMake the first-run setup clearer.",
+      };
+      break;
+    }
+    case "workspace_ticket_create": {
+      const workspace = workspaces.find((item) => item.id === request.workspaceId);
       if (!workspace) throw new Error("Workspace was not found");
-      result = { ...makeSession(workspace), openCodeSessionId: `fixture-ticket-creation-${sessions.length}` };
-      sessions.push(result);
+      const base = request.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "ticket";
+      let filename = `${base}.md`;
+      let suffix = 2;
+      while (createdWorkspaceTickets.some((ticket) => ticket.workspaceId === workspace.id && ticket.filename === filename)) filename = `${base}-${suffix++}.md`;
+      result = {
+        filename,
+        title: request.title,
+        status: "draft",
+        content: `---\ntitle: ${JSON.stringify(request.title)}\nstatus: draft\n---\n\n${request.body}\n`,
+        modifiedAt: Date.now(),
+      };
+      createdWorkspaceTickets.push({ ...result, workspaceId: workspace.id });
       break;
     }
     case "workspace_ticket_work": {

@@ -15,12 +15,26 @@
 .header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   flex-wrap: wrap;
   gap: var(--ui-space-8);
 }
 
-.header { justify-content: flex-end; }
+.modelControl {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ui-space-6);
+  max-width: 100%;
+  color: var(--ui-muted);
+  font-size: 0.82rem;
+}
+
+.modelControl select {
+  width: min(24rem, 48vw);
+  min-width: 0;
+  max-width: 100%;
+}
 
 .columns {
   display: grid;
@@ -70,7 +84,7 @@
 
 .listActions > button { flex: 0 0 auto; }
 .sortMenu { flex: 0 0 auto; }
-.sortOption { justify-content: space-between; }
+.menuOption { justify-content: space-between; }
 .emptyList { padding: var(--ui-space-12); color: var(--ui-muted); }
 
 .list {

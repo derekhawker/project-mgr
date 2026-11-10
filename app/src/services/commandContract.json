@@ -104,6 +104,49 @@
       "additionalProperties": false
     }
   },
+  "opencode_model_default_set": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "request": {
+          "type": "object",
+          "properties": {
+            "providerId": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "providerId",
+            "id"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "request"
+      ],
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "object",
+      "properties": {
+        "providerId": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "providerId",
+        "id"
+      ],
+      "additionalProperties": false
+    }
+  },
   "opencode_session_create": {
     "payload": {
       "type": "object",
@@ -6589,101 +6632,104 @@
       }
     }
   },
-  "workspace_ticket_creation_start": {
+  "workspace_ticket_proposal": {
     "payload": {
       "type": "object",
       "properties": {
-        "workspaceId": {
-          "type": "string"
-        },
-        "model": {
+        "request": {
           "type": "object",
           "properties": {
-            "providerId": {
+            "workspaceId": {
               "type": "string"
             },
-            "id": {
+            "idea": {
               "type": "string"
             }
           },
           "required": [
-            "providerId",
-            "id"
+            "workspaceId",
+            "idea"
           ],
           "additionalProperties": false
         }
       },
       "required": [
-        "workspaceId",
-        "model"
+        "request"
       ],
       "additionalProperties": false
     },
     "result": {
       "type": "object",
       "properties": {
-        "openCodeSessionId": {
+        "title": {
           "type": "string"
         },
-        "owner": {
+        "body": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "title",
+        "body"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "workspace_ticket_create": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "request": {
           "type": "object",
           "properties": {
-            "owner_type": {
+            "workspaceId": {
               "type": "string"
             },
-            "owner_id": {
+            "title": {
+              "type": "string"
+            },
+            "body": {
               "type": "string"
             }
           },
           "required": [
-            "owner_type",
-            "owner_id"
+            "workspaceId",
+            "title",
+            "body"
           ],
           "additionalProperties": false
-        },
-        "directory": {
-          "type": "string"
-        },
-        "lastKnownStatus": {
-          "type": "string"
-        },
-        "createdAt": {
-          "type": "number"
-        },
-        "updatedAt": {
-          "type": "number"
-        },
-        "eventCursor": {
-          "type": "string",
-          "nullable": true
-        },
-        "reconciliationStatus": {
-          "type": "string"
-        },
-        "reconciliationUncertain": {
-          "type": "boolean"
-        },
-        "pendingInputJson": {
-          "type": "string",
-          "nullable": true
-        },
-        "selectedModel": {
-          "type": "string",
-          "nullable": true
         }
       },
       "required": [
-        "openCodeSessionId",
-        "owner",
-        "directory",
-        "lastKnownStatus",
-        "createdAt",
-        "updatedAt",
-        "eventCursor",
-        "reconciliationStatus",
-        "reconciliationUncertain",
-        "pendingInputJson",
-        "selectedModel"
+        "request"
+      ],
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "object",
+      "properties": {
+        "filename": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "content": {
+          "type": "string"
+        },
+        "modifiedAt": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "filename",
+        "title",
+        "status",
+        "content",
+        "modifiedAt"
       ],
       "additionalProperties": false
     }

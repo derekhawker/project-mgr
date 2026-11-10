@@ -86,6 +86,14 @@ pub struct CreateSessionRequest {
     pub title: String,
     pub location: Location,
     pub model: ModelReference,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub permissions: Option<Vec<PermissionRule>>,
+}
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct PermissionRule {
+    pub action: String,
+    pub resource: String,
+    pub effect: String,
 }
 #[derive(Debug, Clone, Serialize)]
 pub struct Location {
@@ -372,6 +380,35 @@ impl Runtime {
         directory: &Path,
         model: ModelReference,
     ) -> Result<Value, String> {
+        self.create_session_with_permissions(title, directory, model, None)
+    }
+
+    /// Create a proposal-only session with every OpenCode tool permission denied.
+    pub fn create_ticket_proposal_session(
+        &self,
+        title: &str,
+        directory: &Path,
+        model: ModelReference,
+    ) -> Result<Value, String> {
+        self.create_session_with_permissions(
+            title,
+            directory,
+            model,
+            Some(vec![PermissionRule {
+                action: "*".into(),
+                resource: "*".into(),
+                effect: "deny".into(),
+            }]),
+        )
+    }
+
+    fn create_session_with_permissions(
+        &self,
+        title: &str,
+        directory: &Path,
+        model: ModelReference,
+        permissions: Option<Vec<PermissionRule>>,
+    ) -> Result<Value, String> {
         if !directory.is_absolute() {
             return Err(format!(
                 "OpenCode session directory must be absolute: {}",
@@ -386,8 +423,50 @@ impl Runtime {
                 directory: directory.to_string_lossy().into_owned(),
             },
             model,
+            permissions,
         };
         post_data_value(&client, &format!("{url}/api/session"), &body)
+    }
+
+    /// Submit a one-off proposal prompt and collect its completed assistant text.
+    /// Unlike `/generate`, `/prompt` works with the configured model provider; the
+    /// caller owns and must delete the temporary session afterward.
+    pub fn prompt_session_text(&self, id: &str, prompt: &str) -> Result<String, String> {
+        let id = validate_session_id(id)?;
+        let (client, url) = self.client_url()?;
+        post_data_value(
+            &client,
+            &format!("{url}/api/session/{id}/prompt"),
+            &PromptRequest {
+                text: prompt.to_owned(),
+            },
+        )?;
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(120);
+        loop {
+            let messages =
+                get_data_value(&client, &format!("{url}/api/session/{id}/message?limit=20"))?;
+            if let Some(text) = completed_assistant_text(&messages)? {
+                return generated_session_text(&json!({"text": text}));
+            }
+            if std::time::Instant::now() >= deadline {
+                return Err("OpenCode did not finish generating a ticket proposal in time.".into());
+            }
+            std::thread::sleep(Duration::from_millis(250));
+        }
+    }
+
+    /// Delete a temporary proposal session after capturing its result.
+    pub fn delete_session(&self, id: &str) -> Result<(), String> {
+        let id = validate_session_id(id)?;
+        let (client, url) = self.client_url()?;
+        checked(
+            client
+                .delete(format!("{url}/api/session/{id}"))
+                .send()
+                .map_err(|error| error.to_string())?,
+        )
+        .map(|_| ())
     }
 
     /// Returns `false` only when OpenCode confirms that the session does not
@@ -459,17 +538,14 @@ impl Runtime {
         allow_directory_at(&client, &url, &id, path)
     }
     pub fn generate_session_text(&self, id: &str, prompt: &str) -> Result<String, String> {
+        let id = validate_session_id(id)?;
         let (client, url) = self.client_url()?;
         let response = post_data_value(
             &client,
             &format!("{url}/api/session/{id}/generate"),
             &json!({"prompt": prompt}),
         )?;
-        response
-            .get("text")
-            .and_then(Value::as_str)
-            .map(str::to_owned)
-            .ok_or_else(|| "OpenCode returned an invalid session generation response.".to_owned())
+        generated_session_text(&response)
     }
     pub fn reply_permission(
         &self,
@@ -785,6 +861,53 @@ impl Runtime {
         ))
     }
 }
+
+fn generated_session_text(response: &Value) -> Result<String, String> {
+    let text = response
+        .get("text")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "OpenCode returned an invalid session generation response.".to_owned())?;
+    if text.trim().is_empty() {
+        return Err(
+            "OpenCode completed generation without returning any text. No ticket was created; try again or choose another model."
+                .into(),
+        );
+    }
+    Ok(text.to_owned())
+}
+
+fn completed_assistant_text(messages: &Value) -> Result<Option<String>, String> {
+    let messages = messages
+        .as_array()
+        .ok_or_else(|| "OpenCode returned an invalid session message list.".to_owned())?;
+    let Some(assistant) = messages
+        .iter()
+        .rev()
+        .find(|message| message.get("type").and_then(Value::as_str) == Some("assistant"))
+    else {
+        return Ok(None);
+    };
+    let Some(finish) = assistant.get("finish").and_then(Value::as_str) else {
+        return Ok(None);
+    };
+    if finish == "error" {
+        return Err("OpenCode could not generate a ticket proposal.".into());
+    }
+    if finish == "tool-calls" {
+        return Err("OpenCode attempted to use a tool while preparing a ticket proposal.".into());
+    }
+    let parts = assistant
+        .get("content")
+        .and_then(Value::as_array)
+        .ok_or_else(|| "OpenCode returned an invalid assistant message.".to_owned())?;
+    let text = parts
+        .iter()
+        .filter(|part| part.get("type").and_then(Value::as_str) == Some("text"))
+        .filter_map(|part| part.get("text").and_then(Value::as_str))
+        .collect::<String>();
+    Ok(Some(text))
+}
+
 impl Drop for Runtime {
     fn drop(&mut self) {
         self.shutdown();
@@ -1591,6 +1714,7 @@ mod tests {
                 provider_id: "p".into(),
                 id: "m".into(),
             },
+            permissions: None,
         };
         assert_eq!(
             serde_json::to_value(body).unwrap(),
@@ -1954,6 +2078,7 @@ mod tests {
                 provider_id: "openai".into(),
                 id: "gpt-6-luna".into(),
             },
+            permissions: None,
         };
         assert_eq!(
             post_data_value(&client, &format!("{base}/api/session"), &body).unwrap(),
@@ -2172,6 +2297,150 @@ mod tests {
             .generate_session_text("ses_proposal", "Prepare a proposal")
             .unwrap();
         assert_eq!(result, r#"{"schemaVersion":1,"workType":"workspace"}"#);
+        server.join().unwrap();
+        runtime.shutdown();
+    }
+
+    #[test]
+    fn generated_session_text_rejects_empty_output_with_actionable_error() {
+        for response in [json!({"text": ""}), json!({"text": "  \n\t"})] {
+            let error = generated_session_text(&response).unwrap_err();
+            assert!(error.contains("completed generation without returning any text"));
+            assert!(error.contains("try again or choose another model"));
+            assert!(!error.contains("EOF"));
+        }
+
+        assert!(generated_session_text(&json!({"text": "proposal"})).is_ok());
+        assert!(generated_session_text(&json!({}))
+            .unwrap_err()
+            .contains("invalid session generation response"));
+    }
+
+    #[test]
+    fn ticket_proposal_permissions_deny_every_tool_and_prompt_extracts_finished_text() {
+        let request = CreateSessionRequest {
+            title: "proposal".into(),
+            location: Location {
+                directory: "/tmp/repository".into(),
+            },
+            model: ModelReference {
+                provider_id: "fixture".into(),
+                id: "model".into(),
+            },
+            permissions: Some(vec![PermissionRule {
+                action: "*".into(),
+                resource: "*".into(),
+                effect: "deny".into(),
+            }]),
+        };
+        let payload = serde_json::to_value(request).unwrap();
+        assert_eq!(
+            payload["permissions"],
+            json!([{"action":"*","resource":"*","effect":"deny"}])
+        );
+
+        let messages = json!([
+            {"type":"idle","outcome":"succeeded"},
+            {"type":"assistant","finish":"stop","content":[
+                {"type":"reasoning","text":"private reasoning"},
+                {"type":"text","text":"{\"title\":\"Example\",\"body\":\"Idea\"}"}
+            ]},
+            {"type":"user","text":"synthetic prompt"}
+        ]);
+        assert_eq!(
+            completed_assistant_text(&messages).unwrap().as_deref(),
+            Some(r#"{"title":"Example","body":"Idea"}"#)
+        );
+        assert!(completed_assistant_text(&json!([
+            {"type":"assistant","finish":"error","content":[]}
+        ]))
+        .unwrap_err()
+        .contains("could not generate"));
+        assert!(completed_assistant_text(&json!([
+            {"type":"assistant","finish":"tool-calls","content":[]}
+        ]))
+        .unwrap_err()
+        .contains("attempted to use a tool"));
+    }
+
+    #[test]
+    fn prompt_session_text_sends_prompt_collects_completion_and_deletes_session() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = thread::spawn(move || {
+            for (expected_method, expected_path, response_body) in [
+                (
+                    "POST",
+                    "/api/session/ses_proposal/prompt",
+                    r#"{"data":{"id":"msg_user"}}"#,
+                ),
+                (
+                    "GET",
+                    "/api/session/ses_proposal/message?limit=20",
+                    r#"{"data":[{"type":"assistant","finish":"stop","content":[{"type":"text","text":"{\"title\":\"Example\",\"body\":\"Idea\"}"}]}]}"#,
+                ),
+                ("DELETE", "/api/session/ses_proposal", ""),
+            ] {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                let mut request_line = String::new();
+                reader.read_line(&mut request_line).unwrap();
+                let mut content_length = 0;
+                loop {
+                    let mut line = String::new();
+                    reader.read_line(&mut line).unwrap();
+                    if line == "\r\n" {
+                        break;
+                    }
+                    if let Some(length) = line.to_ascii_lowercase().strip_prefix("content-length:")
+                    {
+                        content_length = length.trim().parse::<usize>().unwrap();
+                    }
+                }
+                let mut body = vec![0; content_length];
+                reader.read_exact(&mut body).unwrap();
+                let request = request_line.split_whitespace().collect::<Vec<_>>();
+                assert_eq!(request[0], expected_method);
+                assert_eq!(request[1], expected_path);
+                if expected_method == "POST" {
+                    assert_eq!(
+                        serde_json::from_slice::<Value>(&body).unwrap(),
+                        json!({"text":"Prepare a proposal"})
+                    );
+                }
+                let status = if expected_method == "DELETE" {
+                    "204 No Content"
+                } else {
+                    "200 OK"
+                };
+                let response = format!(
+                    "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    response_body.len(),
+                    response_body
+                );
+                stream.write_all(response.as_bytes()).unwrap();
+            }
+        });
+        let runtime = Runtime {
+            server: Mutex::new(Some(Server {
+                info: RuntimeInfo {
+                    executable: "fake".into(),
+                    version: "2.1.4".into(),
+                    base_url: format!("http://{address}"),
+                },
+                _password: "secret".into(),
+                client: api_client("secret").unwrap(),
+            })),
+            terminals: TerminalManager::default(),
+            lifecycle: AtomicU8::new(0),
+            lifecycle_gate: Mutex::new(()),
+        };
+
+        let text = runtime
+            .prompt_session_text("ses_proposal", "Prepare a proposal")
+            .unwrap();
+        assert_eq!(text, r#"{"title":"Example","body":"Idea"}"#);
+        runtime.delete_session("ses_proposal").unwrap();
         server.join().unwrap();
         runtime.shutdown();
     }

@@ -236,6 +236,18 @@ export function resultForCommand(name) {
       return [];
     case "opencode_model_default":
       return { providerId: "openai", id: "gpt-6-luna" };
+    case "opencode_model_default_set":
+      return { providerId: "openai", id: "gpt-6-luna" };
+    case "workspace_ticket_proposal":
+      return { title: "Fixture proposal", body: "# Fixture proposal\n\n## Idea\n\nFixture body." };
+    case "workspace_ticket_create":
+      return {
+        filename: "fixture-proposal.md",
+        title: "Fixture proposal",
+        status: "draft",
+        content: "---\ntitle: Fixture proposal\nstatus: draft\n---\n\nFixture body.\n",
+        modifiedAt: 1,
+      };
     case "app_shell_info":
       return {
         appName: "OpenCode Project Manager",

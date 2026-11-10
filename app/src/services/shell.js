@@ -415,6 +415,10 @@ export function getDefaultModel(invoke) {
   return invokeCommand(invoke, "opencode_model_default");
 }
 
+export function setDefaultModel(invoke, model) {
+  return invokeCommand(invoke, "opencode_model_default_set", { request: model });
+}
+
 // This is the production model-loader seam used by the selector.  Keeping the
 // fetch, empty-catalog policy, and error transition together prevents a
 // healthy-looking selector from being left enabled after a CLI/API failure.
@@ -751,10 +755,18 @@ export function createWorkspaceSession(invoke, workspaceId, prompt, model) {
   });
 }
 
-export function startWorkspaceTicketCreation(invoke, workspaceId, model) {
-  return invokeCommand(invoke, "workspace_ticket_creation_start", {
+export function proposeWorkspaceTicket(invoke, workspaceId, idea) {
+  return invokeCommand(invoke, "workspace_ticket_proposal", {
     workspaceId,
-    model,
+    idea,
+  });
+}
+
+export function createWorkspaceTicket(invoke, workspaceId, title, body) {
+  return invokeCommand(invoke, "workspace_ticket_create", {
+    workspaceId,
+    title,
+    body,
   });
 }
 

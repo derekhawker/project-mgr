@@ -135,11 +135,17 @@ fn tray_icon() -> Image<'static> {
 }
 
 pub fn run() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+    let mut builder = tauri::Builder::default().plugin(tauri_plugin_dialog::init());
+    // `live` sets this per-worktree port so development instances do not hand
+    // off to the first worktree's app. Installed launches keep single-instance
+    // behavior.
+    if std::env::var_os("PROJECT_MGR_DEV_PORT").is_none() {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             reveal_main_window(app);
-        }))
+        }));
+    }
+
+    builder
         .setup(|app| {
             // OpenCode is started lazily by its command, so an absent install
             // cannot prevent the management shell from opening.
@@ -244,6 +250,7 @@ pub fn run() {
             opencode_runtime_info,
             opencode_models,
             opencode_model_default,
+            opencode_model_default_set,
             opencode_session_create,
             opencode_session_model,
             opencode_session_prompt,
@@ -278,7 +285,8 @@ pub fn run() {
             quick_request_promote,
             workspace_navigation,
             workspace_tickets_list,
-            workspace_ticket_creation_start,
+            workspace_ticket_proposal,
+            workspace_ticket_create,
             workspace_ticket_work,
             workspace_ticket_session_create,
             workspace_ticket_session_close,
@@ -468,15 +476,7 @@ impl workspace_tickets::TicketWorkRuntime for TicketWorkAdapter<'_> {
         self.runtime.session_exists(id)
     }
     fn create(&mut self, title: &str, repository: &std::path::Path) -> Result<String, String> {
-        let models = self.runtime.enabled_models()?;
-        let selected = models
-            .iter()
-            .find(|m| m.enabled)
-            .ok_or("No enabled OpenCode model is available")?;
-        let model = opencode::ModelReference {
-            provider_id: selected.provider_id.clone(),
-            id: selected.id.clone(),
-        };
+        let model = ticket_work_model(self.store)?;
         session_id_from_response(&self.runtime.create_session(title, repository, model)?)
     }
     fn prepare(
@@ -781,12 +781,51 @@ async fn workspace_tickets_list(
     .await
 }
 
-#[tauri::command]
-async fn workspace_ticket_creation_start(
-    app: AppHandle,
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct WorkspaceTicketProposalCommand {
     workspace_id: String,
-    model: ModelCommand,
-) -> Result<management::SessionRecord, String> {
+    idea: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct WorkspaceTicketCreateCommand {
+    workspace_id: String,
+    title: String,
+    body: String,
+}
+
+fn ticket_workspace_repository(
+    store: &ManagementStore,
+    workspace_id: &str,
+) -> Result<(management::Workspace, PathBuf), String> {
+    let workspace = store
+        .get_workspace(workspace_id)
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "Workspace was not found.".to_owned())?;
+    if workspace.kind != management::WorkspaceKind::Regular
+        || workspace.status != management::WorkspaceStatus::Active
+    {
+        return Err("Ticket creation requires an active regular Workspace.".into());
+    }
+    let bindings = store
+        .list_workspace_repository_bindings(&workspace.id)
+        .map_err(|error| error.to_string())?;
+    if bindings.len() != 1
+        || bindings[0].verification_status != management::VerificationStatus::Verified
+    {
+        return Err("Workspace must have exactly one verified repository before creating a ticket.".into());
+    }
+    let repository = change_review::validate_repo_root(std::path::Path::new(&bindings[0].checkout_path))?;
+    Ok((workspace, repository))
+}
+
+#[tauri::command]
+async fn workspace_ticket_proposal(
+    app: AppHandle,
+    request: WorkspaceTicketProposalCommand,
+) -> Result<workspace_tickets::TicketIdeaProposal, String> {
     static LIMIT: std::sync::OnceLock<std::sync::Arc<tokio::sync::Semaphore>> =
         std::sync::OnceLock::new();
     let limit = LIMIT.get_or_init(|| std::sync::Arc::new(tokio::sync::Semaphore::new(2)));
@@ -796,37 +835,60 @@ async fn workspace_ticket_creation_start(
         .await
         .map_err(|e| e.to_string())?;
     tauri::async_runtime::spawn_blocking(move || {
-    let _permit = permit;
-    let runtime = app.state::<opencode::Runtime>();
-    let store = app.state::<ManagementStore>();
-    let workspace = store.get_workspace(&workspace_id).map_err(|e| e.to_string())?
-        .ok_or_else(|| "Workspace was not found".to_owned())?;
-    let bindings = store.list_workspace_repository_bindings(&workspace.id).map_err(|e| e.to_string())?;
-    if bindings.len() != 1 {
-        return Err("This Workspace must have exactly one associated repository before creating a ticket.".into());
-    }
-    let directory = PathBuf::from(&bindings[0].checkout_path);
-    if !directory.is_dir() { return Err(format!("Workspace repository is unavailable: {}", directory.display())); }
-    let app_data = app.path().app_data_dir().map_err(|e| e.to_string())?;
-    let ticket_dir = workspace_tickets::workspace_ticket_dir(&app_data, &workspace.slug)?;
-    std::fs::create_dir_all(&ticket_dir).map_err(|e| format!("Could not create Workspace ticket directory: {e}"))?;
-    let canonical_ticket_dir = ticket_dir.canonicalize().map_err(|e| e.to_string())?;
-    let canonical_repository = directory.canonicalize().map_err(|e| e.to_string())?;
-    if canonical_ticket_dir.starts_with(&canonical_repository) {
-        return Err("Workspace ticket storage must be outside the repository.".into());
-    }
-    let response = runtime.create_session(&format!("{} ticket creation", workspace.name), &directory, model.clone().runtime_model())?;
-    let id = session_id_from_response(&response)?;
-    runtime.allow_ticket_directory(&id, &canonical_ticket_dir)?;
-    let session = store.create_session_with_model(&management::NewSession {
-        open_code_session_id: id.clone(), owner: management::SessionOwner::Workspace(workspace.id),
-        directory: directory.to_string_lossy().into_owned(), last_known_status: "starting".into(), created_at: now_millis(),
-    }, &model_key(&model)).map_err(|e| e.to_string())?;
-    let instructions = format!("Create or clarify a Workspace ticket following the globally available ticket-management skill. Repository root: {}. Canonical Workspace ticket directory (outside Git): {}. Save the resulting ticket as a new Markdown file with status `draft` in that directory. Do not create ticket records elsewhere.", canonical_repository.display(), canonical_ticket_dir.display());
-    runtime.set_instruction_entry(&id, "workspace-ticket-creation", &instructions)?;
-    runtime.attach_terminal(app.clone(), &id, &directory)?;
-    Ok(session)
-    }).await.map_err(|e| e.to_string())?
+        let _permit = permit;
+        let runtime = app.state::<opencode::Runtime>();
+        let store = app.state::<ManagementStore>();
+        let (workspace, repository) = ticket_workspace_repository(&store, &request.workspace_id)?;
+        let app_data = app.path().app_data_dir().map_err(|error| error.to_string())?;
+        let ticket_directory = workspace_tickets::workspace_ticket_dir(&app_data, &workspace.slug)?;
+        let canonical_app_data = app_data.canonicalize().map_err(|error| error.to_string())?;
+        if ticket_directory.starts_with(&repository) || canonical_app_data.starts_with(&repository) {
+            return Err("Workspace ticket storage must be outside the repository.".into());
+        }
+        let prompt = workspace_tickets::render_ticket_idea_prompt(&request.idea, &workspace.name)?;
+        let model = ticket_work_model(&store)?;
+        let response = runtime.create_ticket_proposal_session(
+            &format!("{} ticket idea proposal", workspace.name),
+            &repository,
+            model,
+        )?;
+        let session_id = session_id_from_response(&response)?;
+        let result = runtime.prompt_session_text(&session_id, &prompt);
+        if runtime.delete_session(&session_id).is_err() {
+            log_ticket_proposal_event(&app, &session_id, "ticket_proposal_session_cleanup_failed");
+            return Err(
+                "Could not remove the temporary proposal session. No ticket was created.".into(),
+            );
+        }
+        let text = result.map_err(|error| {
+            log_ticket_proposal_event(&app, &session_id, "ticket_proposal_generation_failed");
+            error
+        })?;
+        let proposal = workspace_tickets::parse_ticket_idea_proposal(&text)?;
+        Ok(proposal)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+async fn workspace_ticket_create(
+    app: AppHandle,
+    request: WorkspaceTicketCreateCommand,
+) -> Result<workspace_tickets::Ticket, String> {
+    run_ports_work(move || {
+        let store = app.state::<ManagementStore>();
+        let (workspace, repository) = ticket_workspace_repository(&store, &request.workspace_id)?;
+        let app_data = app.path().app_data_dir().map_err(|error| error.to_string())?;
+        let ticket_directory = workspace_tickets::workspace_ticket_dir(&app_data, &workspace.slug)?;
+        workspace_tickets::create_draft(
+            &ticket_directory,
+            &repository,
+            &request.title,
+            &request.body,
+        )
+    })
+    .await
 }
 
 #[derive(Debug, Deserialize)]
@@ -3376,6 +3438,34 @@ fn log_initial_prompt_failure(app: &AppHandle, session_id: &str, prompt: &str, e
     }
 }
 
+fn log_ticket_proposal_event(app: &AppHandle, session_id: &str, event: &str) {
+    let directory = match app.path().app_log_dir() {
+        Ok(directory) => directory,
+        Err(error) => {
+            eprintln!("could not resolve ticket proposal log directory: {error}");
+            return;
+        }
+    };
+    let result = (|| {
+        std::fs::create_dir_all(&directory)?;
+        let entry = serde_json::json!({
+            "timestamp": now_millis(),
+            "level": "ERROR",
+            "event": event,
+            "sessionId": session_id,
+            "error": "ticket proposal operation failed; details withheld",
+        });
+        let mut log = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(directory.join("application.log"))?;
+        writeln!(log, "{entry}")
+    })();
+    if let Err(error) = result {
+        eprintln!("could not write ticket proposal failure metadata: {error}");
+    }
+}
+
 fn mark_session_failed(store: &ManagementStore, session_id: &str, error: String) -> String {
     match store.update_session_status(session_id, "failed", now_millis()) {
         Ok(_) => error,
@@ -4110,6 +4200,10 @@ fn model_key(model: &ModelCommand) -> String {
     format!("{}/{}", model.provider_id, model.id)
 }
 
+fn ticket_work_model(store: &ManagementStore) -> Result<opencode::ModelReference, String> {
+    Ok(opencode_model_default_command(store)?.runtime_model())
+}
+
 pub fn opencode_model_default_command(store: &ManagementStore) -> Result<ModelCommand, String> {
     let configured = store
         .get_setting("default_model")
@@ -4128,9 +4222,37 @@ pub fn opencode_model_default_command(store: &ManagementStore) -> Result<ModelCo
     })
 }
 
+pub fn set_opencode_model_default_command(
+    store: &ManagementStore,
+    models: &[opencode::ModelCatalogEntry],
+    model: ModelCommand,
+    updated_at: i64,
+) -> Result<ModelCommand, String> {
+    opencode::validate_model(models, &model.clone().runtime_model())?;
+    store
+        .set_setting("default_model", &model_key(&model), updated_at)
+        .map_err(|error| error.to_string())?;
+    Ok(model)
+}
+
 #[tauri::command]
 fn opencode_model_default(store: State<'_, ManagementStore>) -> Result<ModelCommand, String> {
     opencode_model_default_command(&store)
+}
+
+#[tauri::command]
+async fn opencode_model_default_set(
+    app: AppHandle,
+    request: ModelCommand,
+) -> Result<ModelCommand, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let store = app.state::<ManagementStore>();
+        let runtime = app.state::<opencode::Runtime>();
+        let models = runtime.enabled_models()?;
+        set_opencode_model_default_command(&store, &models, request, now_millis())
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -4631,6 +4753,76 @@ mod tests {
         assert!(opencode_model_default_command(&store)
             .unwrap_err()
             .contains("Invalid configured OpenCode model"));
+    }
+
+    #[test]
+    fn setting_default_model_accepts_only_an_available_model_and_persists_it() {
+        let root = tempfile::tempdir().unwrap();
+        let home = root.path().join("home");
+        let temp = root.path().join("tmp");
+        std::fs::create_dir_all(&home).unwrap();
+        std::fs::create_dir_all(&temp).unwrap();
+        let store =
+            ManagementStore::open_with_paths(root.path().join("state.sqlite"), home, temp).unwrap();
+        let models = vec![opencode::ModelCatalogEntry {
+            provider_id: "fixture".into(),
+            id: "chosen-model".into(),
+            name: Some("Chosen model".into()),
+            enabled: true,
+            status: None,
+        }];
+
+        let selected = set_opencode_model_default_command(
+            &store,
+            &models,
+            ModelCommand {
+                provider_id: "fixture".into(),
+                id: "chosen-model".into(),
+            },
+            42,
+        )
+        .unwrap();
+        assert_eq!(selected.provider_id, "fixture");
+        assert_eq!(selected.id, "chosen-model");
+        assert_eq!(
+            store.get_setting("default_model").unwrap().unwrap().value,
+            "fixture/chosen-model"
+        );
+
+        let error = set_opencode_model_default_command(
+            &store,
+            &models,
+            ModelCommand {
+                provider_id: "missing".into(),
+                id: "model".into(),
+            },
+            43,
+        )
+        .unwrap_err();
+        assert!(error.contains("not available"));
+        assert_eq!(
+            store.get_setting("default_model").unwrap().unwrap().value,
+            "fixture/chosen-model",
+            "rejected selection must not replace the remembered default"
+        );
+    }
+
+    #[test]
+    fn new_ticket_work_session_uses_the_persisted_app_default_model() {
+        let root = tempfile::tempdir().unwrap();
+        let home = root.path().join("home");
+        let temp = root.path().join("tmp");
+        std::fs::create_dir_all(&home).unwrap();
+        std::fs::create_dir_all(&temp).unwrap();
+        let store =
+            ManagementStore::open_with_paths(root.path().join("state.sqlite"), home, temp).unwrap();
+        store
+            .set_setting("default_model", "fixture/ticket-model", 42)
+            .unwrap();
+
+        let selected = ticket_work_model(&store).unwrap();
+        assert_eq!(selected.provider_id, "fixture");
+        assert_eq!(selected.id, "ticket-model");
     }
 
     #[test]

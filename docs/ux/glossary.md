@@ -13,6 +13,9 @@ discussions. For workflow behavior beyond the UX vocabulary, see
   checkouts stay where they are unless the user chooses otherwise.
 - **Ticket:** A Workspace-owned Markdown work record outside Git. Selection sets
   context; the separate **Work** action opens or resumes its OpenCode session.
+- **Ticket idea proposal:** Transient OpenCode-generated title and Markdown
+  content shown for review before Rust creates a new `draft` ticket. It is not a
+  ticket record or an interactive session.
 - **Legacy Task record:** A retained pre-refactor database record, not a target
   product concept or a creation option. Existing archived metadata remains
   internal compatibility data and is not exposed as an in-app destination.
