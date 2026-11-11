@@ -37,7 +37,7 @@
 
 ## Delivery
 
-- For ticket work, do not create pull requests. Push the ticket branch and squash-merge directly into `main`.
+- For ticket work, do not create pull requests. Push the ticket branch and squash-merge directly into `main`, then fast-forward the primary `main` worktree to `origin/main`. Check that worktree for uncommitted changes first; preserve its work and ask before proceeding if it is dirty. Verify it is clean and up to date before removing the ticket worktree.
 
 ## Testing
 - Avoid end-to-end tests; their cost is not justified.
