@@ -18,6 +18,7 @@
   font-weight: 500;
   line-height: 1.25;
   text-align: left;
+  white-space: normal;
   overflow-wrap: anywhere;
   cursor: pointer;
 }

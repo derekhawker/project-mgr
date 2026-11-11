@@ -19,22 +19,6 @@ export function createKeyedSingleFlight(operation, keyOf = (key) => key) {
   };
 }
 
-export function workspaceProposalRepositoryLocations(
-  proposalRepositories,
-  repositoryCatalog,
-) {
-  const repositoriesById = new Map(
-    (repositoryCatalog || []).map((repository) => [repository.id, repository]),
-  );
-  return (proposalRepositories || []).map(({ repositoryId }) => {
-    const repository = repositoriesById.get(repositoryId);
-    return {
-      name: repository?.name || repositoryId,
-      path: repository?.repositoryPath || "Location unavailable",
-    };
-  });
-}
-
 export function workspaceSessionTabLabel(
   session,
   sessionContexts,
@@ -55,38 +39,6 @@ export function workspaceSessionTabLabel(
     return repository?.name || context.repositoryId;
   }
   return null;
-}
-
-export function workspaceStartingPrompt(proposal) {
-  return typeof proposal?.startingPrompt === "string" &&
-    proposal.startingPrompt.trim()
-    ? proposal.startingPrompt
-    : "";
-}
-
-export function shouldSubmitWorkspaceStartingPrompt(prompt) {
-  return typeof prompt === "string" && prompt.trim().length > 0;
-}
-
-export function workspaceStartingPromptSession(sessions, sessionContexts) {
-  const sessionById = new Map(
-    (sessions || []).map((session) => [session.openCodeSessionId, session]),
-  );
-  for (const role of ["orchestrator", "workspace", "worker"]) {
-    const context = (sessionContexts || []).find(
-      (entry) =>
-        entry.role === role && sessionById.has(entry.openCodeSessionId),
-    );
-    if (context) return sessionById.get(context.openCodeSessionId);
-  }
-  return sessions?.[0] || null;
-}
-
-export function workspaceReviewDetails(proposal) {
-  return {
-    name: proposal?.workspace?.name || "",
-    directory: proposal?.repositories?.length ? "Existing repository" : "A new local repository will be created",
-  };
 }
 
 export function formatShellResponse(info) {
@@ -467,35 +419,15 @@ export function startNewWorkProposal(invoke, model) {
   return invokeCommand(invoke, "new_work_proposal_start", { model });
 }
 
-export function previewNewWorkProposal(invoke) {
-  return invokeCommand(invoke, "new_work_proposal_preview");
-}
-
 export function runNewWorkProposal(
   invoke,
   sessionId,
   originalPrompt,
-  preferredWorkspaceId = undefined,
-  workType = undefined,
   explicitDirectory = undefined,
 ) {
-  const payload = { sessionId, originalPrompt };
-  if (preferredWorkspaceId !== undefined)
-    payload.preferredWorkspaceId = preferredWorkspaceId;
-  if (workType !== undefined) payload.workType = workType;
+  const payload = { sessionId, originalPrompt, workType: "quick_request" };
   if (explicitDirectory !== undefined) payload.explicitDirectory = explicitDirectory;
   return invokeCommand(invoke, "new_work_proposal_run", payload);
-}
-
-export function readNewWorkProposal(
-  invoke,
-  sessionId,
-  preferredWorkspaceId = undefined,
-) {
-  const payload = { sessionId };
-  if (preferredWorkspaceId !== undefined)
-    payload.preferredWorkspaceId = preferredWorkspaceId;
-  return invokeCommand(invoke, "new_work_proposal_read", payload);
 }
 
 export function closeNewWorkProposal(invoke, sessionId) {
@@ -558,17 +490,15 @@ export function selectWorkspaceTask(navigation, taskId) {
   return workspace ? { task, workspace } : null;
 }
 
-export function createWorkspace(invoke, name, description = null) {
-  return invokeCommand(invoke, "workspace_create", { name, description });
-}
-
-export function createInitializedWorkspace(
+export function createWorkspace(
   invoke,
   name,
+  description = null,
   repositoryId = null,
 ) {
-  return invokeCommand(invoke, "workspace_create_initialized", {
+  return invokeCommand(invoke, "workspace_create", {
     name,
+    description,
     repositoryId,
   });
 }
@@ -738,13 +668,6 @@ export function formatWorkspaceError(action, error) {
     }
   }
   return `${action} failed: ${detail}`;
-}
-
-export function attachRepository(invoke, workspaceId, repositoryId) {
-  return invokeCommand(invoke, "repository_attach", {
-    workspaceId,
-    repositoryId,
-  });
 }
 
 export function createWorkspaceSession(invoke, workspaceId, prompt, model) {

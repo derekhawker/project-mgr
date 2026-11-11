@@ -2,6 +2,13 @@
 
 **State:** Tasks 1–5 approved for implementation; task 6 remains deferred.
 
+**Workspace creation update (2026-11-10):** Workspace creation uses a direct
+form, not an OpenCode proposal. Users either link a registered repository or
+create an empty repository at
+`<configured repository-library root>/<username>/<workspace-slug>/`. This
+approved ticket-specific change supersedes the older creation path below; it
+does not change the ticket **Work** flow.
+
 ## Main task
 
 **Implementation tasks:** 1–5 approved by the user in this conversation on
@@ -98,26 +105,31 @@ not add a database reset, backup migration, or legacy-association migration task
 ## Current summary
 
 Selecting a Workspace should lead first to a ticket viewer. Each Workspace is
-associated with exactly one repository; when no repository exists, Workspace
-creation makes a new local Git repository. Workspace and repository records live
-in SQLite. Each Workspace owns Markdown tickets stored outside Git under the
+associated with exactly one repository. The user either selects a registered
+repository or creates a local Git repository in the configured repository
+library; the latter requires a short description and uses
+`<library-root>/<username>/<workspace-slug>/`. The Workspace links directly to
+that repository and has no separate home directory. Creation does not start
+OpenCode. Workspace and repository records live in SQLite. Each Workspace owns
+Markdown tickets stored outside Git under the
 application data directory. OpenCode sessions guide ticket
 creation and work. The Markdown ticket is the source of truth for ticket status
 and records the one OpenCode work session needed to resume work. Workspace screen
 destinations and tools are entered through a selected ticket; a ticket is
 required to work.
 
-This proposal changes the accepted model in
-[`workspace-refactor-target.md`](workspace-refactor-target.md), which currently
-allows zero or multiple repositories. Do not silently change that contract until
-the revised requirements are shaped and approved.
+This approved ticket-specific creation scope supersedes the older proposal and
+the zero/multiple-repository assumptions in
+[`workspace-refactor-target.md`](workspace-refactor-target.md) for Workspace
+creation. Existing ticket and later **Work** behavior remains the source of
+truth for ticket sessions.
 
 ## Request coverage
 
 | Ask | Disposition | Coverage |
 |---|---|---|
 | Make a substantial UI improvement and document its requirements collaboratively. | In scope | This draft; detailed acceptance checks and implementation slices remain open. |
-| Make each Workspace strictly coupled to one repository, creating a local Git repository if needed, without creating a new Workspace directory under `~/OpenCode Projects`. | In scope | Workspace/repository creation and storage location; replaces the accepted target contract. |
+| Make each Workspace directly link to one repository; allow a registered repository or create a local Git repository if needed, without a separate Workspace directory. | In scope | The approved creation update above; empty repositories use the configured library root and require a short description. |
 | Make the ticket viewer the primary Workspace screen, with a selectable ticket list and a way to work on a ticket. | In scope | Tasks 3–4. |
 | Store each Workspace's Markdown tickets outside the repository, in Workspace-owned storage. | In scope | Storage location section. |
 | Follow the ticket format and creation guidance from `rust-main`; make its ticket skill global. | In scope | Global skill and its guidance are required for ticket creation, clarification, and work flows. |
@@ -141,9 +153,15 @@ the revised requirements are shaped and approved.
   clean-break product model; no prior Workspace or repository is a special
   case.
 - A regular Workspace has exactly one associated repository.
-- If there is no repository to use, create a new local Git repository. No hosted
-  repository or remote is implied. Create it under
-  `~/OpenCode Projects/repos/<username>/<workspace-slug>/`.
+- The user either selects a repository registered in the Repositories view or
+  creates an empty local Git repository. The empty-repository path requires a
+  short description, assumes no remote, and creates the repository under
+  `<configured repository-library root>/<username>/<workspace-slug>/`, creating
+  the username directory if needed. The Workspace links directly to the
+  registered or newly created repository.
+- Workspace creation is a direct form and does not start OpenCode. A selected
+  repository name supplies an editable, word-spaced title suggestion. Starting
+  or resuming OpenCode remains part of the later ticket **Work** action.
 - Creating a Workspace must not create a separate Workspace home directory under
   `~/OpenCode Projects`. Workspace/repository metadata stays in SQLite; the repo
   directory is the sole code working directory, and ticket files live under
@@ -273,10 +291,12 @@ an implementation detail, not a second authority.
 
 ## Decisions recorded
 
-- **No repository exists:** create a local Git repository; do not assume a
-  remote. Put it under
-  `~/OpenCode Projects/repos/<username>/<workspace-slug>/`. Confirmed in
-  conversation.
+- **Workspace creation:** link a registered repository directly or create an
+  empty local Git repository under
+  `<configured repository-library root>/<username>/<workspace-slug>/`; require
+  a short description for the empty-repository path. Do not create a clone or
+  symlink, separate Workspace home, or OpenCode proposal/session during creation.
+  Confirmed in conversation on 2026-11-10.
 - **Workspace directory:** do not create a new directory under
   `~/OpenCode Projects` for a Workspace home. Workspace metadata is in SQLite;
   the repository directory is the only Workspace-related directory there.

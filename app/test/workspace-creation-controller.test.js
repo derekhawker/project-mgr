@@ -1,119 +1,94 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createWorkspaceCreationController } from "../src/features/new-work/modal/workspaceCreationController.js";
+import {
+  createWorkspaceCreationController,
+  EMPTY_WORKSPACE_REPOSITORY,
+} from "../src/features/new-work/modal/workspaceCreationController.js";
 
 function setup(overrides = {}) {
   const calls = [];
   const deps = {
-    getProposal: () => ({ workspace: { intent: "intent" }, repositories: [] }),
-    getProposalSessionId: () => "proposal",
-    getSelectedModel: () => '{"providerId":"p","id":"m"}',
-    getStartingPrompt: () => " start ",
+    getRepositoryChoice: () => "repo-1",
     getWorkspaceName: () => " Name ",
+    getWorkspaceDescription: () => " Description ",
     invoke: "invoke",
-    createInitializedWorkspace: async (...args) => {
+    createWorkspace: async (...args) => {
       calls.push(["create", ...args]);
-      return {
-        workspace: { id: "w" },
-        setup: [],
-        sessions: [{ openCodeSessionId: "s" }],
-        sessionErrors: [],
-      };
+      return { id: "w", name: "Name" };
     },
-    navigationData: () => ({ workspaceSessionContexts: [] }),
-    refreshNavigation: async () => ({ refreshed: true }),
+    navigationData: () => ({ workspaces: [] }),
+    refreshNavigation: async () => ({ workspaces: [{ id: "w" }] }),
     selectWorkspace: (...args) => calls.push(["select", ...args]),
     selectCreatedWorkspace: (_data, workspace) => workspace,
-    getCatalog: () => [],
-    setProgress: (...args) => calls.push(["progress", ...args]),
-    setProposalError: (v) => calls.push(["error", v]),
-    setNewWorkView: (v) => calls.push(["view", v]),
-    setProposalView: (fn) =>
-      calls.push(["proposalView", fn({ createLabel: "Create" })]),
-    showSession: async (id) => calls.push(["show", id]),
-    workspaceSetupFailureDetails: () => "setup details",
-    hideWorkspaceRepositoryIds: (v) => v,
-    workspaceStartingPromptSession: (sessions) => sessions[0],
-    shouldSubmitWorkspaceStartingPrompt: (v) => Boolean(v.trim()),
-    submitNewWorkStartingPrompt: async (...args) =>
-      calls.push(["prompt", ...args]),
-    setOwnerStatus: (v) => calls.push(["ownerStatus", v]),
-    clearProposal: () => calls.push(["clearProposal"]),
-    closeModal: () => calls.push(["closeModal"]),
-    closeProposalSession: async () => calls.push(["closeProposal"]),
+    setBusy: (value) => calls.push(["busy", value]),
+    setError: (value) => calls.push(["error", value]),
+    setNotice: (value) => calls.push(["notice", value]),
+    setView: (value) => calls.push(["view", value]),
+    closeModal: () => calls.push(["close"]),
     formatWorkspaceError: (label, error) => `${label}:${error.message}`,
-    setOwnerSetupBusy: (v) => calls.push(["busy", v]),
-    syncPendingPrompt: () => calls.push(["sync"]),
-    setCreateDisabled: (v) => calls.push(["disabled", v]),
-    clearError: () => calls.push(["clearError"]),
-    clearOwnerSetupNotice: () => calls.push(["clearNotice"]),
-    setProposalSessionForProgress: (v) => calls.push(["progressSession", v]),
     ...overrides,
   };
   return { controller: createWorkspaceCreationController(deps), calls };
 }
 
-test("successful creation selects workspace without opening a session or submitting a prompt", async () => {
+test("registered repository creation directly links and selects without OpenCode", async () => {
   const { controller, calls } = setup();
-  await controller.createWorkspace();
+  await controller.create({ preventDefault() {} });
+
   assert.deepEqual(
-    calls
-      .filter(([key]) =>
-        ["create", "show", "prompt", "busy", "sync", "disabled"].includes(key),
-      )
-      .map(([key]) => key),
-    [
-      "disabled",
-      "busy",
-      "create",
-      "busy",
-      "sync",
-      "disabled",
-    ],
+    calls.find(([key]) => key === "create"),
+    ["create", "invoke", "Name", null, "repo-1"],
   );
-  assert.equal(calls.some(([key]) => key === "show" || key === "prompt"), false);
-  assert.deepEqual(calls.slice(-3), [
-    ["busy", false],
-    ["sync"],
-    ["disabled", true],
+  assert.deepEqual(calls.filter(([key]) => key === "select").length, 2);
+  assert.equal(calls.some(([key]) => ["session", "prompt"].includes(key)), false);
+  assert.ok(calls.some(([key, value]) => key === "view" && value === "closed"));
+  assert.ok(calls.some(([key]) => key === "close"));
+  assert.equal(calls.at(-1)[0], "busy");
+  assert.equal(calls.at(-1)[1], false);
+});
+
+test("empty repository creation requires a description and sends it to Rust", async () => {
+  const { controller, calls } = setup({
+    getRepositoryChoice: () => EMPTY_WORKSPACE_REPOSITORY,
+  });
+  await controller.create();
+  assert.deepEqual(
+    calls.find(([key]) => key === "create"),
+    ["create", "invoke", "Name", "Description", null],
+  );
+});
+
+test("empty repository creation rejects a blank description before invoking Rust", async () => {
+  const { controller, calls } = setup({
+    getRepositoryChoice: () => EMPTY_WORKSPACE_REPOSITORY,
+    getWorkspaceDescription: () => "  ",
+  });
+  await controller.create();
+  assert.deepEqual(calls, [
+    ["error", "A short description is required for an empty workspace."],
   ]);
 });
 
-test("pre-owner command failure reports create error and always restores busy state", async () => {
+test("command errors keep the form open and restore the busy state", async () => {
   const { controller, calls } = setup({
-    createInitializedWorkspace: async () => {
-      throw new Error("command");
+    createWorkspace: async () => {
+      throw new Error("git failed");
     },
   });
-  await controller.createWorkspace();
-  assert.ok(
-    calls.some(
-      ([key, value]) => key === "error" && value === "Create work:command",
-    ),
-  );
-  assert.deepEqual(calls.slice(-3), [
-    ["busy", false],
-    ["sync"],
-    ["disabled", false],
-  ]);
+  await controller.create();
+  assert.ok(calls.some(([key, value]) => key === "error" && value === "Create workspace:git failed"));
+  assert.equal(calls.some(([key]) => key === "close"), false);
+  assert.deepEqual(calls.slice(-1), [["busy", false]]);
 });
 
-test("post-owner failure closes the create flow and keeps creation disabled", async () => {
+test("a navigation refresh failure does not retry or duplicate successful creation", async () => {
   const { controller, calls } = setup({
     refreshNavigation: async () => {
-      throw new Error("refresh");
+      throw new Error("refresh failed");
     },
   });
-  await controller.createWorkspace();
-  assert.ok(
-    calls.some(
-      ([key, value]) =>
-        key === "ownerStatus" && value === "Finish owner setup:refresh",
-    ),
-  );
-  assert.deepEqual(calls.slice(-3), [
-    ["busy", false],
-    ["sync"],
-    ["disabled", true],
-  ]);
+  await controller.create();
+  assert.equal(calls.filter(([key]) => key === "create").length, 1);
+  assert.ok(calls.some(([key, value]) => key === "notice" && value === "Workspace created; refresh navigation:refresh failed"));
+  assert.ok(calls.some(([key]) => key === "close"));
 });

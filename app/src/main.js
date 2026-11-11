@@ -190,7 +190,7 @@ const workspaceOwnerPanel = () =>
     quickPrompt: quickRequestFormView.getPrompt,
     onQuickPromptInput: quickRequestFormView.setPrompt,
     quickRequestBusy: quickRequestFormView.isBusy,
-    onModelChange: (event) => setQuickSelectedModel(event.currentTarget.value),
+    onModelChange: (value) => setQuickSelectedModel(value),
     onEnterToSubmit: handleEnterToSubmit,
     visible: selectedOwnerVisible,
     proposalMode,

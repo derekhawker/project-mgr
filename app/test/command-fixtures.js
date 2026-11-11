@@ -87,17 +87,8 @@ export const terminal = { replay: [] };
 
 export const newWorkProposal = {
   schemaVersion: 1,
-  workType: "workspace",
-  workspace: {
-    id: null,
-    name: "Movie recommendations",
-    intent: "Track recommendations",
-  },
-  task: null,
+  workType: "quick_request",
   repositories: [],
-  startingPrompt:
-    "Organize movie recommendations and record why each one is worth watching.",
-  setupPlan: { workspaceHome: "/tmp/workspace", repositories: [] },
 };
 
 export const cleanupJobs = [];
@@ -129,13 +120,9 @@ export function resultForCommand(name) {
   switch (name) {
     case "opencode_session_history":
       return history;
-    case "new_work_proposal_preview":
-      return "Proposal prompt preview";
     case "new_work_proposal_start":
       return { sessionId: "proposal-session-1" };
     case "new_work_proposal_run":
-      return newWorkProposal;
-    case "new_work_proposal_read":
       return newWorkProposal;
     case "new_work_proposal_close":
       return null;
@@ -152,8 +139,6 @@ export function resultForCommand(name) {
     case "task_session_create":
     case "workspace_session_create":
       return session;
-    case "workspace_create_initialized":
-      return { workspace, sessions: [session], setup: [], sessionErrors: [] };
     case "task_complete":
       return { task: completedTask, cleanupJobs };
     case "task_cleanup_jobs":
@@ -221,17 +206,6 @@ export function resultForCommand(name) {
       return [];
     case "repository_scan":
       return { repositories: [], errors: [] };
-    case "repository_attach":
-      return {
-        workspaceId: "workspace-1",
-        repositoryId: "repo-1",
-        setupStatus: "ready",
-        planJson: "{}",
-        checkoutIdentity: "clone-identity",
-        errorCode: null,
-        errorDetail: null,
-        updatedAt: 1,
-      };
     case "opencode_models":
       return [];
     case "opencode_model_default":

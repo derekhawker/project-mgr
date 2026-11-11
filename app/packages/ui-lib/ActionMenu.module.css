@@ -77,6 +77,18 @@
   overscroll-behavior: contain;
 }
 
+.portalActions {
+  z-index: 1000;
+  min-width: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.portalActions[popover] {
+  inset: auto;
+  margin: 0;
+}
+
 .menu[data-direction="up"] > .actions {
   top: auto;
   bottom: calc(100% + var(--ui-space-4));

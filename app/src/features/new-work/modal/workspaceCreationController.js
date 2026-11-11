@@ -1,79 +1,71 @@
+export const EMPTY_WORKSPACE_REPOSITORY = "__create_empty_repository__";
+
 export function createWorkspaceCreationController(deps) {
   const {
-    getProposal,
+    getRepositoryChoice,
     getWorkspaceName,
+    getWorkspaceDescription,
     invoke,
-    createInitializedWorkspace,
+    createWorkspace,
     navigationData,
     refreshNavigation,
     selectWorkspace,
     selectCreatedWorkspace,
-    getCatalog,
-    setProgress,
-    setProposalError,
-    setNewWorkView,
-    setProposalView,
-    getShowSession,
-    setOwnerStatus,
-    clearProposal,
+    setBusy,
+    setError,
+    setNotice,
+    setView,
     closeModal,
     formatWorkspaceError,
-    setOwnerSetupBusy,
-    syncPendingPrompt,
-    setCreateDisabled,
-    clearError,
-    clearOwnerSetupNotice,
   } = deps;
 
-  async function createWorkspace() {
-    setCreateDisabled(true);
-    setOwnerSetupBusy(true);
-    clearError();
-    clearOwnerSetupNotice();
-    let ownerCreated = false;
-    const proposal = getProposal();
+  async function create(event) {
+    event?.preventDefault?.();
+    const choice = getRepositoryChoice();
+    const name = getWorkspaceName().trim();
+    const isEmptyWorkspace = choice === EMPTY_WORKSPACE_REPOSITORY;
+    if (!choice) {
+      setError("Choose a registered repository or create an empty workspace.");
+      return;
+    }
+    if (!name) {
+      setError("Workspace title is required.");
+      return;
+    }
+    const description = isEmptyWorkspace
+      ? getWorkspaceDescription().trim()
+      : null;
+    if (isEmptyWorkspace && !description) {
+      setError("A short description is required for an empty workspace.");
+      return;
+    }
+
+    setBusy(true);
+    setError("");
     try {
-      const workspaceName = getWorkspaceName().trim();
-      if (!workspaceName) throw new Error("Workspace name is required.");
-      if ((proposal.repositories || []).length > 1)
-        throw new Error("A Workspace requires exactly one repository. Revise the proposal to select one repository.");
-      setProgress("workspace", "Create workspace", "running");
-      const initialized = await createInitializedWorkspace(
+      const workspace = await createWorkspace(
         invoke,
-        workspaceName,
-        proposal.repositories?.[0]?.repositoryId ?? null,
+        name,
+        description,
+        isEmptyWorkspace ? null : choice,
       );
-      ownerCreated = true;
-      selectWorkspace(initialized.workspace, navigationData());
-      const data = await refreshNavigation();
-      selectWorkspace(
-        selectCreatedWorkspace(data, initialized.workspace),
-        data,
-      );
-      await refreshNavigation();
-      setProgress("workspace-result", "Workspace create", "success");
-      setOwnerStatus("");
-      setNewWorkView("closed");
-      clearProposal();
+      selectWorkspace(workspace, navigationData());
+      setView("closed");
       closeModal();
+      try {
+        const data = await refreshNavigation();
+        selectWorkspace(selectCreatedWorkspace(data, workspace), data);
+      } catch (error) {
+        setNotice?.(
+          formatWorkspaceError("Workspace created; refresh navigation", error),
+        );
+      }
     } catch (error) {
-      setProgress(
-        "workspace-result",
-        "Workspace create",
-        "failed",
-        String(error),
-      );
-      if (ownerCreated) {
-        setNewWorkView("closed");
-        clearProposal();
-        closeModal();
-        setOwnerStatus(formatWorkspaceError("Finish owner setup", error));
-      } else setProposalError(formatWorkspaceError("Create work", error));
+      setError(formatWorkspaceError("Create workspace", error));
     } finally {
-      setOwnerSetupBusy(false);
-      syncPendingPrompt();
-      setCreateDisabled(ownerCreated);
+      setBusy(false);
     }
   }
-  return { createWorkspace };
+
+  return { create };
 }

@@ -6,7 +6,6 @@ function setup(session = null, failClose = false) {
   const calls = [];
   const controller = createNewWorkModalController({
     getProposalSessionId: () => session,
-    setRequestedType: (v) => calls.push(["requested", v]),
     setWorkType: (v) => calls.push(["type", v]),
     setView: (v) => calls.push(["view", v]),
     setPrompt: (v) => calls.push(["prompt", v]),
@@ -31,7 +30,6 @@ test("open accepts work types and ignores invalid types", () => {
   assert.deepEqual(calls, []);
   controller.open("quick_request");
   assert.deepEqual(calls, [
-    ["requested", "quick_request"],
     ["type", "quick_request"],
     ["view", "capture"],
     ["prompt", ""],

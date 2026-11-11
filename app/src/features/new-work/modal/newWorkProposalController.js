@@ -1,7 +1,6 @@
 export function createNewWorkProposalController(deps) {
   const {
     getOriginalPrompt,
-    getRequestedType,
     getExplicitDirectory,
     getSelectedModel,
     getProposalSessionId,
@@ -31,8 +30,7 @@ export function createNewWorkProposalController(deps) {
     setProgress("interpret", "Interpret request", "running");
     try {
       if (getProposalSessionId()) await closePriorProposalSession();
-      const requestedType = getRequestedType();
-      if (requestedType === "quick_request") await refreshCatalog();
+      await refreshCatalog();
       const selectedModel = JSON.parse(getSelectedModel());
       const started = await startNewWorkProposal(invoke, selectedModel);
       setProposalSessionId(started.sessionId);
@@ -42,8 +40,6 @@ export function createNewWorkProposalController(deps) {
         invoke,
         started.sessionId,
         originalPrompt,
-        undefined,
-        requestedType,
         ...(getExplicitDirectory?.() ? [getExplicitDirectory()] : []),
       );
       setProgress("interpret", "Interpret request", "success");

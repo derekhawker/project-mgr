@@ -16,7 +16,7 @@ await writeFile(
   `
 export { render } from ${JSON.stringify(resolve(root, "node_modules/solid-js/web/dist/web.js"))};
 export { createComponent, createSignal } from ${JSON.stringify(resolve(root, "node_modules/solid-js/dist/solid.js"))};
-export { ActionMenu, ActionMenuItem, ActionMenuGroup, ActionMenuSeparator } from "@ui-lib";
+export { ActionMenu, ActionMenuItem, ActionMenuGroup, ActionMenuSeparator, Select } from "@ui-lib";
 `,
 );
 try {
@@ -43,6 +43,8 @@ for (const key of [
   "Node",
   "Element",
   "HTMLElement",
+  "HTMLHeadElement",
+  "HTMLBodyElement",
   "Event",
   "MouseEvent",
   "PointerEvent",
@@ -62,6 +64,7 @@ const {
   ActionMenuItem,
   ActionMenuGroup,
   ActionMenuSeparator,
+  Select,
 } = await import(pathToFileURL(join(temp, "out/test.js")));
 function mount(children) {
   const host = document.createElement("div");
@@ -203,6 +206,61 @@ test("menu groups and dividers are semantic; rows retain native button behavior"
     assert.equal(submissions, 0);
   } finally {
     view.dispose();
+    form.remove();
+  }
+});
+
+test("Select keeps its form-control API while rendering choices through ActionMenu", async () => {
+  const [value, setValue] = createSignal("");
+  let changed;
+  const host = document.createElement("div");
+  document.body.append(host);
+  const form = document.createElement("form");
+  form.append(host);
+  const dispose = render(
+    () =>
+      createComponent(Select, {
+        id: "repository-choice",
+        label: "Repository",
+        required: true,
+        portal: false,
+        placeholder: "Choose a repository",
+        options: [
+          { value: "repo-1", label: "Example repository" },
+          { value: "empty", label: "Create an empty workspace" },
+        ],
+        get value() {
+          return value();
+        },
+        onChange: (next) => {
+          changed = next;
+          setValue(next);
+        },
+      }),
+    host,
+  );
+  try {
+    const summary = host.querySelector("summary");
+    const details = host.querySelector("details");
+    const listbox = host.querySelector('[role="listbox"]');
+    const options = host.querySelectorAll('[role="option"]');
+    assert.equal(summary.getAttribute("role"), "combobox");
+    assert.equal(summary.getAttribute("aria-haspopup"), "listbox");
+    assert.equal(summary.getAttribute("aria-labelledby"), "repository-choice-label repository-choice-current");
+    assert.equal(listbox.getAttribute("aria-label"), "Repository");
+    assert.equal(options.length, 2);
+    details.open = true;
+    await Promise.resolve();
+    options[0].dispatchEvent(
+      new MouseEvent("click", { bubbles: true, cancelable: true }),
+    );
+    assert.equal(changed, "repo-1");
+    assert.equal(details.open, false);
+    assert.equal(host.querySelector("#repository-choice-current").textContent, "Example repository");
+    assert.equal(options[0].getAttribute("aria-selected"), "true");
+  } finally {
+    dispose();
+    host.remove();
     form.remove();
   }
 });

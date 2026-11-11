@@ -41,10 +41,6 @@ const appNotice = readFileSync(
   join(process.cwd(), "src/application/AppNotice.jsx"),
   "utf8",
 );
-const proposalRepositories = readFileSync(
-  join(process.cwd(), "src/features/new-work/modal/ProposalRepositoryList.jsx"),
-  "utf8",
-);
 const quickRequestHistoryPage = readFileSync(
   join(process.cwd(), "src/views/quick-requests/QuickRequestHistoryPage.jsx"),
   "utf8",
@@ -93,7 +89,7 @@ const directoriesNavigationButton = readFileSync(
   join(process.cwd(), "src/views/directories/DirectoriesNavigationButton.jsx"),
   "utf8",
 );
-const uiMarkup = `${html}\n${workspaceShell}\n${rightContentShell}\n${newWorkMenu}\n${newWorkModal}\n${ownerPanel}\n${appNotice}\n${proposalRepositories}\n${quickRequestHistoryPage}\n${repositoryToolsMenu}\n${directoriesPageMarkup}\n${directoriesNavigationButton}\n${commandResult}\n${applicationShellStatus}`;
+const uiMarkup = `${html}\n${workspaceShell}\n${rightContentShell}\n${newWorkMenu}\n${newWorkModal}\n${ownerPanel}\n${appNotice}\n${quickRequestHistoryPage}\n${repositoryToolsMenu}\n${directoriesPageMarkup}\n${directoriesNavigationButton}\n${commandResult}\n${applicationShellStatus}`;
 
 test("startup and command result feedback share the production Solid shell view", () => {
   assert.match(html, /<div id="application-status-root"><\/div>/);
@@ -248,7 +244,7 @@ test("ticket Workbench selection does not expose tools until row Work is activat
 test("proposal owner mode is presented and identified through the Solid signal", () => {
   const main = readFileSync(join(process.cwd(), "src", "main.js"), "utf8");
   const controller = readFileSync(
-    join(process.cwd(), "src/features/new-work/modal/newWorkProposalController.js"),
+    join(process.cwd(), "src/features/new-work/modal/newWorkModalController.js"),
     "utf8",
   );
   assert.match(
@@ -345,7 +341,7 @@ test("New-work capture alert is rendered from its Solid signal and controller se
     "utf8",
   );
   const controller = readFileSync(
-    join(process.cwd(), "src/features/new-work/modal/newWorkProposalController.js"),
+    join(process.cwd(), "src/features/new-work/modal/newWorkModalController.js"),
     "utf8",
   );
   assert.match(
@@ -710,46 +706,24 @@ test("repository directory management is a page opened from top navigation", () 
   assert.doesNotMatch(html, /id="scan-path"|id="scan-repositories"/);
 });
 
-test("proposal review uses a compact repository path list and has one starting prompt field", () => {
-  assert.match(
-    newWorkModal,
-    /<ul id="proposal-repositories" class="proposal-repository-list" \/>/,
+test("Workspace creation form offers direct repository linking and requires an empty-repo description", () => {
+  assert.match(newWorkModal, /id="workspace-repository-select"/);
+  assert.match(newWorkModal, /Create an empty workspace/);
+  assert.match(newWorkModal, /id="workspace-create-name"/);
+  assert.match(newWorkModal, /id="workspace-create-description"[\s\S]*required/);
+  assert.match(newWorkModal, /form="workspace-create-form"/);
+  assert.doesNotMatch(newWorkModal, /proposal-repositories|workspace-review-directory|proposal-prompt-preview/);
+  const createWork = readFileSync(
+    join(process.cwd(), "src/features/new-work/createNewWork.js"),
+    "utf8",
   );
-  assert.match(
-    newWorkModal,
-    /id="workspace-review-name" type="text" required maxlength="120" value=\{props\.workspaceName\(\)\} onInput=\{\(event\) => props\.setWorkspaceName\(event\.currentTarget\.value\)\}/,
-  );
-  assert.match(newWorkModal, /id="workspace-review-directory"/);
-  assert.match(
-    newWorkModal,
-    /<TextArea id="workspace-original-prompt" rows="3" readOnly value=\{proposal\(\)\.originalPrompt\} \/>/,
-  );
-  assert.match(
-    newWorkModal,
-    /<label for="proposal-prompt">Starting prompt<\/label>/,
-  );
-  assert.match(
-    newWorkModal,
-    /<TextArea id="proposal-prompt" rows="4" value=\{props\.startingPrompt\(\)\} onInput=\{\(event\) => props\.setStartingPrompt\(event\.currentTarget\.value\)\} \/>/,
-  );
-  const main = readFileSync(join(process.cwd(), "src", "main.js"), "utf8");
   const controller = readFileSync(
     join(process.cwd(), "src/features/new-work/modal/workspaceCreationController.js"),
     "utf8",
   );
-  assert.match(main, /setReviewWorkspaceName\(review\.workspaceName\)/);
-  assert.match(main, /setReviewStartingPrompt\(review\.startingPrompt\)/);
-  assert.match(controller, /const startingPrompt = getStartingPrompt\(\)/);
-  assert.match(
-    controller,
-    /const workspaceName = getWorkspaceName\(\)\.trim\(\)/,
-  );
-  assert.doesNotMatch(
-    main,
-    /querySelector\('#(?:proposal-prompt|workspace-review-name)'\)\.value/,
-  );
-  assert.doesNotMatch(html, /proposal-grid/);
-  assert.doesNotMatch(html, /Pinned submodules|Workspace clone:/);
+  assert.match(createWork, /workspaceTitleFromRepositoryName\(repository\.name\)/);
+  assert.match(controller, /A short description is required for an empty workspace/);
+  assert.doesNotMatch(controller, /showSession|submitNewWorkStartingPrompt/);
 });
 
 test("Quick Requests use a dedicated available-height page with a visible way back and no owner controls", () => {
@@ -765,7 +739,7 @@ test("Quick Requests use a dedicated available-height page with a visible way ba
     ),
     "utf8",
   );
-  assert.match(html, /id="quick-request-list"/);
+  assert.match(quickLists, /quick-request-list/);
   assert.match(
     quickRequestHistoryPage,
     /<section id="quick-request-full-list"[^>]*hidden=\{!props\.visible\(\)\}/,
@@ -846,7 +820,7 @@ test("Quick Request navigation aligns its history icon button with the heading a
     "utf8",
   );
   assert.match(
-    html,
+    quickLists,
     /<div class="quick-section-heading">\s*<h3>Quick Requests<\/h3>\s*<div id="show-history-root"><\/div>/,
   );
   const historyButton = readFileSync(
@@ -893,10 +867,10 @@ test("Quick Request navigation aligns its history icon button with the heading a
   assert.doesNotMatch(quickLists, /item\.append\(button, remove\)/);
 });
 
-test("New-work is a modal over the existing workbench, with no standalone workspace creation path", () => {
+test("New-work offers direct Workspace creation and a separate Quick Request proposal flow", () => {
   const main = readFileSync(join(process.cwd(), "src", "main.js"), "utf8");
   const controller = readFileSync(
-    join(process.cwd(), "src/features/new-work/modal/newWorkProposalController.js"),
+    join(process.cwd(), "src/features/new-work/modal/newWorkModalController.js"),
     "utf8",
   );
   const quickRequestController = readFileSync(
@@ -905,59 +879,33 @@ test("New-work is a modal over the existing workbench, with no standalone worksp
   );
   assert.match(
     newWorkModal,
-    /<dialog id="new-work-modal"[\s\S]*id="new-work"[\s\S]*id="new-work-review"[\s\S]*<\/dialog>/,
+    /id="new-work-workspace"[\s\S]*id="workspace-create-form"[\s\S]*id="new-work"[\s\S]*id="new-work-review"/,
   );
   assert.doesNotMatch(
     html,
-    /id="new-workspace"|id="workspace-create-form"|id="empty-workspaces"/,
+    /id="new-workspace"|id="empty-workspaces"/,
   );
-  assert.match(main, /newWorkModal\.showModal\(\)/);
+  assert.match(newWorkModal, /id="workspace-repository-select"/);
+  assert.match(newWorkModal, /Create an empty workspace/);
+  assert.match(newWorkModal, /Short description/);
+  assert.doesNotMatch(newWorkModal, /proposal-prompt-preview|proposal-starting-prompt/);
+  assert.match(newWorkModal, /form="workspace-create-form"/);
+  assert.match(controller, /modal\.showModal\(\)/);
   assert.match(
     newWorkMenu,
     /id="new-work-menu"[\s\S]*data-new-work-type="workspace"[\s\S]*data-new-work-type="quick_request"/,
   );
   assert.match(newWorkMenu, /props\.onChoose\(type\)/);
   assert.doesNotMatch(html, /<select id="new-work-type"/);
-  assert.match(
-    newWorkModal,
-    /\['Workspace', 'Describe the workspace you want to create\.', 'New Workspace'\]/,
-  );
-  assert.match(
-    newWorkModal,
-    /id="new-work-prompt-label"[^>]*>Original prompt</,
-  );
-  assert.match(
-    newWorkModal,
-    /props\.workType\(\) === 'quick_request'[\s\S]*\['Quick Request', 'What do you want OpenCode to do\?'/,
-  );
-  assert.doesNotMatch(newWorkModal, /\['Task'/);
-  const proposalReview = readFileSync(
-    join(process.cwd(), "src/features/new-work/modal/newWorkProposalReview.js"),
-    "utf8",
-  );
-  assert.match(
-    proposalReview,
-    /createLabel: isQuickRequest \? 'Confirm directory and start Quick Request' : 'Create Workspace'/,
-  );
-  assert.match(
-    newWorkModal,
-    /id="proposal-create" disabled=\{props\.proposalCreateDisabled\(\)\} onClick=\{props\.onConfirm\}>\{proposal\(\)\.createLabel\}/,
-  );
-  assert.match(controller, /undefined, requestedType,/);
+  assert.match(newWorkModal, /What do you want OpenCode to do\?/);
+  assert.match(newWorkModal, /id="proposal-create"/);
+  assert.match(controller, /if \(workType === "workspace"\)[\s\S]*setView\("workspace"\)/);
   assert.match(newWorkModal, /id="quick-request-directory"/);
   assert.match(
     quickRequestController,
     /originalPrompt: getOriginalPrompt\(\),[\s\S]*model,[\s\S]*repositoryId: getRepositoryId\(\) \|\| null/,
   );
-  assert.match(
-    main,
-    /setRequestedType: \(value\) => \{ requestedNewWorkType = value; \}/,
-  );
-  assert.doesNotMatch(
-    main,
-    /restoreWorkspacePendingPrompt/,
-    "selecting a workspace must not restore the unsent starting-prompt editor",
-  );
+  assert.match(main, /createNewWork\(/);
   assert.match(
     readFileSync(
       join(process.cwd(), "src/application/NoSelection.jsx"),
@@ -965,10 +913,7 @@ test("New-work is a modal over the existing workbench, with no standalone worksp
     ),
     /Select a Workspace, or choose New work to start\./,
   );
-  assert.match(
-    newWorkModal,
-    /class="new-work-modal-scroll"[\s\S]*class="new-work-modal-footer"/,
-  );
+  assert.match(newWorkModal, /id="workspace-create-form"/);
 });
 
 test("New-work offers only Workspace and Quick Request creation, not legacy Task creation", () => {
@@ -988,7 +933,7 @@ test("New-work offers only Workspace and Quick Request creation, not legacy Task
     ),
     "utf8",
   );
-  assert.match(dialogController, /new Set\(\['workspace', 'quick_request'\]\)/);
+  assert.match(dialogController, /new Set\(\["workspace", "quick_request"\]\)/);
   assert.doesNotMatch(
     main,
     /createWorkspaceTask|currentProposal\.workType === 'task'/,
@@ -1042,30 +987,22 @@ test("Workspace ticket viewer is mounted as a Solid component", () => {
   );
 });
 
-test("Workspace confirmation opens its sessions and sends only the reviewed starting prompt", () => {
-  const main = readFileSync(join(process.cwd(), "src", "main.js"), "utf8");
+test("Workspace creation links a repository without creating an OpenCode session", () => {
+  const createNewWork = readFileSync(
+    join(process.cwd(), "src/features/new-work/createNewWork.js"),
+    "utf8",
+  );
   const controller = readFileSync(
     join(process.cwd(), "src/features/new-work/modal/workspaceCreationController.js"),
     "utf8",
   );
-  assert.match(
-    main,
-    /if \(currentProposal\.workType === 'workspace'\) \{\s*await workspaceCreationController\.createWorkspace\(\);\s*return;/,
-  );
-  assert.match(
-    controller,
-    /for \(const session of workspaceSessions\) await showSession\(session\.openCodeSessionId\);[\s\S]*if \(shouldSubmitWorkspaceStartingPrompt\(startingPrompt\)\)[\s\S]*await submitNewWorkStartingPrompt\(invoke, action, startingPrompt\);[\s\S]*No starting prompt was provided/,
-  );
-  assert.match(controller, /initialized\.sessions \|\| \[\]/);
-  assert.doesNotMatch(main, /task-revised-prompt|taskPromptAction/);
-  assert.doesNotMatch(main, /currentProposal\.workType === 'task'/);
-  assert.match(newWorkModal, /id="proposal-starting-prompt"/);
-  assert.match(
-    newWorkModal,
-    /id="proposal-starting-prompt"[^>]*hidden=\{proposal\(\)\.workType !== 'workspace'\}/,
-  );
-  assert.match(controller, /Retry setup/);
-  assert.match(controller, /Retry session/);
+  const rust = readFileSync(join(process.cwd(), "src-tauri/src/lib.rs"), "utf8");
+  assert.match(createNewWork, /onWorkspaceSubmit: workspaceCreation\.create/);
+  assert.match(controller, /createWorkspace\([\s\S]*isEmptyWorkspace \? null : choice/);
+  assert.doesNotMatch(controller, /createSession|workspace_session_create|submit.*Prompt/);
+  const handler = rust.match(/async fn workspace_create\([\s\S]*?\n\}/)?.[0] || "";
+  assert.match(handler, /create_single_repository_workspace/);
+  assert.doesNotMatch(handler, /Runtime|session_create|OpenCode/);
 });
 
 test("pending starting-prompt editor and submit busy state are WorkspaceOwnerPanel signals", () => {
@@ -1079,11 +1016,11 @@ test("pending starting-prompt editor and submit busy state are WorkspaceOwnerPan
   );
   assert.match(
     main,
-    /const \[pendingPromptText, setPendingPromptText\] = createSignal\(''\)/,
+    /const \[pendingPromptText, setPendingPromptText\] = createSignal\(""\)/,
   );
   assert.match(
     ownerPanel,
-    /id="pending-prompt-text"[^>]*value=\{props\.pendingPromptText\(\)\} onInput=/,
+    /id="pending-prompt-text"[\s\S]*value=\{props\.pendingPromptText\(\)\}[\s\S]*onInput=/,
   );
   assert.match(main, /createPendingStartingPromptController\(/);
   assert.match(

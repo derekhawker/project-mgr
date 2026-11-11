@@ -2,14 +2,15 @@ const acceptedTypes = new Set(["workspace", "quick_request"]);
 
 export function createNewWorkModalController({
   getProposalSessionId,
-  setRequestedType,
   setWorkType,
-  setView,
-  setPrompt,
-  setCaptureError,
-  modal,
-  focusPrompt,
-  closeProposalSession,
+    setView,
+    setPrompt,
+    setCaptureError,
+    resetWorkspaceFields,
+    modal,
+    focusPrompt,
+    focusWorkspace,
+    closeProposalSession,
 }) {
   async function cancel() {
     if (getProposalSessionId()) {
@@ -25,13 +26,18 @@ export function createNewWorkModalController({
   return {
     open(workType = "workspace") {
       if (!acceptedTypes.has(workType)) return;
-      setRequestedType(workType);
       setWorkType(workType);
-      setView("capture");
-      setPrompt("");
-      setCaptureError("");
+      if (workType === "workspace") {
+        resetWorkspaceFields?.();
+        setView("workspace");
+      } else {
+        setView("capture");
+        setPrompt("");
+        setCaptureError("");
+      }
       if (!modal.isOpen()) modal.showModal();
-      focusPrompt();
+      if (workType === "workspace") focusWorkspace?.();
+      else focusPrompt();
     },
     cancel,
     backToCapture() {

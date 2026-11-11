@@ -3,19 +3,45 @@
 > **Ticket-workflow transition:** The approved single-repository, ticket-first
 > requirements and implementation progress are recorded in
 > [workspace-ticket-workflow-proposal.md](workspace-ticket-workflow-proposal.md).
-> They supersede conflicting regular-Workspace descriptions below; the new
-> workflow remains subject to the proof and validation recorded there.
+> They supersede conflicting regular-Workspace descriptions below. Workspace
+> creation is a direct registered-repository link or a new repository in the
+> configured repository library; it does not use the historical proposal/clone/
+> symlink flow. Quick Request proposal behavior remains current.
 
 > **Workspace-only contract:** `workspace-refactor-target.md` is authoritative
 > for regular work. Most detailed sequences below document the former
 > Workspace/Task product and are retained as historical implementation context;
-> they are not current UI flows. Task 6/7 delivery and remaining validation are
-> tracked in `workspace-refactor-plan.md`.
+> they are not current UI flows. Current ticket-first requirements and remaining
+> transition proof are tracked in `workspace-ticket-workflow-proposal.md`.
 
 This specification defines the actors, state changes, and sequence flows for
 the application. It is the durable reference for application behavior and
 for the boundaries between the GUI, Rust core, OpenCode, Git, SQLite, and the
 filesystem.
+
+## Direct Workspace creation
+
+The New Work menu keeps **Workspace** and **Quick Request** as separate flows.
+Workspace opens a direct form with two choices: link a repository registered in
+the Repositories view, or create an empty repository. The title is editable and
+is suggested from a selected repository name by splitting hyphens, underscores,
+and lowercase-to-uppercase boundaries. Empty-repository creation also requires
+a short description.
+
+Rust owns validation and persistence. A registered choice is re-inspected and
+identity-checked, then associated directly; no clone or symlink is made. For an
+empty Workspace, Rust initializes and registers a repository at
+`<configured repository-library root>/<username>/<workspace-slug>/`, creating
+the username directory if needed. The Workspace has no separate home directory,
+and its session/ticket working directory is the linked repository root.
+Workspace creation does not start or require OpenCode. On success, the app
+selects the Workspace and shows its ticket view; **Work** starts or resumes the
+ticket's OpenCode session later. Errors leave the form open and are shown to the
+user.
+
+The detailed New-work proposal and repository-provisioning sequences later in
+this document describe the retired Workspace path. They are historical only;
+the independent Quick Request proposal and session flow remains current.
 
 ## Workspace ticket browser and ticket creation
 
@@ -58,10 +84,10 @@ historical v1 evidence remains in the prototype notes. OpenCode conversation
 history remains in OpenCode; SQLite stores only application associations and
 lifecycle state.
 
-Rust creates and validates Workspace clones, Task branches/worktrees, and their
-associations before opening user-facing sessions. OpenCode owns conversation
-history and performs requested implementation work; it does not provision
-application-managed repositories or worktrees.
+Rust validates direct Workspace repository associations and legacy Task
+branches/worktrees before opening user-facing sessions. OpenCode owns
+conversation history and performs requested implementation work; it does not
+provision application-managed repositories or worktrees.
 
 ## 2. Actors
 
