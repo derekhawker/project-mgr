@@ -8,6 +8,7 @@
 
 ## Bug Discussions
 
+- For crashes or unclear failures, consult [crash diagnostics](docs/crash-diagnostics.md) for log, frontend-diagnostic, and OS dump locations.
 - When a bug is discussed, first inspect the reported context and accessible evidence, including relevant logs and errors, without changing user data. Confirm only the material unknowns with the user before relying on assumptions or making changes: for UI bugs, the screen or interaction area, preconditions, reproduction steps, and expected versus actual behavior. Preserve safety and obtain authorization before operations that could affect user data or live services.
 - For native initial-prompt failures, inspect Tauri's `app_log_dir()/application.log`: on Linux, `${XDG_DATA_HOME:-$HOME/.local/share}/dev.opencode.projectmgr/logs/application.log`; on macOS, `~/Library/Logs/dev.opencode.projectmgr/application.log`; on Windows, `%LOCALAPPDATA%\dev.opencode.projectmgr\logs\application.log`. An application directory override changes the location to `<override>/logs/application.log`. The file may not exist until a failure is logged; inspect terminal stderr and the UI error too. Never copy prompts, credentials, or other secrets into reports or logs.
 - For frontend command failures, inspect `window.appDiagnostics()` in the browser/WebView developer console, or `agent-browser console` in the mock browser. These bounded, in-memory records contain command names and categories only and reset on reload; they do not cover failures before frontend startup. UI and other console/stderr messages may contain sensitive details, so review before sharing.
@@ -25,6 +26,7 @@
 ## Implementation
 
 - Default user-facing Tauri backend commands to async orchestration. Put blocking Rust work on a bounded blocking executor. Make explicit exceptions for UI-thread operations and measured, high-frequency lightweight commands.
+- For performance-sensitive Rust/Tauri changes or slow/unresponsive UI reports, consult [Performance Pitfalls and Safe Patterns](docs/performance-pitfalls.md).
 - Treat `npm run live --prefix app` as a persistent, user-owned development runtime: reuse it and let frontend changes hot-reload. Preserve its launch script and running process; restart or change either only when the work requires it, and explain why first.
 - When adding or moving frontend files, follow [frontend organization and naming](app/README.md#frontend-organization): colocate screen code in `app/src/views/<area>/`, use exact-name PascalCase component files, and keep plain JavaScript modules camelCase.
 - Before implementation, understand how the intended behavior could work end to end within the current architecture. Identify whether the feature extends an existing feature or calls for a different organization of code. Refine this understanding as implementation reveals more.
