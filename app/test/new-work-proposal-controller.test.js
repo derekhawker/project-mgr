@@ -7,7 +7,6 @@ function setup(overrides = {}) {
   let sessionId = "prior";
   const deps = {
     getOriginalPrompt: () => "  exact\nprompt  ",
-    getRequestedType: () => "workspace",
     getSelectedModel: () => '{"providerId":"openai","id":"m"}',
     getProposalSessionId: () => sessionId,
     setProposalSessionId: (id) => {
@@ -56,9 +55,7 @@ test("guards blank original prompt before state changes and preserves success or
   assert.equal(prevented, true);
   assert.deepEqual(empty.calls, []);
 
-  const { controller, calls } = setup({
-    getRequestedType: () => "quick_request",
-  });
+  const { controller, calls } = setup();
   await controller.handleNewWorkCapture({ preventDefault() {} });
   assert.deepEqual(calls, [
     ["clear"],
@@ -70,7 +67,7 @@ test("guards blank original prompt before state changes and preserves success or
     ["start", "invoke", { providerId: "openai", id: "m" }],
     ["session", "new"],
     ["mode", true],
-    ["run", "invoke", "new", "  exact\nprompt  ", undefined, "quick_request"],
+    ["run", "invoke", "new", "  exact\nprompt  "],
     ["progress", "interpret", "Interpret request", "success"],
     ["render", { proposal: true }, "  exact\nprompt  "],
     ["review"],
@@ -135,7 +132,6 @@ test("captures failures and restores busy state for prior-session, model, start,
 
 test("passes the explicitly chosen Quick Request directory to proposal generation", async () => {
   const { controller, calls } = setup({
-    getRequestedType: () => "quick_request",
     getExplicitDirectory: () => "/chosen/directory",
   });
   await controller.handleNewWorkCapture({ preventDefault() {} });

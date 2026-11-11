@@ -38,13 +38,6 @@ test("browser fixture is deterministic, isolated, and blocks unimplemented effec
   }
 });
 
-test("browser proposal preview uses template values instead of prompt or repository data", async () => {
-  const preview = await invokeBrowserFixture("new_work_proposal_preview");
-  assert.match(preview, /\{\{originalPrompt\}\}/);
-  assert.match(preview, /\{\{repositoryCatalog\}\}/);
-  assert.doesNotMatch(preview, /Example repository|\/fixture\/repository/);
-});
-
 test("Ports fixture shows informative default-range listeners and simulates stop without processes", async () => {
   const listeners = await invokeBrowserFixture("ports_list");
   assert.ok(listeners.length >= 2);
@@ -145,17 +138,17 @@ test("fixture creates and reopens a workspace and tool without external operatio
     throw new Error("unexpected network");
   };
   try {
-    const created = await invokeBrowserFixture("workspace_create_initialized", {
-      request: { name: "Fixture created" },
+    const created = await invokeBrowserFixture("workspace_create", {
+      request: { name: "Fixture created", description: "Fixture" },
     });
-    assert.equal(created.workspace.name, "Fixture created");
+    assert.equal(created.name, "Fixture created");
     assert.equal(
       (await invokeBrowserFixture("workspace_navigation")).workspaces.at(-1).id,
-      created.workspace.id,
+      created.id,
     );
-    assert.deepEqual(created.sessions, []);
+    assert.equal(Object.hasOwn(created, "sessions"), false);
     const ticketWork = await invokeBrowserFixture("workspace_ticket_work", {
-      workspaceId: created.workspace.id, filename: "example.md",
+      workspaceId: created.id, filename: "example.md",
     });
     assert.deepEqual(
       await invokeBrowserFixture("opencode_session_restore", { sessionId: ticketWork.sessions[0].openCodeSessionId }),
@@ -163,16 +156,16 @@ test("fixture creates and reopens a workspace and tool without external operatio
     );
     assert.equal(ticketWork.activeSessionId, ticketWork.sessions[0].openCodeSessionId);
     const extraSession = await invokeBrowserFixture("workspace_ticket_session_create", {
-      workspaceId: created.workspace.id, filename: "example.md",
+      workspaceId: created.id, filename: "example.md",
     });
     const afterCreate = await invokeBrowserFixture("workspace_ticket_work", {
-      workspaceId: created.workspace.id, filename: "example.md",
+      workspaceId: created.id, filename: "example.md",
     });
     assert.equal(afterCreate.sessions.length, 2);
     assert.equal(afterCreate.activeSessionId, extraSession.openCodeSessionId);
     assert.equal(
       await invokeBrowserFixture("workspace_ticket_session_close", {
-        workspaceId: created.workspace.id,
+        workspaceId: created.id,
         filename: "example.md",
         sessionId: extraSession.openCodeSessionId,
       }),
@@ -191,7 +184,7 @@ test("fixture creates and reopens a workspace and tool without external operatio
     assert.deepEqual(tools[0].packageScripts, ["test"]);
     assert.deepEqual(
       await invokeBrowserFixture("repo_tools_list", {
-        request: { ownerId: created.workspace.id },
+        request: { ownerId: created.id },
       }),
       [],
     );
@@ -213,10 +206,10 @@ test("fixture creates and reopens a workspace and tool without external operatio
 });
 
 test("created ticket fixtures stay scoped to their owning workspace", async () => {
-  const created = await invokeBrowserFixture("workspace_create_initialized", {
-    request: { name: "Ticket fixture scope" },
+  const created = await invokeBrowserFixture("workspace_create", {
+    request: { name: "Ticket fixture scope", description: "Fixture" },
   });
-  const workspaceId = created.workspace.id;
+  const workspaceId = created.id;
   const ticket = await createWorkspaceTicket(
     invokeBrowserFixture,
     workspaceId,

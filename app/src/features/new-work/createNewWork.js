@@ -1,37 +1,27 @@
 import { createSignal } from "solid-js";
 import { NewWorkModal } from "./modal/NewWorkModal.jsx";
 import { NewWorkMenu } from "./NewWorkMenu.jsx";
-import { ProposalRepositoryList } from "./modal/ProposalRepositoryList.jsx";
 import { createNewWorkModalController } from "./modal/newWorkModalController.js";
 import { createNewWorkProposalController } from "./modal/newWorkProposalController.js";
 import { createWorkspaceCreationController } from "./modal/workspaceCreationController.js";
+import { EMPTY_WORKSPACE_REPOSITORY } from "./modal/workspaceCreationController.js";
 import { createQuickRequestCreationController } from "./modal/quickRequestCreationController.js";
-import { createNewWorkProposalPreview } from "./modal/newWorkProposalPreview.js";
+import { workspaceTitleFromRepositoryName } from "./modal/workspaceTitle.js";
 import { prepareProposalReview } from "./modal/newWorkProposalReview.js";
 import { handleEnterToSubmit } from "../../lib/formKeyboard.js";
-import {
-  hideWorkspaceRepositoryIds,
-  workspaceProgressPresentation,
-  workspaceSetupFailureDetails,
-} from "./modal/workspaceSetupProgress.js";
+import { workspaceProgressPresentation } from "./modal/workspaceSetupProgress.js";
 import {
   startNewWorkProposal,
-  previewNewWorkProposal,
   runNewWorkProposal,
   closeNewWorkProposal,
-  createInitializedWorkspace,
+  createWorkspace,
   selectCreatedWorkspace,
-  workspaceProposalRepositoryLocations,
-  workspaceStartingPromptSession,
-  shouldSubmitWorkspaceStartingPrompt,
-  submitNewWorkStartingPrompt,
   resolveQuickRequestDirectory,
   submitResolvedQuickRequestFlow,
   formatWorkspaceError,
 } from "../../services/shell.js";
 
-// Owns the transient capture → review → creation presentation. Product records,
-// validation, provisioning and process ownership still live behind Rust commands.
+// Composes direct Workspace creation with the separate Quick Request proposal flow.
 export function createNewWork({
   invoke,
   openDirectoryPicker,
@@ -70,12 +60,16 @@ export function createNewWork({
     startingPrompt: "",
     createLabel: "Create",
   });
-  const [reviewWorkspaceName, setReviewWorkspaceName] = createSignal("");
-  const [reviewStartingPrompt, setReviewStartingPrompt] = createSignal("");
   const [progressVisible, setProgressVisible] = createSignal(false);
   const [progressRows, setProgressRows] = createSignal(new Map());
   const [newWorkCaptureError, setNewWorkCaptureError] = createSignal("");
   const [proposalError, setProposalError] = createSignal("");
+  const [workspaceError, setWorkspaceError] = createSignal("");
+  const [workspaceRepositoryChoice, setWorkspaceRepositoryChoice] = createSignal("");
+  const [workspaceName, setWorkspaceName] = createSignal("");
+  const [workspaceDescription, setWorkspaceDescription] = createSignal("");
+  const [workspaceCatalogLoading, setWorkspaceCatalogLoading] = createSignal(false);
+  const [workspaceRepositories, setWorkspaceRepositories] = createSignal([]);
   const [proposalCreateDisabled, setProposalCreateDisabled] =
     createSignal(true);
   const [proposalModelDisabled, setProposalModelDisabled] = createSignal(true);
@@ -84,15 +78,8 @@ export function createNewWork({
   const [newWorkCaptureDisabled, setNewWorkCaptureDisabled] =
     createSignal(false);
   const [newWorkPromptValue, setNewWorkPromptValue] = createSignal("");
-  const [preview, setPreview] = createSignal("");
-  const proposalPreview = createNewWorkProposalPreview({
-    requestPreview: () => previewNewWorkProposal(invoke),
-    setPreview,
-  });
-  const [proposalRepositoryRows, setProposalRepositoryRows] = createSignal([]);
   let newWorkModal;
   let newWorkPrompt;
-  let requestedNewWorkType = "workspace";
   let currentProposal = null;
   let quickRequestDirectoryReady = false;
   let proposalSessionId = null;
@@ -130,19 +117,24 @@ export function createNewWork({
 
   const modalController = createNewWorkModalController({
     getProposalSessionId: () => proposalSessionId,
-    setRequestedType: (value) => {
-      requestedNewWorkType = value;
-    },
     setWorkType: setNewWorkType,
     setView: setNewWorkView,
     setPrompt: setNewWorkPromptValue,
     setCaptureError: setNewWorkCaptureError,
+    resetWorkspaceFields: () => {
+      setWorkspaceRepositoryChoice("");
+      setWorkspaceName("");
+      setWorkspaceDescription("");
+      setWorkspaceError("");
+    },
     modal: {
       isOpen: () => newWorkModal.open,
       showModal: () => newWorkModal.showModal(),
       close: () => newWorkModal.close(),
     },
     focusPrompt: () => newWorkPrompt.focus(),
+    focusWorkspace: () =>
+      newWorkModal.querySelector("#workspace-repository-select")?.focus(),
     closeProposalSession,
   });
 
@@ -171,14 +163,10 @@ export function createNewWork({
   async function renderProposal(proposal, originalPrompt) {
     const review = prepareProposalReview(proposal, originalPrompt, {
       repositoryCatalog: getCatalog(),
-      repositoryLocations: workspaceProposalRepositoryLocations,
     });
     currentProposal = proposal;
     setProposalCreateDisabled(false);
-    setProposalRepositoryRows(review.repositoryLocations);
     setProposalView(review);
-    setReviewWorkspaceName(review.workspaceName);
-    setReviewStartingPrompt(review.startingPrompt);
     if (review.workType === "quick_request") {
       setQuickRequestDirectories(review.quickRequestDirectories);
       setQuickRequestDirectoryId(review.quickRequestDirectoryId);
@@ -191,8 +179,8 @@ export function createNewWork({
 
   const proposalController = createNewWorkProposalController({
     getOriginalPrompt: newWorkPromptValue,
-    getRequestedType: () => requestedNewWorkType,
-    getExplicitDirectory: () => requestedNewWorkType === "quick_request" && customQuickDirectory() !== null ? customQuickDirectory() : undefined,
+    getExplicitDirectory: () =>
+      customQuickDirectory() !== null ? customQuickDirectory() : undefined,
     getSelectedModel: proposalSelectedModel,
     getProposalSessionId: () => proposalSessionId,
     setProposalSessionId: (id) => {
@@ -215,43 +203,21 @@ export function createNewWork({
   });
 
   const workspaceCreation = createWorkspaceCreationController({
-    getProposal: () => currentProposal,
-    getProposalSessionId: () => proposalSessionId,
-    getSelectedModel: proposalSelectedModel,
-    getStartingPrompt: reviewStartingPrompt,
-    getWorkspaceName: reviewWorkspaceName,
+    getRepositoryChoice: workspaceRepositoryChoice,
+    getWorkspaceName: workspaceName,
+    getWorkspaceDescription: workspaceDescription,
     invoke,
-    createInitializedWorkspace,
+    createWorkspace,
     navigationData: getNavigationData,
     refreshNavigation,
     selectWorkspace,
     selectCreatedWorkspace,
-    getCatalog,
-    setProgress,
-    setProposalError,
-    setNewWorkView,
-    setProposalView,
-    showSession,
-    workspaceSetupFailureDetails,
-    hideWorkspaceRepositoryIds,
-    workspaceStartingPromptSession,
-    shouldSubmitWorkspaceStartingPrompt,
-    submitNewWorkStartingPrompt,
-    setOwnerStatus: owner.setStatus,
-    clearProposal: () => {
-      currentProposal = null;
-    },
+    setBusy: setNewWorkCaptureDisabled,
+    setError: setWorkspaceError,
+    setNotice: setAppNotice,
+    setView: setNewWorkView,
     closeModal: () => newWorkModal.close(),
-    closeProposalSession,
     formatWorkspaceError,
-    setOwnerSetupBusy: owner.setSetupBusy,
-    syncPendingPrompt: owner.syncPendingPrompt,
-    setCreateDisabled: setProposalCreateDisabled,
-    clearError: () => setProposalError(""),
-    clearOwnerSetupNotice: owner.clearSetupNotice,
-    setProposalSessionForProgress: (id) => {
-      progressProposalSessionId = id;
-    },
   });
 
   const quickRequestCreation = createQuickRequestCreationController({
@@ -303,33 +269,38 @@ export function createNewWork({
   async function createProposedWork() {
     if (
       !currentProposal ||
+      currentProposal.workType !== "quick_request" ||
       !isModelsReady() ||
-      (currentProposal.workType === "quick_request" &&
-        !quickRequestDirectoryReady)
-    )
-      return;
-    if (currentProposal.workType === "workspace") {
-      await workspaceCreation.createWorkspace();
-      return;
-    }
+      !quickRequestDirectoryReady
+    ) return;
     await quickRequestCreation.createQuickRequest();
   }
 
   function openNewWork(type) {
-      setCustomQuickDirectory(null);
-      setDefaultQuickDirectory("");
-      if (type === "quick_request") {
-        void resolveQuickRequestDirectory(invoke).then(setDefaultQuickDirectory)
-          .catch((error) => setDefaultQuickDirectory(formatWorkspaceError("Resolve Quick Request directory", error)));
-      }
-      const disclosure = newWorkModal.querySelector("#proposal-prompt-preview");
-      if (disclosure) disclosure.open = false;
-      proposalPreview.close();
-      return modalController.open(type);
+    setCustomQuickDirectory(null);
+    setDefaultQuickDirectory("");
+    if (type === "quick_request") {
+      void resolveQuickRequestDirectory(invoke)
+        .then(setDefaultQuickDirectory)
+        .catch((error) =>
+          setDefaultQuickDirectory(
+            formatWorkspaceError("Resolve Quick Request directory", error),
+          ),
+        );
+    } else if (type === "workspace") {
+      setWorkspaceRepositories(getCatalog() || []);
+      setWorkspaceCatalogLoading(true);
+      void refreshCatalog()
+        .then((repositories) => setWorkspaceRepositories(repositories))
+        .catch((error) => {
+          setWorkspaceError(formatWorkspaceError("Load repositories", error));
+        })
+        .finally(() => setWorkspaceCatalogLoading(false));
+    }
+    return modalController.open(type);
   }
   async function cancelNewWork() {
     await modalController.cancel();
-    if (!newWorkModal.open) proposalPreview.close();
   }
   return {
     open: openNewWork,
@@ -343,10 +314,10 @@ export function createNewWork({
     onSetupProgress(payload) {
       if (!payload || payload.proposalSessionId !== progressProposalSessionId)
         return;
-      const presentation = workspaceProgressPresentation(
-        payload,
-        currentProposal?.repositories,
-        getCatalog(),
+        const presentation = workspaceProgressPresentation(
+          payload,
+          [],
+          getCatalog(),
       );
       setProgress(
         payload.key,
@@ -364,13 +335,35 @@ export function createNewWork({
         setPromptElement: (element) => {
           newWorkPrompt = element;
         },
-        proposalRepositories: () =>
-          ProposalRepositoryList({ repositories: proposalRepositoryRows }),
         proposal: proposalView,
-        workspaceName: reviewWorkspaceName,
-        setWorkspaceName: setReviewWorkspaceName,
-        startingPrompt: reviewStartingPrompt,
-        setStartingPrompt: setReviewStartingPrompt,
+        workspaceVisible: () => newWorkView() === "workspace",
+        workspaceRepositoryChoice,
+        workspaceRepositories,
+        workspaceCatalogLoading,
+        workspaceEmptySelected: () =>
+          workspaceRepositoryChoice() === EMPTY_WORKSPACE_REPOSITORY,
+        emptyWorkspaceChoice: EMPTY_WORKSPACE_REPOSITORY,
+        onWorkspaceRepositoryChange: (repositoryId) => {
+          setWorkspaceRepositoryChoice(repositoryId);
+          const repository = workspaceRepositories().find(
+            (item) => item.id === repositoryId,
+          );
+          if (repository)
+            setWorkspaceName(workspaceTitleFromRepositoryName(repository.name));
+          else if (repositoryId === EMPTY_WORKSPACE_REPOSITORY)
+            setWorkspaceName("");
+          setWorkspaceError("");
+        },
+        workspaceName,
+        setWorkspaceName,
+        workspaceDescription,
+        setWorkspaceDescription,
+        workspaceError,
+        workspaceCreateDisabled: () =>
+          newWorkCaptureDisabled() ||
+          workspaceCatalogLoading() ||
+          !workspaceRepositoryChoice(),
+        onWorkspaceSubmit: workspaceCreation.create,
         workType: newWorkType,
         captureVisible: () => newWorkView() === "capture",
         reviewVisible: () => newWorkView() === "review",
@@ -386,11 +379,6 @@ export function createNewWork({
         captureDisabled: newWorkCaptureDisabled,
         prompt: newWorkPromptValue,
         setPrompt: setNewWorkPromptValue,
-        preview,
-        onPreviewToggle: (event) => {
-          if (event.currentTarget.open) proposalPreview.open();
-          else proposalPreview.close();
-        },
         onCapture: proposalController.handleNewWorkCapture,
         onEnterToSubmit: handleEnterToSubmit,
         onBack: modalController.backToCapture,

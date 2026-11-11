@@ -495,7 +495,7 @@ test("owner visibility preserves the terminal while removed workspace controls s
   assert.equal(view.host.querySelector("#workspace-prompt"), null);
   assert.equal(quickForm.hidden, true);
   assert.equal(view.host.querySelector("#quick-prompt").required, true);
-  assert.equal(view.host.querySelector("#quick-model").required, true);
+  assert.equal(view.host.querySelector("#quick-model-value").required, true);
   assert.equal(view.host.querySelector("#quick-submit").type, "submit");
   const child = document.createElement("div");
   terminal.append(child);

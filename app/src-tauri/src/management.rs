@@ -760,7 +760,8 @@ pub struct ManagementStore {
 impl ManagementStore {
     /// Creates a regular workspace whose sole repository is also its working context.
     /// `existing_repository_id` selects an already-catalogued repository; otherwise a
-    /// local repository is initialized under `~/OpenCode Projects/repos/<user>/<slug>`.
+    /// local repository is initialized under the configured repository library at
+    /// `<library>/<user>/<slug>`.
     /// No workspace home is created. The returned path is suitable as OpenCode cwd.
     pub fn create_single_repository_workspace(
         &self,
@@ -774,6 +775,16 @@ impl ManagementStore {
         }
         safety::validate_name(&workspace.name)?;
         safety::validate_slug(&workspace.slug)?;
+        if existing_repository_id.is_none()
+            && workspace
+                .description
+                .as_deref()
+                .is_none_or(|description| description.trim().is_empty())
+        {
+            return Err(ManagementStoreError::InvalidTransition(
+                "a short description is required for an empty workspace".into(),
+            ));
+        }
         // Reject duplicate identity/slug before creating anything on disk.
         {
             let connection = self.lock()?;
@@ -784,11 +795,16 @@ impl ManagementStore {
             if slug_exists { return Err(ManagementStoreError::InvalidTransition(format!("workspace slug {} is already in use", workspace.slug))); }
         }
         let (repository, branch, created_path) = if let Some(id) = existing_repository_id {
-            let repository = self.get_repository(id)?.ok_or_else(|| ManagementStoreError::NotFound(format!("repository {id}")))?;
+            let repository = self
+                .list_repositories()?
+                .into_iter()
+                .find(|repository| repository.id == id)
+                .ok_or_else(|| ManagementStoreError::NotFound(format!("enabled repository {id}")))?;
             let inspected = safety::inspect_repository(Path::new(&repository.repository_path))?;
             if inspected.repository.canonical_root != PathBuf::from(&repository.repository_path) {
                 return Err(ManagementStoreError::InvalidTransition("catalogued path is not the repository root".into()));
             }
+            verify_catalog_identity(&repository, &inspected.repository)?;
             let branch = inspected.repository.default_branch.or(inspected.repository.current_branch).unwrap_or_else(|| "main".into());
             (repository, branch, None)
         } else {
@@ -797,16 +813,38 @@ impl ManagementStore {
             if username.is_empty() || !username.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-' || b == b'.') || username == "." || username == ".." {
                 return Err(ManagementStoreError::InvalidTransition("username is unsafe for repository path construction".into()));
             }
-            let path = self.user_home.join("OpenCode Projects").join("repos").join(username).join(&workspace.slug);
-            let canonical_home = self.user_home.canonicalize()?;
-            let resolved_parent = safety::canonicalize_or_resolve_missing(path.parent().expect("repository path has parent"))?;
-            if !resolved_parent.starts_with(&canonical_home) {
-                return Err(ManagementStoreError::InvalidTransition("repository destination escapes the user home".into()));
+            let library_root = self.resolved_repository_library_root()?;
+            fs::create_dir_all(&library_root)?;
+            let canonical_library_root = fs::canonicalize(&library_root)?;
+            let username_directory = canonical_library_root.join(&username);
+            match fs::symlink_metadata(&username_directory) {
+                Ok(metadata) if metadata.file_type().is_dir() => {}
+                Ok(_) => return Err(ManagementStoreError::InvalidTransition(format!(
+                    "repository username path is not a regular directory: {}",
+                    username_directory.display()
+                ))),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    fs::create_dir(&username_directory)?;
+                }
+                Err(error) => return Err(error.into()),
             }
-            if path.exists() {
-                return Err(ManagementStoreError::InvalidTransition(format!("repository destination already exists: {}", path.display())));
+            let canonical_username_directory = fs::canonicalize(&username_directory)?;
+            if canonical_username_directory == canonical_library_root
+                || !canonical_username_directory.starts_with(&canonical_library_root)
+            {
+                return Err(ManagementStoreError::InvalidTransition(
+                    "repository username directory escapes the configured repository library".into(),
+                ));
             }
-            fs::create_dir_all(path.parent().expect("repository path has parent"))?;
+            let path = canonical_username_directory.join(&workspace.slug);
+            match fs::symlink_metadata(&path) {
+                Ok(_) => return Err(ManagementStoreError::InvalidTransition(format!(
+                    "repository destination already exists: {}",
+                    path.display()
+                ))),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error.into()),
+            }
             fs::create_dir(&path)?;
             let output = std::process::Command::new("git").arg("init").arg(&path).output()?;
             if !output.status.success() {
@@ -5874,13 +5912,18 @@ mod tests {
         let root = tempdir().unwrap();
         let home = root.path().join("home");
         fs::create_dir(&home).unwrap();
+        let repository_library = root.path().join("repo-library");
         let db = root.path().join("db.sqlite");
         let store = ManagementStore::open_with_paths(&db, &home, root.path()).unwrap();
-        let input = NewWorkspace { id:"single-1".into(), name:"Single".into(), slug:"single".into(), description:None, kind:WorkspaceKind::Regular, created_at:CREATED };
+        store.set_repository_library_root(repository_library.to_str().unwrap(), CREATED).unwrap();
+        let input = NewWorkspace { id:"single-1".into(), name:"Single".into(), slug:"single".into(), description:Some("A short purpose".into()), kind:WorkspaceKind::Regular, created_at:CREATED };
         let (workspace, repo) = store.create_single_repository_workspace(&input, None).unwrap();
+        let username = std::env::var("USER").or_else(|_| std::env::var("USERNAME")).unwrap_or_else(|_| "user".into());
+        assert_eq!(Path::new(&repo.repository_path), repository_library.join(username).join("single"));
         assert_eq!(workspace.home_path, repo.repository_path);
         assert!(Path::new(&repo.repository_path).join(".git").is_dir());
         assert!(!home.join("workspaces").exists());
+        assert!(repository_library.join(std::env::var("USER").or_else(|_| std::env::var("USERNAME")).unwrap_or_else(|_| "user".into())).is_dir());
         let bindings = store.list_workspace_repository_bindings(&workspace.id).unwrap();
         assert_eq!(bindings.len(), 1);
         assert_eq!(bindings[0].checkout_path, repo.repository_path);
@@ -5889,6 +5932,21 @@ mod tests {
         let reopened = ManagementStore::open_with_paths(&db, &home, root.path()).unwrap();
         assert_eq!(reopened.get_workspace(&workspace.id).unwrap().unwrap().home_path, repo.repository_path);
         assert_eq!(reopened.list_workspace_repository_bindings(&workspace.id).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn empty_single_repository_workspace_requires_description_before_filesystem_changes() {
+        let root = tempdir().unwrap();
+        let home = root.path().join("home");
+        fs::create_dir(&home).unwrap();
+        let repository_library = root.path().join("repo-library");
+        let store = ManagementStore::in_memory_with_paths(&home, root.path()).unwrap();
+        store.set_repository_library_root(repository_library.to_str().unwrap(), CREATED).unwrap();
+        let input = NewWorkspace { id:"missing-description".into(), name:"Missing description".into(), slug:"missing-description".into(), description:None, kind:WorkspaceKind::Regular, created_at:CREATED };
+
+        assert!(store.create_single_repository_workspace(&input, None).is_err());
+        assert!(!repository_library.exists());
+        assert!(store.list_repositories().unwrap().is_empty());
     }
 
     #[test]

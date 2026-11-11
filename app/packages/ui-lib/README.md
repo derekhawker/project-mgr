@@ -134,6 +134,18 @@ forward standard HTML attributes (including `id`, `disabled`, and label-related
 attributes); callers associate visible labels with their controls. Notice
 defaults to a polite status announcement but callers may override its native
 `role` and `aria-live` attributes when the message needs different semantics.
+`Select` keeps a labelled choice-control API while presenting options in the
+shared `ActionMenu` disclosure. Pass `label`, `options` (`{ value, label,
+disabled? }`), `value`, and `onChange(value)`; `required`, `disabled`, and
+`aria-describedby` are supported. It retains native form-required validation
+through a visually hidden validation input and focuses the visible trigger when
+the value is missing. Its popup uses shared flat action rows and native
+Tab/Enter/Space interaction; it does not implement arrow-key listbox navigation.
+When used inside a dialog, the popup is portalled to the dialog and uses the
+Popover API to enter the browser's top layer, then positioned above or below its
+trigger. This keeps the popup outside the dialog's overflow clipping; its own
+list scrolls when it exceeds the available space. Renderers without Popover API
+support use a dialog-overflow fallback.
 Modal and Drawer request closure through Escape or their close button, not
 outside clicks. ActionMenu closes on outside pointer interaction, Escape, or an
 enabled action; Escape returns focus to its summary. Dialogs and tab lists need

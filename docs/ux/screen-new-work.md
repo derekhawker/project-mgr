@@ -47,176 +47,33 @@ the combined appearance, focus, and native behavior manually on Wayland.
 
 ## Workspace flow
 
-The first deliverable supports one New-work outcome: **create a workspace**.
-The flow has two prompts:
+Workspace creation is a direct form. It does not capture a prompt, create an
+OpenCode proposal session, or start a work session. The modal offers exactly two
+paths through one **Repository** selector:
 
-1. The user enters the **original prompt** describing the workspace.
-2. After the prompt is interpreted and confirmed, the app creates a workspace
-   and starts the workspace's session or sessions.
+- **A registered repository:** options come from the Repositories view. Selecting
+  one suggests an editable **Workspace title** by splitting its name at hyphens,
+  underscores, and lowercase-to-uppercase boundaries, then capitalizing words.
+  For example, `my_repoName` becomes `My Repo Name`. The Workspace links directly
+to that registered repository; it does not clone it.
+- **Create an empty workspace:** show an editable **Workspace title** and a
+  required **Short description**. Rust creates and initializes a local Git
+  repository at `<configured repository-library root>/<username>/<workspace-slug>/`,
+  creating the username directory when needed, registers it, and links it directly
+  to the Workspace.
 
-### 1. Capture the original prompt
+**Create Workspace** stays disabled until a path and title are selected/entered,
+and for the empty path until a short description is present. Rust validates the
+repository identity, title, description, and destination before persisting the
+Workspace. Show creation errors in the form and keep it open for correction or
+retry; do not show a success state after a failed command. Successful creation
+selects the Workspace and opens its ticket view. The user starts OpenCode later
+with the ticket's **Work** action, rooted at the linked repository directory.
 
-Show a compact modal titled **New Workspace** or **New Quick Request**. Label the
-field **Original prompt** and explain what that prompt will start. Preserve the
-original prompt exactly as entered.
-
-For Quick Requests, put **Working directory** before the prompt, prefilled with
-the shared default path. The user may type an existing absolute directory or use
-**Choose folder**. This choice applies only to the current request. An explicit
-choice takes precedence over a repository suggested by the prompt; the confirmed
-directory is shown in the review step.
-
-The Workspace capture form includes a collapsed **Proposal prompt preview**
-disclosure. Expanding it shows the read-only proposal template and schema, with
-template values in place of the original prompt and live workspace/repository
-context. Do not display that user data or send it to the preview command. The
-actual proposal request still receives the current original prompt and verified
-context when the user continues. The preview is static while the user edits the
-prompt. It is indented on a darker surface, with its own scroll area capped at
-20% of the viewport height.
-
-In the multiline Original prompt field, **Enter** continues the form and
-**Shift+Enter** inserts a newline. Enter during IME composition does not submit.
-The field initially displays nine rows for both Workspace and Quick Request.
-
-### 2. Review the interpretation
-
-The first interaction is an internal OpenCode proposal request. It does not use
-an interactive terminal. This is the one exception to the normal terminal rule:
-the proposal request is not a user session, does not create a terminal tab, and
-does not change product data.
-
-Rust validates the proposal before showing it for confirmation. Workspace review
-uses a simple vertical form instead of a card grid. It shows:
-
-- An editable workspace name.
-- The full workspace directory path that confirmation will create.
-- The original prompt in a read-only field.
-- Relevant repository locations, if any, as a compact list of repository names
-  and source paths. Show **None** when no repositories are proposed.
-- One editable starting-prompt field, prefilled with the revised prompt returned
-  by OpenCode, not the original prompt the user entered.
-
-Do not show a separate proposed-prompt section. OpenCode's revised text is the
-starting prompt, shown once in the editable starting-prompt field. The user
-can go back and submit a new original prompt to obtain a fresh interpretation.
-The workspace directory remains the exact reviewed path shown in the form;
-editing the display name does not silently move the planned directory.
-
-The first-deliverable proposal has this conceptual shape:
-
-```json
-{
-  "schemaVersion": 1,
-  "workType": "workspace",
-  "workspace": { "id": null, "name": "...", "intent": "..." },
-  "repositories": [],
-  "startingPrompt": "...",
-  "effects": ["Create workspace and start its OpenCode session"]
-}
-```
-
-Malformed proposals or invalid repository references are rejected before
-confirmation. No workspace is created by the proposal request.
-Workspace setup uses the repository's reviewed committed Git state. A dirty source
-checkout is allowed: tracked, untracked, and ignored local files stay in the
-original checkout and are not copied into the managed base clone, Workspace
-worktree, or Workspace symlink. Rust still revalidates repository identity, the
-reviewed commits, default branch, remote, and committed submodule metadata.
-Default branch resolution prefers a valid `origin/HEAD`, then a local `main` or
-`master` branch, then the currently checked-out local branch. This supports
-repositories without remotes. If no branch can be determined, show a clear error
-explaining that the repository needs a configured `origin/HEAD` or a local
-branch.
-
-Enabled repositories from the Repositories page are additional context to every
-New-work proposal; disabled repositories are absent from proposal input and
-cannot be selected as working directories.
-Users do not have to manually attach a repository before naming it in a
-Workspace prompt. The proposal maps mentioned repositories to verified catalog
-identities; the review shows the selected repository names and source locations
-as a compact list, and confirmation attaches them to the new Workspace. Do not
-expand this list with proposal reasons, clone destinations, or submodule details.
-
-### 3. Confirm and start the workspace session
-
-Confirmation performs one user-visible flow:
-
-1. Rust creates the workspace and its home directories.
-2. Rust clones and validates the confirmed repositories, including recursive
-   submodules.
-3. Rust creates and records one Workspace session for zero repositories, one
-   worker for one repository, or an outside-repository orchestrator plus one
-   worker per repository for multiple repositories.
-4. The app selects the new workspace and opens all of its interactive terminal
-   tabs.
-5. A nonblank starting prompt goes to the zero-repository Workspace session,
-   single-repository worker, or multi-repository orchestrator, respectively.
-   Workers always start empty.
-
-Keep a visible, ordered progress list in the New-work dialog while this runs.
-Place it immediately after the active prompt field: below the original prompt
-during interpretation, then below the revised starting prompt during Workspace
-review and setup. During Quick Request review, place it immediately after the
-working-directory review section.
-
-- **Interpret request** — success before the proposal is shown, or failed with
-  the error if proposal generation fails.
-- **Create workspace** — success when the Workspace record is created.
-- **Clone _repository name_** — one in-progress/success/failed row per selected
-  repository, with its source location shown. Never display an internal
-  repository ID in progress labels or failure details. A failed row can expand
-  to show the Git/setup error detail.
-- **Write workspace instructions** — success or failed when applicable.
-- **Start workspace session(s) and terminal(s)** — success or failed, with one
-  terminal for zero/one repository and one per repository for multiple repos.
-- **Submit starting prompt** — shown only for zero/one-repository workspaces;
-  if the optional field is blank, mark it skipped rather than failing setup.
-- **Workspace create** — final success only when required setup and session
-  startup succeeded; otherwise show **Workspace create — failed** and the
-  individual failed step details. Do not present a partially provisioned
-  workspace as ready.
-
-The list is transient UI progress, not a new log file or database record. Show
-captured error detail, not prompt text or unrestricted process output. Keep the
-list in the dialog only; do not leave it on the Workspace page after the
-terminal tabs.
-
-The user does not need a second manual start action for zero/one repository.
-For multiple repositories, each empty terminal is ready for a user-directed
-prompt; do not fan out the original or generated prompt. Navigating to that
-workspace later opens or restores all of its exact tracked sessions.
-
-If repository setup or session startup fails after the Workspace is created,
-keep the durable Workspace available, leave the failed step and its detail in
-the visible review pane in the New-work dialog, and offer the applicable retry
-action there. Selecting the durable Workspace must not hide the only failure
-details while the modal remains open. Do not leave the progress list on the
-selected Workspace page after its tabs.
-
-## Legacy Task records
-
-Task is no longer a creation option or product-level work type. Existing Task records remain compatibility data, but new work starts as a Workspace or Quick Request. Archived legacy records are not listed or restored in the app; migration snapshots remain internal for data preservation.
-
-## Example
-
-```text
-Your prompt
-“new project to manage movie preferences using a simple document”
-
-Proposed workspace: Movie Preferences
-Repositories: None
-
-Starting prompt (editable)
-[Create and maintain a simple document of movie names and thoughts]
-
-[Back]                                      [Create workspace]
-```
-
-After confirmation, the new Workspace is selected. A Workspace with two
-repositories opens an outside-repository Orchestrator and two repo-rooted worker
-terminals. Workers start empty; a nonblank starting prompt goes only to the
-Orchestrator.
+Cancel and Escape close the modal without creating records or touching Git.
+Neither path changes the current terminal until creation succeeds. The shared
+modal owns focus, close behavior, and scrolling; manually verify its appearance
+and focus behavior on Wayland.
 
 ## Quick Request flow
 

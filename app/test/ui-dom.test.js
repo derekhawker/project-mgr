@@ -360,10 +360,8 @@ test("repository library edits save on blur without an explicit save button", ()
   list.dispose();
 });
 
-test("New work uses native dialog and adopted controls without taking over cancellation", () => {
-  let prompt = "",
-    cancelled = 0,
-    submitted = 0;
+test("Workspace creation presents direct repository choices in the native dialog", () => {
+  let cancelled = 0;
   const proposal = {
     workType: "workspace",
     title: "Review",
@@ -373,78 +371,62 @@ test("New work uses native dialog and adopted controls without taking over cance
   const props = {
     setModal: () => {},
     proposal: () => proposal,
-    captureVisible: () => true,
+    captureVisible: () => false,
     reviewVisible: () => false,
     workType: () => "workspace",
-    preview: () => "Rendered prompt with context",
-    onPreviewToggle: () => {},
-    prompt: () => "",
-    setPrompt: (value) => {
-      prompt = value;
-    },
-    onCancel: () => cancelled++,
-    onCapture: (event) => {
-      event.preventDefault();
-      submitted++;
-    },
-    onEnterToSubmit: () => {},
-    progressVisible: () => false,
-    progressRows: () => [],
-    captureError: () => "",
-    captureDisabled: () => false,
+    workspaceVisible: () => true,
+    workspaceError: () => "",
+    workspaceCreateDisabled: () => false,
+    workspaceCatalogLoading: () => false,
+    workspaceRepositoryChoice: () => "",
+    workspaceRepositories: () => [
+      { id: "repo-1", name: "repoName", repositoryPath: "/code/repoName" },
+    ],
+    workspaceEmptySelected: () => false,
+    emptyWorkspaceChoice: "__empty__",
+    onWorkspaceRepositoryChange: () => {},
     workspaceName: () => "",
     setWorkspaceName: () => {},
-    startingPrompt: () => "",
-    setStartingPrompt: () => {},
-    directoryId: () => "",
-    onDirectoryChange: () => {},
-    directories: () => [],
+    workspaceDescription: () => "",
+    setWorkspaceDescription: () => {},
+    onWorkspaceSubmit: (event) => event.preventDefault(),
+    prompt: () => "",
+    setPrompt: () => {},
+    captureError: () => "",
+    captureDisabled: () => false,
+    onCapture: () => {},
+    onEnterToSubmit: () => {},
     directoryPath: () => "",
+    customDirectory: () => null,
+    defaultDirectory: () => "",
+    onCustomDirectoryInput: () => {},
+    onChooseDirectory: () => {},
+    onResetDirectory: () => {},
     proposalModelDisabled: () => false,
     proposalSelectedModel: () => "",
     setProposalSelectedModel: () => {},
     proposalModels: () => [],
+    proposalError: () => "",
+    proposalCreateDisabled: () => false,
     onBack: () => {},
     onConfirm: () => {},
-    proposalCreateDisabled: () => false,
-    proposalError: () => "",
+    onCancel: () => cancelled++,
+    progressVisible: () => false,
+    progressRows: () => [],
   };
   const mounted = mount(() => component(NewWorkModal, props));
-  const preview = mounted.host.querySelector("#proposal-prompt-preview");
-  assert.equal(preview.open, false);
-  assert.ok(
-    preview.compareDocumentPosition(
-      mounted.host.querySelector("#new-work-prompt"),
-    ) & Node.DOCUMENT_POSITION_FOLLOWING,
-  );
+  assert.equal(mounted.host.querySelector("#proposal-prompt-preview"), null);
+  assert.equal(mounted.host.querySelector("#new-work-prompt"), null);
   assert.equal(
-    preview.querySelector("summary").textContent,
-    "Proposal prompt preview",
+    mounted.host.querySelector("#workspace-repository-select").getAttribute("role"),
+    "combobox",
   );
-  assert.equal(
-    preview.querySelector("summary svg").getAttribute("aria-hidden"),
-    "true",
-  );
-  preview.open = true;
-  assert.equal(
-    preview.querySelector("pre").textContent,
-    "Rendered prompt with context",
-  );
-  assert.equal(preview.querySelector("pre").parentElement.tabIndex, 0);
   assert.ok(mounted.host.querySelector("dialog"));
   mounted.host
     .querySelector("dialog")
     .dispatchEvent(new MouseEvent("click", { bubbles: true }));
   assert.equal(cancelled, 0);
-  const field = mounted.host.querySelector("#new-work-prompt");
-  field.value = "  unchanged  ";
-  field.dispatchEvent(new Event("input", { bubbles: true }));
-  mounted.host
-    .querySelector("#new-work-capture")
-    .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
-  mounted.host.querySelector("#new-work-cancel").click();
-  assert.equal(prompt, "  unchanged  ");
-  assert.equal(submitted, 1);
+  mounted.host.querySelector("#workspace-cancel").click();
   assert.equal(cancelled, 1);
   const dialog = mounted.host.querySelector("dialog");
   assert.equal(dialog.getAttribute("aria-labelledby"), "new-work-title");
@@ -453,9 +435,9 @@ test("New work uses native dialog and adopted controls without taking over cance
     "New Workspace",
   );
   const submit = mounted.host.querySelector('button[type="submit"]');
-  assert.equal(submit.form, mounted.host.querySelector("#new-work-capture"));
+  assert.equal(submit.form, mounted.host.querySelector("#workspace-create-form"));
   assert.equal(
-    mounted.host.querySelector("#new-work-error"),
+    mounted.host.querySelector("#workspace-create-error"),
     null,
     "Empty errors do not reserve footer space",
   );

@@ -40,13 +40,10 @@ import {
   expireQuickRequest,
   loadWorkspaceNavigation,
   startNewWorkProposal,
-  previewNewWorkProposal,
   runNewWorkProposal,
-  readNewWorkProposal,
   closeNewWorkProposal,
   selectWorkspaceTask,
   createWorkspace,
-  createInitializedWorkspace,
   createWorkspaceTask,
   submitNewWorkStartingPrompt,
   getTaskSetupStatus,
@@ -64,7 +61,6 @@ import {
   setRepositoryEnabled,
   softDeleteRepositories,
   formatWorkspaceError,
-  attachRepository,
   createWorkspaceSession,
   listPendingInputs,
   createTaskSession,
@@ -84,23 +80,9 @@ import {
   terminalAccessibilityAttributes,
   controlErrorAttributes,
   createKeyedSingleFlight,
-  workspaceProposalRepositoryLocations,
   workspaceSessionTabLabel,
-  workspaceStartingPrompt,
-  workspaceStartingPromptSession,
-  shouldSubmitWorkspaceStartingPrompt,
-  workspaceReviewDetails,
 } from "../src/services/shell.js";
 
-test("proposal preview requests the static prompt template without sending user input", async () => {
-  const calls = [];
-  const invoke = async (name, payload) => {
-    calls.push([name, payload]);
-    return "rendered proposal";
-  };
-  assert.equal(await previewNewWorkProposal(invoke), "rendered proposal");
-  assert.deepEqual(calls, [["new_work_proposal_preview", undefined]]);
-});
 import {
   resultForCommand,
   completedTask,
@@ -134,33 +116,6 @@ test("concurrent requests to show one session share a single restore and tab cre
   release();
   assert.equal(await afterCompletion, "shown:ses-one");
   assert.equal(starts, 2);
-});
-
-test("workspace review lists repository locations and uses the proposal prompt as its starting prompt", () => {
-  assert.deepEqual(
-    workspaceProposalRepositoryLocations(
-      [{ repositoryId: "repo-a", reason: "matches the request" }],
-      [{ id: "repo-a", name: "Alpha", repositoryPath: "/work/alpha" }],
-    ),
-    [{ name: "Alpha", path: "/work/alpha" }],
-  );
-  assert.equal(
-    workspaceStartingPrompt({ startingPrompt: "Revised starting text" }),
-    "Revised starting text",
-  );
-  assert.equal(shouldSubmitWorkspaceStartingPrompt("  "), false);
-  assert.equal(shouldSubmitWorkspaceStartingPrompt("A starting prompt"), true);
-  assert.equal(workspaceStartingPrompt({}), "");
-  assert.deepEqual(
-    workspaceReviewDetails({
-      workspace: { name: "Edited proposal name" },
-      setupPlan: { workspaceHome: "/home/user/Projects/proposed-folder" },
-    }),
-    {
-      name: "Edited proposal name",
-      directory: "A new local repository will be created",
-    },
-  );
 });
 
 test("maps every application session state to its visible label", () => {
@@ -534,11 +489,7 @@ test("workspace adapters preserve navigation and setup command boundaries", asyn
   };
   await loadWorkspaceNavigation(invoke);
   await createWorkspace(invoke, "Todo", "Plan");
-  await createInitializedWorkspace(
-    invoke,
-    "Ready",
-    "repo-1",
-  );
+  await createWorkspace(invoke, "Ready", "Plan", "repo-1");
   await createWorkspaceTask(
     invoke,
     "w1",
@@ -567,21 +518,14 @@ test("workspace adapters preserve navigation and setup command boundaries", asyn
     "/home/me/code/app": "web app",
   });
   await listRepositoryCatalog(invoke);
-  await attachRepository(invoke, "w1", "r1");
   await createWorkspaceSession(invoke, "w1", "Inspect", {
     providerId: "openai",
     id: "gpt-6-luna",
   });
   assert.deepEqual(calls, [
     ["workspace_navigation"],
-    ["workspace_create", { name: "Todo", description: "Plan" }],
-    [
-      "workspace_create_initialized",
-      {
-        name: "Ready",
-        repositoryId: "repo-1",
-      },
-    ],
+    ["workspace_create", { name: "Todo", description: "Plan", repositoryId: null }],
+    ["workspace_create", { name: "Ready", description: "Plan", repositoryId: "repo-1" }],
     [
       "task_create",
       {
@@ -620,7 +564,6 @@ test("workspace adapters preserve navigation and setup command boundaries", asyn
       },
     ],
     ["repository_catalog"],
-    ["repository_attach", { workspaceId: "w1", repositoryId: "r1" }],
     [
       "workspace_session_create",
       {
@@ -762,10 +705,7 @@ test("New-work proposal adapters preserve exact session and prompt boundary", as
     invoke,
     "proposal-session-1",
     "Original prompt",
-    "workspace-1",
-    "task",
   );
-  await readNewWorkProposal(invoke, "proposal-session-1", "workspace-1");
   await closeNewWorkProposal(invoke, "proposal-session-1");
   assert.deepEqual(calls, [
     ["new_work_proposal_start", { model }],
@@ -774,13 +714,8 @@ test("New-work proposal adapters preserve exact session and prompt boundary", as
       {
         sessionId: "proposal-session-1",
         originalPrompt: "Original prompt",
-        preferredWorkspaceId: "workspace-1",
-        workType: "task",
+        workType: "quick_request",
       },
-    ],
-    [
-      "new_work_proposal_read",
-      { sessionId: "proposal-session-1", preferredWorkspaceId: "workspace-1" },
     ],
     ["new_work_proposal_close", { sessionId: "proposal-session-1" }],
   ]);
@@ -1104,30 +1039,6 @@ test("Workspace session tabs label sessions from persisted role and repository c
       contexts,
     ),
     null,
-  );
-});
-
-test("multi-repository starting prompts target the persisted orchestrator, not first-created worker", () => {
-  const sessions = [
-    { openCodeSessionId: "ses-worker", directory: "/repo/worktree" },
-    { openCodeSessionId: "ses-orchestrator", directory: "/workspace/home" },
-  ];
-  const contexts = [
-    { openCodeSessionId: "ses-worker", role: "worker", repositoryId: "repo-a" },
-    {
-      openCodeSessionId: "ses-orchestrator",
-      role: "orchestrator",
-      repositoryId: null,
-    },
-  ];
-  assert.equal(
-    workspaceStartingPromptSession(sessions, contexts).openCodeSessionId,
-    "ses-orchestrator",
-  );
-  assert.equal(
-    workspaceStartingPromptSession(sessions.slice(0, 1), contexts.slice(0, 1))
-      .openCodeSessionId,
-    "ses-worker",
   );
 });
 

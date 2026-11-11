@@ -1,5 +1,5 @@
 import { Button, Select, TextArea } from "@ui-lib";
-import { For, Show } from "solid-js";
+import { Show } from "solid-js";
 import styles from "./WorkspaceOwnerPanel.module.css";
 
 export function WorkspaceOwnerPanel(props) {
@@ -83,33 +83,22 @@ export function WorkspaceOwnerPanel(props) {
           }
         />
         <div class={styles.modelRow}>
-          <label for="quick-model">Model</label>
           <Select
             id="quick-model"
+            label="Model"
             required
             aria-describedby="quick-error"
             aria-busy={String(props.modelBusy())}
             disabled={props.modelDisabled()}
             value={props.selectedModel()}
+            placeholder={
+              props.modelError()
+                ? "Models unavailable"
+                : "Loading models…"
+            }
+            options={props.modelOptions()}
             onChange={props.onModelChange}
-          >
-            <Show
-              when={props.modelOptions().length}
-              fallback={
-                <option value="">
-                  {props.modelError()
-                    ? "Models unavailable"
-                    : "Loading models…"}
-                </option>
-              }
-            >
-              <For each={props.modelOptions()}>
-                {(option) => (
-                  <option value={option.value}>{option.label}</option>
-                )}
-              </For>
-            </Show>
-          </Select>
+          />
         </div>
         <Button
           id="quick-submit"
