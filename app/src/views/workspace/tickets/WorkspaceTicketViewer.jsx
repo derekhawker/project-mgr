@@ -153,7 +153,19 @@ export function WorkspaceTicketViewer(props) {
                       onClick={() => props.onSelect(ticket.filename)}
                     >
                       <TicketStatusBadge status={ticket.status} />
-                      <span class={styles.ticketTitle}>{ticket.title}</span>
+                      <span class={styles.ticketTitleGroup}>
+                        <Show when={ticket.status === "in_progress" && !ticket.hasWorkSession}>
+                          <span class={styles.idleAttention} role="img" aria-label="Ticket has no work session">
+                            <Icon name="caution" size="small" />
+                          </span>
+                        </Show>
+                        <Show when={ticket.status === "in_progress" && ticket.opencodeStatus === "idle"}>
+                          <span class={styles.idleAttention} role="img" aria-label="OpenCode session is idle">
+                            <Icon name="pause" size="small" class={styles.pauseIcon} />
+                          </span>
+                        </Show>
+                        <span class={styles.ticketTitle}>{ticket.title}</span>
+                      </span>
                     </button>
                     <div class={styles.actionCell}>
                       <Show when={!archived()} fallback={<span class={styles.actionPlaceholder} aria-hidden="true" />}>
@@ -174,7 +186,7 @@ export function WorkspaceTicketViewer(props) {
             </ul>
           </section>
           <Show when={selected()} fallback={<div class={styles.emptyDetail}>Select a ticket to read it.</div>}>{(ticket) => {
-              const fields = createMemo(() => splitTicketFrontmatter(ticket().content).fields);
+              const fields = createMemo(() => splitTicketFrontmatter(ticket().content).fields.filter(([key]) => key !== "opencode-status"));
               return <article class={styles.detail} aria-label={`Selected ticket: ${ticket().title}`}>
                 <div class={styles.markdown} ref={(element) => createEffect(() => { element.innerHTML = markdown() ?? ""; })} />
                 <Show when={fields().length}>

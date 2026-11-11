@@ -3239,6 +3239,13 @@
                 "status": {
                   "type": "string"
                 },
+                "hasWorkSession": {
+                  "type": "boolean"
+                },
+                "opencodeStatus": {
+                  "type": "string",
+                  "nullable": true
+                },
                 "modifiedAt": {
                   "type": "number"
                 }
@@ -3247,6 +3254,7 @@
                 "filename",
                 "title",
                 "status",
+                "hasWorkSession",
                 "modifiedAt"
               ],
               "additionalProperties": false
@@ -6182,6 +6190,13 @@
           "status": {
             "type": "string"
           },
+          "hasWorkSession": {
+            "type": "boolean"
+          },
+          "opencodeStatus": {
+            "type": "string",
+            "nullable": true
+          },
           "content": {
             "type": "string"
           },
@@ -6193,6 +6208,7 @@
           "filename",
           "title",
           "status",
+          "hasWorkSession",
           "content",
           "modifiedAt"
         ],
@@ -6285,6 +6301,13 @@
         "status": {
           "type": "string"
         },
+        "hasWorkSession": {
+          "type": "boolean"
+        },
+        "opencodeStatus": {
+          "type": "string",
+          "nullable": true
+        },
         "content": {
           "type": "string"
         },
@@ -6296,6 +6319,8 @@
         "filename",
         "title",
         "status",
+        "hasWorkSession",
+        "opencodeStatus",
         "content",
         "modifiedAt"
       ],

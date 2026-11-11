@@ -53,7 +53,19 @@ export function WorkspaceNavigation(props) {
         <Show when={ticket().status === "blocked"}>
           <Icon name="circleX" muted />
         </Show>
-        <span class={styles.ticketTitle}>{ticket().title}</span>
+        <span class={styles.ticketTitleGroup}>
+          <Show when={ticket().status === "in_progress" && !ticket().hasWorkSession}>
+            <span class={styles.idleAttention} role="img" aria-label="Ticket has no work session">
+              <Icon name="caution" size="small" />
+            </span>
+          </Show>
+          <Show when={ticket().status === "in_progress" && ticket().opencodeStatus === "idle"}>
+            <span class={styles.idleAttention} role="img" aria-label="OpenCode session is idle">
+              <Icon name="pause" size="small" class={styles.pauseIcon} />
+            </span>
+          </Show>
+          <span class={styles.ticketTitle}>{ticket().title}</span>
+        </span>
       </NavigationItem>
     </li>
   );

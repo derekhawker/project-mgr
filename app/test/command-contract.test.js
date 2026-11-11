@@ -168,6 +168,21 @@ test("ticket session commands validate the multi-session and close wire shapes",
   ]);
 });
 
+test("workspace navigation accepts the persisted OpenCode status on ticket rows", async () => {
+  const result = structuredClone(resultForCommand("workspace_navigation"));
+  result.workspaceTickets["workspace-1"] = [{
+    filename: "active.md",
+    title: "Active ticket",
+    status: "in_progress",
+    hasWorkSession: true,
+    opencodeStatus: "idle",
+    modifiedAt: 1,
+  }];
+  await assert.doesNotReject(
+    invokeCommand(async () => result, "workspace_navigation"),
+  );
+});
+
 test("the production screen mounts one component tree without selector-based mount targets", () => {
   const main = readFileSync(join(process.cwd(), "src", "main.js"), "utf8");
   assert.match(html, /<div id="app-root"><\/div>/);

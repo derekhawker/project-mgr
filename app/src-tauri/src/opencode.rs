@@ -609,6 +609,27 @@ impl Runtime {
             serde_json::from_value(value).map_err(|e| format!("invalid OpenCode response: {e}"))
         })
     }
+    /// Connects to OpenCode's volatile event stream. The caller owns reconnect
+    /// policy and must subscribe before taking an active-session snapshot.
+    pub fn connect_event_stream(&self) -> Result<Response, String> {
+        let info = self.ensure_started()?;
+        let password = self
+            .server
+            .lock()
+            .map_err(|_| "OpenCode runtime lock is poisoned".to_owned())?
+            .as_ref()
+            .expect("server just started")
+            ._password
+            .clone();
+        let client = api_client_stream(&password)?;
+        checked(
+            client
+                .get(format!("{}/api/event", info.base_url))
+                .header("accept", "text/event-stream")
+                .send()
+                .map_err(|error| error.to_string())?,
+        )
+    }
     pub fn session_status(&self, id: &str) -> Result<SessionStatus, String> {
         let id = validate_session_id(id)?;
         let active = self.active_sessions()?.remove(&id);
@@ -1127,6 +1148,21 @@ fn api_client_optional(password: Option<&str>) -> Result<Client, String> {
         .timeout(Duration::from_secs(30))
         .build()
         .map_err(|e| e.to_string())
+}
+
+fn api_client_stream(password: &str) -> Result<Client, String> {
+    let token = STANDARD.encode(format!("opencode:{password}"));
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        AUTHORIZATION,
+        HeaderValue::from_str(&format!("Basic {token}")).map_err(|error| error.to_string())?,
+    );
+    Client::builder()
+        .default_headers(headers)
+        .connect_timeout(Duration::from_secs(10))
+        .timeout(None)
+        .build()
+        .map_err(|error| error.to_string())
 }
 
 fn opencode_state_dir(executable: &Path) -> Result<PathBuf, String> {

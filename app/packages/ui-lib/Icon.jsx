@@ -13,6 +13,8 @@ const icons = {
     "M1.5 5.5h13l-1.5 7H3l-1.5-7ZM1.5 5.5V3h4l1.5 1.5h4",
   list: "M2.5 3.5h11m-11 4h6m-6 4h6m2 0h2.5m-2-2 2 2-2 2",
   circleX: "M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM5.5 5.5l5 5m0-5-5 5",
+  caution: "M8 1.5 15 14H1L8 1.5Zm0 4.2v4.1m0 2.1v.1",
+  pause: "M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM6 5.5v5m4-5v5",
   refresh: "M13 5.5A5.5 5.5 0 1 0 13.5 9M13 2.5v3h-3",
   ports: "M2 4h12v8H2zM5 4v3h6V4M5 10h.1M8 10h.1M11 10h.1",
   questionMark: "M5.5 5.5a2.5 2.5 0 1 1 4.2 1.8C8.5 8.4 8 8.8 8 10m0 2.5v.1",
@@ -30,7 +32,14 @@ export function Icon(props) {
       focusable="false"
       viewBox="0 0 16 16"
     >
-      <path d={icons[local.name]} />
+      {local.name === "caution" ? (
+        <>
+          <path d="M8 1.5 15 14H1L8 1.5Z" fill="var(--ui-caution-fill)" />
+          <path d="M8 5.7v4.1m0 2.1v.1" />
+        </>
+      ) : (
+        <path d={icons[local.name]} />
+      )}
     </svg>
   );
 }
