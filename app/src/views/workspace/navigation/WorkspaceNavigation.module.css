@@ -73,6 +73,21 @@
   overflow-wrap: anywhere;
 }
 
+.ticketTitleGroup {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-4);
+  min-width: 0;
+}
+
+.idleAttention {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--ui-muted);
+}
+
+.pauseIcon { color: var(--ui-primary); }
+
 .ticketHeading {
   margin: var(--ui-space-8) 0 var(--ui-space-4);
   padding-inline: var(--ui-space-8);

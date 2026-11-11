@@ -49,6 +49,22 @@ overwritten. The dialog closes after the create command succeeds and remains
 open with the reviewed edits if creation fails; the ticket list then refreshes
 and selects the created draft.
 
+For tickets with an active `work_session_id`, Rust subscribes to OpenCode's
+volatile `GET /api/event` stream and takes one `GET /api/session/active`
+snapshot after connecting, after each reconnect, and every 30 seconds. The
+snapshot is authoritative for this indicator: listed sessions are busy and
+sessions absent from the response are idle. SSE provides faster transitions;
+the periodic snapshot repairs missed events. It stores the active
+session's exact `idle`, `busy`, or `retry` status as app-maintained
+`opencode-status` frontmatter only when the ticket's current value differs.
+The ticket Markdown watcher refreshes navigation and the ticket reader. Both
+surfaces show a caution triangle for `in_progress` tickets without a
+`work_session_id`, and a pause icon for `in_progress` tickets with
+`opencode-status: idle`. Both icons appear before the title; the status field
+stays hidden from reader metadata. During a stream disconnect, the last
+persisted status remains visible until the next 30-second or reconnect
+snapshot updates it.
+
 The application uses Tauri, Rust, raw HTML/CSS/JavaScript, a Rust-managed PTY,
 xterm.js, and OpenCode's shared local background server. Rust discovers the
 server from OpenCode's private service registration and starts it through the

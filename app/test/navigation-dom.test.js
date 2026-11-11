@@ -205,7 +205,7 @@ test("workspace tickets group, collapse, mark blocked, and flatten newest first"
       workspaceTickets: {
         a: [
           { filename: "blocked.md", title: "Blocked ticket", status: "blocked", modifiedAt: 30 },
-          { filename: "active.md", title: "Active ticket", status: "in_progress", modifiedAt: 10 },
+          { filename: "active.md", title: "Active ticket", status: "in_progress", hasWorkSession: true, opencodeStatus: "idle", modifiedAt: 10 },
         ],
         b: [{ filename: "newest.md", title: "Newest ticket", status: "in_progress", modifiedAt: 40 }],
       },
@@ -229,7 +229,13 @@ test("workspace tickets group, collapse, mark blocked, and flatten newest first"
     /muted/,
     "Workspace disclosure icon uses the shared muted icon style",
   );
-  assert.equal(view.host.querySelectorAll("svg").length, 3);
+  const idleIcon = view.host.querySelector('[aria-label="OpenCode session is idle"]');
+  assert.ok(idleIcon);
+  assert.equal(idleIcon.parentElement.firstElementChild, idleIcon, "the icon precedes the ticket title");
+  assert.match(idleIcon.querySelector("svg path").getAttribute("d"), /a6\.5 6\.5.*v5m4-5v5$/, "idle status uses a circled pause icon");
+  assert.match(idleIcon.parentElement.textContent, /Active ticket/);
+  assert.ok(view.host.querySelector('[aria-label="Ticket has no work session"]'), "a missing work_session_id uses the caution icon");
+  assert.equal(view.host.querySelectorAll("svg").length, 5);
   view.host.querySelector('button[aria-label="Collapse Alpha tickets"]').click();
   assert.doesNotMatch(view.host.textContent, /Blocked ticket|Active ticket/);
   assert.match(view.host.textContent, /BetaNewest ticket/);
@@ -253,7 +259,7 @@ test("workspace tickets group, collapse, mark blocked, and flatten newest first"
     "Tickets",
   );
   assert.equal(view.host.textContent.includes("Alpha ·"), false);
-  assert.equal(view.host.querySelectorAll("svg").length, 1);
+  assert.equal(view.host.querySelectorAll("svg").length, 3);
   [...view.host.querySelectorAll("button")].find((button) => button.textContent.includes("Newest ticket")).click();
   assert.deepEqual(worked, [["b", "newest.md"]]);
   assert.equal(

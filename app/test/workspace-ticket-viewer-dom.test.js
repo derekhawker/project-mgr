@@ -61,8 +61,10 @@ function mountIdeaModal(props) {
 const longContent = "x".repeat(1300);
 const tickets = [
   { filename: "one.md", title: "First", status: "draft", modifiedAt: 100, content: `---\ntitle: First\nstatus: draft\nowner: Alice\n---\n# First body\n\n${longContent}` },
-  { filename: "two.md", title: "Second", status: "blocked", modifiedAt: 200, content: "---\ntitle: Second\nstatus: blocked\n---\nSecond body" },
-  { filename: "three.md", title: "Third", status: "in_progress", modifiedAt: 50, content: "---\ntitle: Third\nstatus: in_progress\n---\nThird body" },
+  { filename: "two.md", title: "Second", status: "blocked", hasWorkSession: false, opencodeStatus: "idle", modifiedAt: 200, content: "---\ntitle: Second\nstatus: blocked\nopencode-status: idle\n---\nSecond body" },
+  { filename: "three.md", title: "Third", status: "in_progress", hasWorkSession: true, opencodeStatus: "idle", modifiedAt: 50, content: "---\ntitle: Third\nstatus: in_progress\nwork_session_id: ses-three\nopencode-status: idle\n---\nThird body" },
+  { filename: "four.md", title: "Fourth", status: "in_progress", hasWorkSession: true, opencodeStatus: "busy", modifiedAt: 60, content: "---\ntitle: Fourth\nstatus: in_progress\nwork_session_id: ses-four\nopencode-status: busy\n---\nFourth body" },
+  { filename: "five.md", title: "Fifth", status: "in_progress", hasWorkSession: false, modifiedAt: 40, content: "---\ntitle: Fifth\nstatus: in_progress\n---\nFifth body" },
 ];
 
 test.after(async () => {
@@ -201,15 +203,27 @@ test("ticket browser keeps selection separate from Work, renders the complete sa
     assert.equal(detail.querySelector("script"), null);
     assert.equal(detail.querySelector('[aria-label="Ticket metadata"] dt').textContent, "title");
     assert.equal(detail.querySelector('[aria-label="Ticket metadata"] dd').textContent, "First");
+    assert.equal(detail.querySelector('[aria-label="OpenCode session is idle"]'), null);
     assert.equal(detail.children[0].compareDocumentPosition(detail.querySelector('[aria-label="Ticket metadata"]')) & Node.DOCUMENT_POSITION_FOLLOWING, Node.DOCUMENT_POSITION_FOLLOWING);
     assert.equal(selectFirst.getAttribute("aria-pressed"), "true");
+    const idleRow = [...view.host.querySelectorAll('button[aria-pressed]')].find((button) => button.textContent.includes("Third"));
+    idleRow.click();
+    assert.equal(view.host.querySelectorAll('[aria-label="OpenCode session is idle"]').length, 1);
+    const idleIcon = idleRow.querySelector('[aria-label="OpenCode session is idle"]');
+    assert.equal(idleIcon.parentElement.firstElementChild, idleIcon, "the icon precedes the ticket title");
+    assert.match(idleIcon.querySelector("svg path").getAttribute("d"), /a6\.5 6\.5.*v5m4-5v5$/, "idle status uses a circled pause icon");
+    assert.match(idleRow.textContent, /Third/, "the idle icon supplements rather than replaces the title");
+    assert.equal(view.host.querySelector('[aria-label="Ticket metadata"] dt')?.textContent, "title");
+    assert.equal([...view.host.querySelectorAll('[aria-label="Ticket metadata"] dt')].some((item) => item.textContent === "opencode-status"), false);
+    const missingSessionRow = [...view.host.querySelectorAll('button[aria-pressed]')].find((button) => button.textContent.includes("Fifth"));
+    assert.equal(missingSessionRow.querySelector('[aria-label="Ticket has no work session"] svg path').getAttribute("fill"), "var(--ui-caution-fill)");
     const sort = view.host.querySelector('summary[aria-label="Sort: Status"]');
     sort.click();
     [...view.host.querySelectorAll("button")].find((button) => button.textContent.includes("Recently modified")).click();
     assert.equal(view.host.querySelector("ul li button").children[1].textContent, "Second");
     view.host.querySelector('summary[aria-label="Sort: Recently modified"]').click();
     [...view.host.querySelectorAll("button")].find((button) => button.textContent.trim() === "Title").click();
-    assert.equal(view.host.querySelector("ul li button").children[1].textContent, "First");
+    assert.equal(view.host.querySelector("ul li button").children[1].textContent, "Fifth");
   } finally { view.dispose(); }
 });
 

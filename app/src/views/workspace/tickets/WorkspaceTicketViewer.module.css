@@ -115,6 +115,21 @@
   overflow-wrap: anywhere;
 }
 
+.ticketTitleGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ui-space-4);
+  min-width: 0;
+}
+
+.idleAttention {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--ui-muted);
+}
+
+.pauseIcon { color: var(--ui-primary); }
+
 .selectTicket {
   display: grid;
   grid-template-columns: subgrid;

@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fs::OpenOptions;
-use std::io::{Read, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -206,6 +206,9 @@ pub fn run() {
                     }
                     app.manage(management_store);
                     start_cleanup_worker(app.handle().clone());
+                    if let Ok(app_data) = app.path().app_data_dir() {
+                        start_ticket_status_worker(app.handle().clone(), app_data);
+                    }
                     AppState::initialized()
                 }
                 Err(error) => AppState::storage_unavailable(&error),
@@ -815,9 +818,12 @@ fn ticket_workspace_repository(
     if bindings.len() != 1
         || bindings[0].verification_status != management::VerificationStatus::Verified
     {
-        return Err("Workspace must have exactly one verified repository before creating a ticket.".into());
+        return Err(
+            "Workspace must have exactly one verified repository before creating a ticket.".into(),
+        );
     }
-    let repository = change_review::validate_repo_root(std::path::Path::new(&bindings[0].checkout_path))?;
+    let repository =
+        change_review::validate_repo_root(std::path::Path::new(&bindings[0].checkout_path))?;
     Ok((workspace, repository))
 }
 
@@ -839,10 +845,14 @@ async fn workspace_ticket_proposal(
         let runtime = app.state::<opencode::Runtime>();
         let store = app.state::<ManagementStore>();
         let (workspace, repository) = ticket_workspace_repository(&store, &request.workspace_id)?;
-        let app_data = app.path().app_data_dir().map_err(|error| error.to_string())?;
+        let app_data = app
+            .path()
+            .app_data_dir()
+            .map_err(|error| error.to_string())?;
         let ticket_directory = workspace_tickets::workspace_ticket_dir(&app_data, &workspace.slug)?;
         let canonical_app_data = app_data.canonicalize().map_err(|error| error.to_string())?;
-        if ticket_directory.starts_with(&repository) || canonical_app_data.starts_with(&repository) {
+        if ticket_directory.starts_with(&repository) || canonical_app_data.starts_with(&repository)
+        {
             return Err("Workspace ticket storage must be outside the repository.".into());
         }
         let prompt = workspace_tickets::render_ticket_idea_prompt(&request.idea, &workspace.name)?;
@@ -879,7 +889,10 @@ async fn workspace_ticket_create(
     run_ports_work(move || {
         let store = app.state::<ManagementStore>();
         let (workspace, repository) = ticket_workspace_repository(&store, &request.workspace_id)?;
-        let app_data = app.path().app_data_dir().map_err(|error| error.to_string())?;
+        let app_data = app
+            .path()
+            .app_data_dir()
+            .map_err(|error| error.to_string())?;
         let ticket_directory = workspace_tickets::workspace_ticket_dir(&app_data, &workspace.slug)?;
         workspace_tickets::create_draft(
             &ticket_directory,
@@ -1410,6 +1423,513 @@ fn start_cleanup_worker(app: AppHandle) {
             drop(runtime);
             drop(store);
             std::thread::sleep(std::time::Duration::from_secs(2));
+        })
+        .ok();
+}
+
+const STATUS_DIAGNOSTIC_TICKET_FILENAME: &str = "show-whether-a-session-is-active-or-idle.md";
+const STATUS_DIAGNOSTIC_WORKSPACE_DIRECTORY: &str = "project-manager";
+
+fn is_status_diagnostic_ticket(path: &std::path::Path) -> bool {
+    path.file_name().and_then(|name| name.to_str()) == Some(STATUS_DIAGNOSTIC_TICKET_FILENAME)
+        && path
+            .parent()
+            .and_then(std::path::Path::file_name)
+            .and_then(|name| name.to_str())
+            == Some(STATUS_DIAGNOSTIC_WORKSPACE_DIRECTORY)
+}
+
+fn log_ticket_status_diagnostic(
+    log_directory: Option<&std::path::Path>,
+    phase: &str,
+    session_id: Option<&str>,
+    event_type: Option<&str>,
+    status: Option<&str>,
+    previous_status: Option<&str>,
+    result: &str,
+) {
+    let entry = serde_json::json!({
+        "timestamp": now_millis(),
+        "level": "INFO",
+        "event": "ticket_opencode_status_diagnostic",
+        "ticket": STATUS_DIAGNOSTIC_TICKET_FILENAME,
+        "phase": phase,
+        "sessionId": session_id,
+        "eventType": event_type,
+        "status": status,
+        "previousStatus": previous_status,
+        "result": result,
+    });
+    append_ticket_status_diagnostic(log_directory, entry);
+}
+
+fn append_ticket_status_diagnostic(
+    log_directory: Option<&std::path::Path>,
+    entry: serde_json::Value,
+) {
+    let Some(directory) = log_directory else {
+        return;
+    };
+    let write_result = (|| {
+        std::fs::create_dir_all(directory)?;
+        let mut log = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(directory.join("application.log"))?;
+        writeln!(log, "{entry}")
+    })();
+    if let Err(error) = write_result {
+        eprintln!("could not write ticket status diagnostic: {error}");
+    }
+}
+
+fn contains_exact_session_id(value: &serde_json::Value, session_id: &str) -> bool {
+    match value {
+        serde_json::Value::String(value) => value == session_id,
+        serde_json::Value::Array(values) => values
+            .iter()
+            .any(|value| contains_exact_session_id(value, session_id)),
+        serde_json::Value::Object(fields) => fields
+            .values()
+            .any(|value| contains_exact_session_id(value, session_id)),
+        _ => false,
+    }
+}
+
+fn diagnostic_session_event_projection(
+    value: &serde_json::Value,
+    session_id: &str,
+) -> Option<serde_json::Value> {
+    if !contains_exact_session_id(value, session_id) {
+        return None;
+    }
+    let event = value
+        .get("payload")
+        .or_else(|| value.get("event"))
+        .unwrap_or(value);
+    let event_type = event.get("type").and_then(serde_json::Value::as_str);
+    if event_type.is_some_and(|event_type| !event_type.starts_with("session.")) {
+        return None;
+    }
+    let properties = event.get("properties").unwrap_or(event);
+    let status_type = properties
+        .get("status")
+        .and_then(|status| status.get("type"))
+        .and_then(serde_json::Value::as_str);
+    let execution_id = properties
+        .get("executionID")
+        .and_then(serde_json::Value::as_str);
+    Some(serde_json::json!({
+        "type": event_type,
+        "sessionID": session_id,
+        "statusType": status_type,
+        "executionID": execution_id,
+    }))
+}
+
+fn log_ticket_status_event_data(
+    log_directory: Option<&std::path::Path>,
+    session_id: &str,
+    event_data: serde_json::Value,
+) {
+    append_ticket_status_diagnostic(
+        log_directory,
+        serde_json::json!({
+            "timestamp": now_millis(),
+            "level": "INFO",
+            "event": "ticket_opencode_status_diagnostic",
+            "ticket": STATUS_DIAGNOSTIC_TICKET_FILENAME,
+            "phase": "event_data",
+            "sessionId": session_id,
+            "eventData": event_data,
+            "result": "content_redacted",
+        }),
+    );
+}
+
+fn apply_ticket_session_status(ticket_root: &std::path::Path, session_id: &str, status: &str) {
+    apply_ticket_session_status_with_diagnostics(ticket_root, session_id, status, None, None);
+}
+
+fn apply_ticket_session_status_with_diagnostics(
+    ticket_root: &std::path::Path,
+    session_id: &str,
+    status: &str,
+    event_type: Option<&str>,
+    log_directory: Option<&std::path::Path>,
+) {
+    let Ok(workspaces) = std::fs::read_dir(ticket_root) else {
+        return;
+    };
+    for workspace in workspaces.flatten() {
+        let directory = workspace.path();
+        if !directory.is_dir() {
+            continue;
+        }
+        let Ok(entries) = std::fs::read_dir(&directory) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|extension| extension.to_str()) != Some("md") {
+                continue;
+            }
+            let Ok(markdown) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            if workspace_tickets::work_session_id(&markdown)
+                .ok()
+                .flatten()
+                .as_deref()
+                != Some(session_id)
+            {
+                continue;
+            }
+            let previous_status = workspace_tickets::opencode_status(&markdown);
+            let is_diagnostic_ticket = is_status_diagnostic_ticket(&path);
+            if previous_status.as_deref() == Some(status) {
+                if is_diagnostic_ticket {
+                    log_ticket_status_diagnostic(
+                        log_directory,
+                        "event_apply",
+                        Some(session_id),
+                        event_type,
+                        Some(status),
+                        previous_status.as_deref(),
+                        "unchanged",
+                    );
+                }
+                continue;
+            }
+            if let Err(error) = workspace_tickets::record_opencode_status(&path, status) {
+                eprintln!("Could not persist ticket OpenCode status: {error}");
+                if is_diagnostic_ticket {
+                    log_ticket_status_diagnostic(
+                        log_directory,
+                        "event_apply",
+                        Some(session_id),
+                        event_type,
+                        Some(status),
+                        previous_status.as_deref(),
+                        "write_failed",
+                    );
+                }
+            } else if is_diagnostic_ticket {
+                log_ticket_status_diagnostic(
+                    log_directory,
+                    "event_apply",
+                    Some(session_id),
+                    event_type,
+                    Some(status),
+                    previous_status.as_deref(),
+                    "written",
+                );
+            }
+        }
+    }
+}
+
+fn handle_ticket_status_event(ticket_root: &std::path::Path, value: &serde_json::Value) {
+    handle_ticket_status_event_with_diagnostics(ticket_root, value, None);
+}
+
+fn handle_ticket_status_event_with_diagnostics(
+    ticket_root: &std::path::Path,
+    value: &serde_json::Value,
+    log_directory: Option<&std::path::Path>,
+) {
+    let diagnostic_session_id = diagnostic_ticket_session_id(ticket_root);
+    if let Some(session_id) = diagnostic_session_id.as_deref() {
+        if let Some(event_data) = diagnostic_session_event_projection(value, session_id) {
+            log_ticket_status_event_data(log_directory, session_id, event_data);
+        }
+    }
+    let Some((session_id, event_type, status)) = ticket_session_status_event_details(value) else {
+        return;
+    };
+    if diagnostic_session_id.as_deref() == Some(session_id.as_str()) {
+        log_ticket_status_diagnostic(
+            log_directory,
+            "event_received",
+            Some(&session_id),
+            Some(&event_type),
+            status,
+            None,
+            if status.is_some() {
+                "recognized"
+            } else {
+                "unmapped_status"
+            },
+        );
+    }
+    if let Some(status) = status {
+        apply_ticket_session_status_with_diagnostics(
+            ticket_root,
+            &session_id,
+            status,
+            Some(&event_type),
+            log_directory,
+        );
+    }
+}
+
+fn diagnostic_ticket_session_id(ticket_root: &std::path::Path) -> Option<String> {
+    let path = ticket_root
+        .join(STATUS_DIAGNOSTIC_WORKSPACE_DIRECTORY)
+        .join(STATUS_DIAGNOSTIC_TICKET_FILENAME);
+    let markdown = std::fs::read_to_string(path).ok()?;
+    workspace_tickets::work_session_id(&markdown).ok().flatten()
+}
+
+fn ticket_session_status_event(value: &serde_json::Value) -> Option<(String, &'static str)> {
+    let (session_id, _, status) = ticket_session_status_event_details(value)?;
+    status.map(|status| (session_id, status))
+}
+
+fn ticket_session_status_event_details(
+    value: &serde_json::Value,
+) -> Option<(String, String, Option<&'static str>)> {
+    let event = value
+        .get("payload")
+        .or_else(|| value.get("event"))
+        .unwrap_or(value);
+    let kind = event.get("type").and_then(serde_json::Value::as_str);
+    let kind = kind?;
+    let properties = event.get("properties").unwrap_or(event);
+    let session_id = properties
+        .get("sessionID")
+        .and_then(serde_json::Value::as_str)?;
+    let status: Option<&'static str> = match kind {
+        "session.idle" => Some("idle"),
+        // Status events are ephemeral. Durable execution lifecycle events
+        // provide a fallback when a status transition is missed by the stream.
+        "session.execution.started" => Some("busy"),
+        "session.execution.succeeded" | "session.execution.interrupted" => Some("idle"),
+        "session.status" => match properties
+            .get("status")
+            .and_then(|status| status.get("type"))
+            .and_then(serde_json::Value::as_str)
+        {
+            Some("idle") => Some("idle"),
+            Some("busy") => Some("busy"),
+            Some("retry") => Some("retry"),
+            _ => None,
+        },
+        _ => None,
+    };
+    Some((session_id.to_owned(), kind.to_owned(), status))
+}
+
+fn ticket_snapshot_status(
+    active: &HashMap<String, opencode::ActiveSession>,
+    session_id: &str,
+) -> &'static str {
+    if active.contains_key(session_id) {
+        "busy"
+    } else {
+        "idle"
+    }
+}
+
+const TICKET_STATUS_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(30);
+
+fn reconcile_ticket_status_snapshot(
+    ticket_root: &std::path::Path,
+    active: &HashMap<String, opencode::ActiveSession>,
+    log_directory: Option<&std::path::Path>,
+) {
+    let Ok(workspaces) = std::fs::read_dir(ticket_root) else {
+        return;
+    };
+    for workspace in workspaces.flatten() {
+        let Ok(entries) = std::fs::read_dir(workspace.path()) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|extension| extension.to_str()) != Some("md") {
+                continue;
+            }
+            let Ok(markdown) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            let Ok(Some(session_id)) = workspace_tickets::work_session_id(&markdown) else {
+                continue;
+            };
+            let status = ticket_snapshot_status(active, &session_id);
+            let previous_status = workspace_tickets::opencode_status(&markdown);
+            let is_diagnostic_ticket = is_status_diagnostic_ticket(&path);
+            let mut result = "unchanged";
+            if previous_status.as_deref() != Some(status) {
+                match workspace_tickets::record_opencode_status(&path, status) {
+                    Ok(true) => result = "written",
+                    Ok(false) => result = "unchanged",
+                    Err(error) => {
+                        result = "write_failed";
+                        eprintln!("Could not persist ticket OpenCode status: {error}");
+                    }
+                }
+            }
+            if is_diagnostic_ticket {
+                log_ticket_status_diagnostic(
+                    log_directory,
+                    "snapshot",
+                    Some(&session_id),
+                    None,
+                    Some(status),
+                    previous_status.as_deref(),
+                    result,
+                );
+            }
+        }
+    }
+}
+
+fn start_ticket_status_worker(app: AppHandle, app_data: PathBuf) {
+    let log_directory = match app.path().app_log_dir() {
+        Ok(directory) => Some(directory),
+        Err(error) => {
+            eprintln!("could not resolve ticket status diagnostic log directory: {error}");
+            None
+        }
+    };
+    let poll_app = app.clone();
+    let poll_root = app_data.join("workspace-tickets");
+    let poll_log_directory = log_directory.clone();
+    let _ = thread::Builder::new()
+        .name("ticket-opencode-status-poll".into())
+        .spawn(move || loop {
+            let Some(runtime) = poll_app.try_state::<opencode::Runtime>() else {
+                break;
+            };
+            if runtime.is_shutting_down() {
+                break;
+            }
+            match runtime.active_sessions() {
+                Ok(active) => reconcile_ticket_status_snapshot(
+                    &poll_root,
+                    &active,
+                    poll_log_directory.as_deref(),
+                ),
+                Err(error) => {
+                    eprintln!("Could not refresh ticket OpenCode status snapshot: {error}");
+                    log_ticket_status_diagnostic(
+                        poll_log_directory.as_deref(),
+                        "poll",
+                        diagnostic_ticket_session_id(&poll_root).as_deref(),
+                        None,
+                        None,
+                        None,
+                        "failed",
+                    );
+                }
+            }
+            drop(runtime);
+            thread::sleep(TICKET_STATUS_POLL_INTERVAL);
+        });
+    thread::Builder::new()
+        .name("ticket-opencode-status".into())
+        .spawn(move || {
+            let ticket_root = app_data.join("workspace-tickets");
+            loop {
+                let Some(runtime) = app.try_state::<opencode::Runtime>() else {
+                    break;
+                };
+                if runtime.is_shutting_down() {
+                    break;
+                }
+                let diagnostic_session_id = diagnostic_ticket_session_id(&ticket_root);
+                let stream = runtime.connect_event_stream();
+                log_ticket_status_diagnostic(
+                    log_directory.as_deref(),
+                    "stream_connect",
+                    diagnostic_session_id.as_deref(),
+                    None,
+                    None,
+                    None,
+                    if stream.is_ok() {
+                        "connected"
+                    } else {
+                        "failed"
+                    },
+                );
+                if let Ok(response) = stream {
+                    let snapshot = runtime.active_sessions();
+                    if let Ok(active) = snapshot {
+                        // The SSE connection is established before this one-time baseline.
+                        reconcile_ticket_status_snapshot(
+                            &ticket_root,
+                            &active,
+                            log_directory.as_deref(),
+                        );
+                        let mut reader = BufReader::new(response);
+                        let mut line = String::new();
+                        let mut data = String::new();
+                        loop {
+                            line.clear();
+                            match reader.read_line(&mut line) {
+                                Ok(0) | Err(_) => break,
+                                Ok(_) if line.trim().is_empty() => {
+                                    if !data.is_empty() {
+                                        if let Ok(value) =
+                                            serde_json::from_str::<serde_json::Value>(&data)
+                                        {
+                                            handle_ticket_status_event_with_diagnostics(
+                                                &ticket_root,
+                                                &value,
+                                                log_directory.as_deref(),
+                                            );
+                                        }
+                                        data.clear();
+                                    }
+                                }
+                                Ok(_) => {
+                                    if let Some(payload) = line.strip_prefix("data:") {
+                                        if !data.is_empty() {
+                                            data.push('\n');
+                                        }
+                                        data.push_str(payload.trim());
+                                    }
+                                }
+                            }
+                            if runtime.is_shutting_down() {
+                                return;
+                            }
+                        }
+                    } else {
+                        log_ticket_status_diagnostic(
+                            log_directory.as_deref(),
+                            "snapshot",
+                            diagnostic_session_id.as_deref(),
+                            None,
+                            None,
+                            None,
+                            "failed",
+                        );
+                    }
+                    log_ticket_status_diagnostic(
+                        log_directory.as_deref(),
+                        "stream_end",
+                        diagnostic_ticket_session_id(&ticket_root).as_deref(),
+                        None,
+                        None,
+                        None,
+                        "disconnected",
+                    );
+                } else {
+                    log_ticket_status_diagnostic(
+                        log_directory.as_deref(),
+                        "snapshot",
+                        diagnostic_session_id.as_deref(),
+                        None,
+                        None,
+                        None,
+                        "skipped_stream_connect_failed",
+                    );
+                }
+                drop(runtime);
+                thread::sleep(std::time::Duration::from_secs(1));
+            }
         })
         .ok();
 }
@@ -4706,6 +5226,198 @@ async fn opencode_pending_inputs_all(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn ticket_status_diagnostics_are_metadata_only_and_scoped_to_this_ticket() {
+        let root = tempfile::tempdir().unwrap();
+        assert!(is_status_diagnostic_ticket(std::path::Path::new(
+            "project-manager/show-whether-a-session-is-active-or-idle.md"
+        )));
+        assert!(!is_status_diagnostic_ticket(std::path::Path::new(
+            "other-workspace/show-whether-a-session-is-active-or-idle.md"
+        )));
+        log_ticket_status_diagnostic(
+            Some(root.path()),
+            "event_received",
+            Some("ses_diagnostic"),
+            Some("session.status"),
+            Some("idle"),
+            Some("busy"),
+            "recognized",
+        );
+        let line = std::fs::read_to_string(root.path().join("application.log")).unwrap();
+        let entry: serde_json::Value = serde_json::from_str(line.trim()).unwrap();
+        assert_eq!(entry["ticket"], STATUS_DIAGNOSTIC_TICKET_FILENAME);
+        assert_eq!(entry["sessionId"], "ses_diagnostic");
+        assert_eq!(entry["eventType"], "session.status");
+        assert_eq!(entry["status"], "idle");
+        assert!(entry.get("prompt").is_none());
+        assert!(entry.get("content").is_none());
+
+        let raw_event = json!({"payload":{"type":"session.status","properties":{"sessionID":"ses_diagnostic","status":{"type":"retry","attempt":2,"message":"private event detail"},"prompt":"private prompt"}}});
+        let projection = diagnostic_session_event_projection(&raw_event, "ses_diagnostic").unwrap();
+        assert_eq!(projection["type"], "session.status");
+        assert_eq!(projection["statusType"], "retry");
+        assert!(projection.get("prompt").is_none());
+        assert!(projection.get("message").is_none());
+        assert!(diagnostic_session_event_projection(&raw_event, "ses_other").is_none());
+        log_ticket_status_event_data(Some(root.path()), "ses_diagnostic", projection);
+        let lines = std::fs::read_to_string(root.path().join("application.log")).unwrap();
+        let event_entry: serde_json::Value =
+            serde_json::from_str(lines.lines().nth(1).unwrap()).unwrap();
+        assert_eq!(event_entry["eventData"]["statusType"], "retry");
+        assert!(!lines.contains("private event detail"));
+        assert!(!lines.contains("private prompt"));
+    }
+
+    #[test]
+    fn ticket_session_snapshot_and_sse_events_reconcile_exact_statuses() {
+        let active = HashMap::from([(
+            "ses_busy".to_owned(),
+            opencode::ActiveSession {
+                kind: "running".into(),
+            },
+        )]);
+        assert_eq!(ticket_snapshot_status(&active, "ses_busy"), "busy");
+        assert_eq!(ticket_snapshot_status(&active, "ses_idle"), "idle");
+        assert_eq!(
+            ticket_session_status_event(
+                &json!({"payload":{"type":"session.status","properties":{"sessionID":"ses_one","status":{"type":"retry","attempt":2}}}})
+            ),
+            Some(("ses_one".into(), "retry"))
+        );
+        assert_eq!(
+            ticket_session_status_event(
+                &json!({"type":"session.status","properties":{"sessionID":"ses_two","status":{"type":"busy"}}})
+            ),
+            Some(("ses_two".into(), "busy"))
+        );
+        assert_eq!(
+            ticket_session_status_event(
+                &json!({"type":"session.idle","properties":{"sessionID":"ses_three"}})
+            ),
+            Some(("ses_three".into(), "idle"))
+        );
+        assert_eq!(
+            ticket_session_status_event(
+                &json!({"payload":{"type":"session.execution.started","properties":{"sessionID":"ses_four","executionID":"exec_one"}}})
+            ),
+            Some(("ses_four".into(), "busy"))
+        );
+        assert_eq!(
+            ticket_session_status_event(
+                &json!({"payload":{"type":"session.execution.succeeded","properties":{"sessionID":"ses_four","executionID":"exec_one"}}})
+            ),
+            Some(("ses_four".into(), "idle"))
+        );
+        assert_eq!(
+            ticket_session_status_event(
+                &json!({"type":"session.execution.interrupted","properties":{"sessionID":"ses_four","executionID":"exec_one"}})
+            ),
+            Some(("ses_four".into(), "idle"))
+        );
+        assert_eq!(
+            ticket_session_status_event(
+                &json!({"type":"session.updated","properties":{"sessionID":"ses_four"}})
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn ticket_status_poll_reconciles_running_to_inactive_without_sse_events() {
+        let root = tempfile::tempdir().unwrap();
+        let workspace = root.path().join(STATUS_DIAGNOSTIC_WORKSPACE_DIRECTORY);
+        std::fs::create_dir_all(&workspace).unwrap();
+        let ticket = workspace.join(STATUS_DIAGNOSTIC_TICKET_FILENAME);
+        std::fs::write(
+            &ticket,
+            "---\ntitle: Activity\nstatus: in_progress\nwork_session_id: ses_poll\n---\nBody\n",
+        )
+        .unwrap();
+        let running = HashMap::from([(
+            "ses_poll".to_owned(),
+            opencode::ActiveSession {
+                kind: "running".into(),
+            },
+        )]);
+
+        reconcile_ticket_status_snapshot(root.path(), &running, None);
+        assert_eq!(
+            workspace_tickets::opencode_status(&std::fs::read_to_string(&ticket).unwrap())
+                .as_deref(),
+            Some("busy")
+        );
+
+        reconcile_ticket_status_snapshot(root.path(), &HashMap::new(), None);
+        assert_eq!(
+            workspace_tickets::opencode_status(&std::fs::read_to_string(&ticket).unwrap())
+                .as_deref(),
+            Some("idle")
+        );
+    }
+
+    #[test]
+    fn ticket_status_events_update_only_the_active_ticket_session() {
+        let root = tempfile::tempdir().unwrap();
+        let workspace = root.path().join("workspace");
+        std::fs::create_dir_all(&workspace).unwrap();
+        let active = workspace.join("active.md");
+        let retained = workspace.join("retained.md");
+        std::fs::write(
+            &active,
+            "---\ntitle: Active\nstatus: in_progress\nwork_session_id: ses_active\nwork_session_ids:\n  - ses_old\n  - ses_active\n---\nBody\n",
+        )
+        .unwrap();
+        std::fs::write(
+            &retained,
+            "---\ntitle: Retained\nstatus: in_progress\nwork_session_id: ses_other\n---\nBody\n",
+        )
+        .unwrap();
+
+        apply_ticket_session_status(root.path(), "ses_old", "busy");
+        assert_eq!(
+            workspace_tickets::opencode_status(&std::fs::read_to_string(&active).unwrap()),
+            None
+        );
+        apply_ticket_session_status(root.path(), "ses_active", "idle");
+        assert_eq!(
+            workspace_tickets::opencode_status(&std::fs::read_to_string(&active).unwrap())
+                .as_deref(),
+            Some("idle")
+        );
+        assert_eq!(
+            workspace_tickets::opencode_status(&std::fs::read_to_string(&retained).unwrap()),
+            None
+        );
+        handle_ticket_status_event(
+            root.path(),
+            &json!({"payload":{"type":"session.execution.started","properties":{"sessionID":"ses_active","executionID":"exec_one"}}}),
+        );
+        assert_eq!(
+            workspace_tickets::opencode_status(&std::fs::read_to_string(&active).unwrap())
+                .as_deref(),
+            Some("busy")
+        );
+        handle_ticket_status_event(
+            root.path(),
+            &json!({"payload":{"type":"session.execution.succeeded","properties":{"sessionID":"ses_active","executionID":"exec_one"}}}),
+        );
+        assert_eq!(
+            workspace_tickets::opencode_status(&std::fs::read_to_string(&active).unwrap())
+                .as_deref(),
+            Some("idle")
+        );
+        handle_ticket_status_event(
+            root.path(),
+            &json!({"payload":{"type":"session.status","properties":{"sessionID":"ses_active","status":{"type":"retry","attempt":1}}}}),
+        );
+        assert_eq!(
+            workspace_tickets::opencode_status(&std::fs::read_to_string(&active).unwrap())
+                .as_deref(),
+            Some("retry")
+        );
+    }
 
     #[test]
     fn terminal_work_runs_off_the_calling_thread_and_preserves_errors() {

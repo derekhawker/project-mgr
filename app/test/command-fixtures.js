@@ -172,6 +172,7 @@ export function resultForCommand(name) {
         filename: "example.md",
         title: "Example ticket",
         status: "draft",
+        hasWorkSession: false,
         content: "---\ntitle: Example ticket\nstatus: draft\n---\nExample body",
         modifiedAt: 1_793_700_000_000,
       }];
@@ -245,6 +246,8 @@ export function resultForCommand(name) {
         filename: "fixture-proposal.md",
         title: "Fixture proposal",
         status: "draft",
+        hasWorkSession: false,
+        opencodeStatus: null,
         content: "---\ntitle: Fixture proposal\nstatus: draft\n---\n\nFixture body.\n",
         modifiedAt: 1,
       };
