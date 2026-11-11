@@ -3,14 +3,14 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ValueRef};
 use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 use serde::{Deserialize, Serialize};
 
-use crate::safety::{self, GitInspection, ManagedHomeGuard, SafetyError};
+use crate::safety::{self, GitInspection, GitRepositoryInfo, ManagedHomeGuard, SafetyError};
 
 pub const DEFAULT_PROJECT_HOME_ROOT: &str = "~/OpenCode Projects/";
 pub const DEFAULT_REPOSITORY_LIBRARY_ROOT: &str = "~/OpenCode Projects/Repositories/";
@@ -41,6 +41,7 @@ const MIGRATION_21: &str = include_str!("migrations/0021_workspace_link_compat.s
 const MIGRATION_22: &str = include_str!("migrations/0022_repository_soft_delete.sql");
 const MIGRATION_23: &str = include_str!("migrations/0023_quick_request_custom_directory.sql");
 const MIGRATION_24: &str = include_str!("migrations/0024_workspace_session_context_roles.sql");
+const MIGRATION_25: &str = include_str!("migrations/0025_repository_path_identity.sql");
 #[cfg(test)]
 const LEGACY_MIGRATION_18: &str =
     include_str!("migrations/test_fixtures/0018_legacy_workspace_work_contexts.sql");
@@ -749,8 +750,9 @@ pub struct Setting {
 }
 
 /// Owns one SQLite connection. Access is serialized and every connection enables foreign keys.
+#[derive(Clone)]
 pub struct ManagementStore {
-    connection: Mutex<Connection>,
+    connection: Arc<Mutex<Connection>>,
     database_path: Option<PathBuf>,
     user_home: PathBuf,
 }
@@ -922,7 +924,7 @@ impl ManagementStore {
         Self::ensure_default_settings(&connection)?;
         Self::sync_quick_requests_home(&connection, &user_home)?;
         Ok(Self {
-            connection: Mutex::new(connection),
+            connection: Arc::new(Mutex::new(connection)),
             database_path,
             user_home,
         })
@@ -945,7 +947,7 @@ impl ManagementStore {
             [],
             |row| row.get(0),
         )?;
-        if current_version > 24 {
+        if current_version > 25 {
             return Err(ManagementStoreError::UnsupportedSchemaVersion(
                 current_version,
             ));
@@ -1169,7 +1171,31 @@ impl ManagementStore {
                 [],
             )?;
         }
+        let migrate_repository_identity = current_version < 25;
         transaction.commit()?;
+        if migrate_repository_identity {
+            connection.pragma_update(None, "foreign_keys", "OFF")?;
+            let migration_result = (|| {
+                let transaction =
+                    connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+                transaction.execute_batch(MIGRATION_25)?;
+                transaction.execute(
+                    "INSERT INTO schema_migrations(version, applied_at) VALUES (25, 0)",
+                    [],
+                )?;
+                transaction.commit()?;
+                Ok::<(), ManagementStoreError>(())
+            })();
+            connection.pragma_update(None, "foreign_keys", "ON")?;
+            migration_result?;
+
+            let mut violations = connection.prepare("PRAGMA foreign_key_check")?;
+            if violations.query([])?.next()?.is_some() {
+                return Err(ManagementStoreError::InvalidTransition(
+                    "repository path migration left invalid foreign-key references".into(),
+                ));
+            }
+        }
         Ok(())
     }
 
@@ -2803,12 +2829,12 @@ impl ManagementStore {
         Ok(())
     }
 
-    pub fn repository_is_soft_deleted(&self, repository_identity: &str) -> StoreResult<bool> {
+    pub fn repository_is_soft_deleted(&self, repository_path: &str) -> StoreResult<bool> {
         let connection = self.lock()?;
         Ok(connection.query_row(
             "SELECT EXISTS(SELECT 1 FROM repository_catalog
-             WHERE repository_identity = ?1 AND deleted_at IS NOT NULL)",
-            [repository_identity],
+             WHERE repository_path = ?1 AND deleted_at IS NOT NULL)",
+            [repository_path],
             |row| row.get(0),
         )?)
     }
@@ -2871,22 +2897,22 @@ impl ManagementStore {
         Ok(())
     }
 
-    pub fn repository_is_disallowed(&self, repository_identity: &str) -> StoreResult<bool> {
+    pub fn repository_is_disallowed(&self, repository_path: &str) -> StoreResult<bool> {
         let connection = self.lock()?;
         Ok(connection.query_row(
             "SELECT EXISTS(
                  SELECT 1 FROM repository_disallowed d
                  JOIN repository_catalog r ON r.id = d.repository_id
-                 WHERE r.repository_identity = ?1
+                 WHERE r.repository_path = ?1 AND r.deleted_at IS NULL
              )",
-            [repository_identity],
+            [repository_path],
             |row| row.get(0),
         )?)
     }
 
     /// Add a verified discovery result, updating an existing catalog record by
-    /// either its canonical path or Git identity. Git facts always win over
-    /// proposal text supplied by the caller.
+    /// canonical path. Git facts always win over proposal text supplied by the
+    /// caller; Git common-directory identity is metadata, not a catalog key.
     pub fn catalog_discovered_repository(
         &self,
         id: &str,
@@ -2894,28 +2920,48 @@ impl ManagementStore {
         purpose: Option<&str>,
         created_at: i64,
     ) -> StoreResult<Repository> {
-        let inspection = safety::inspect_repository(path)?;
-        let canonical_path = path_to_string(&inspection.repository.canonical_root)?;
+        let inspection = safety::inspect_repository_for_discovery(path)?;
+        self.catalog_discovered_repository_from_inspection(id, &inspection, purpose, created_at)
+    }
+
+    pub fn catalog_discovered_repository_from_inspection(
+        &self,
+        id: &str,
+        inspection: &GitRepositoryInfo,
+        purpose: Option<&str>,
+        created_at: i64,
+    ) -> StoreResult<Repository> {
+        let canonical_path = path_to_string(&inspection.canonical_root)?;
         let name = inspection
-            .repository
             .canonical_root
             .file_name()
             .and_then(|name| name.to_str())
             .unwrap_or("Repository");
         let connection = self.lock()?;
         let existing = connection.query_row(
-            "SELECT id FROM repository_catalog WHERE repository_path = ?1 OR repository_identity = ?2 LIMIT 1",
-            params![canonical_path, inspection.repository.identity], |row| row.get::<_, String>(0)).optional()?;
+            "SELECT id FROM repository_catalog WHERE repository_path = ?1 AND deleted_at IS NULL LIMIT 1",
+            [&canonical_path],
+            |row| row.get::<_, String>(0),
+        ).optional()?;
         if let Some(existing_id) = existing {
             drop(connection);
             let repository = self
                 .get_repository(&existing_id)?
                 .ok_or_else(|| ManagementStoreError::NotFound(existing_id.clone()))?;
-            if purpose.is_none() {
+            let identity_changed = repository.repository_identity != inspection.identity;
+            if purpose.is_none() && !identity_changed {
                 return Ok(repository);
             }
             let connection = self.lock()?;
-            connection.execute("UPDATE repository_catalog SET purpose = ?2, purpose_status = 'available', updated_at = ?3 WHERE id = ?1", params![existing_id, purpose, created_at])?;
+            connection.execute(
+                "UPDATE repository_catalog
+                 SET repository_identity = ?2,
+                     purpose = CASE WHEN ?3 IS NULL THEN purpose ELSE ?3 END,
+                     purpose_status = CASE WHEN ?3 IS NULL THEN purpose_status ELSE 'available' END,
+                     updated_at = ?4
+                 WHERE id = ?1",
+                params![existing_id, inspection.identity, purpose, created_at],
+            )?;
             return Self::get_repository_from(&connection, &existing_id)?
                 .ok_or_else(|| ManagementStoreError::NotFound(existing_id));
         }
@@ -2924,7 +2970,7 @@ impl ManagementStore {
             id: id.to_owned(),
             name: name.to_owned(),
             repository_path: canonical_path,
-            repository_identity: inspection.repository.identity,
+            repository_identity: inspection.identity.clone(),
             purpose: purpose.map(str::to_owned),
             purpose_status: if purpose.is_some() {
                 PurposeStatus::Available
@@ -2933,6 +2979,46 @@ impl ManagementStore {
             },
             created_at,
         })
+    }
+
+    /// Retire catalog entries absent from a completely scanned portion of a
+    /// repository root. Paths inside pruned subtrees are unknown, not missing.
+    pub fn retire_missing_discovered_repositories(
+        &self,
+        scan_root: &Path,
+        discovered_paths: &std::collections::HashSet<PathBuf>,
+        pruned_directories: &[PathBuf],
+        retired_at: i64,
+    ) -> StoreResult<()> {
+        let connection = self.lock()?;
+        let transaction = connection.unchecked_transaction()?;
+        let mut statement = transaction.prepare(
+            "SELECT id, repository_path FROM repository_catalog WHERE deleted_at IS NULL",
+        )?;
+        let rows = statement.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        let candidates = rows.collect::<Result<Vec<_>, _>>()?;
+        drop(statement);
+
+        for (id, repository_path) in candidates {
+            let repository_path = PathBuf::from(repository_path);
+            if !repository_path.starts_with(scan_root)
+                || discovered_paths.contains(&repository_path)
+                || pruned_directories
+                    .iter()
+                    .any(|pruned| repository_path.starts_with(pruned) && pruned != scan_root)
+            {
+                continue;
+            }
+            transaction.execute(
+                "UPDATE repository_catalog SET deleted_at = ?2
+                 WHERE id = ?1 AND deleted_at IS NULL",
+                params![id, retired_at],
+            )?;
+        }
+        transaction.commit()?;
+        Ok(())
     }
 
     /// Catalogs a repository explicitly selected by the user. This is the only
@@ -5891,6 +5977,108 @@ mod tests {
         }
     }
 
+    fn database_through_version_24(connection: &Connection) {
+        database_through_version(connection, 18);
+        for (version, migration) in [
+            (19, MIGRATION_19),
+            (20, MIGRATION_20),
+            (21, MIGRATION_21),
+            (22, MIGRATION_22),
+            (23, MIGRATION_23),
+            (24, MIGRATION_24),
+        ] {
+            connection.execute_batch(migration).unwrap();
+            connection
+                .execute(
+                    "INSERT INTO schema_migrations(version, applied_at) VALUES (?1, 0)",
+                    [version],
+                )
+                .unwrap();
+        }
+    }
+
+    #[test]
+    fn migration_25_replaces_repository_identity_uniqueness_with_path_uniqueness() {
+        let fixture = tempdir().unwrap();
+        let database = fixture.path().join("management.sqlite");
+        let home = fixture.path().join("home");
+        fs::create_dir_all(&home).unwrap();
+        let connection = Connection::open(&database).unwrap();
+        connection
+            .pragma_update(None, "foreign_keys", "ON")
+            .unwrap();
+        database_through_version_24(&connection);
+        connection
+            .execute(
+                "INSERT INTO repository_catalog(id, name, repository_path, repository_identity,
+                     purpose, purpose_status, created_at, updated_at, deleted_at)
+                 VALUES ('repo-existing', 'Existing', '/repos/existing', 'same-git-id', NULL,
+                         'unavailable', 1, 1, NULL)",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO repository_disallowed(repository_id, created_at)
+                 VALUES ('repo-existing', 2)",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO workspaces(id, name, slug, description, home_path, kind, status, created_at)
+                 VALUES ('workspace-existing', 'Existing Workspace', 'existing-workspace', NULL,
+                         '/workspaces/existing', 'regular', 'active', 1)",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO workspace_repositories(workspace_id, repository_id, checkout_path,
+                     checkout_mode, branch, verification_status, source_identity, checkout_identity,
+                     default_branch, created_at)
+                 VALUES ('workspace-existing', 'repo-existing', '/repos/existing', 'existing',
+                         'main', 'verified', 'same-git-id', 'same-git-id', 'main', 1)",
+                [],
+            )
+            .unwrap();
+        drop(connection);
+
+        let store = ManagementStore::open_with_paths(&database, &home, fixture.path()).unwrap();
+        let mut second = repository("repo-second-path");
+        second.repository_identity = "same-git-id".into();
+        store.create_repository(&second).unwrap();
+
+        assert_eq!(store.migration_versions().unwrap().last(), Some(&25));
+        assert_eq!(
+            store
+                .get_repository("repo-existing")
+                .unwrap()
+                .unwrap()
+                .repository_path,
+            "/repos/existing"
+        );
+        assert_eq!(
+            store
+                .get_repository("repo-second-path")
+                .unwrap()
+                .unwrap()
+                .repository_identity,
+            "same-git-id"
+        );
+        assert!(store.repository_is_disallowed("/repos/existing").unwrap());
+        assert!(!store
+            .repository_is_disallowed(&second.repository_path)
+            .unwrap());
+        assert_eq!(
+            store
+                .list_workspace_repository_bindings("workspace-existing")
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+
     #[test]
     fn migration_24_adds_workspace_role_and_preserves_existing_contexts() {
         let fixture = tempdir().unwrap();
@@ -5945,7 +6133,7 @@ mod tests {
 
         ManagementStore::migrate(&mut connection).unwrap();
         let store = ManagementStore {
-            connection: Mutex::new(connection),
+            connection: Arc::new(Mutex::new(connection)),
             database_path: None,
             user_home: home,
         };
@@ -5958,7 +6146,7 @@ mod tests {
             })
             .unwrap();
 
-        assert_eq!(store.migration_versions().unwrap().last(), Some(&24));
+        assert_eq!(store.migration_versions().unwrap().last(), Some(&25));
         let contexts = store
             .list_workspace_session_context("w-legacy-context")
             .unwrap();
@@ -6086,7 +6274,7 @@ mod tests {
         }
         let migrated =
             ManagementStore::open_with_paths(&database, &user_home, &system_temp).unwrap();
-        assert_eq!(migrated.migration_versions().unwrap().last(), Some(&24));
+        assert_eq!(migrated.migration_versions().unwrap().last(), Some(&25));
         let connection = migrated.lock().unwrap();
         let legacy_table_count: i64 = connection
             .query_row(
@@ -6287,7 +6475,7 @@ mod tests {
 
         let migrated =
             ManagementStore::open_with_paths(&database, &user_home, &system_temp).unwrap();
-        assert_eq!(migrated.migration_versions().unwrap().last(), Some(&24));
+        assert_eq!(migrated.migration_versions().unwrap().last(), Some(&25));
         assert_eq!(
             migrated
                 .quick_request_prompt("qr-legacy-prompt")
@@ -6595,25 +6783,24 @@ mod tests {
     fn repository_soft_delete_batch_is_atomic_when_an_id_is_missing() {
         let store = ManagementStore::in_memory().unwrap();
         store.create_repository(&repository("repo-atomic")).unwrap();
-        store.create_repository(&repository("repo-atomic-second")).unwrap();
+        store
+            .create_repository(&repository("repo-atomic-second"))
+            .unwrap();
 
-        let result = store
-            .soft_delete_repositories(
-                &[
-                    "repo-atomic".into(),
-                    "repo-atomic-second".into(),
-                    "repo-missing".into(),
-                ],
-                CREATED + 1,
-            );
+        let result = store.soft_delete_repositories(
+            &[
+                "repo-atomic".into(),
+                "repo-atomic-second".into(),
+                "repo-missing".into(),
+            ],
+            CREATED + 1,
+        );
 
         assert!(matches!(result, Err(ManagementStoreError::NotFound(_))));
         assert_eq!(store.list_repositories().unwrap().len(), 2);
-        assert!(
-            !store
-                .repository_is_soft_deleted("git-identity-repo-atomic")
-                .unwrap()
-        );
+        assert!(!store
+            .repository_is_soft_deleted("/fixtures/repos/repo-atomic")
+            .unwrap());
 
         store
             .soft_delete_repositories(
@@ -6623,10 +6810,40 @@ mod tests {
             .unwrap();
         assert!(store.list_repositories().unwrap().is_empty());
         assert!(store
-            .repository_is_soft_deleted("git-identity-repo-atomic")
+            .repository_is_soft_deleted("/fixtures/repos/repo-atomic")
             .unwrap());
         assert!(store
-            .repository_is_soft_deleted("git-identity-repo-atomic-second")
+            .repository_is_soft_deleted("/fixtures/repos/repo-atomic-second")
+            .unwrap());
+    }
+
+    #[test]
+    fn repository_enabled_and_deleted_state_are_scoped_to_canonical_path() {
+        let store = ManagementStore::in_memory().unwrap();
+        let first = repository("repo-same-identity-first");
+        let mut second = repository("repo-same-identity-second");
+        second.repository_identity = first.repository_identity.clone();
+        store.create_repository(&first).unwrap();
+        store.create_repository(&second).unwrap();
+
+        store
+            .set_repository_enabled(&first.id, false, CREATED + 1)
+            .unwrap();
+        assert!(store
+            .repository_is_disallowed(&first.repository_path)
+            .unwrap());
+        assert!(!store
+            .repository_is_disallowed(&second.repository_path)
+            .unwrap());
+
+        store
+            .soft_delete_repositories(&[first.id.clone()], CREATED + 2)
+            .unwrap();
+        assert!(store
+            .repository_is_soft_deleted(&first.repository_path)
+            .unwrap());
+        assert!(!store
+            .repository_is_soft_deleted(&second.repository_path)
             .unwrap());
     }
 
@@ -6680,7 +6897,7 @@ mod tests {
                 .unwrap(),
             vec![failed]
         );
-        assert_eq!(reopened.migration_versions().unwrap().last(), Some(&24));
+        assert_eq!(reopened.migration_versions().unwrap().last(), Some(&25));
     }
 
     #[test]
@@ -7117,7 +7334,7 @@ mod tests {
                 store.migration_versions().unwrap(),
                 vec![
                     1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22,
-                    23, 24
+                    23, 24, 25
                 ]
             );
             assert_eq!(
@@ -7146,8 +7363,8 @@ mod tests {
         assert_eq!(
             reopened.migration_versions().unwrap(),
             vec![
-                1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22,
-                23, 24
+                1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+                24, 25
             ]
         );
         assert_eq!(
@@ -7318,7 +7535,7 @@ mod tests {
         }
 
         let migrated = ManagementStore::open_with_paths(&database, &home, fixture.path()).unwrap();
-        assert_eq!(migrated.migration_versions().unwrap().last(), Some(&24));
+        assert_eq!(migrated.migration_versions().unwrap().last(), Some(&25));
         assert!(migrated
             .list_workspace_repository_worktrees("workspace-with-no-worktrees")
             .unwrap()
@@ -8012,7 +8229,7 @@ mod tests {
 
         let repo = store.create_repository(&repository("repo-unique")).unwrap();
         let mut duplicate_repo = repository("repo-duplicate");
-        duplicate_repo.repository_identity = repo.repository_identity;
+        duplicate_repo.repository_path = repo.repository_path;
         assert!(store.create_repository(&duplicate_repo).is_err());
         assert_eq!(store.list_repositories().unwrap().len(), 1);
 

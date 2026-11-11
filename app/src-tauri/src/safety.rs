@@ -696,7 +696,11 @@ fn parse_worktrees(repo_root: &Path) -> SafetyResult<Vec<GitWorktreeInfo>> {
     Ok(worktrees)
 }
 
-pub fn inspect_repository(path: &Path) -> SafetyResult<GitInspection> {
+/// Verify a repository root and its stable Git identity without enumerating
+/// branches, worktrees, or worktree status. Repository discovery only needs
+/// the root and identity; use `inspect_repository` for workflows that need the
+/// full checkout details.
+pub fn inspect_repository_for_discovery(path: &Path) -> SafetyResult<GitRepositoryInfo> {
     reject_parent_components(path)?;
     let root_text = git_text(path, &["rev-parse", "--show-toplevel"])?;
     let canonical_root = fs::canonicalize(root_text)?;
@@ -711,6 +715,48 @@ pub fn inspect_repository(path: &Path) -> SafetyResult<GitInspection> {
         canonical_root.join(common_path)
     };
     let canonical_common_dir = fs::canonicalize(common_path)?;
+    Ok(GitRepositoryInfo {
+        canonical_root,
+        identity: format!("git-common-dir:{}", canonical_common_dir.display()),
+        canonical_common_dir,
+        current_branch: None,
+        default_branch: None,
+        branches: Vec::new(),
+    })
+}
+
+/// Linked worktrees and submodules are Git checkouts, but they are not
+/// independent repository-catalog entries. A `.git` file can also describe a
+/// separate-Git-dir checkout, so compare Git's own paths before excluding it.
+pub fn is_independent_repository_checkout(
+    path: &Path,
+    inspection: &GitRepositoryInfo,
+) -> SafetyResult<bool> {
+    let marker = path.join(".git");
+    let metadata = match fs::symlink_metadata(&marker) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error.into()),
+    };
+    if metadata.file_type().is_file() {
+        let git_dir = PathBuf::from(git_text(path, &["rev-parse", "--git-dir"])?);
+        let git_dir = if git_dir.is_absolute() {
+            git_dir
+        } else {
+            inspection.canonical_root.join(git_dir)
+        };
+        if fs::canonicalize(git_dir)? != inspection.canonical_common_dir {
+            return Ok(false);
+        }
+    }
+
+    let superproject = git_text(path, &["rev-parse", "--show-superproject-working-tree"])?;
+    Ok(superproject.is_empty())
+}
+
+pub fn inspect_repository(path: &Path) -> SafetyResult<GitInspection> {
+    let discovery_info = inspect_repository_for_discovery(path)?;
+    let canonical_root = discovery_info.canonical_root.clone();
     let current_branch = match git_text(path, &["symbolic-ref", "--quiet", "--short", "HEAD"]) {
         Ok(branch) if !branch.is_empty() => Some(branch),
         _ => None,
@@ -727,8 +773,8 @@ pub fn inspect_repository(path: &Path) -> SafetyResult<GitInspection> {
     let default_branch = inspect_default_branch(path, &branches)?;
     let repository = GitRepositoryInfo {
         canonical_root: canonical_root.clone(),
-        canonical_common_dir: canonical_common_dir.clone(),
-        identity: format!("git-common-dir:{}", canonical_common_dir.display()),
+        canonical_common_dir: discovery_info.canonical_common_dir,
+        identity: discovery_info.identity,
         current_branch,
         default_branch,
         branches,

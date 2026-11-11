@@ -30,7 +30,8 @@ Each repository row has an enable checkbox and delete icon. The delete icon
 enters multi-select mode with that repository selected; users can select more,
 cancel, or confirm **Delete selected (n)**. Deletion soft-deletes catalog
 entries only: repository files and existing workspace associations remain
-untouched, and scans must not rediscover a soft-deleted repository.
+untouched, and scans must not rediscover a soft-deleted repository at that same
+canonical path. A different path is a distinct catalog entry.
 
 Page, form, and repository-group insets and gaps use the shared whole-CSS-pixel
 [spacing weights](../../app/packages/ui-lib/spacing.md).
@@ -44,6 +45,12 @@ the failure in the page banner so the user can recover or navigate away.
 ## Discovered repositories
 
 - **Add directories** opens the native multi-folder picker.
+- Broad scans prune common dependency/build/output directory names (for example
+  `node_modules`, `target`, `dist`, `build`, and `release`) below the selected
+  root. The selected root itself remains eligible. Linked worktrees and
+  submodules are not cataloged; independent separate-Git-dir checkouts may be.
+- Saved-root scans run asynchronously during startup rather than delaying
+  application startup or the page.
 - Show the configurable **Repository library location** on this page. The user
   can type an absolute path or choose a folder; save edits after five seconds
   without changes and immediately when the field loses focus. Rust validates
