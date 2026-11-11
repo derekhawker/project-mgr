@@ -400,16 +400,21 @@ inferred.
 | Step | Actor | Action | Result |
 |---:|---|---|---|
 | 1 | User | Opens **Repositories** from top navigation and uses **Add directories** to select one or more folders with the native folder picker. | The GUI sends only those explicit paths to Rust. |
-| 2 | Rust | Canonicalizes and validates readable directories; discovers Git repositories while excluding the configured OpenCode Projects root. | Candidate Git repositories are identified without changing them; the managed project tree is never scanned. |
-| 3 | Git | Reports repository roots, remotes, branches, and identity data. | Rust has verifiable repository facts. |
-| 4 | Rust | De-duplicates candidates against the repository catalog by verified identity and canonical path; linked worktrees do not become separate catalog entries. | Existing repository identities are reused rather than duplicated. |
+| 2 | Rust | Runs traversal and Git discovery on a bounded blocking worker; canonicalizes selected roots, but does not follow child directory symlinks. | The UI/startup thread remains available while filesystem work runs. |
+| 3 | Rust/Git | Prunes common dependency, generated-output, and build directory names during broad traversal; stops at Git markers and verifies candidates with lightweight Git root/common-directory facts. | The managed project and repository-library trees are excluded; invalid markers are not cataloged; linked worktrees and submodules are excluded, while independent separate-Git-dir checkouts are eligible. |
+| 4 | Rust | De-duplicates by canonical repository path and retires absent active entries only after a complete scan; incomplete roots do not trigger cleanup. | A move creates a path-keyed entry at the new location; old catalog history and workspace bindings remain attached to the old entry. Repository files are never deleted. |
 | 5 | OpenCode | Generates a concise purpose description from repository content or metadata when requested by the discovery flow. | The description is proposed content, not repository identity. |
 | 6 | User | Reviews or edits the purpose description. | The catalog stores the accepted concise purpose. |
 | 7 | Rust | Writes the repository catalog entry and discovery result to SQLite. | The shared catalog is additional context to any New-work proposal; discovery alone does not attach a repo to a workspace. |
 
-Saved scan roots persist and startup rescans each root. Repository identities
-discovered under overlapping roots are shown only once under the most-specific
-root. The Repositories page groups saved roots under their shortest shared
+Saved scan roots persist and startup rescans each root asynchronously on the
+bounded blocking worker pool; startup does not wait for scan completion. Broad
+traversal prunes common names such as `node_modules`, `vendor`, `target`, `dist`,
+`build`, `release`, and language/tool output directories. A selected root itself
+is always eligible regardless of its name. These name-based rules apply only to
+descendants and may leave repositories inside a pruned directory undiscovered.
+Repository paths discovered under overlapping roots are shown only once under
+the most-specific root. The Repositories page groups saved roots under their shortest shared
 parent when their filesystem-level path component matches and the group
 contains at most five repositories. Larger groups retain their separate saved
 scan roots; a lone scan root keeps its own path. Within a displayed root,
@@ -429,8 +434,9 @@ saved value.
 Deleting repository entries is a confirmed bulk operation. Rust soft-deletes
 the selected catalog rows in one transaction; repository files and existing
 workspace associations are retained. Active catalog and directory listings
-hide deleted entries, and rescans suppress matches by the retained Git
-repository identity so deleted repositories do not reappear.
+hide deleted entries, and rescans suppress matches at the same canonical path so
+deleted repositories do not reappear there. A repository at a different path is
+a distinct catalog entry even when Git reports the same common-directory identity.
 
 The configured project-home root is a hard scan exclusion: Rust rejects a
 selected path inside it and prunes it when a selected ancestor contains it.

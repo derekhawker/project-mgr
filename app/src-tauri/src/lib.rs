@@ -2937,12 +2937,56 @@ fn repository_soft_delete_many(
         .map_err(|error| error.to_string())
 }
 
+fn is_pruned_repository_scan_directory(name: &std::ffi::OsStr) -> bool {
+    const PRUNED_DIRECTORY_NAMES: &[&str] = &[
+        "node_modules",
+        "bower_components",
+        "vendor",
+        "third_party",
+        "pods",
+        "carthage",
+        "target",
+        "dist",
+        "build",
+        "release",
+        "out",
+        "coverage",
+        "bin",
+        "obj",
+        ".next",
+        ".nuxt",
+        ".turbo",
+        ".cache",
+        ".gradle",
+        "deriveddata",
+        ".tox",
+        "__pycache__",
+        ".pytest_cache",
+        ".mypy_cache",
+        ".ruff_cache",
+        "venv",
+        ".venv",
+        "virtualenv",
+        "site-packages",
+        "_build",
+        "deps",
+    ];
+
+    name.to_str().is_some_and(|name| {
+        PRUNED_DIRECTORY_NAMES
+            .iter()
+            .any(|excluded| name.eq_ignore_ascii_case(excluded))
+    })
+}
+
 fn scan_repository_dirs(
     root: &std::path::Path,
     project_home: &std::path::Path,
     repository_library: &std::path::Path,
     found: &mut Vec<std::path::PathBuf>,
-) -> Result<(), String> {
+    pruned: &mut Vec<std::path::PathBuf>,
+    visited: &mut std::collections::HashSet<std::path::PathBuf>,
+) -> Result<std::path::PathBuf, String> {
     if !root.is_dir() {
         return Err(format!("{} is not a directory", root.display()));
     }
@@ -2960,34 +3004,62 @@ fn scan_repository_dirs(
             repository_library.display()
         ));
     }
+    let scan_root = canonical_root.clone();
     let mut stack = vec![canonical_root];
     while let Some(path) = stack.pop() {
-        if path == project_home {
+        if visited.contains(&path) {
             continue;
         }
-        if path.join(".git").exists() {
-            found.push(path);
+        if path == project_home {
+            visited.insert(path);
             continue;
+        }
+        match std::fs::symlink_metadata(path.join(".git")) {
+            Ok(metadata) if metadata.file_type().is_file() => {
+                // A .git file marks a checkout, but Git facts are needed to
+                // distinguish a linked worktree/submodule from a separate
+                // Git-directory checkout. Never descend into that checkout.
+                found.push(path.clone());
+                visited.insert(path);
+                continue;
+            }
+            Ok(_) => {
+                found.push(path.clone());
+                visited.insert(path);
+                continue;
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(format!("could not inspect {}: {error}", path.display()));
+            }
         }
         let entries = std::fs::read_dir(&path)
             .map_err(|e| format!("could not read {}: {e}", path.display()))?;
         for entry in entries {
             let entry = entry.map_err(|e| e.to_string())?;
-            let child = entry.path();
-            if entry.file_type().map_err(|e| e.to_string())?.is_dir()
-                && child.file_name().and_then(|n| n.to_str()) != Some(".git")
-            {
-                let canonical_child = std::fs::canonicalize(&child)
-                    .map_err(|error| format!("could not resolve {}: {error}", child.display()))?;
-                if !canonical_child.starts_with(project_home)
-                    && !canonical_child.starts_with(repository_library)
-                {
-                    stack.push(canonical_child);
-                }
+            let name = entry.file_name();
+            if name == ".git" {
+                continue;
+            }
+            if !entry.file_type().map_err(|e| e.to_string())?.is_dir() {
+                continue;
+            }
+            let child = path.join(name);
+            if is_pruned_repository_scan_directory(
+                child.file_name().expect("directory entry has a name"),
+            ) {
+                pruned.push(child);
+                continue;
+            }
+            if !child.starts_with(project_home) && !child.starts_with(repository_library) {
+                // The walk starts at a canonical root and does not follow
+                // directory symlinks, so child paths are already stable.
+                stack.push(child);
             }
         }
+        visited.insert(path);
     }
-    Ok(())
+    Ok(scan_root)
 }
 
 #[derive(Debug, Deserialize)]
@@ -2998,11 +3070,12 @@ struct RepositoryScanCommand {
 }
 
 #[tauri::command]
-fn repository_scan(
+async fn repository_scan(
     store: State<'_, ManagementStore>,
     request: RepositoryScanCommand,
 ) -> Result<RepositoryScanResult, String> {
-    scan_repositories_with_store(&store, request)
+    let store = store.inner().clone();
+    run_ports_work(move || scan_repositories_with_store(&store, request)).await
 }
 
 fn scan_repositories_with_store(
@@ -3019,84 +3092,125 @@ fn scan_repositories_with_store(
         .resolved_repository_library_root()
         .map_err(|error| error.to_string())?;
     let mut candidates = Vec::new();
+    let mut pruned_directories = Vec::new();
+    let mut visited_directories = std::collections::HashSet::new();
+    let mut completely_scanned_roots = Vec::new();
     let mut errors = Vec::new();
     for path in request.paths {
-        if let Err(error) = scan_repository_dirs(
+        match scan_repository_dirs(
             std::path::Path::new(&path),
             &project_home,
             &repository_library,
             &mut candidates,
+            &mut pruned_directories,
+            &mut visited_directories,
         ) {
-            errors.push(error);
-        } else if let Err(error) =
-            store.add_repository_scan_directory(std::path::Path::new(&path), now_millis())
-        {
-            errors.push(error.to_string());
+            Ok(canonical_root) => {
+                if let Err(error) =
+                    store.add_repository_scan_directory(std::path::Path::new(&path), now_millis())
+                {
+                    errors.push(error.to_string());
+                } else {
+                    completely_scanned_roots.push(canonical_root);
+                }
+            }
+            Err(error) => errors.push(error),
         }
     }
     let mut repositories = Vec::new();
     let mut seen_paths = std::collections::HashSet::new();
-    let mut seen_identities = std::collections::HashSet::new();
+    let mut discovered_paths = std::collections::HashSet::new();
+    let mut failed_candidate_paths = std::collections::HashSet::new();
     for (index, path) in candidates.into_iter().enumerate() {
-        let canonical_path = match std::fs::canonicalize(&path) {
-            Ok(path) => path,
-            Err(error) => {
-                errors.push(format!(
-                    "{}: could not canonicalize repository: {error}",
-                    path.display()
-                ));
-                continue;
-            }
-        };
+        let path_key = path.to_string_lossy().to_string();
+        // Candidate paths are under a canonical scan root, and the walker
+        // excludes symlinked directories, so don't canonicalize them again.
+        let canonical_path = path;
         if !seen_paths.insert(canonical_path.clone()) {
             continue;
         }
-        if canonical_path.join(".git").is_file() {
-            errors.push(format!(
-                "{} is a linked Git worktree; add its main repository instead",
-                canonical_path.display()
-            ));
-            continue;
-        }
-        let inspection = match safety::inspect_repository(&canonical_path) {
-            Ok(inspection) => inspection,
+        let inspection = match safety::inspect_repository_for_discovery(&canonical_path) {
+            Ok(inspection) if inspection.canonical_root == canonical_path => inspection,
+            Ok(_) => {
+                failed_candidate_paths.insert(canonical_path.clone());
+                errors.push(format!(
+                    "{} is not the verified Git repository root",
+                    canonical_path.display()
+                ));
+                continue;
+            }
             Err(error) => {
+                failed_candidate_paths.insert(canonical_path.clone());
                 errors.push(format!("{}: {error}", canonical_path.display()));
                 continue;
             }
         };
-        if store
-            .repository_is_disallowed(&inspection.repository.identity)
-            .map_err(|error| error.to_string())?
-        {
-            continue;
-        }
-        if store
-            .repository_is_soft_deleted(&inspection.repository.identity)
-            .map_err(|error| error.to_string())?
-        {
-            continue;
-        }
-        if !seen_identities.insert(inspection.repository.identity) {
-            continue;
+        let canonical_path = inspection.canonical_root.clone();
+        match safety::is_independent_repository_checkout(&canonical_path, &inspection) {
+            Ok(true) => {}
+            Ok(false) => continue,
+            Err(error) => {
+                failed_candidate_paths.insert(canonical_path.clone());
+                errors.push(format!("{}: {error}", canonical_path.display()));
+                continue;
+            }
         }
         let canonical_key = canonical_path.to_string_lossy().to_string();
+        discovered_paths.insert(canonical_path.clone());
+        if store
+            .repository_is_disallowed(&canonical_key)
+            .map_err(|error| error.to_string())?
+        {
+            continue;
+        }
+        if store
+            .repository_is_soft_deleted(&canonical_key)
+            .map_err(|error| error.to_string())?
+        {
+            continue;
+        }
         let proposal = request
             .purpose_proposals
             .as_ref()
-            .and_then(|p| {
-                p.get(&canonical_key)
-                    .or_else(|| p.get(&path.to_string_lossy().to_string()))
-            })
+            .and_then(|p| p.get(&canonical_key).or_else(|| p.get(&path_key)))
             .map(String::as_str);
-        match store.catalog_discovered_repository(
+        match store.catalog_discovered_repository_from_inspection(
             &format!("repo-{}-{}", now_millis(), index),
-            &canonical_path,
+            &inspection,
             proposal,
             now_millis(),
         ) {
             Ok(repository) => repositories.push(repository),
-            Err(error) => errors.push(format!("{}: {error}", path.display())),
+            Err(error) => {
+                failed_candidate_paths.insert(canonical_path.clone());
+                errors.push(format!("{path_key}: {error}"));
+            }
+        }
+    }
+    for scan_root in completely_scanned_roots {
+        if failed_candidate_paths
+            .iter()
+            .any(|failed| failed.starts_with(&scan_root))
+        {
+            continue;
+        }
+        let root_pruned = pruned_directories
+            .iter()
+            .filter(|pruned| pruned.starts_with(&scan_root) && *pruned != &scan_root)
+            .cloned()
+            .collect::<Vec<_>>();
+        let root_discovered = discovered_paths
+            .iter()
+            .filter(|discovered| discovered.starts_with(&scan_root))
+            .cloned()
+            .collect::<std::collections::HashSet<_>>();
+        if let Err(error) = store.retire_missing_discovered_repositories(
+            &scan_root,
+            &root_discovered,
+            &root_pruned,
+            now_millis(),
+        ) {
+            errors.push(error.to_string());
         }
     }
     Ok(RepositoryScanResult {
@@ -3850,10 +3964,12 @@ fn quick_request_list(
 }
 
 #[tauri::command]
-fn opencode_models(
-    state: State<'_, opencode::Runtime>,
-) -> Result<Vec<opencode::ModelCatalogEntry>, String> {
-    opencode_models_command(&state)
+async fn opencode_models(app: AppHandle) -> Result<Vec<opencode::ModelCatalogEntry>, String> {
+    run_ports_work(move || {
+        let state = app.state::<opencode::Runtime>();
+        opencode_models_command(&state)
+    })
+    .await
 }
 
 /// The production implementation behind the `opencode_models` Tauri command.
@@ -4174,10 +4290,12 @@ fn opencode_terminal_cleanup(
 }
 
 #[tauri::command]
-fn opencode_runtime_info(
-    state: State<'_, opencode::Runtime>,
-) -> Result<opencode::RuntimeInfo, String> {
-    state.ensure_started()
+async fn opencode_runtime_info(app: AppHandle) -> Result<opencode::RuntimeInfo, String> {
+    run_ports_work(move || {
+        let state = app.state::<opencode::Runtime>();
+        state.ensure_started()
+    })
+    .await
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -4895,27 +5013,85 @@ mod tests {
             "{}",
             String::from_utf8_lossy(&output.stderr)
         );
+        let separate_git_dir_checkout = selected_root.join("separate-git-dir");
+        let separate_git_dir = repository_library.join("separate-git-dir-metadata");
+        let output = std::process::Command::new("git")
+            .args(["init", "--quiet", "--separate-git-dir"])
+            .arg(&separate_git_dir)
+            .args(["--initial-branch=main"])
+            .arg(&separate_git_dir_checkout)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let submodule_source = repository_library.join("fixture-submodule");
+        make_repository_fixture(&submodule_source);
+        let output = std::process::Command::new("git")
+            .args(["-c", "protocol.file.allow=always", "-C"])
+            .arg(&main_repo)
+            .args(["submodule", "add", "--quiet"])
+            .arg(&submodule_source)
+            .arg("nested/submodule")
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let output = std::process::Command::new("git")
+            .args(["-C"])
+            .arg(&main_repo)
+            .args([
+                "-c",
+                "user.name=fixture",
+                "-c",
+                "user.email=fixture@example.invalid",
+                "commit",
+                "--quiet",
+                "-am",
+                "add submodule",
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let submodule = main_repo.join("nested/submodule");
 
         let result = scan_repositories_with_store(
             &store,
             RepositoryScanCommand {
-                paths: vec![root.path().to_string_lossy().into()],
+                paths: vec![
+                    root.path().to_string_lossy().into(),
+                    main_repo.to_string_lossy().into(),
+                    linked_worktree.to_string_lossy().into(),
+                    submodule.to_string_lossy().into(),
+                ],
                 purpose_proposals: None,
             },
         )
         .unwrap();
-        assert_eq!(result.repositories.len(), 1);
-        assert_eq!(
-            result.repositories[0].repository_path,
-            main_repo.to_string_lossy()
-        );
+        let cataloged_paths = result
+            .repositories
+            .iter()
+            .map(|repository| repository.repository_path.as_str())
+            .collect::<std::collections::HashSet<_>>();
+        assert_eq!(cataloged_paths.len(), 2);
+        assert!(cataloged_paths.contains(main_repo.to_string_lossy().as_ref()));
+        assert!(cataloged_paths.contains(separate_git_dir_checkout.to_string_lossy().as_ref()));
+        assert!(!cataloged_paths.contains(linked_worktree.to_string_lossy().as_ref()));
+        assert!(!cataloged_paths.contains(submodule.to_string_lossy().as_ref()));
         let wire = serde_json::to_value(&result).unwrap();
-        assert_eq!(wire["repositories"].as_array().unwrap().len(), 1);
-        assert_eq!(
-            wire["repositories"][0]["repositoryPath"],
-            main_repo.to_string_lossy().as_ref()
-        );
-        assert!(wire["repositories"][0].get("repository_path").is_none());
+        assert_eq!(wire["repositories"].as_array().unwrap().len(), 2);
+        assert!(wire["repositories"].as_array().unwrap().iter().all(|repo| {
+            repo.get("repository_path").is_none() && repo["repositoryPath"].is_string()
+        }));
         assert!(!result
             .repositories
             .iter()
@@ -4925,14 +5101,14 @@ mod tests {
                 .repository_path
                 .starts_with(repository_library.to_string_lossy().as_ref())
         }));
-        assert!(
-            result
-                .errors
-                .iter()
-                .any(|error| error.contains("linked Git worktree")),
-            "expected linked worktree to be skipped, errors: {:?}",
-            result.errors
-        );
+        assert!(!result
+            .errors
+            .iter()
+            .any(|error| { error.contains(&linked_worktree.to_string_lossy().to_string()) }));
+        assert!(!result
+            .errors
+            .iter()
+            .any(|error| { error.contains(&submodule.to_string_lossy().to_string()) }));
 
         let direct_project_home_scan = scan_repositories_with_store(
             &store,
@@ -4994,6 +5170,174 @@ mod tests {
         assert!(repository_path.join("README.md").is_file());
     }
 
+    #[test]
+    fn repository_scan_retires_moved_path_and_catalogs_new_path() {
+        let root = tempfile::tempdir().unwrap();
+        let home = root.path().join("home");
+        std::fs::create_dir_all(&home).unwrap();
+        let store = ManagementStore::open_with_paths(
+            root.path().join("state.sqlite"),
+            &home,
+            root.path().join("tmp"),
+        )
+        .unwrap();
+        let scan_root = root.path().join("source");
+        let old_path = scan_root.join("old-name");
+        let new_path = scan_root.join("new-name");
+        make_repository_fixture(&old_path);
+        let initial = scan_repositories_with_store(
+            &store,
+            RepositoryScanCommand {
+                paths: vec![scan_root.to_string_lossy().into_owned()],
+                purpose_proposals: None,
+            },
+        )
+        .unwrap();
+        let old_record = initial.repositories[0].clone();
+
+        std::fs::rename(&old_path, &new_path).unwrap();
+        let rescanned = scan_repositories_with_store(
+            &store,
+            RepositoryScanCommand {
+                paths: vec![scan_root.to_string_lossy().into_owned()],
+                purpose_proposals: None,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(rescanned.repositories.len(), 1);
+        assert_eq!(
+            rescanned.repositories[0].repository_path,
+            new_path.to_string_lossy()
+        );
+        assert!(store
+            .repository_is_soft_deleted(&old_path.to_string_lossy())
+            .unwrap());
+        assert!(!store
+            .repository_is_soft_deleted(&new_path.to_string_lossy())
+            .unwrap());
+        assert!(store.get_repository(&old_record.id).unwrap().is_some());
+        assert!(new_path.join("README.md").is_file());
+    }
+
+    #[test]
+    fn repository_rescan_preserves_enabled_exclusion_at_the_same_path() {
+        let root = tempfile::tempdir().unwrap();
+        let home = root.path().join("home");
+        std::fs::create_dir_all(&home).unwrap();
+        let store = ManagementStore::open_with_paths(
+            root.path().join("state.sqlite"),
+            &home,
+            root.path().join("tmp"),
+        )
+        .unwrap();
+        let scan_root = root.path().join("source");
+        let repository_path = scan_root.join("repo");
+        make_repository_fixture(&repository_path);
+        let initial = scan_repositories_with_store(
+            &store,
+            RepositoryScanCommand {
+                paths: vec![scan_root.to_string_lossy().into_owned()],
+                purpose_proposals: None,
+            },
+        )
+        .unwrap();
+        let repository = &initial.repositories[0];
+        store
+            .set_repository_enabled(&repository.id, false, now_millis())
+            .unwrap();
+
+        let rescanned = scan_repositories_with_store(
+            &store,
+            RepositoryScanCommand {
+                paths: vec![scan_root.to_string_lossy().into_owned()],
+                purpose_proposals: None,
+            },
+        )
+        .unwrap();
+
+        assert!(rescanned.repositories.is_empty());
+        assert!(store
+            .repository_is_disallowed(&repository_path.to_string_lossy())
+            .unwrap());
+        assert!(store.get_repository(&repository.id).unwrap().is_some());
+    }
+
+    #[test]
+    fn incomplete_repository_scan_does_not_retire_unseen_catalog_entries() {
+        let root = tempfile::tempdir().unwrap();
+        let home = root.path().join("home");
+        std::fs::create_dir_all(&home).unwrap();
+        let store = ManagementStore::open_with_paths(
+            root.path().join("state.sqlite"),
+            &home,
+            root.path().join("tmp"),
+        )
+        .unwrap();
+        let scan_root = root.path().join("source");
+        let old_path = scan_root.join("old-repository");
+        make_repository_fixture(&old_path);
+        let initial = scan_repositories_with_store(
+            &store,
+            RepositoryScanCommand {
+                paths: vec![scan_root.to_string_lossy().into_owned()],
+                purpose_proposals: None,
+            },
+        )
+        .unwrap();
+        let old_record = initial.repositories[0].clone();
+
+        std::fs::remove_dir_all(&old_path).unwrap();
+        let invalid_marker = scan_root.join("unverified/.git");
+        std::fs::create_dir_all(&invalid_marker).unwrap();
+        let rescanned = scan_repositories_with_store(
+            &store,
+            RepositoryScanCommand {
+                paths: vec![scan_root.to_string_lossy().into_owned()],
+                purpose_proposals: None,
+            },
+        )
+        .unwrap();
+
+        assert!(rescanned.repositories.is_empty());
+        assert!(!rescanned.errors.is_empty());
+        assert!(!store
+            .repository_is_soft_deleted(&old_record.repository_path)
+            .unwrap());
+        assert!(store.get_repository(&old_record.id).unwrap().is_some());
+    }
+
+    #[test]
+    fn repository_catalog_uses_path_even_when_git_identity_matches() {
+        let root = tempfile::tempdir().unwrap();
+        let home = root.path().join("home");
+        std::fs::create_dir_all(&home).unwrap();
+        let store = ManagementStore::open_with_paths(
+            root.path().join("state.sqlite"),
+            &home,
+            root.path().join("tmp"),
+        )
+        .unwrap();
+        let first_path = root.path().join("first");
+        let second_path = root.path().join("second");
+        make_repository_fixture(&first_path);
+        make_repository_fixture(&second_path);
+        let first = safety::inspect_repository_for_discovery(&first_path).unwrap();
+        let mut second = safety::inspect_repository_for_discovery(&second_path).unwrap();
+        second.identity = first.identity.clone();
+
+        let first_record = store
+            .catalog_discovered_repository_from_inspection("first", &first, None, 1)
+            .unwrap();
+        let second_record = store
+            .catalog_discovered_repository_from_inspection("second", &second, None, 2)
+            .unwrap();
+
+        assert_ne!(first_record.id, second_record.id);
+        assert_ne!(first_record.repository_path, second_record.repository_path);
+        assert_eq!(store.list_repositories().unwrap().len(), 2);
+    }
+
     fn make_repository_fixture(path: &std::path::Path) {
         std::fs::create_dir_all(path).unwrap();
         let init = std::process::Command::new("git")
@@ -5043,6 +5387,139 @@ mod tests {
             "{}",
             String::from_utf8_lossy(&commit.stderr)
         );
+    }
+
+    #[test]
+    fn repository_scan_prunes_generated_trees_and_keeps_explicit_root_eligible() {
+        let root = tempfile::tempdir().unwrap();
+        let home = root.path().join("home");
+        std::fs::create_dir_all(&home).unwrap();
+        let store = ManagementStore::open_with_paths(
+            root.path().join("state.sqlite"),
+            &home,
+            root.path().join("tmp"),
+        )
+        .unwrap();
+        let library = root.path().join("external-library");
+        store
+            .set_repository_library_root(library.to_str().unwrap(), 1)
+            .unwrap();
+
+        let scan_root = root.path().join("source");
+        let normal_repository = scan_root.join("product");
+        make_repository_fixture(&normal_repository);
+        let skipped_repository = scan_root.join("node_modules/pkg/repository");
+        make_repository_fixture(&skipped_repository);
+        for index in 0..512 {
+            std::fs::create_dir_all(
+                scan_root
+                    .join("node_modules")
+                    .join(format!("package-{index}/deep/generated")),
+            )
+            .unwrap();
+        }
+        let deep_output = scan_root.join("release/large/output/tree");
+        std::fs::create_dir_all(&deep_output).unwrap();
+        make_repository_fixture(&deep_output.join("nested-repository"));
+        let preexisting_in_pruned_tree = store
+            .catalog_discovered_repository("preexisting-pruned", &skipped_repository, None, 1)
+            .unwrap();
+        #[cfg(unix)]
+        {
+            let symlink_target = root.path().join("symlink-target");
+            make_repository_fixture(&symlink_target);
+            std::os::unix::fs::symlink(&symlink_target, scan_root.join("linked-directory"))
+                .unwrap();
+        }
+
+        let project_home = store.resolved_project_home_root().unwrap();
+        let repository_library = store.resolved_repository_library_root().unwrap();
+        let mut traversal_candidates = Vec::new();
+        let mut pruned = Vec::new();
+        let mut visited = std::collections::HashSet::new();
+        scan_repository_dirs(
+            &scan_root,
+            &project_home,
+            &repository_library,
+            &mut traversal_candidates,
+            &mut pruned,
+            &mut visited,
+        )
+        .unwrap();
+        assert_eq!(visited.len(), 2, "pruned descendants must not be visited");
+        assert!(pruned.contains(&scan_root.join("node_modules")));
+        assert!(pruned.contains(&scan_root.join("release")));
+
+        let result = scan_repositories_with_store(
+            &store,
+            RepositoryScanCommand {
+                paths: vec![scan_root.to_string_lossy().into_owned()],
+                purpose_proposals: None,
+            },
+        )
+        .unwrap();
+        let paths = result
+            .repositories
+            .iter()
+            .map(|repository| repository.repository_path.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(paths, vec![normal_repository.to_str().unwrap()]);
+        assert!(store
+            .get_repository(&preexisting_in_pruned_tree.id)
+            .unwrap()
+            .is_some());
+        assert!(!store
+            .repository_is_soft_deleted(&skipped_repository.to_string_lossy())
+            .unwrap());
+
+        let explicitly_selected_output_root = root.path().join("explicit/release");
+        make_repository_fixture(&explicitly_selected_output_root);
+        let explicit_result = scan_repositories_with_store(
+            &store,
+            RepositoryScanCommand {
+                paths: vec![explicitly_selected_output_root
+                    .to_string_lossy()
+                    .into_owned()],
+                purpose_proposals: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(explicit_result.repositories.len(), 1);
+        assert_eq!(
+            explicit_result.repositories[0].repository_path,
+            explicitly_selected_output_root.to_string_lossy()
+        );
+    }
+
+    #[test]
+    fn repository_catalog_deduplicates_by_path_not_git_identity() {
+        let root = tempfile::tempdir().unwrap();
+        let home = root.path().join("home");
+        std::fs::create_dir_all(&home).unwrap();
+        let store = ManagementStore::open_with_paths(
+            root.path().join("state.sqlite"),
+            &home,
+            root.path().join("tmp"),
+        )
+        .unwrap();
+        let first_path = root.path().join("first");
+        let second_path = root.path().join("second");
+        make_repository_fixture(&first_path);
+        make_repository_fixture(&second_path);
+        let first = safety::inspect_repository_for_discovery(&first_path).unwrap();
+        let mut second = safety::inspect_repository_for_discovery(&second_path).unwrap();
+        second.identity = first.identity.clone();
+
+        let first_record = store
+            .catalog_discovered_repository_from_inspection("first", &first, None, 1)
+            .unwrap();
+        let second_record = store
+            .catalog_discovered_repository_from_inspection("second", &second, None, 2)
+            .unwrap();
+
+        assert_ne!(first_record.id, second_record.id);
+        assert_ne!(first_record.repository_path, second_record.repository_path);
+        assert_eq!(store.list_repositories().unwrap().len(), 2);
     }
 
     #[test]
