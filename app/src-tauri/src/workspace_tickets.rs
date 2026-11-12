@@ -856,6 +856,17 @@ pub fn parse_ticket_idea_proposal(raw: &str) -> Result<TicketIdeaProposal, Strin
     Ok(proposal)
 }
 
+pub fn parse_ticket_idea_proposal_for_session(
+    raw: &str,
+    session_id: &str,
+) -> Result<TicketIdeaProposal, String> {
+    parse_ticket_idea_proposal(raw).map_err(|error| {
+        format!(
+            "{error} The temporary proposal session {session_id} was retained for inspection; no ticket was created."
+        )
+    })
+}
+
 pub fn render_ticket_idea_prompt(idea: &str, workspace_name: &str) -> Result<String, String> {
     if idea.trim().is_empty() {
         return Err("Describe the ticket idea first.".into());
@@ -1951,6 +1962,27 @@ mod tests {
         .is_err());
         assert!(parse_ticket_idea_proposal(r#"{"title":" ","body":"Body"}"#).is_err());
         assert!(parse_ticket_idea_proposal("not JSON").is_err());
+    }
+
+    #[test]
+    fn invalid_ticket_proposal_error_identifies_retained_session_without_echoing_response() {
+        let error =
+            parse_ticket_idea_proposal_for_session("not JSON", "ses_retain_me").unwrap_err();
+        assert!(error.contains("ses_retain_me"));
+        assert!(error.contains("no ticket was created"));
+        assert!(error.contains("retained"));
+        assert!(!error.contains("not JSON"));
+    }
+
+    #[test]
+    fn valid_ticket_proposal_for_session_returns_content_unchanged() {
+        let proposal = parse_ticket_idea_proposal_for_session(
+            r#"{"title":"A useful title","body":"Idea section"}"#,
+            "ses_valid",
+        )
+        .unwrap();
+        assert_eq!(proposal.title, "A useful title");
+        assert_eq!(proposal.body, "Idea section");
     }
 
     #[test]

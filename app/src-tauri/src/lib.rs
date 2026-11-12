@@ -856,18 +856,42 @@ async fn workspace_ticket_proposal(
             model,
         )?;
         let session_id = session_id_from_response(&response)?;
-        let result = runtime.prompt_session_text(&session_id, &prompt);
+        let text = match runtime.prompt_session_text(&session_id, &prompt) {
+            Ok(text) => text,
+            Err(error) => {
+                if runtime.delete_session(&session_id).is_err() {
+                    log_ticket_proposal_event(
+                        &app,
+                        &session_id,
+                        "ticket_proposal_session_cleanup_failed",
+                    );
+                    return Err(
+                        "Could not remove the temporary proposal session. No ticket was created."
+                            .into(),
+                    );
+                }
+                log_ticket_proposal_event(&app, &session_id, "ticket_proposal_generation_failed");
+                return Err(error);
+            }
+        };
+        let proposal =
+            match workspace_tickets::parse_ticket_idea_proposal_for_session(&text, &session_id) {
+                Ok(proposal) => proposal,
+                Err(error) => {
+                    log_ticket_proposal_event(
+                        &app,
+                        &session_id,
+                        "ticket_proposal_invalid_response_session_retained",
+                    );
+                    return Err(error);
+                }
+            };
         if runtime.delete_session(&session_id).is_err() {
             log_ticket_proposal_event(&app, &session_id, "ticket_proposal_session_cleanup_failed");
             return Err(
                 "Could not remove the temporary proposal session. No ticket was created.".into(),
             );
         }
-        let text = result.map_err(|error| {
-            log_ticket_proposal_event(&app, &session_id, "ticket_proposal_generation_failed");
-            error
-        })?;
-        let proposal = workspace_tickets::parse_ticket_idea_proposal(&text)?;
         Ok(proposal)
     })
     .await
