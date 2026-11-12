@@ -1,7 +1,6 @@
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
-import { ActionMenu, ActionMenuItem, ErrorMessage, Icon, IconButton, Switch } from "@ui-lib";
+import { ActionMenu, ActionMenuItem, Button, ErrorMessage, Icon, IconButton, Switch } from "@ui-lib";
 import { AppPageLayout } from "../../../components/page/AppPageLayout.jsx";
-import { OpenItemButton } from "../../../components/OpenItemButton.jsx";
 import { TicketStatusBadge } from "./TicketStatusBadge.jsx";
 import { CreateTicketIdeaModal } from "./CreateTicketIdeaModal.jsx";
 import { recordUiDiagnostic } from "../../../lib/uiDiagnostics.js";
@@ -169,15 +168,19 @@ export function WorkspaceTicketViewer(props) {
                     </button>
                     <div class={styles.actionCell}>
                       <Show when={!archived()} fallback={<span class={styles.actionPlaceholder} aria-hidden="true" />}>
-                        <OpenItemButton
+                        <Button
+                          variant="compact"
                           class={styles.rowAction}
-                          itemType="ticket"
-                          itemName={ticket.title}
-                          action="Work on"
-                          title="Work on ticket"
+                          aria-label={`${ticket.hasWorkSession ? "Resume" : "Work"} ticket: ${ticket.title}`}
+                          title={`${ticket.hasWorkSession ? "Resume" : "Work"} ticket`}
                           disabled={Boolean(props.working?.() || props.modelBusy?.() || !props.selectedModel?.())}
                           onClick={() => { props.onSelect(ticket.filename); props.onWork?.(ticket.filename); }}
-                        />
+                        >
+                          {ticket.hasWorkSession ? "Resume" : "Work"}
+                          <Show when={ticket.hasWorkSession}>
+                            <Icon name="terminal" muted />
+                          </Show>
+                        </Button>
                       </Show>
                     </div>
                   </li>;

@@ -229,7 +229,8 @@ test("workspace tickets group, collapse, mark blocked, and flatten newest first"
         a: [
           { filename: "blocked.md", title: "Blocked ticket", status: "blocked", modifiedAt: 30 },
           { filename: "active.md", title: "Active ticket", status: "in_progress", hasWorkSession: true, opencodeStatus: "idle", modifiedAt: 10 },
-          { filename: "draft.md", title: "Draft ticket", status: "draft", modifiedAt: 20 },
+          { filename: "draft-session.md", title: "Draft with session", status: "draft", hasWorkSession: true, modifiedAt: 20 },
+          { filename: "draft.md", title: "Draft ticket", status: "draft", hasWorkSession: false, modifiedAt: 15 },
           { filename: "done.md", title: "Done ticket", status: "done", modifiedAt: 5 },
           { filename: "cancelled.md", title: "Cancelled ticket", status: "cancelled", modifiedAt: 4 },
         ],
@@ -252,9 +253,9 @@ test("workspace tickets group, collapse, mark blocked, and flatten newest first"
     (button) => button.firstElementChild?.tagName === "SPAN" &&
       (button.textContent.includes("Alpha") || button.textContent.includes("Beta")),
   );
-  assert.equal(workspaceRows[0].lastElementChild.textContent, "3");
+  assert.equal(workspaceRows[0].lastElementChild.textContent, "4");
   assert.equal(workspaceRows[1].lastElementChild.textContent, "1");
-  assert.equal(workspaceRows[0].lastElementChild.getAttribute("aria-label"), "3 outstanding tickets");
+  assert.equal(workspaceRows[0].lastElementChild.getAttribute("aria-label"), "4 outstanding tickets");
 
   assert.equal(view.host.querySelectorAll('[aria-expanded="true"]').length, 2);
   assert.equal(view.host.querySelectorAll('button[aria-label$="tickets"]').length, 2);
@@ -272,10 +273,13 @@ test("workspace tickets group, collapse, mark blocked, and flatten newest first"
   assert.equal(idleIcon.parentElement.firstElementChild, idleIcon, "the icon precedes the ticket title");
   assert.match(idleIcon.querySelector("svg path").getAttribute("d"), /a6\.5 6\.5.*v5m4-5v5$/, "idle status uses a circled pause icon");
   assert.match(idleIcon.parentElement.textContent, /Active ticket/);
+  assert.equal(view.host.querySelectorAll('[aria-label="Ticket has saved session"]').length, 0);
+  const draftWithoutSession = [...view.host.querySelectorAll("button")].find((button) => button.textContent.includes("Draft ticket"));
+  assert.equal(draftWithoutSession.querySelector('[aria-label="Ticket has saved session"]'), null);
   assert.ok(view.host.querySelector('[aria-label="Ticket has no work session"]'), "a missing work_session_id uses the caution icon");
   assert.equal(view.host.querySelectorAll("svg").length, 5);
   view.host.querySelector('button[aria-label="Collapse Alpha tickets"]').click();
-  assert.doesNotMatch(view.host.textContent, /Blocked ticket|Active ticket|Draft ticket|Done ticket|Cancelled ticket/);
+  assert.doesNotMatch(view.host.textContent, /Blocked ticket|Active ticket|Draft with session|Draft ticket|Done ticket|Cancelled ticket/);
   assert.match(view.host.textContent, /Beta1Newest ticket/);
   assert.equal(selected(), null, "disclosure does not select a Workspace");
   assert.deepEqual(worked, [], "disclosure does not activate a ticket");
@@ -283,14 +287,14 @@ test("workspace tickets group, collapse, mark blocked, and flatten newest first"
   assert.equal(selected(), first);
   assert.equal(
     view.host.querySelector('button[aria-current="page"]')?.textContent.trim(),
-    "Alpha3",
+    "Alpha4",
   );
 
   setViewMode("flat");
   assert.equal(view.host.querySelectorAll('button[aria-label$="tickets"]').length, 0);
   assert.deepEqual(
     [...view.host.querySelectorAll("li")].map((item) => item.textContent.trim()),
-    ["Alpha3", "Beta1", "Tickets", "Newest ticket", "Blocked ticket", "Draft ticket", "Active ticket", "Done ticket", "Cancelled ticket"],
+    ["Alpha4", "Beta1", "Tickets", "Newest ticket", "Blocked ticket", "Draft with session", "Draft ticket", "Active ticket", "Done ticket", "Cancelled ticket"],
   );
   assert.equal(
     [...view.host.querySelectorAll("h3")].find((heading) => heading.textContent === "Tickets")?.textContent,

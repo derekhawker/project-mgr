@@ -24,7 +24,7 @@ await writeFile(
 try {
   await build({
     configFile: false,
-    resolve: { alias: presentationAliases },
+    resolve: { alias: presentationAliases, dedupe: ["solid-js"] },
     root,
     plugins: [solid()],
     logLevel: "silent",
@@ -61,6 +61,7 @@ function mountIdeaModal(props) {
 const longContent = "x".repeat(1300);
 const tickets = [
   { filename: "one.md", title: "First", status: "draft", modifiedAt: 100, content: `---\ntitle: First\nstatus: draft\nowner: Alice\n---\n# First body\n\n${longContent}` },
+  { filename: "one-session.md", title: "Draft with session", status: "draft", hasWorkSession: true, modifiedAt: 90, content: "---\ntitle: Draft with session\nstatus: draft\nwork_session_id: ses-draft\n---\nDraft body" },
   { filename: "two.md", title: "Second", status: "blocked", hasWorkSession: false, opencodeStatus: "idle", modifiedAt: 200, content: "---\ntitle: Second\nstatus: blocked\nopencode-status: idle\n---\nSecond body" },
   { filename: "three.md", title: "Third", status: "in_progress", hasWorkSession: true, opencodeStatus: "idle", modifiedAt: 50, content: "---\ntitle: Third\nstatus: in_progress\nwork_session_id: ses-three\nopencode-status: idle\n---\nThird body" },
   { filename: "four.md", title: "Fourth", status: "in_progress", hasWorkSession: true, opencodeStatus: "busy", modifiedAt: 60, content: "---\ntitle: Fourth\nstatus: in_progress\nwork_session_id: ses-four\nopencode-status: busy\n---\nFourth body" },
@@ -186,8 +187,11 @@ test("ticket browser keeps selection separate from Work, renders the complete sa
     assert.match(first.textContent, /Blocked/);
     assert.equal(view.host.querySelector("ul li button").children[1].textContent, "Second");
     assert.equal(first.querySelector("p"), null, "rows have no body preview");
-    first.querySelector('button[aria-label="Work on ticket: Second"]').click();
+    first.querySelector('button[aria-label="Work ticket: Second"]').click();
     assert.deepEqual(calls, [["select", "two.md"], ["work", "two.md"]]);
+    const noSessionAction = first.querySelector('button[aria-label="Work ticket: Second"]');
+    assert.equal(noSessionAction.textContent.trim(), "Work");
+    assert.equal(noSessionAction.querySelector("svg"), null, "Work has no session icon");
     first.querySelector('button[aria-pressed]').click();
     assert.deepEqual(calls, [["select", "two.md"], ["work", "two.md"], ["select", "two.md"]]);
     // Set the selected row to the long Markdown ticket.
@@ -217,13 +221,22 @@ test("ticket browser keeps selection separate from Work, renders the complete sa
     assert.equal([...view.host.querySelectorAll('[aria-label="Ticket metadata"] dt')].some((item) => item.textContent === "opencode-status"), false);
     const missingSessionRow = [...view.host.querySelectorAll('button[aria-pressed]')].find((button) => button.textContent.includes("Fifth"));
     assert.equal(missingSessionRow.querySelector('[aria-label="Ticket has no work session"] svg path').getAttribute("fill"), "var(--ui-caution-fill)");
+    const sessionDraftRow = [...view.host.querySelectorAll('button[aria-pressed]')].find((button) => button.textContent.includes("Draft with session"));
+    assert.equal(sessionDraftRow.querySelector('[aria-label="Ticket has saved session"]'), null);
+    const resumeAction = sessionDraftRow.parentElement.querySelector('button[aria-label="Resume ticket: Draft with session"]');
+    assert.equal(resumeAction.textContent.trim(), "Resume");
+    assert.equal(resumeAction.firstChild.nodeType, Node.TEXT_NODE, "the action label precedes its icon");
+    assert.equal(resumeAction.querySelectorAll("svg").length, 1, "Resume shows the session icon");
+    assert.match(resumeAction.lastElementChild.className, /muted/);
+    resumeAction.click();
+    assert.deepEqual(calls.slice(-2), [["select", "one-session.md"], ["work", "one-session.md"]]);
     const sort = view.host.querySelector('summary[aria-label="Sort: Status"]');
     sort.click();
     [...view.host.querySelectorAll("button")].find((button) => button.textContent.includes("Recently modified")).click();
     assert.equal(view.host.querySelector("ul li button").children[1].textContent, "Second");
     view.host.querySelector('summary[aria-label="Sort: Recently modified"]').click();
     [...view.host.querySelectorAll("button")].find((button) => button.textContent.trim() === "Title").click();
-    assert.equal(view.host.querySelector("ul li button").children[1].textContent, "Fifth");
+    assert.equal(view.host.querySelector("ul li button").children[1].textContent, "Draft with session");
   } finally { view.dispose(); }
 });
 
