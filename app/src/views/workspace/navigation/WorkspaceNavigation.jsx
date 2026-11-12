@@ -22,6 +22,10 @@ export function WorkspaceNavigation(props) {
     );
   const workspaceTickets = (workspaceId) =>
     props.data()?.workspaceTickets?.[workspaceId] || [];
+  const outstandingTicketCount = (workspaceId) =>
+    workspaceTickets(workspaceId).filter((ticket) =>
+      ["draft", "in_progress", "blocked"].includes(ticket.status),
+    ).length;
   const workspaceIsCurrent = (workspace) =>
     props.selected()?.id === workspace.id &&
     !workspaceTickets(workspace.id).some((ticket) =>
@@ -98,6 +102,13 @@ export function WorkspaceNavigation(props) {
                       }}
                     >
                       <span class={styles.workspaceName}>{workspace().name}</span>
+                      <span
+                        class={styles.ticketCount}
+                        aria-label={`${outstandingTicketCount(workspace().id)} outstanding tickets`}
+                        title={`${outstandingTicketCount(workspace().id)} outstanding tickets`}
+                      >
+                        {outstandingTicketCount(workspace().id)}
+                      </span>
                     </NavigationItem>
                   </li>
                 )}
@@ -130,6 +141,13 @@ export function WorkspaceNavigation(props) {
                       }}
                     >
                       <span class={styles.workspaceName}>{workspace().name}</span>
+                      <span
+                        class={styles.ticketCount}
+                        aria-label={`${outstandingTicketCount(workspace().id)} outstanding tickets`}
+                        title={`${outstandingTicketCount(workspace().id)} outstanding tickets`}
+                      >
+                        {outstandingTicketCount(workspace().id)}
+                      </span>
                     </NavigationItem>
                     <Show when={tickets().length > 0}>
                       <IconButton

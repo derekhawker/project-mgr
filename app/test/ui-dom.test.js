@@ -201,15 +201,16 @@ test("Switch is a labelled native binary control and OpenItemButton gives folder
   mounted.dispose();
 });
 
-test("Quick Request history uses the shared icon button and opens history", () => {
+test("Quick Requests chevron button opens the full list", () => {
   let opens = 0;
   const mounted = mount(() =>
     component(QuickRequestHistoryButton, { onShow: () => opens++ }),
   );
   const button = mounted.host.querySelector("button");
   assert.equal(button.id, "show-history");
-  assert.equal(button.getAttribute("aria-label"), "See all Quick Requests");
-  assert.equal(button.title, "See all Quick Requests");
+  assert.equal(button.getAttribute("aria-label"), "Open all Quick Requests");
+  assert.equal(button.title, "Open all Quick Requests");
+  assert.equal(button.textContent, "");
   assert.ok(button.querySelector('svg[aria-hidden="true"]'));
   button.click();
   assert.equal(opens, 1);

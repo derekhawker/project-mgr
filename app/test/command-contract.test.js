@@ -828,16 +828,12 @@ test("Quick Requests use a dedicated available-height page with a visible way ba
   assert.doesNotMatch(quickLists, /dismiss|promote|retry/);
 });
 
-test("Quick Request navigation aligns its history icon button with the heading and omits Delete", () => {
-  const main = readFileSync(join(process.cwd(), "src", "main.js"), "utf8");
+test("Quick Requests heading has a separate chevron button to open the full list", () => {
   const quickLists = readFileSync(
     join(process.cwd(), "src/views/quick-requests/QuickRequestList.jsx"),
     "utf8",
   );
-  assert.match(
-    quickLists,
-    /<div class="quick-section-heading">\s*<h3>Quick Requests<\/h3>\s*<div id="show-history-root"><\/div>/,
-  );
+  assert.doesNotMatch(quickLists, /See all Quick Requests/);
   const historyButton = readFileSync(
     new URL(
       "../src/views/quick-requests/QuickRequestHistoryButton.jsx",
@@ -847,18 +843,23 @@ test("Quick Request navigation aligns its history icon button with the heading a
   );
   assert.match(
     historyButton,
-    /<IconButton id="show-history" label="See all Quick Requests" title="See all Quick Requests"/,
+    /<IconButton\s+id="show-history"/,
   );
-  assert.match(historyButton, /<Icon name="list" \/>/);
+  assert.match(historyButton, /label="Open all Quick Requests"/);
+  assert.match(historyButton, /<Icon name="chevron" muted class=\{styles\.chevron\}/);
   assert.match(historyButton, /onClick=\{props\.onShow\}/);
-  assert.match(
-    readFileSync(new URL("../src/main.js", import.meta.url), "utf8"),
-    /QuickRequestHistoryButton\(\{ onShow:[\s\S]*?showQuickRequestList\(\)\.catch/,
+  const quickRequestFactory = readFileSync(
+    new URL("../src/views/quick-requests/createQuickRequests.js", import.meta.url),
+    "utf8",
   );
-  assert.match(rightContentShell, /id="quick-request-history-root"/);
+  assert.match(
+    quickRequestFactory,
+    /QuickRequestHistoryButton\(\{[\s\S]*?showQuickRequestList\(\)\.catch/,
+  );
+  assert.match(rightContentShell, /props\.quickRequestHistory\?\.\(\)/);
   assert.match(
     quickRequestHistoryPage,
-    /<AppPageLayout\s+type="Quick Requests"\s+name="All"\s+id="quick-request-full-title">/,
+    /<AppPageLayout\s+type="Quick Requests"\s+name="All"\s+id="quick-request-full-title"\s*>/,
   );
   assert.match(
     quickRequestHistoryPage,
@@ -868,17 +869,17 @@ test("Quick Request navigation aligns its history icon button with the heading a
   assert.doesNotMatch(html, /id="history-disabled"/);
   assert.match(
     quickLists,
-    /'quick-request-navigation-item': !props\.history\(\)/,
+    /"quick-request-navigation-item": !props\.history\(\)/,
   );
   assert.match(
     quickLists,
-    /'quick-request-navigation-item': !props\.history\(\)/,
+    /"quick-request-navigation-item": !props\.history\(\)/,
   );
   assert.match(
     quickLists,
-    /<OpenItemButton\s+itemType="Quick Request"[\s\S]*<DeleteButton itemName=/,
+    /<OpenItemButton[\s\S]*itemType="Quick Request"[\s\S]*<DeleteButton/,
   );
-  assert.match(main, /records: recentQuickRequests/);
+  assert.match(quickRequestFactory, /records: recentQuickRequests/);
   assert.doesNotMatch(quickLists, /item\.append\(button, remove\)/);
 });
 
