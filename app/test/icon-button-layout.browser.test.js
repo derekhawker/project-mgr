@@ -76,7 +76,7 @@ test("icon buttons keep their SVG glyph at its intended 16px size in the rendere
     "--session",
     session,
     "click",
-    'button[aria-label="See all Quick Requests"]',
+    'button[aria-label="Open all Quick Requests"]',
   );
   browser(
     "--session",
@@ -148,5 +148,4 @@ test("icon buttons keep their SVG glyph at its intended 16px size in the rendere
       browser("--session", session, "click", "#new-work-menu summary");
     },
   );
-
 });

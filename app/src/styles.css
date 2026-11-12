@@ -84,14 +84,19 @@ body {
   width: max-content;
   gap: var(--ui-space-2);
   border-right: 1px solid var(--ui-border-light);
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  overflow: hidden;
   min-height: 0;
   min-width: 260px;
   max-width: 320px;
   box-sizing: border-box;
   background: var(--ui-surface);
   box-shadow: none;
+}
+.navigation-scroll {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .navigation h2 {
   margin: 0 0 var(--ui-space-6);
@@ -118,6 +123,11 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: var(--ui-space-4);
+}
+#quick-request-list {
+  max-height: 10rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .quick-section h3 {
   margin: 0;

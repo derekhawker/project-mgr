@@ -14,7 +14,7 @@ are screen and interaction decisions, not implementation instructions.
 Application shell (fixed to the window)
 ├── Left navigation (fixed; independent navigation)
 │   ├── Quick Requests (top section)
-│   │   ├── See all Quick Requests
+│   │   ├── Quick Requests heading and chevron button open the full list
 │   │   └── Recent Quick Requests (created in the last 24 hours)
 │   ├── Workspaces (grouped or flat Workspace-ticket navigation)
 │   ├── Ports (immediately above Repositories)
@@ -103,7 +103,8 @@ experience; the glossary is the vocabulary reference.
   with lists, notes, or tool panes. Switching destinations does not itself
   close a terminal tab.
 - **Keep the shell quiet and anchored.** The left navigation stays fixed while
-  only the selected right-hand work area scrolls. Do not spend persistent space
+  the workspace/ticket list and selected right-hand work area scroll in their
+  own areas. Keep Ports, Repositories, and New work pinned. Do not spend persistent space
   on decorative branding, environment labels, app diagnostics, or a footer.
 - **Use compact spacing.** Keep padding on navigation links, list rows, toolbars,
   and buttons restrained so the content, not its surrounding whitespace, sets

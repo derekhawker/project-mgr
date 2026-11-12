@@ -22,12 +22,13 @@ await writeFile(
   export { WorkspaceTicketViewToggle } from ${JSON.stringify(resolve(root, "src/views/workspace/navigation/WorkspaceTicketViewToggle.jsx"))};
   export { QuickRequestList } from ${JSON.stringify(resolve(root, "src/views/quick-requests/QuickRequestList.jsx"))};
   export { DirectoriesNavigationButton } from ${JSON.stringify(resolve(root, "src/views/directories/DirectoriesNavigationButton.jsx"))};
+  export { QuickRequestHistoryButton } from ${JSON.stringify(resolve(root, "src/views/quick-requests/QuickRequestHistoryButton.jsx"))};
 `,
 );
 try {
   await build({
     configFile: false,
-    resolve: { alias: presentationAliases },
+    resolve: { alias: presentationAliases, dedupe: ["solid-js"] },
     root,
     plugins: [solid()],
     build: {
@@ -66,6 +67,7 @@ const {
   WorkspaceTicketViewToggle,
   QuickRequestList,
   DirectoriesNavigationButton,
+  QuickRequestHistoryButton,
 } = await import(pathToFileURL(join(temp, "dist/navigation.js")));
 function mount(Component, props) {
   const host = document.createElement("div");
@@ -132,6 +134,18 @@ test("Directories uses a decorative SVG while retaining its label and action", (
   view.dispose();
 });
 
+test("Quick Requests uses a separate chevron button to open the full list", () => {
+  let opened = 0;
+  const view = mount(QuickRequestHistoryButton, { onShow: () => opened++ });
+  const button = view.host.querySelector("#show-history");
+  assert.equal(button.getAttribute("aria-label"), "Open all Quick Requests");
+  assert.equal(button.textContent, "");
+  assertDecorativeIcon(button);
+  button.click();
+  assert.equal(opened, 1);
+  view.dispose();
+});
+
 test("workspace navigation filters and selects active regular workspaces", () => {
   const active = { id: "a", name: "Active", kind: "regular", status: "active" };
   const [selected, setSelected] = createSignal(null);
@@ -154,7 +168,9 @@ test("workspace navigation filters and selects active regular workspaces", () =>
   });
   const buttons = view.host.querySelectorAll("button");
   assert.equal(buttons.length, 1);
-  assert.equal(buttons[0].textContent.trim(), "Active");
+  assert.equal(buttons[0].textContent.trim(), "Active0");
+  assert.equal(buttons[0].lastElementChild.textContent, "0");
+  assert.equal(buttons[0].lastElementChild.getAttribute("aria-label"), "0 outstanding tickets");
   assert.equal(buttons[0].getAttribute("aria-current"), null);
   buttons[0].click();
   assert.equal(selected(), active);
@@ -183,10 +199,17 @@ test("workspace refreshes update row data without replacing the hovered DOM node
   const row = view.host.querySelector("button");
 
   const refreshedWorkspace = workspace("After refresh");
-  setData({ workspaces: [refreshedWorkspace] });
+  setData({
+    workspaces: [refreshedWorkspace],
+    workspaceTickets: {
+      "stable-id": [
+        { filename: "draft.md", title: "Draft", status: "draft" },
+      ],
+    },
+  });
 
   assert.strictEqual(view.host.querySelector("button"), row);
-  assert.equal(row.textContent.trim(), "After refresh");
+  assert.equal(row.textContent.trim(), "After refresh1");
   row.click();
   assert.equal(selected(), refreshedWorkspace);
   view.dispose();
@@ -206,6 +229,9 @@ test("workspace tickets group, collapse, mark blocked, and flatten newest first"
         a: [
           { filename: "blocked.md", title: "Blocked ticket", status: "blocked", modifiedAt: 30 },
           { filename: "active.md", title: "Active ticket", status: "in_progress", hasWorkSession: true, opencodeStatus: "idle", modifiedAt: 10 },
+          { filename: "draft.md", title: "Draft ticket", status: "draft", modifiedAt: 20 },
+          { filename: "done.md", title: "Done ticket", status: "done", modifiedAt: 5 },
+          { filename: "cancelled.md", title: "Cancelled ticket", status: "cancelled", modifiedAt: 4 },
         ],
         b: [{ filename: "newest.md", title: "Newest ticket", status: "in_progress", modifiedAt: 40 }],
       },
@@ -222,14 +248,26 @@ test("workspace tickets group, collapse, mark blocked, and flatten newest first"
     },
   });
 
+  const workspaceRows = [...view.host.querySelectorAll("button")].filter(
+    (button) => button.firstElementChild?.tagName === "SPAN" &&
+      (button.textContent.includes("Alpha") || button.textContent.includes("Beta")),
+  );
+  assert.equal(workspaceRows[0].lastElementChild.textContent, "3");
+  assert.equal(workspaceRows[1].lastElementChild.textContent, "1");
+  assert.equal(workspaceRows[0].lastElementChild.getAttribute("aria-label"), "3 outstanding tickets");
+
   assert.equal(view.host.querySelectorAll('[aria-expanded="true"]').length, 2);
-  assert.equal(view.host.querySelectorAll('[aria-label$="tickets"]').length, 2);
+  assert.equal(view.host.querySelectorAll('button[aria-label$="tickets"]').length, 2);
   assert.match(
     view.host.querySelector('button[aria-label="Collapse Alpha tickets"] svg').className,
     /muted/,
     "Workspace disclosure icon uses the shared muted icon style",
   );
   const idleIcon = view.host.querySelector('[aria-label="OpenCode session is idle"]');
+  const blockedRow = [...view.host.querySelectorAll("button")].find((button) => button.textContent.includes("Blocked ticket"));
+  assertDecorativeIcon(blockedRow);
+  assert.match(blockedRow.firstElementChild.className, /muted/);
+  assert.match(blockedRow.firstElementChild.querySelector("path").getAttribute("d"), /M8 1\.5.*l5 5/);
   assert.ok(idleIcon);
   assert.equal(idleIcon.parentElement.firstElementChild, idleIcon, "the icon precedes the ticket title");
   assert.match(idleIcon.querySelector("svg path").getAttribute("d"), /a6\.5 6\.5.*v5m4-5v5$/, "idle status uses a circled pause icon");
@@ -237,22 +275,22 @@ test("workspace tickets group, collapse, mark blocked, and flatten newest first"
   assert.ok(view.host.querySelector('[aria-label="Ticket has no work session"]'), "a missing work_session_id uses the caution icon");
   assert.equal(view.host.querySelectorAll("svg").length, 5);
   view.host.querySelector('button[aria-label="Collapse Alpha tickets"]').click();
-  assert.doesNotMatch(view.host.textContent, /Blocked ticket|Active ticket/);
-  assert.match(view.host.textContent, /BetaNewest ticket/);
+  assert.doesNotMatch(view.host.textContent, /Blocked ticket|Active ticket|Draft ticket|Done ticket|Cancelled ticket/);
+  assert.match(view.host.textContent, /Beta1Newest ticket/);
   assert.equal(selected(), null, "disclosure does not select a Workspace");
   assert.deepEqual(worked, [], "disclosure does not activate a ticket");
   [...view.host.querySelectorAll("button")].find((button) => button.textContent.includes("Alpha")).click();
   assert.equal(selected(), first);
   assert.equal(
     view.host.querySelector('button[aria-current="page"]')?.textContent.trim(),
-    "Alpha",
+    "Alpha3",
   );
 
   setViewMode("flat");
-  assert.equal(view.host.querySelectorAll('[aria-label$="tickets"]').length, 0);
+  assert.equal(view.host.querySelectorAll('button[aria-label$="tickets"]').length, 0);
   assert.deepEqual(
     [...view.host.querySelectorAll("li")].map((item) => item.textContent.trim()),
-    ["Alpha", "Beta", "Tickets", "Newest ticket", "Blocked ticket", "Active ticket"],
+    ["Alpha3", "Beta1", "Tickets", "Newest ticket", "Blocked ticket", "Draft ticket", "Active ticket", "Done ticket", "Cancelled ticket"],
   );
   assert.equal(
     [...view.host.querySelectorAll("h3")].find((heading) => heading.textContent === "Tickets")?.textContent,

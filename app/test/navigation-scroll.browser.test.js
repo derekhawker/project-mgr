@@ -14,7 +14,7 @@ function browser(session, ...args) {
   return result.stdout.trim();
 }
 
-test("navigation keeps section headings and bottom actions visible while scrolling", async (t) => {
+test("workspace list scrolls independently while quick heading and bottom destinations stay visible", async (t) => {
   const socket = createServer();
   socket.listen(0, "127.0.0.1");
   await once(socket, "listening");
@@ -39,7 +39,7 @@ test("navigation keeps section headings and bottom actions visible while scrolli
   browser(session, "wait", "--fn", "document.querySelectorAll('#workspace-list li').length >= 30 && document.querySelectorAll('#quick-request-list li').length >= 30");
   const result = JSON.parse(browser(session, "eval", `(() => {
     const nav = document.querySelector('.navigation');
-    const scroll = document.querySelector('.navigation-scroll') || nav;
+    const scroll = document.querySelector('.navigation-scroll');
     const qr = document.querySelector('.quick-section-heading');
     const ws = document.querySelector('.navigation-heading');
     const buttons = [document.querySelector('#show-directories'), document.querySelector('[aria-label="Open ports"]'), document.querySelector('#new-work-menu button')];
@@ -52,16 +52,18 @@ test("navigation keeps section headings and bottom actions visible while scrolli
     const workspaces = snapshot();
     scroll.scrollTop = scroll.scrollHeight;
     const end = snapshot();
-    return {initial, requests, workspaces, end, overflow: scroll.scrollHeight > scroll.clientHeight};
+    return {initial, requests, workspaces, end, overflow: scroll.scrollHeight > scroll.clientHeight, heading: document.querySelector('.quick-section-heading h3')?.textContent.trim(), diagnostics: !!document.querySelector('.navigation-diagnostics')};
   })()`));
-  assert.ok(result.overflow, "fixture must overflow the navigation");
+  assert.ok(result.overflow, "workspace list must overflow its scroll area");
+  assert.equal(result.heading, "Quick Requests", "the section heading stays visible beside the chevron");
+  assert.equal(result.diagnostics, false, "Navigation diagnostics are not rendered");
   for (const state of [result.initial, result.requests, result.workspaces, result.end]) {
     for (const button of state.buttons) {
       assert.ok(button.top >= state.viewport.top && button.bottom <= state.viewport.bottom, `bottom actions must remain visible: ${JSON.stringify(state)}`);
       assert.ok(Math.abs(button.top - result.initial.buttons[state.buttons.indexOf(button)].top) < 2, `bottom actions must remain anchored: ${JSON.stringify(state)}`);
     }
   }
-  assert.ok(result.requests.scroll > 0 && Math.abs(result.requests.qr.top - result.initial.qr.top) < 2, `Quick Requests heading must stick: ${JSON.stringify(result)}`);
-  assert.ok(result.workspaces.scroll > result.requests.scroll && Math.abs(result.workspaces.ws.top - result.initial.qr.top) < 2, `Workspaces heading must stick: ${JSON.stringify(result)}`);
+  assert.ok(result.requests.scroll > 0 && Math.abs(result.requests.qr.top - result.initial.qr.top) < 2, `Quick Requests heading must stay visible: ${JSON.stringify(result)}`);
+  assert.ok(Math.abs(result.workspaces.ws.top - result.initial.ws.top) < 2, `Workspaces heading must stay visible: ${JSON.stringify(result)}`);
   assert.ok(result.end.scroll > result.workspaces.scroll, "last workspace must be reachable");
 });

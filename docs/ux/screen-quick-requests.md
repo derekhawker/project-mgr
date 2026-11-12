@@ -9,18 +9,15 @@ and control gaps. Filtering behavior is unchanged. Verify appearance on Wayland.
 
 - Quick Requests are the top section of the persistent left navigation, above
   all workspaces and tasks.
-- Place **See all Quick Requests** above the recent list.
-- Put the compact **See all Quick Requests** icon button on the same row as the
-  **Quick Requests** heading. Recent requests use the same compact
+- Keep **Quick Requests** as a static section heading. Place a separate compact
+  chevron-only button beside it to open the complete list. Recent requests use the same compact
   navigation-link styling as workspace entries and have no per-row Delete
   control.
-- Render **See all Quick Requests** as an icon-only list-and-arrow button with
-  the accessible name **See all Quick Requests**.
-- Keep **New work** pinned to the bottom of the navigation while its contents
-  scroll. Open its work-type menu upward as an overlay so it does not move the
-  pinned button or surrounding navigation content.
+- Keep Ports, Repositories, and **New work** pinned in the navigation while the
+  workspace/ticket list scrolls. Open the New work menu upward as an overlay so
+  it does not move the pinned button or surrounding navigation content.
 - Show Quick Requests created within the last 24 hours in the recent navigation
-  list. Older requests remain available in **See all Quick Requests**.
+  list. Older requests remain available in the complete Quick Requests list.
 - Highlight the selected Quick Request in the recent list. Opening another
   request moves the highlight even when the list records have not changed;
   selecting a Workspace or deleting the selected request clears it.

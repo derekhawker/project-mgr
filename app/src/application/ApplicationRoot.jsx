@@ -1,34 +1,7 @@
-import { createSignal, onCleanup } from "solid-js";
 import styles from "./navigation.module.css";
 import { WorkspaceNavigation } from "../views/workspace/navigation/WorkspaceNavigation.jsx";
-import {
-  getUiDiagnostics,
-  subscribeUiDiagnostics,
-} from "../lib/uiDiagnostics.js";
 
 export function ApplicationRoot(props) {
-  const [diagnosticsVersion, setDiagnosticsVersion] = createSignal(0);
-  let diagnosticsTimer;
-  const unsubscribeDiagnostics = subscribeUiDiagnostics(() => {
-    if (diagnosticsTimer !== undefined) return;
-    diagnosticsTimer = window.setTimeout(() => {
-      diagnosticsTimer = undefined;
-      setDiagnosticsVersion((n) => n + 1);
-    }, 250);
-  });
-  onCleanup(() => {
-    unsubscribeDiagnostics();
-    if (diagnosticsTimer !== undefined)
-      window.clearTimeout(diagnosticsTimer);
-  });
-  const diagnostics = () => {
-    diagnosticsVersion();
-    return Object.entries(getUiDiagnostics())
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([label, count]) => `${label}: ${count}`)
-      .join("\n");
-  };
-
   return (
     <>
       <main class="shell">
@@ -47,15 +20,13 @@ export function ApplicationRoot(props) {
               <h2>Workspaces</h2>
               {props.workspaceViewToggle?.()}
             </div>
-            <WorkspaceNavigation {...props.workspaceNavigation} />
+            <div class="navigation-scroll">
+              <WorkspaceNavigation {...props.workspaceNavigation} />
+            </div>
             <div class={styles.destinations}>
               {props.portsNavigationButton()}
               {props.directoriesNavigationButton()}
             </div>
-            <details class="navigation-diagnostics">
-              <summary>Navigation diagnostics</summary>
-              <pre aria-live="polite">{diagnostics() || "No events recorded."}</pre>
-            </details>
             {props.newWorkMenu()}
           </aside>
           <section class="quick-view" aria-label="Selected work">

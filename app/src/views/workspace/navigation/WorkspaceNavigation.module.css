@@ -5,6 +5,19 @@
   white-space: nowrap;
 }
 
+.ticketCount {
+  flex: 0 0 auto;
+  margin-inline-start: auto;
+  padding: var(--ui-space-2) var(--ui-space-6);
+  border: 0;
+  border-radius: 3px;
+  color: var(--ui-blue-deep);
+  background: color-mix(in srgb, var(--ui-lavender) 22%, var(--ui-surface));
+  font-size: 0.75rem;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+
 .workspaceGroup {
   list-style: none;
 }
@@ -23,22 +36,9 @@
 }
 
 .ticketChildren {
-  position: relative;
   margin: 0;
   padding: 0;
   list-style: none;
-}
-
-.ticketChildren::before {
-  position: absolute;
-  z-index: 1;
-  top: 0;
-  bottom: 0;
-  left: var(--ui-space-12);
-  /* Keep the tree rail inset while the selectable row remains full width. */
-  border-inline-start: 1px solid var(--ui-border-light);
-  content: "";
-  pointer-events: none;
 }
 
 .workspaceDisclosure {
@@ -56,11 +56,29 @@
 }
 
 :global(.navigation li) .groupedTicketButton {
+  position: relative;
   padding-inline-start: var(--ui-space-32);
 }
 
 :global(.navigation li) .flatTicketButton {
-  padding-inline-start: var(--ui-space-12);
+  position: relative;
+  padding-inline-start: var(--ui-space-24);
+  border-radius: 0;
+}
+
+:global(.navigation li) .groupedTicketButton::before {
+  position: absolute;
+  top: 50%;
+  color: var(--ui-muted);
+  content: "›";
+  font-size: 1.1rem;
+  line-height: 1;
+  transform: translateY(-55%);
+  pointer-events: none;
+}
+
+:global(.navigation li) .groupedTicketButton::before {
+  left: var(--ui-space-12);
 }
 
 .ticketTitle {
