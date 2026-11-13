@@ -75,6 +75,17 @@ overwritten. The dialog closes after the create command succeeds and remains
 open with the reviewed edits if creation fails; the ticket list then refreshes
 and selects the created draft.
 
+The Workspace ticket list keeps separate sort selections for active and archived
+tickets. Active tickets retain the **Status**, **Recently modified**, and
+**Title** options with **Status** as the default. Archived tickets offer
+**Status**, **Archive time**, and **Title**, defaulting to **Archive time**;
+changing one list's sort does not change the other. Archived rows show the
+archive date in the third column. Rust reads `archived_at` from ticket YAML
+front matter as an ISO 8601 date-time string. When an archived list is loaded,
+Rust backfills missing or invalid timestamps from each ticket file's current
+modification time. Missing timestamps remain non-fatal if a file cannot be
+updated; the list falls back to modification time for display and ordering.
+
 For tickets with an active `work_session_id`, Rust subscribes to OpenCode's
 volatile `GET /api/event` stream and takes one `GET /api/session/active`
 snapshot after connecting, after each reconnect, and every 30 seconds. The

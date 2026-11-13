@@ -3,13 +3,13 @@ import { Portal } from "solid-js/web";
 import { Icon } from "./Icon.jsx";
 import styles from "./Tooltip.module.css";
 
-const SHOW_DELAY = 250;
-const HIDE_DELAY = 250;
+const DEFAULT_DELAY = 250;
 const EDGE_GAP = 8;
 
 /** A compact, keyboard-accessible help trigger with a non-native tooltip. */
 export function Tooltip(props) {
-  const [local, rest] = splitProps(props, ["content", "class", "id", "renderTrigger"]);
+  const [local, rest] = splitProps(props, ["content", "class", "id", "renderTrigger", "delay"]);
+  const delay = () => local.delay ?? DEFAULT_DELAY;
   const tooltipId = local.id || `tooltip-${createUniqueId()}`;
   const [visible, setVisible] = createSignal(false);
   const [position, setPosition] = createSignal(null);
@@ -25,7 +25,7 @@ export function Tooltip(props) {
     timer = setTimeout(() => {
       timer = undefined;
       show();
-    }, SHOW_DELAY);
+    }, delay());
   };
   const dismiss = () => {
     cancel();
@@ -33,7 +33,7 @@ export function Tooltip(props) {
   };
   const scheduleDismiss = () => {
     cancel();
-    timer = setTimeout(() => { timer = undefined; setVisible(false); }, HIDE_DELAY);
+    timer = setTimeout(() => { timer = undefined; setVisible(false); }, delay());
   };
   const place = () => {
     if (!anchor) return;

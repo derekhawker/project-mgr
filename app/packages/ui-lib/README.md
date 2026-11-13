@@ -61,7 +61,7 @@ check icon to mark selected ActionMenu options rather than a text glyph.
 Tooltip renders a labelled question-mark trigger by default and a non-native,
 viewport-positioned `role="tooltip"` bubble in a document portal. It appears
 after 250ms of hover or keyboard focus and dismisses 250ms after pointer leave
-or blur (or immediately on Escape). Placement updates on scroll and resize.
+or blur (or immediately on Escape); `delay` overrides both delays. Placement updates on scroll and resize.
 `renderTrigger` receives the event handlers and ref for the actual focusable
 help trigger; keep it separate from any action button rather than nesting
 interactive elements. The relationship is exposed with `aria-describedby` while

@@ -1,5 +1,6 @@
 //! Markdown-backed Workspace ticket discovery. Ticket files remain outside Git;
 //! this module deliberately treats their contents (not SQLite) as authority.
+use chrono::{DateTime, SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
@@ -821,6 +822,7 @@ pub struct Ticket {
     pub opencode_status: Option<String>,
     pub content: String,
     pub modified_at: u128,
+    pub archived_at: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -946,6 +948,7 @@ pub fn create_draft(
                     opencode_status: None,
                     content,
                     modified_at: ticket_modified_at(&path) as u128,
+                    archived_at: None,
                 });
             }
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
@@ -1062,6 +1065,7 @@ pub fn list(directory: &Path) -> Result<Vec<Ticket>, String> {
                 .and_then(|s| s.to_str())
                 .unwrap_or("Ticket"),
         );
+        let archived_at = archived_at(&content);
         tickets.push(Ticket {
             filename: path.file_name().unwrap().to_string_lossy().into_owned(),
             title,
@@ -1070,6 +1074,7 @@ pub fn list(directory: &Path) -> Result<Vec<Ticket>, String> {
             opencode_status: opencode_status(&content),
             content,
             modified_at: modified_at as u128,
+            archived_at,
         });
     }
     tickets.sort_by(|a, b| a.filename.cmp(&b.filename));
@@ -1225,7 +1230,58 @@ pub fn watch_directory(
 
 /// Lists closed tickets separately; archived files never leak into the default list.
 pub fn list_archived(directory: &Path) -> Result<Vec<Ticket>, String> {
+    // Backfill is best-effort: old or externally edited tickets without the
+    // field remain readable, and the UI can fall back to their file mtime.
+    let _ = backfill_archived_at(directory);
     list(&directory.join("archived"))
+}
+
+fn archived_at(markdown: &str) -> Option<String> {
+    let value = frontmatter_value(markdown, "archived_at").ok().flatten()?;
+    DateTime::parse_from_rfc3339(&value).ok().map(|_| value)
+}
+
+fn iso8601_from_file_mtime(path: &Path) -> Option<String> {
+    let modified = fs::metadata(path).ok()?.modified().ok()?;
+    Some(DateTime::<Utc>::from(modified).to_rfc3339_opts(SecondsFormat::Millis, true))
+}
+
+/// Fill missing or malformed archive timestamps in the archived ticket folder.
+/// It is safe to call repeatedly and preserves all existing ticket content.
+fn backfill_archived_at(directory: &Path) -> Result<(), String> {
+    let archived_directory = directory.join("archived");
+    if !archived_directory.exists() {
+        return Ok(());
+    }
+    for entry in fs::read_dir(&archived_directory).map_err(|error| error.to_string())? {
+        let path = entry.map_err(|error| error.to_string())?.path();
+        if path.extension().and_then(|extension| extension.to_str()) != Some("md")
+            || !path.is_file()
+        {
+            continue;
+        }
+        let original =
+            fs::read_to_string(&path).map_err(|error| format!("{}: {error}", path.display()))?;
+        if archived_at(&original).is_some() {
+            continue;
+        }
+        let Some(timestamp) = iso8601_from_file_mtime(&path) else {
+            continue;
+        };
+        let updated = if original.starts_with("---\n") || original.starts_with("---\r\n") {
+            replace_frontmatter_fields(
+                &original,
+                &[("archived_at", Some(yaml_string(&timestamp)))],
+            )?
+        } else {
+            format!(
+                "---\narchived_at: {}\n---\n{original}",
+                yaml_string(&timestamp)
+            )
+        };
+        write_ticket_markdown_safely(&path, &original, &updated)?;
+    }
+    Ok(())
 }
 
 pub fn ticket_metadata(text: &str, fallback: &str) -> (String, String) {
@@ -2304,6 +2360,65 @@ mod tests {
         assert_eq!(list(root.path()).unwrap().len(), 1);
         assert_eq!(list_archived(root.path()).unwrap()[0].title, "Closed");
     }
+
+    #[test]
+    fn archived_timestamp_backfill_is_iso_idempotent_and_preserves_ticket_content() {
+        use std::time::{Duration, SystemTime};
+
+        let root = tempfile::tempdir().unwrap();
+        let archived_dir = root.path().join("archived");
+        fs::create_dir(&archived_dir).unwrap();
+        let legacy = archived_dir.join("legacy.md");
+        let original = "---\ntitle: Legacy\nstatus: done\n---\n\nBody stays intact.\n";
+        fs::write(&legacy, original).unwrap();
+        fs::File::open(&legacy)
+            .unwrap()
+            .set_times(
+                fs::FileTimes::new()
+                    .set_modified(SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000)),
+            )
+            .unwrap();
+        let expected =
+            DateTime::<Utc>::from(SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000))
+                .to_rfc3339_opts(SecondsFormat::Millis, true);
+
+        let listed = list_archived(root.path()).unwrap();
+        assert_eq!(listed[0].archived_at.as_deref(), Some(expected.as_str()));
+        assert_eq!(
+            serde_json::to_value(&listed[0]).unwrap()["archivedAt"],
+            serde_json::json!(expected)
+        );
+        let migrated = fs::read_to_string(&legacy).unwrap();
+        assert!(migrated.contains(&format!("archived_at: \"{expected}\"\n")));
+        assert!(migrated.ends_with("\nBody stays intact.\n"));
+
+        backfill_archived_at(root.path()).unwrap();
+        assert_eq!(fs::read_to_string(&legacy).unwrap(), migrated);
+        assert_eq!(
+            list_archived(root.path()).unwrap()[0]
+                .archived_at
+                .as_deref(),
+            Some(expected.as_str())
+        );
+    }
+
+    #[test]
+    fn archived_ticket_listing_tolerates_missing_or_invalid_archive_timestamps() {
+        let root = tempfile::tempdir().unwrap();
+        let archived_dir = root.path().join("archived");
+        fs::create_dir(&archived_dir).unwrap();
+        fs::write(
+            archived_dir.join("invalid.md"),
+            "---\ntitle: Invalid\nstatus: done\narchived_at: not-a-date\n---\nBody\n",
+        )
+        .unwrap();
+
+        let listed = list_archived(root.path()).unwrap();
+        assert_eq!(listed.len(), 1);
+        assert!(listed[0].archived_at.is_some());
+        assert!(DateTime::parse_from_rfc3339(listed[0].archived_at.as_deref().unwrap()).is_ok());
+    }
+
     #[test]
     fn ticket_path_is_in_app_data_and_slugged() {
         assert!(workspace_ticket_dir(Path::new("/data"), "my-workspace")

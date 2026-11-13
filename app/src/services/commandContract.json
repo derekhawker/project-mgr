@@ -6202,6 +6202,10 @@
           },
           "modifiedAt": {
             "type": "number"
+          },
+          "archivedAt": {
+            "type": "string",
+            "nullable": true
           }
         },
         "required": [
@@ -6210,7 +6214,8 @@
           "status",
           "hasWorkSession",
           "content",
-          "modifiedAt"
+          "modifiedAt",
+          "archivedAt"
         ],
         "additionalProperties": false
       }
@@ -6313,6 +6318,10 @@
         },
         "modifiedAt": {
           "type": "number"
+        },
+        "archivedAt": {
+          "type": "string",
+          "nullable": true
         }
       },
       "required": [
@@ -6322,7 +6331,8 @@
         "hasWorkSession",
         "opencodeStatus",
         "content",
-        "modifiedAt"
+        "modifiedAt",
+        "archivedAt"
       ],
       "additionalProperties": false
     }

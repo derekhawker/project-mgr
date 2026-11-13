@@ -53,10 +53,15 @@ unavailable, start a replacement session and update the ticket's session ID.
 
 ## Closeout
 
+Before beginning the closeout sequence, obtain the user's explicit confirmation
+to proceed. This confirmation is a prerequisite to the entire sequence, not a
+per-action approval gate.
+
 For completion, record verification and set `done` only when approved work and
 required checks are complete. For selected ticket work, follow the shared
 ticket-workflow defaults for publishing, squash-merging, and safely removing the
 clean ticket worktree and local branch before marking the ticket done. For
 cancellation, record why work stopped and what was completed or remains, then
 set `cancelled`. Archive either terminal ticket under `archived/<slug>.md`. Never
-archive an active ticket.
+archive an active ticket. Before moving a terminal ticket into `archived/`, add
+`archived_at` to its YAML front matter as a quoted ISO 8601 date-time string.

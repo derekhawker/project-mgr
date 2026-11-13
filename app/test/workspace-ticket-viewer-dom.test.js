@@ -39,7 +39,7 @@ try {
   throw error;
 }
 const window = new Window();
-for (const key of ["window", "document", "Node", "Element", "HTMLElement", "Event"])
+for (const key of ["window", "document", "Node", "Element", "HTMLElement", "HTMLHeadElement", "Event"])
   globalThis[key] = key === "window" ? window : key === "document" ? window.document : window[key];
 const { render, createComponent, createSignal, WorkspaceTicketViewer, CreateTicketIdeaModal } =
   await import(pathToFileURL(join(temp, "out/test.js")));
@@ -277,5 +277,60 @@ test("archive toggle reports state and clears selection; create opens the first 
     archiveSwitch.dispatchEvent(new Event("change", { bubbles: true }));
     assert.deepEqual(calls.slice(-2), [["archive", false], ["select", null]]);
     assert.equal(view.host.querySelector("ul").getAttribute("aria-label"), "Tickets");
+  } finally { view.dispose(); }
+});
+
+test("active and archived ticket sorts are independent and archived rows show archive time", async () => {
+  const archivedTickets = [
+    { filename: "later.md", title: "Later", status: "done", modifiedAt: 100, archivedAt: "2025-01-01T12:00:00.000Z", content: "---\ntitle: Later\nstatus: done\n---\n" },
+    { filename: "earlier.md", title: "Earlier", status: "cancelled", modifiedAt: 900, archivedAt: "2024-01-01T12:00:00.000Z", content: "---\ntitle: Earlier\nstatus: cancelled\n---\n" },
+  ];
+  const view = mount({
+    workspaceName: () => "Example Workspace",
+    tickets: () => archivedTickets,
+    selectedFilename: () => null,
+    loading: () => false,
+    error: () => "",
+    onSelect: () => {},
+    onArchiveChange: () => {},
+  });
+  const chooseSort = (current, next) => {
+    view.host.querySelector(`summary[aria-label="Sort: ${current}"]`).click();
+    [...view.host.querySelectorAll("[role=group] button")].find((button) => button.textContent.trim() === next).click();
+  };
+  const firstTitle = () => view.host.querySelector("ul li button").children[1].textContent;
+  try {
+    assert.equal(view.host.querySelector('summary[aria-label="Sort: Status"]') !== null, true);
+    chooseSort("Status", "Recently modified");
+    assert.equal(firstTitle(), "Earlier", "active recently-modified sort remains unchanged");
+
+    const archiveSwitch = view.host.querySelector('input[role="switch"]');
+    archiveSwitch.checked = true;
+    archiveSwitch.dispatchEvent(new Event("change", { bubbles: true }));
+    assert.ok(view.host.querySelector('summary[aria-label="Sort: Archive time"]'), "archived view defaults to archive time");
+    assert.equal(firstTitle(), "Later", "archive order uses archivedAt rather than modifiedAt");
+    assert.equal(view.host.querySelector("ul li time").getAttribute("datetime"), "2025-01-01T12:00:00.000Z");
+    assert.equal(
+      view.host.querySelector("ul li time").textContent,
+      new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date("2025-01-01T12:00:00.000Z")),
+      "archived date display omits the time",
+    );
+    const date = view.host.querySelector("ul li time");
+    assert.equal(date.getAttribute("aria-label"), `Archived ${date.textContent}`);
+    date.dispatchEvent(new Event("mouseenter"));
+    await new Promise((resolve) => setTimeout(resolve, 170));
+    assert.equal(document.querySelector('[role="tooltip"]')?.textContent, "2025-01-01T12:00:00.000Z");
+    date.dispatchEvent(new Event("mouseleave"));
+    await new Promise((resolve) => setTimeout(resolve, 170));
+    assert.equal(document.querySelector('[role="tooltip"]'), null);
+
+    chooseSort("Archive time", "Title");
+    assert.equal(firstTitle(), "Earlier");
+    archiveSwitch.checked = false;
+    archiveSwitch.dispatchEvent(new Event("change", { bubbles: true }));
+    assert.ok(view.host.querySelector('summary[aria-label="Sort: Recently modified"]'), "archived sort change does not affect active sort");
+    archiveSwitch.checked = true;
+    archiveSwitch.dispatchEvent(new Event("change", { bubbles: true }));
+    assert.ok(view.host.querySelector('summary[aria-label="Sort: Title"]'), "archived sort selection is retained independently");
   } finally { view.dispose(); }
 });

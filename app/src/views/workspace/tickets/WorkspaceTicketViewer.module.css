@@ -165,6 +165,8 @@
   height: 1.75rem;
 }
 
+.archivedAt { color: var(--ui-muted); font-size: 0.78rem; white-space: nowrap; }
+
 .rowAction { white-space: nowrap; }
 
 .detail, .emptyDetail {
