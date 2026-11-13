@@ -179,7 +179,9 @@ test("Switch is a labelled native binary control and OpenItemButton gives folder
     component(Switch, {
       "aria-label": "Show archived tickets",
       checked,
-      onChange: (event) => { checked = event.currentTarget.checked; },
+      onChange: (event) => {
+        checked = event.currentTarget.checked;
+      },
     }),
     component(OpenItemButton, {
       itemType: "ticket",
@@ -417,9 +419,15 @@ test("Workspace creation presents direct repository choices in the native dialog
   };
   const mounted = mount(() => component(NewWorkModal, props));
   assert.equal(mounted.host.querySelector("#proposal-prompt-preview"), null);
-  assert.equal(mounted.host.querySelector("#new-work-prompt"), null);
   assert.equal(
-    mounted.host.querySelector("#workspace-repository-select").getAttribute("role"),
+    mounted.host.querySelector("#new-work").hidden,
+    true,
+    "The prompt form stays hidden during Workspace creation",
+  );
+  assert.equal(
+    mounted.host
+      .querySelector("#workspace-repository-select")
+      .getAttribute("role"),
     "combobox",
   );
   assert.ok(mounted.host.querySelector("dialog"));
@@ -436,7 +444,10 @@ test("Workspace creation presents direct repository choices in the native dialog
     "New Workspace",
   );
   const submit = mounted.host.querySelector('button[type="submit"]');
-  assert.equal(submit.form, mounted.host.querySelector("#workspace-create-form"));
+  assert.equal(
+    submit.form,
+    mounted.host.querySelector("#workspace-create-form"),
+  );
   assert.equal(
     mounted.host.querySelector("#workspace-create-error"),
     null,

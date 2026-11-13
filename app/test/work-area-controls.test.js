@@ -504,7 +504,11 @@ test("workspace terminal panel omits removed Workspace options", () => {
   const view = mount(WorkspaceOwnerPanel, props);
   const terminal = view.host.querySelector(".terminal-card");
   assert.equal(view.host.querySelector(".owner-management"), null);
-  assert.equal(view.host.querySelector("summary"), null);
+  assert.equal(
+    view.host.querySelector("summary").closest("#quick-request-form").hidden,
+    true,
+    "Quick Request model controls remain inside the hidden form",
+  );
   assert.equal(view.host.querySelector("#attach-repository"), null);
   assert.equal(view.host.querySelector("#complete-workspace"), null);
   assert.equal(view.host.querySelector(".terminal-context"), null);
