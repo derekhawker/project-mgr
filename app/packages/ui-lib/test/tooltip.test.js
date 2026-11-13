@@ -29,10 +29,10 @@ const window = new Window();
 for (const key of ["window", "document", "Node", "Element", "HTMLElement", "HTMLHeadElement", "Event", "KeyboardEvent"])
   globalThis[key] = key === "window" ? window : key === "document" ? window.document : window[key];
 const { render, createComponent, createEffect, Tooltip } = await import(pathToFileURL(join(temp, "out/tooltip.js")));
-const mount = () => {
+const mount = (props = {}) => {
   const host = document.createElement("div");
   document.body.append(host);
-  const dispose = render(() => createComponent(Tooltip, { content: "Helpful details" }), host);
+  const dispose = render(() => createComponent(Tooltip, { content: "Helpful details", ...props }), host);
   return { host, dispose: () => { dispose(); host.remove(); } };
 };
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -66,6 +66,22 @@ test("hover dismissal cancels pending show and unmount cleans up", async () => {
   trigger.dispatchEvent(new Event("mouseenter"));
   mounted.dispose();
   await wait(280);
+});
+
+test("supports a shared custom delay for both hover opening and closing", async () => {
+  const mounted = mount({ delay: 150 });
+  const trigger = mounted.host.querySelector("button");
+  trigger.dispatchEvent(new Event("mouseenter"));
+  await wait(100);
+  assert.equal(document.querySelector('[role="tooltip"]'), null);
+  await wait(80);
+  assert.ok(document.querySelector('[role="tooltip"]'));
+  trigger.dispatchEvent(new Event("mouseleave"));
+  await wait(100);
+  assert.ok(document.querySelector('[role="tooltip"]'));
+  await wait(80);
+  assert.equal(document.querySelector('[role="tooltip"]'), null);
+  mounted.dispose();
 });
 
 test("renderTrigger attaches hover, focus, Escape, ref, and description to the action itself", async () => {

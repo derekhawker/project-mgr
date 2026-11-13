@@ -1,5 +1,5 @@
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
-import { ActionMenu, ActionMenuItem, Button, ErrorMessage, Icon, IconButton, Switch } from "@ui-lib";
+import { ActionMenu, ActionMenuItem, Button, ErrorMessage, Icon, IconButton, Switch, Tooltip } from "@ui-lib";
 import { AppPageLayout } from "../../../components/page/AppPageLayout.jsx";
 import { TicketStatusBadge } from "./TicketStatusBadge.jsx";
 import { CreateTicketIdeaModal } from "./CreateTicketIdeaModal.jsx";
@@ -8,9 +8,14 @@ import { renderTicketMarkdown, splitTicketFrontmatter } from "./ticketContent.js
 import styles from "./WorkspaceTicketViewer.module.css";
 
 const statusOrder = { blocked: 0, in_progress: 1, draft: 2 };
-const sortOptions = [
+const activeSortOptions = [
   ["status", "Status"],
   ["modified", "Recently modified"],
+  ["title", "Title"],
+];
+const archivedSortOptions = [
+  ["status", "Status"],
+  ["archivedAt", "Archive time"],
   ["title", "Title"],
 ];
 function compareStatus(a, b) {
@@ -19,12 +24,25 @@ function compareStatus(a, b) {
     (rank(a.status) === 3 ? a.status.localeCompare(b.status) : 0) ||
     b.modifiedAt - a.modifiedAt || a.title.localeCompare(b.title);
 }
+function archivedTimestamp(ticket) {
+  const timestamp = Date.parse(ticket.archivedAt ?? "");
+  return Number.isFinite(timestamp) ? timestamp : ticket.modifiedAt;
+}
 function sortedTickets(tickets, sort) {
   return [...tickets].sort((a, b) => {
     if (sort === "modified") return b.modifiedAt - a.modifiedAt || a.title.localeCompare(b.title);
+    if (sort === "archivedAt") return archivedTimestamp(b) - archivedTimestamp(a) || a.title.localeCompare(b.title);
     if (sort === "title") return a.title.localeCompare(b.title);
     return compareStatus(a, b);
   });
+}
+function displayedDate(ticket) {
+  const archivedTimestamp = Date.parse(ticket.archivedAt ?? "");
+  const time = Number.isFinite(archivedTimestamp) ? archivedTimestamp : ticket.modifiedAt;
+  return {
+    dateTime: new Date(time).toISOString(),
+    label: new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(time),
+  };
 }
 
 /** Workspace ticket browser and selected-ticket reader. */
@@ -32,9 +50,13 @@ export function WorkspaceTicketViewer(props) {
   onMount(() => recordUiDiagnostic("WorkspaceTicketViewer", "mount"));
   onCleanup(() => recordUiDiagnostic("WorkspaceTicketViewer", "dispose"));
   const [localArchived, setArchived] = createSignal(false);
-  const [sort, setSort] = createSignal("status");
+  const [activeSort, setActiveSort] = createSignal("status");
+  const [archivedSort, setArchivedSort] = createSignal("archivedAt");
   const archived = () => props.archived ? props.archived() : localArchived();
-  const sortLabel = () => sortOptions.find(([value]) => value === sort())?.[1] ?? "Status";
+  const sortOptions = () => archived() ? archivedSortOptions : activeSortOptions;
+  const sort = () => archived() ? archivedSort() : activeSort();
+  const setSort = (value) => archived() ? setArchivedSort(value) : setActiveSort(value);
+  const sortLabel = () => sortOptions().find(([value]) => value === sort())?.[1] ?? "Status";
   const selectedModelLabel = () =>
     (props.modelOptions?.() ?? []).find((option) => option.value === props.selectedModel?.())?.label ??
     "Choose an available model";
@@ -126,7 +148,7 @@ export function WorkspaceTicketViewer(props) {
                   triggerVariant="compact"
                   surfaceVariant="neutral"
                 >
-                  <For each={sortOptions}>{([value, label]) =>
+                  <For each={sortOptions()}>{([value, label]) =>
                     <ActionMenuItem
                       class={styles.menuOption}
                       aria-pressed={sort() === value}
@@ -143,6 +165,7 @@ export function WorkspaceTicketViewer(props) {
               <Show when={orderedTickets().length} fallback={<li class={styles.emptyList} role="listitem">No {archived() ? "archived " : "active "}tickets.</li>}>
                 <For each={orderedTickets()}>{(ticket) => {
                   const selected = () => props.selectedFilename() === ticket.filename;
+                  const date = displayedDate(ticket);
                   return <li role="listitem" classList={{ [styles.selected]: selected() }}>
                     <button
                       class={styles.selectTicket}
@@ -167,7 +190,27 @@ export function WorkspaceTicketViewer(props) {
                       </span>
                     </button>
                     <div class={styles.actionCell}>
-                      <Show when={!archived()} fallback={<span class={styles.actionPlaceholder} aria-hidden="true" />}>
+                      <Show when={!archived()} fallback={
+                        <Tooltip
+                          content={ticket.archivedAt ?? date.dateTime}
+                          delay={150}
+                          renderTrigger={(tooltipProps) => (
+                            <time
+                              class={styles.archivedAt}
+                              dateTime={date.dateTime}
+                              tabIndex="0"
+                              aria-label={`Archived ${date.label}`}
+                              aria-describedby={tooltipProps["aria-describedby"]}
+                              ref={tooltipProps.ref}
+                              onMouseEnter={tooltipProps.onMouseEnter}
+                              onMouseLeave={tooltipProps.onMouseLeave}
+                              onFocus={tooltipProps.onFocus}
+                              onBlur={tooltipProps.onBlur}
+                              onKeyDown={tooltipProps.onKeyDown}
+                            >{date.label}</time>
+                          )}
+                        />
+                      }>
                         <Button
                           variant="compact"
                           class={styles.rowAction}

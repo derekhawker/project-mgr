@@ -160,6 +160,7 @@ export function resultForCommand(name) {
         hasWorkSession: false,
         content: "---\ntitle: Example ticket\nstatus: draft\n---\nExample body",
         modifiedAt: 1_793_700_000_000,
+        archivedAt: null,
       }];
     case "repository_directory_page":
       return repositoryDirectoryPage;
@@ -224,6 +225,7 @@ export function resultForCommand(name) {
         opencodeStatus: null,
         content: "---\ntitle: Fixture proposal\nstatus: draft\n---\n\nFixture body.\n",
         modifiedAt: 1,
+        archivedAt: null,
       };
     case "app_shell_info":
       return {

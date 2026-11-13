@@ -235,11 +235,12 @@ export async function invokeBrowserFixture(name, payload = {}) {
       result = request.archived
         ? [{
             filename: "archived-example.md",
-            title: "Archived example",
+            title: "Investigate inability to submit a large Markdown document in the create-ticket prompt",
             status: "done",
             hasWorkSession: false,
             modifiedAt: 1_762_400_000_000,
-            content: "---\ntitle: Archived example\nstatus: done\n---\n# Archived example\n\nThis archived ticket remains readable.",
+            archivedAt: "2025-11-14T00:00:00.000Z",
+            content: "---\ntitle: Investigate inability to submit a large Markdown document in the create-ticket prompt\nstatus: done\narchived_at: \"2025-11-14T00:00:00.000Z\"\n---\n# Investigate inability to submit a large Markdown document in the create-ticket prompt\n\nThis archived ticket remains readable.",
           }]
         : [
             {
@@ -248,6 +249,7 @@ export async function invokeBrowserFixture(name, payload = {}) {
               status: "blocked",
               hasWorkSession: false,
               modifiedAt: 1_793_500_000_000,
+              archivedAt: null,
               content: "---\ntitle: Blocked example ticket\nstatus: blocked\nowner: Browser fixture\n---\n# Blocked ticket\n\nThis entry verifies blocked-status priority and formatted frontmatter.\n\n- First check\n- Second check",
             },
             {
@@ -256,6 +258,7 @@ export async function invokeBrowserFixture(name, payload = {}) {
               status: "in_progress",
               hasWorkSession: false,
               modifiedAt: 1_793_600_000_000,
+              archivedAt: null,
               content: "---\ntitle: In-progress example ticket\nstatus: in_progress\n---\n# In progress\n\nThis entry verifies the in-progress status position.",
             },
             {
@@ -264,6 +267,7 @@ export async function invokeBrowserFixture(name, payload = {}) {
               status: "draft",
               hasWorkSession: true,
               modifiedAt: 1_793_700_000_000,
+              archivedAt: null,
               content: `---\ntitle: Example ticket\nstatus: draft\nwork_session_id: fixture-session\n---\n# Example ticket\n\nA fixture ticket for the Workspace with readable **Markdown**.\n\n${"This long paragraph checks reader scrolling and keeps the full ticket body available. ".repeat(28)}\n\n## Acceptance checks\n\n- List and reader scroll independently\n- Metadata follows the body\n\n\`\`\`js\nconsole.log("safe fixture Markdown");\n\`\`\``,
             },
             {
@@ -272,6 +276,7 @@ export async function invokeBrowserFixture(name, payload = {}) {
               status: "review",
               hasWorkSession: false,
               modifiedAt: 1_793_650_000_000,
+              archivedAt: null,
               content: "---\ntitle: Other-status example\nstatus: review\n---\nAn unknown status follows draft.",
             },
           ].concat(
@@ -303,6 +308,7 @@ export async function invokeBrowserFixture(name, payload = {}) {
         opencodeStatus: null,
         content: `---\ntitle: ${JSON.stringify(request.title)}\nstatus: draft\n---\n\n${request.body}\n`,
         modifiedAt: Date.now(),
+        archivedAt: null,
       };
       createdWorkspaceTickets.push({ ...result, workspaceId: workspace.id });
       break;
