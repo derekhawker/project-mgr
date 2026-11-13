@@ -22,19 +22,25 @@ export function WorkspaceNavigation(props) {
     );
   const workspaceTickets = (workspaceId) =>
     props.data()?.workspaceTickets?.[workspaceId] || [];
+  const displayedWorkspaceTickets = (workspaceId) =>
+    workspaceTickets(workspaceId).filter((ticket) =>
+      ticket.status === "in_progress" ||
+      ticket.status === "blocked" ||
+      (ticket.status === "draft" && ticket.hasWorkSession),
+    );
   const outstandingTicketCount = (workspaceId) =>
     workspaceTickets(workspaceId).filter((ticket) =>
       ["draft", "in_progress", "blocked"].includes(ticket.status),
     ).length;
   const workspaceIsCurrent = (workspace) =>
     props.selected()?.id === workspace.id &&
-    !workspaceTickets(workspace.id).some((ticket) =>
+    !displayedWorkspaceTickets(workspace.id).some((ticket) =>
       props.isTicketCurrent?.(workspace, ticket),
     );
   const flatTickets = () =>
     workspaces()
       .flatMap((workspace) =>
-        workspaceTickets(workspace.id).map((ticket) => ({ ...ticket, workspace })),
+        displayedWorkspaceTickets(workspace.id).map((ticket) => ({ ...ticket, workspace })),
       )
       .sort(
         (a, b) =>
@@ -124,7 +130,7 @@ export function WorkspaceNavigation(props) {
         >
           <Index each={workspaces()}>
             {(workspace) => {
-              const tickets = () => workspaceTickets(workspace().id);
+              const tickets = () => displayedWorkspaceTickets(workspace().id);
               const isExpanded = () => expansionFor(workspace().id)[0]();
               const setExpanded = (value) => expansionFor(workspace().id)[1](value);
               return (

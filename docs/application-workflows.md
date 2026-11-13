@@ -251,9 +251,11 @@ Show the Quick Requests heading above the recent requests list with a separate
 chevron-only button that opens the complete Quick Requests destination. Show one
 ticket-count tag beside each Workspace name in both navigation modes, counting
 `draft`, `in_progress`, and `blocked` tickets but not `done` or `cancelled`
-tickets. Grouped ticket rows are indented and marked with a small chevron; flat
-ticket rows are slightly indented beneath the **Tickets** heading. Both retain
-their existing blocked and in-progress attention markers. Keep the
+tickets. Show `in_progress` and `blocked` ticket rows, plus `draft` ticket rows
+only when their frontmatter has a `work_session_id`; new drafts without a session
+stay out of navigation rows. Grouped ticket rows are indented and marked with a
+small chevron; flat ticket rows are slightly indented beneath the **Tickets**
+heading. Both retain their existing blocked and in-progress attention markers. Keep the
 workspace/ticket list as its own scroll area; Ports, Repositories, and New work
 remain pinned in the navigation.
 

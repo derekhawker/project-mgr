@@ -266,6 +266,15 @@ test("workspace tickets group, collapse, mark blocked, and flatten newest first"
   );
   const idleIcon = view.host.querySelector('[aria-label="OpenCode session is idle"]');
   const blockedRow = [...view.host.querySelectorAll("button")].find((button) => button.textContent.includes("Blocked ticket"));
+  assert.ok(
+    [...view.host.querySelectorAll("button")].some((button) => button.textContent.includes("Draft with session")),
+    "a draft with a saved work session appears in navigation",
+  );
+  assert.equal(
+    [...view.host.querySelectorAll("button")].some((button) => button.textContent.includes("Draft ticket")),
+    false,
+    "a new draft without a saved work session stays out of navigation",
+  );
   assertDecorativeIcon(blockedRow);
   assert.match(blockedRow.firstElementChild.className, /muted/);
   assert.match(blockedRow.firstElementChild.querySelector("path").getAttribute("d"), /M8 1\.5.*l5 5/);
@@ -274,8 +283,6 @@ test("workspace tickets group, collapse, mark blocked, and flatten newest first"
   assert.match(idleIcon.querySelector("svg path").getAttribute("d"), /a6\.5 6\.5.*v5m4-5v5$/, "idle status uses a circled pause icon");
   assert.match(idleIcon.parentElement.textContent, /Active ticket/);
   assert.equal(view.host.querySelectorAll('[aria-label="Ticket has saved session"]').length, 0);
-  const draftWithoutSession = [...view.host.querySelectorAll("button")].find((button) => button.textContent.includes("Draft ticket"));
-  assert.equal(draftWithoutSession.querySelector('[aria-label="Ticket has saved session"]'), null);
   assert.ok(view.host.querySelector('[aria-label="Ticket has no work session"]'), "a missing work_session_id uses the caution icon");
   assert.equal(view.host.querySelectorAll("svg").length, 5);
   view.host.querySelector('button[aria-label="Collapse Alpha tickets"]').click();
@@ -294,7 +301,7 @@ test("workspace tickets group, collapse, mark blocked, and flatten newest first"
   assert.equal(view.host.querySelectorAll('button[aria-label$="tickets"]').length, 0);
   assert.deepEqual(
     [...view.host.querySelectorAll("li")].map((item) => item.textContent.trim()),
-    ["Alpha4", "Beta1", "Tickets", "Newest ticket", "Blocked ticket", "Draft with session", "Draft ticket", "Active ticket", "Done ticket", "Cancelled ticket"],
+    ["Alpha4", "Beta1", "Tickets", "Newest ticket", "Blocked ticket", "Draft with session", "Active ticket"],
   );
   assert.equal(
     [...view.host.querySelectorAll("h3")].find((heading) => heading.textContent === "Tickets")?.textContent,
