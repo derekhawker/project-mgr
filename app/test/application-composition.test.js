@@ -86,7 +86,11 @@ test("application areas compose once and retain terminals across navigation and 
           enforce: "pre",
           resolveId(source, importer) {
             if (source === "./terminal/terminalRuntime.js") return terminal;
-            if (importer !== quickRequestFixture && source.endsWith("fixtures/browserFixture.js")) return quickRequestFixture;
+            if (
+              importer !== quickRequestFixture &&
+              source.endsWith("fixtures/browserFixture.js")
+            )
+              return quickRequestFixture;
           },
         },
         solid(),
@@ -153,16 +157,20 @@ test("application areas compose once and retain terminals across navigation and 
     );
 
     assert.equal($("#workspace-shell").hidden, true);
+    const ticketSessionId =
+      "fixture-ticket-work-fixture-workspace-example-active.md";
+    const ticketTerminalId = `terminal-${ticketSessionId}`;
     $("#workspace-list button").click();
-    await waitFor(() => window.document.querySelector('[aria-label="Tickets"] button'));
-    assert.equal(window.document.getElementById("terminal-session-fixture-workspace"), null);
-    $('[aria-label="Tickets"] button').click();
-    [...window.document.querySelectorAll("button")].find((button) => button.textContent === "Work").click();
-    await waitFor(() =>
-      window.document.getElementById("terminal-session-fixture-workspace"),
-    );
+    const activeTicket = () =>
+      [...$("#workspace-list").querySelectorAll("button")].find((button) =>
+        button.textContent.includes("Example active ticket"),
+      );
+    await waitFor(activeTicket);
+    assert.equal(window.document.getElementById(ticketTerminalId), null);
+    activeTicket().click();
+    await waitFor(() => window.document.getElementById(ticketTerminalId));
     const host = $("#terminal-views");
-    const workspaceTerminal = $("#terminal-session-fixture-workspace");
+    const workspaceTerminal = window.document.getElementById(ticketTerminalId);
     const workspaceHeading = $("#workspace-shell h1");
     assert.deepEqual(
       [...workspaceHeading.children]
@@ -171,16 +179,16 @@ test("application areas compose once and retain terminals across navigation and 
       ["Workspace", "/", "Example Workspace"],
     );
 
-    runtime.exit("session-fixture-workspace");
-    const restart = $('[data-restart-session="session-fixture-workspace"]');
+    runtime.exit(ticketSessionId);
+    const restart = $(`[data-restart-session="${ticketSessionId}"]`);
     assert.equal(restart.hidden, false);
     restart.click();
     await waitFor(
-      () => $('[data-restart-session="session-fixture-workspace"]').hidden,
+      () => $(`[data-restart-session="${ticketSessionId}"]`).hidden,
     );
     assert.deepEqual(runtime.restarted, [
       {
-        id: "session-fixture-workspace",
+        id: ticketSessionId,
         directory: "/fixture/fixture-workspace",
         container: workspaceTerminal,
       },
@@ -207,7 +215,10 @@ test("application areas compose once and retain terminals across navigation and 
     assert.equal(window.document.activeElement, $("#show-docs"));
     assert.equal(toolTab.getAttribute("aria-selected"), "false");
     assert.equal($("#terminal-views"), host);
-    assert.equal($("#terminal-session-fixture-workspace"), workspaceTerminal);
+    assert.equal(
+      window.document.getElementById(ticketTerminalId),
+      workspaceTerminal,
+    );
     assert.deepEqual(
       runtime.attached,
       attachments,
@@ -220,7 +231,7 @@ test("application areas compose once and retain terminals across navigation and 
     await waitFor(() => !$("#selected-owner").hidden);
     assert.equal(
       window.document.activeElement?.id,
-      "session-tab-session-fixture-workspace",
+      `session-tab-${ticketSessionId}`,
     );
     assert.equal($("#show-docs").getAttribute("aria-selected"), "false");
     assert.deepEqual(runtime.attached, attachments);
@@ -243,14 +254,16 @@ test("application areas compose once and retain terminals across navigation and 
       $('[data-review-mode="split"]').getAttribute("aria-pressed"),
       "true",
     );
-    $("#session-tab-session-fixture-workspace").click();
+    window.document.getElementById(`session-tab-${ticketSessionId}`).click();
     $('[aria-label="Close Example repository · Fixture test"]').click();
     await waitFor(
       () => !window.document.getElementById("session-tab-fixture-tool-1"),
     );
     assert.ok(runtime.forgotten.includes("fixture-tool-1"));
     assert.equal(
-      $("#session-tab-session-fixture-workspace").getAttribute("aria-selected"),
+      window.document
+        .getElementById(`session-tab-${ticketSessionId}`)
+        .getAttribute("aria-selected"),
       "true",
     );
 
@@ -259,13 +272,15 @@ test("application areas compose once and retain terminals across navigation and 
     assert.equal($("#workspace-shell").hidden, true);
     assert.equal($("#terminal-views"), host);
     $("#workspace-list button").click();
-    await waitFor(() => window.document.querySelector('[aria-label="Tickets"] button'));
-    $('[aria-label="Tickets"] button').click();
-    [...window.document.querySelectorAll("button")].find((button) => button.textContent === "Work").click();
+    await waitFor(activeTicket);
+    activeTicket().click();
     await waitFor(
       () => !workspaceTerminal.hidden && !$("#selected-owner").hidden,
     );
-    assert.equal($("#terminal-session-fixture-workspace"), workspaceTerminal);
+    assert.equal(
+      window.document.getElementById(ticketTerminalId),
+      workspaceTerminal,
+    );
 
     $("#show-history").click();
     await waitFor(() => !$("#quick-request-full-list").hidden);
@@ -313,7 +328,9 @@ test("application areas compose once and retain terminals across navigation and 
     assert.equal($("#proposal-create").disabled, true);
     $("#proposal-create").click();
     assert.equal(globalThis.__quickRequestCreateCalls, 1);
-    globalThis.__rejectQuickRequestCreate(new Error("Deferred creation failed"));
+    globalThis.__rejectQuickRequestCreate(
+      new Error("Deferred creation failed"),
+    );
     await waitFor(() =>
       window.document
         .querySelector("#proposal-error")
@@ -356,8 +373,7 @@ test("application areas compose once and retain terminals across navigation and 
     assert.equal(workspaceTerminal.isConnected, true);
     assert.equal(quickTerminal.isConnected, true);
     assert.equal(
-      runtime.attached.filter((id) => id === "session-fixture-workspace")
-        .length,
+      runtime.attached.filter((id) => id === ticketSessionId).length,
       1,
     );
     assert.equal(window.document.querySelectorAll("#terminal-views").length, 1);

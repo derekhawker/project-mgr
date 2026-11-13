@@ -46,7 +46,10 @@ const quickRequestHistoryPage = readFileSync(
   "utf8",
 );
 const repositoryToolsMenu = readFileSync(
-  join(process.cwd(), "src/views/workspace/repository-tools/RepositoryToolsMenu.jsx"),
+  join(
+    process.cwd(),
+    "src/views/workspace/repository-tools/RepositoryToolsMenu.jsx",
+  ),
   "utf8",
 );
 const directoriesPageMarkup = readFileSync(
@@ -79,7 +82,10 @@ const shell = readFileSync(
 );
 const main = readFileSync(join(process.cwd(), "src", "main.js"), "utf8");
 const workspaceSessions = readFileSync(
-  join(process.cwd(), "src/views/workspace/sessions/createWorkspaceSessions.js"),
+  join(
+    process.cwd(),
+    "src/views/workspace/sessions/createWorkspaceSessions.js",
+  ),
   "utf8",
 );
 const frontendFiles = readdirSync(join(process.cwd(), "src"), {
@@ -92,16 +98,19 @@ const directoriesNavigationButton = readFileSync(
 const uiMarkup = `${html}\n${workspaceShell}\n${rightContentShell}\n${newWorkMenu}\n${newWorkModal}\n${ownerPanel}\n${appNotice}\n${quickRequestHistoryPage}\n${repositoryToolsMenu}\n${directoriesPageMarkup}\n${directoriesNavigationButton}\n${commandResult}\n${applicationShellStatus}`;
 
 test("startup and command result feedback share the production Solid shell view", () => {
-  assert.match(html, /<div id="application-status-root"><\/div>/);
+  assert.match(html, /<div id="app-root"><\/div>/);
   assert.match(
     applicationShellStatus,
     /<div class="response-panel" id="response-panel">/,
   );
   assert.match(
     commandResult,
-    /id="command-result" class="command-result">\{message\(\)\}/,
+    /id="command-result" class="command-result">[\s\S]*?\{message\(\)\}/,
   );
-  assert.match(applicationShellView, /result: 'Waiting for app_shell_info…'/);
+  assert.match(
+    applicationShellView,
+    /result: ["']Waiting for app_shell_info…["']/,
+  );
   assert.match(main, /const shellView = createApplicationShellView\(\)/);
   assert.match(main, /loadApplicationShell\(\{ invoke, view: shellView \}\)/);
   assert.match(main, /ApplicationShellStatus\(\{ state: shellView.state \}\)/);
@@ -110,10 +119,19 @@ test("startup and command result feedback share the production Solid shell view"
     /<CommandResult message=\{\(\) => state\(\).result\} \/>/,
   );
   assert.match(main, /const setCommandResultMessage = shellView.setResult/);
-  assert.equal(
-    (main.match(/setCommandResultMessage\(message\)/g) || []).length,
-    2,
+  const workspaceSessions = readFileSync(
+    join(
+      process.cwd(),
+      "src/views/workspace/sessions/createWorkspaceSessions.js",
+    ),
+    "utf8",
   );
+  const newWorkState = readFileSync(
+    join(process.cwd(), "src/features/new-work/createNewWork.js"),
+    "utf8",
+  );
+  assert.match(workspaceSessions, /setCommandResultMessage\(message\)/);
+  assert.match(newWorkState, /setCommandResultMessage\(message\)/);
   assert.doesNotMatch(
     `${main}\n${shell}`,
     /(?:commandResult|connectionStatus|appVersion)\.textContent\s*=|connectionIndicator\.classList/,
@@ -150,10 +168,14 @@ test("ticket session commands validate the multi-session and close wire shapes",
   });
   assert.deepEqual(Object.keys(work).sort(), ["activeSessionId", "sessions"]);
   assert.equal(work.sessions[0].openCodeSessionId, "ses-1");
-  const created = await invokeCommand(invoke, "workspace_ticket_session_create", {
-    workspaceId: "workspace-1",
-    filename: "ticket.md",
-  });
+  const created = await invokeCommand(
+    invoke,
+    "workspace_ticket_session_create",
+    {
+      workspaceId: "workspace-1",
+      filename: "ticket.md",
+    },
+  );
   assert.equal(created.openCodeSessionId, "ses-ticket-new");
   const next = await invokeCommand(invoke, "workspace_ticket_session_close", {
     workspaceId: "workspace-1",
@@ -161,23 +183,28 @@ test("ticket session commands validate the multi-session and close wire shapes",
     sessionId: "ses-ticket-new",
   });
   assert.equal(next, "ses-ticket-old");
-  assert.deepEqual(payloads.map(([name]) => name), [
-    "workspace_ticket_work",
-    "workspace_ticket_session_create",
-    "workspace_ticket_session_close",
-  ]);
+  assert.deepEqual(
+    payloads.map(([name]) => name),
+    [
+      "workspace_ticket_work",
+      "workspace_ticket_session_create",
+      "workspace_ticket_session_close",
+    ],
+  );
 });
 
 test("workspace navigation accepts the persisted OpenCode status on ticket rows", async () => {
   const result = structuredClone(resultForCommand("workspace_navigation"));
-  result.workspaceTickets["workspace-1"] = [{
-    filename: "active.md",
-    title: "Active ticket",
-    status: "in_progress",
-    hasWorkSession: true,
-    opencodeStatus: "idle",
-    modifiedAt: 1,
-  }];
+  result.workspaceTickets["workspace-1"] = [
+    {
+      filename: "active.md",
+      title: "Active ticket",
+      status: "in_progress",
+      hasWorkSession: true,
+      opencodeStatus: "idle",
+      modifiedAt: 1,
+    },
+  ];
   await assert.doesNotReject(
     invokeCommand(async () => result, "workspace_navigation"),
   );
@@ -199,9 +226,16 @@ test("repository tool action status and availability are Solid-owned", () => {
     ),
     "utf8",
   );
+  const installControl = readFileSync(
+    join(
+      process.cwd(),
+      "src/views/workspace/repository-tools/InstallControl.jsx",
+    ),
+    "utf8",
+  );
   assert.match(
-    repositoryToolsMenu,
-    /createSignal\('Dependencies missing · npm install'\)/,
+    installControl,
+    /createSignal\(\s*["']Dependencies missing · npm install["']\s*,?\s*\)/,
   );
   assert.match(
     repositoryToolsMenu,
@@ -216,55 +250,68 @@ test("repository tool action status and availability are Solid-owned", () => {
   assert.doesNotMatch(main, /\.\.\.repositoryToolActions\(\)/);
   assert.match(controller, /onHandoff: async \(action, view\)/);
   assert.match(controller, /onInstall: async \(repository, view\)/);
-  assert.match(controller, /view\.setStatus\('Starting npm install…'\)/);
+  assert.match(controller, /view\.setStatus\(["']Starting npm install…["']\)/);
   assert.match(controller, /view\.setDisabled\(true\)/);
 });
 
 test("Directories repository toggle pending and checked state are Solid-owned", () => {
   const main = readFileSync(join(process.cwd(), "src", "main.js"), "utf8");
-  const controller = readFileSync(
-    join(
-      process.cwd(),
-      "src/views/workspace/repository-tools/repositoryToolsController.js",
-    ),
-    "utf8",
-  );
   const component = readFileSync(
-    join(process.cwd(), "src/views/directories/RepositoryDirectories.jsx"),
+    join(process.cwd(), "src/views/directories/RepositoryRow.jsx"),
     "utf8",
   );
-  assert.match(component, /checked=\{entry\.enabled\}/);
+  const directories = readFileSync(
+    join(process.cwd(), "src/views/directories/createDirectories.js"),
+    "utf8",
+  );
+  assert.match(component, /checked=\{props\.entry\.enabled\}/);
   assert.match(
     component,
-    /disabled=\{props\.pendingRepositoryId\(\) === entry\.repository\.id\}/,
+    /disabled=\{props\.pendingRepositoryId\(\) === repository\(\)\.id\}/,
   );
   assert.match(
     component,
-    /onChange=\{\(event\) => props\.onToggle\(entry\.repository, event\.currentTarget\.checked\)\}/,
+    /onChange=\{\(event\) =>[\s\S]*?props\.onToggleRepository\(\s*repository\(\),\s*event\.currentTarget\.checked,?\s*\)[\s\S]*?\}/,
   );
   assert.match(
-    main,
-    /setPendingRepositoryId\(repository\.id\)[\s\S]*setRepositoryEnabled\(invoke, repository\.id, enabled\)[\s\S]*await refreshDirectories\(\)[\s\S]*await refreshCatalog\(\)[\s\S]*setRepositoryStatus\(formatWorkspaceError\('Update repository', error\)\)[\s\S]*setPendingRepositoryId\(null\)/,
+    directories,
+    /setPendingRepositoryId\(repository\.id\)[\s\S]*setRepositoryEnabled\(invoke, repository\.id, enabled\)[\s\S]*await controller\.refreshDirectories\(\)[\s\S]*await controller\.refreshCatalog\(\)[\s\S]*setRepositoryStatus\(formatWorkspaceError\("Update repository", error\)\)[\s\S]*setPendingRepositoryId\(null\)/,
   );
   assert.doesNotMatch(main, /checkbox\.(?:disabled|checked)\s*=/);
 });
 
 test("ticket Workbench selection does not expose tools until row Work is activated", () => {
   const main = readFileSync(join(process.cwd(), "src", "main.js"), "utf8");
-  assert.doesNotMatch(ownerPanel, /Workspace options|attach-repository|complete-workspace|reactivate-workspace|workspace-session-form/);
-  assert.match(main, /onSelect: \(filename\) => \{[\s\S]*setWorkspaceShellVisible\(false\)/);
-  assert.match(main, /onWork: async \(filename\) => \{[\s\S]*setWorkspaceShellVisible\(true\)[\s\S]*await showSession\(session\.openCodeSessionId\)[\s\S]*ownerStatus\(\) === "Loading workspace…"\) setOwnerStatus\(""\)/);
+  assert.doesNotMatch(
+    ownerPanel,
+    /Workspace options|attach-repository|complete-workspace|reactivate-workspace|workspace-session-form/,
+  );
+  assert.match(
+    main,
+    /onSelect: \(filename\) => \{[\s\S]*setWorkspaceShellVisible\(false\)/,
+  );
+  assert.match(
+    main,
+    /onWork: \(workspace, filename\) => workWorkspaceTicket\(workspace\.id, filename\)/,
+  );
+  assert.match(
+    main,
+    /async function workWorkspaceTicket\(workspaceId, filename\)[\s\S]*setWorkspaceShellVisible\(true\)[\s\S]*await showSession\(result\.activeSessionId\)/,
+  );
 });
 
 test("proposal owner mode is presented and identified through the Solid signal", () => {
   const main = readFileSync(join(process.cwd(), "src", "main.js"), "utf8");
   const controller = readFileSync(
-    join(process.cwd(), "src/features/new-work/modal/newWorkModalController.js"),
+    join(
+      process.cwd(),
+      "src/features/new-work/modal/newWorkProposalController.js",
+    ),
     "utf8",
   );
   assert.match(
     ownerPanel,
-    /classList=\{\{ 'proposal-mode': props\.proposalMode\(\) \}\}/,
+    /classList=\{\{\s*["']proposal-mode["']:\s*props\.proposalMode\(\)\s*\}\}/,
   );
   assert.match(
     main,
@@ -272,11 +319,14 @@ test("proposal owner mode is presented and identified through the Solid signal",
   );
   assert.match(
     main,
-    /if \(proposalSessionId && proposalMode\(\)\) return 'proposal'/,
+    /if \(newWork\.proposalSessionId\(\) && proposalMode\(\)\) return "proposal"/,
   );
   assert.match(
-    main,
-    /setProposalSessionId: \(sessionId\) => \{ proposalSessionId = sessionId; \}/,
+    readFileSync(
+      join(process.cwd(), "src/features/new-work/createNewWork.js"),
+      "utf8",
+    ),
+    /setProposalSessionId: \(id\) => \{\s*proposalSessionId = id;/,
   );
   assert.match(
     controller,
@@ -292,19 +342,19 @@ test("Quick Request model and submit disabled/busy attributes are Solid-owned", 
   const main = readFileSync(join(process.cwd(), "src", "main.js"), "utf8");
   assert.match(
     ownerPanel,
-    /id="quick-model"[^>]*aria-busy=\{String\(props\.modelBusy\(\)\)\} disabled=\{props\.modelDisabled\(\)\}/,
+    /id="quick-model"[\s\S]*?aria-busy=\{String\(props\.modelBusy\(\)\)\}[\s\S]*?disabled=\{props\.modelDisabled\(\)\}/,
   );
   assert.match(
     ownerPanel,
-    /id="quick-submit"[^>]*disabled=\{props\.quickRequestBusy\(\) \|\| props\.modelDisabled\(\) \|\| props\.modelError\(\) \|\| props\.terminalRuntimeStartupFailed\(\)\}/,
+    /id="quick-submit"[\s\S]*?props\.quickRequestBusy\(\)[\s\S]*?props\.modelDisabled\(\)[\s\S]*?props\.modelError\(\)[\s\S]*?props\.terminalRuntimeStartupFailed\(\)/,
   );
   assert.match(
     ownerPanel,
-    /id="quick-request-form"[^>]*hidden aria-busy=\{String\(props\.quickRequestBusy\(\)\)\} onSubmit=\{props\.onQuickRequestSubmit\} onKeyDown=\{props\.onEnterToSubmit\}/,
+    /id="quick-request-form"[\s\S]*?hidden[\s\S]*?aria-busy=\{String\(props\.quickRequestBusy\(\)\)\}[\s\S]*?onSubmit=\{props\.onQuickRequestSubmit\}[\s\S]*?onKeyDown=\{props\.onEnterToSubmit\}/,
   );
   assert.match(
     ownerPanel,
-    /id="quick-prompt"[^>]*required[^>]*value=\{props\.quickPrompt\(\)\} onInput=\{\(event\) => props\.onQuickPromptInput\(event\.currentTarget\.value\)\}/,
+    /id="quick-prompt"[\s\S]*?required[\s\S]*?value=\{props\.quickPrompt\(\)\}[\s\S]*?props\.onQuickPromptInput\(event\.currentTarget\.value\)/,
   );
   assert.match(
     main,
@@ -326,7 +376,7 @@ test("Quick Request model and submit disabled/busy attributes are Solid-owned", 
   assert.doesNotMatch(main, /querySelectorAll\('button'\)/);
   assert.match(
     main,
-    /function setModelControls\(ready\)\s*\{\s*modelsReady = ready;\s*syncWorkspaceActionDisabled\(\);\s*\}/,
+    /function setModelControls\(ready\)\s*\{\s*modelsReady = ready;/,
   );
   assert.doesNotMatch(
     main,
@@ -336,60 +386,83 @@ test("Quick Request model and submit disabled/busy attributes are Solid-owned", 
 
 test("New-work dialog class and accessible name derive from Solid view and proposal state", () => {
   const main = readFileSync(join(process.cwd(), "src", "main.js"), "utf8");
-  assert.match(
-    newWorkModal,
-    /classList=\{\{ 'proposal-open': props\.reviewVisible\(\) \}\}/,
+  const controller = readFileSync(
+    join(
+      process.cwd(),
+      "src/features/new-work/modal/newWorkModalController.js",
+    ),
+    "utf8",
   );
   assert.match(
     newWorkModal,
-    /aria-label=\{props\.reviewVisible\(\) \? proposal\(\)\.title : labels\(\)\[2\]\}/,
+    /title=\{props\.reviewVisible\(\) \? proposal\(\)\.title : "New Workspace"\}[\s\S]*size=\{props\.reviewVisible\(\) \? "wide" : "compact"\}/,
+  );
+  assert.match(
+    newWorkModal,
+    /titleId=\{props\.reviewVisible\(\) \? "proposal-title" : "new-work-title"\}/,
   );
   assert.doesNotMatch(main, /newWorkModal\.(?:classList|setAttribute)/);
-  assert.match(main, /newWorkModal\.showModal\(\)/);
-  assert.match(main, /newWorkModal\.close\(\)/);
+  assert.match(controller, /modal\.showModal\(\)/);
+  assert.match(controller, /modal\.close\(\)/);
 });
 
 test("New-work capture alert is rendered from its Solid signal and controller setters", () => {
   const main = readFileSync(join(process.cwd(), "src", "main.js"), "utf8");
   const dialogController = readFileSync(
-    join(process.cwd(), "src/features/new-work/modal/newWorkModalController.js"),
+    join(
+      process.cwd(),
+      "src/features/new-work/modal/newWorkModalController.js",
+    ),
     "utf8",
   );
   const controller = readFileSync(
-    join(process.cwd(), "src/features/new-work/modal/newWorkModalController.js"),
+    join(
+      process.cwd(),
+      "src/features/new-work/modal/newWorkProposalController.js",
+    ),
+    "utf8",
+  );
+  const state = readFileSync(
+    join(process.cwd(), "src/features/new-work/createNewWork.js"),
     "utf8",
   );
   assert.match(
     newWorkModal,
-    /id="new-work-error"[^>]*role="alert">\{props\.captureError\(\)\}<\/p>/,
+    /id="new-work-error"[^>]*role="alert">[\s\S]*?\{props\.captureError\(\)\}[\s\S]*?<\/p>/,
   );
   assert.match(
-    main,
-    /const \[newWorkCaptureError, setNewWorkCaptureError\] = createSignal\(''\)/,
+    state,
+    /const \[newWorkCaptureError, setNewWorkCaptureError\] = createSignal\(""\)/,
   );
-  assert.match(main, /captureError: newWorkCaptureError/);
-  assert.match(main, /setCaptureError: setNewWorkCaptureError/);
-  assert.match(dialogController, /setCaptureError\(''\)/);
-  assert.match(main, /clearError: \(\) => setNewWorkCaptureError\(''\)/);
+  assert.match(state, /captureError: newWorkCaptureError/);
+  assert.match(state, /setCaptureError: setNewWorkCaptureError/);
+  assert.match(dialogController, /setCaptureError\(""\)/);
+  assert.match(state, /clearError: \(\) => setNewWorkCaptureError\(""\)/);
   assert.match(
     controller,
-    /setCaptureError\(formatWorkspaceError\('Prepare proposal', failure\)\)/,
+    /setCaptureError\(formatWorkspaceError\(["']Prepare proposal["'], failure\)\)/,
   );
   assert.doesNotMatch(main, /#new-work-error['"]\)\.textContent\s*=/);
 });
 
 test("New-work proposal-create disabled presentation is Solid-owned", () => {
-  const main = readFileSync(join(process.cwd(), "src", "main.js"), "utf8");
+  const state = readFileSync(
+    join(process.cwd(), "src/features/new-work/createNewWork.js"),
+    "utf8",
+  );
   const controller = readFileSync(
-    join(process.cwd(), "src/features/new-work/modal/quickRequestCreationController.js"),
+    join(
+      process.cwd(),
+      "src/features/new-work/modal/quickRequestCreationController.js",
+    ),
     "utf8",
   );
   assert.match(
     newWorkModal,
-    /id="proposal-create" disabled=\{props\.proposalCreateDisabled\(\)\} onClick=\{props\.onConfirm\}/,
+    /id="proposal-create"[\s\S]*?disabled=\{props\.proposalCreateDisabled\(\)\}[\s\S]*?onClick=\{props\.onConfirm\}/,
   );
-  assert.match(main, /proposalCreateDisabled, /);
-  assert.doesNotMatch(main, /proposalCreate\.disabled\s*=/);
+  assert.match(state, /proposalCreateDisabled/);
+  assert.doesNotMatch(state, /proposalCreate\.disabled\s*=/);
   assert.match(
     controller,
     /finally\s*\{[\s\S]*setCreateDisabled\(ownerCreated[\s\S]*quickRequestDirectoryReady\(\)/,
@@ -397,101 +470,124 @@ test("New-work proposal-create disabled presentation is Solid-owned", () => {
 });
 
 test("New-work proposal model selector disabled state is Solid-owned", () => {
-  const main = readFileSync(join(process.cwd(), "src", "main.js"), "utf8");
+  const state = readFileSync(
+    join(process.cwd(), "src/features/new-work/createNewWork.js"),
+    "utf8",
+  );
   assert.match(
     newWorkModal,
-    /id="proposal-model" required disabled=\{props\.proposalModelDisabled\(\)\} aria-busy=\{props\.proposalModelDisabled\(\) \? 'true' : undefined\} value=\{props\.proposalSelectedModel\(\)\}/,
+    /id="proposal-model"[\s\S]*?required[\s\S]*?disabled=\{props\.proposalModelDisabled\(\)\}[\s\S]*?aria-busy=\{props\.proposalModelDisabled\(\) \? "true" : undefined\}[\s\S]*?value=\{props\.proposalSelectedModel\(\)\}/,
   );
   assert.match(
-    main,
+    state,
     /const \[proposalModelDisabled, setProposalModelDisabled\] = createSignal\(true\)/,
   );
-  assert.match(main, /proposalModelDisabled,/);
-  assert.match(main, /setProposalModelDisabled\(true\)/);
+  assert.match(state, /proposalModelDisabled,/);
   assert.match(
-    main,
-    /view: \{[\s\S]*setProposalModels\(options\); setProposalSelectedModel\(selected\); setProposalModelDisabled\(false\)/,
+    state,
+    /setModels\(options, selected\)\s*\{\s*setProposalModels\(options\);\s*setProposalSelectedModel\(selected\);\s*setProposalModelDisabled\(false\)/,
   );
   assert.doesNotMatch(
-    main,
+    state,
     /proposalModel\.(?:replaceChildren|value)|proposalModel\.options/,
   );
-  assert.doesNotMatch(main, /proposalModel\.disabled\s*=/);
+  assert.doesNotMatch(state, /proposalModel\.disabled\s*=/);
 });
 
 test("New-work capture Continue busy state is Solid-owned by controller setters", () => {
-  const main = readFileSync(join(process.cwd(), "src", "main.js"), "utf8");
+  const state = readFileSync(
+    join(process.cwd(), "src/features/new-work/createNewWork.js"),
+    "utf8",
+  );
   const controller = readFileSync(
-    join(process.cwd(), "src/features/new-work/modal/newWorkProposalController.js"),
+    join(
+      process.cwd(),
+      "src/features/new-work/modal/newWorkProposalController.js",
+    ),
     "utf8",
   );
   const quickRequestController = readFileSync(
-    join(process.cwd(), "src/features/new-work/modal/quickRequestCreationController.js"),
+    join(
+      process.cwd(),
+      "src/features/new-work/modal/quickRequestCreationController.js",
+    ),
     "utf8",
   );
   assert.match(
     newWorkModal,
-    /type="submit" disabled=\{props\.captureDisabled\(\)\}>Continue/,
+    /type="submit"[^>]*disabled=\{props\.captureDisabled\(\)\}[^>]*>\s*Continue/,
   );
   assert.match(
-    main,
-    /const \[newWorkCaptureDisabled, setNewWorkCaptureDisabled\] = createSignal\(false\)/,
+    state,
+    /const \[newWorkCaptureDisabled, setNewWorkCaptureDisabled\] =\s*createSignal\(false\)/,
   );
-  assert.match(main, /captureDisabled: newWorkCaptureDisabled/);
+  assert.match(state, /captureDisabled: newWorkCaptureDisabled/);
   assert.match(
     controller,
     /const originalPrompt = getOriginalPrompt\(\);[\s\S]*if \(!originalPrompt\.trim\(\)\) return;[\s\S]*setBusy\(true\)[\s\S]*finally \{[\s\S]*setBusy\(false\)/,
   );
   assert.doesNotMatch(
-    main,
+    state,
     /#new-work-capture button\[type="submit"\]|continueButton\.disabled/,
   );
 });
 
 test("New-work original prompt is Solid-owned and passed unchanged through capture and Quick Request confirmation", () => {
-  const main = readFileSync(join(process.cwd(), "src", "main.js"), "utf8");
+  const state = readFileSync(
+    join(process.cwd(), "src/features/new-work/createNewWork.js"),
+    "utf8",
+  );
   const controller = readFileSync(
-    join(process.cwd(), "src/features/new-work/modal/newWorkProposalController.js"),
+    join(
+      process.cwd(),
+      "src/features/new-work/modal/newWorkProposalController.js",
+    ),
     "utf8",
   );
   const quickRequestController = readFileSync(
-    join(process.cwd(), "src/features/new-work/modal/quickRequestCreationController.js"),
+    join(
+      process.cwd(),
+      "src/features/new-work/modal/quickRequestCreationController.js",
+    ),
     "utf8",
   );
   const dialogController = readFileSync(
-    join(process.cwd(), "src/features/new-work/modal/newWorkModalController.js"),
+    join(
+      process.cwd(),
+      "src/features/new-work/modal/newWorkModalController.js",
+    ),
     "utf8",
   );
   assert.match(
     newWorkModal,
-    /id="new-work-prompt" required rows="3" placeholder="Describe the workspace" value=\{props\.prompt\(\)\} onInput=\{\(event\) => props\.setPrompt\(event\.currentTarget\.value\)\}/,
+    /id="new-work-prompt"[\s\S]*?required[\s\S]*?rows="9"[\s\S]*?placeholder=\{labels\(\)\}[\s\S]*?value=\{props\.prompt\(\)\}[\s\S]*?props\.setPrompt\(event\.currentTarget\.value\)/,
   );
   assert.match(
-    main,
-    /const \[newWorkPromptValue, setNewWorkPromptValue\] = createSignal\(''\)/,
+    state,
+    /const \[newWorkPromptValue, setNewWorkPromptValue\] = createSignal\(""\)/,
   );
   assert.match(
-    main,
+    state,
     /prompt: newWorkPromptValue,[\s\S]*setPrompt: setNewWorkPromptValue/,
   );
-  assert.match(
-    main,
-    /const \{ open: openNewWork[\s\S]*\} = newWorkModalController/,
-  );
-  assert.match(main, /setPrompt: setNewWorkPromptValue/);
-  assert.match(dialogController, /setPrompt\(''\)/);
+  assert.match(main, /const openNewWork = newWork\.open/);
+  assert.match(state, /setPrompt: setNewWorkPromptValue/);
+  assert.match(dialogController, /setPrompt\(""\)/);
   assert.match(
     controller,
     /runNewWorkProposal\([\s\S]*originalPrompt[\s\S]*renderProposal\(proposal, originalPrompt\)/,
   );
   assert.match(quickRequestController, /originalPrompt: getOriginalPrompt\(\)/);
-  assert.doesNotMatch(main, /newWorkPrompt\.value/);
+  assert.doesNotMatch(state, /newWorkPrompt\.value/);
 });
 
 test("Change Review toolbar availability and selection are WorkspaceShell state", () => {
   const main = readFileSync(join(process.cwd(), "src", "main.js"), "utf8");
   const controller = readFileSync(
-    join(process.cwd(), "src/views/workspace/change-review/changeReviewController.js"),
+    join(
+      process.cwd(),
+      "src/views/workspace/change-review/changeReviewController.js",
+    ),
     "utf8",
   );
   assert.match(workspaceShell, /hidden=\{!props\.changeReviewAvailable\(\)\}/);
@@ -545,16 +641,16 @@ test("Tools toolbar disabled state is presented by the repository-tools componen
   );
   assert.match(
     repositoryToolsMenu,
-    /triggerId="show-repo-tools"[\s\S]*disabled=\{props\.disabled\(\)\} hidden=\{!props\.available\(\)\} open=\{props\.open\(\)\}/,
+    /triggerId="show-repo-tools"[\s\S]*?disabled=\{props\.disabled\(\)\}[\s\S]*?hidden=\{!props\.available\(\)\}[\s\S]*?open=\{props\.open\(\)\}/,
   );
   assert.match(
     main,
-    /const \[repositoryToolsDisabled, setRepositoryToolsDisabled\] = createSignal\(false\)/,
+    /const \[repositoryToolsDisabled, setRepositoryToolsDisabled\]\s*=\s*createSignal\(false\)/,
   );
   assert.match(main, /disabled: repositoryToolsDisabled/);
   assert.match(
     controller,
-    /setDisabled\(true\)[\s\S]*finally \{ setDisabled\(false\); \}/,
+    /setDisabled\(true\)[\s\S]*finally\s*\{\s*setDisabled\(false\);\s*\}/,
   );
   assert.doesNotMatch(main, /repoToolsButton\.disabled/);
 });
@@ -562,62 +658,87 @@ test("Tools toolbar disabled state is presented by the repository-tools componen
 test("New-work progress is composed by Solid with shared rows, not a reparented child root", () => {
   const main = readFileSync(join(process.cwd(), "src", "main.js"), "utf8");
   const controller = readFileSync(
-    join(process.cwd(), "src/features/new-work/modal/workspaceCreationController.js"),
+    join(
+      process.cwd(),
+      "src/features/new-work/modal/workspaceCreationController.js",
+    ),
     "utf8",
   );
   const progress = readFileSync(
     join(process.cwd(), "src/features/new-work/modal/SetupProgressPanel.jsx"),
     "utf8",
   );
-  assert.match(
-    progress,
-    /id="new-work-progress"[^>]*hidden=\{!props\.visible\(\)\}[^>]*aria-label="Setup progress" aria-live="polite"/,
+  const progressList = readFileSync(
+    join(process.cwd(), "src/features/new-work/modal/SetupProgressList.jsx"),
+    "utf8",
   );
   assert.match(
     progress,
-    /id="new-work-progress-steps"><SetupProgressList rows=\{props\.rows\} \/>/,
+    /id="new-work-progress"[\s\S]*?hidden=\{!props\.visible\(\)\}[\s\S]*?aria-label="Setup progress"[\s\S]*?aria-live="polite"/,
+  );
+  assert.match(
+    progress,
+    /id="new-work-progress-steps">[\s\S]*?<SetupProgressList rows=\{props\.rows\} \/>/,
   );
   assert.match(
     newWorkModal,
-    /newWorkProgressDestination\(\s*props\.captureVisible\(\), props\.reviewVisible\(\), proposal\(\)\.workType/,
+    /newWorkProgressDestination\(\s*props\.captureVisible\(\),\s*props\.reviewVisible\(\),\s*proposal\(\)\.workType/,
   );
-  for (const destination of ["capture", "workspace", "quick_request"]) {
+  for (const destination of ["capture", "quick_request"]) {
     assert.ok(
-      newWorkModal.includes(
-        `<Show when={progressDestination() === '${destination}'}>`,
-      ),
+      new RegExp(
+        `<Show when=\\{progressDestination\\(\\) === ["']${destination}["']\\}>`,
+      ).test(newWorkModal),
     );
   }
-  assert.equal(
-    (
-      newWorkModal.match(
-        /<SetupProgressPanel visible=\{props\.progressVisible\} rows=\{props\.progressRows\} \/>/g,
-      ) || []
-    ).length,
-    3,
+  assert.equal((newWorkModal.match(/<SetupProgressPanel\b/g) || []).length, 2);
+  assert.match(
+    readFileSync(
+      join(process.cwd(), "src/features/new-work/createNewWork.js"),
+      "utf8",
+    ),
+    /progressRows,[\s\S]*captureError: newWorkCaptureError/,
   );
-  assert.match(main, /progressRows,[\s\S]*captureError: newWorkCaptureError/);
-  assert.match(main, /setProgressVisible\(true\)/);
+  assert.match(
+    readFileSync(
+      join(process.cwd(), "src/features/new-work/createNewWork.js"),
+      "utf8",
+    ),
+    /function setProgress\(/,
+  );
   assert.doesNotMatch(
     main,
     /progressPanel|progressSteps|progressAnchor|renderSolid\(\(\) => SetupProgressList/,
   );
-  assert.match(main, /\['workspace-setup-progress',/);
+  assert.match(main, /["']workspace-setup-progress["']/);
   assert.match(
-    main,
-    /setProgressRows\(\(rows\) => new Map\(rows\)\.set\(key, \{ label, status, detail \}\)\)/,
+    readFileSync(
+      join(process.cwd(), "src/features/new-work/createNewWork.js"),
+      "utf8",
+    ),
+    /setProgressRows\(\(rows\) =>\s*new Map\(rows\)\.set\(key, \{ label, status, detail \}\),?\s*\)/,
   );
-  assert.match(progress, /<pre>\{row\.detail \|\| ''\}<\/pre>/);
-  assert.match(controller, /Workspace create[\s\S]*failed/);
+  assert.match(progressList, /<pre>\{row\.detail \|\| ["']{2}\}<\/pre>/);
+  assert.match(
+    controller,
+    /setError\(formatWorkspaceError\("Create workspace", error\)\)/,
+  );
 });
 
 test("Workspace navigation owns its list and busy attribute through Solid", () => {
   const main = readFileSync(join(process.cwd(), "src", "main.js"), "utf8");
-  const navigation = readFileSync(
-    join(process.cwd(), "src/views/workspace/navigation/WorkspaceNavigation.jsx"),
+  const applicationRoot = readFileSync(
+    join(process.cwd(), "src/application/ApplicationRoot.jsx"),
     "utf8",
   );
-  assert.match(html, /id="workspace-navigation-root"/);
+  const navigation = readFileSync(
+    join(
+      process.cwd(),
+      "src/views/workspace/navigation/WorkspaceNavigation.jsx",
+    ),
+    "utf8",
+  );
+  assert.match(html, /id="app-root"/);
   assert.doesNotMatch(html, /id="workspace-list"/);
   assert.match(
     navigation,
@@ -627,8 +748,13 @@ test("Workspace navigation owns its list and busy attribute through Solid", () =
     main,
     /const \[navigationBusy, setNavigationBusy\] = createSignal\(true\)/,
   );
+  assert.match(
+    applicationRoot,
+    /<WorkspaceNavigation \{\.\.\.props\.workspaceNavigation\} \/>/,
+  );
   assert.match(main, /busy: navigationBusy/);
   assert.match(main, /setNavigationBusy,/);
+  assert.match(main, /workspaceNavigation: workspaceNavigationProps/);
   assert.doesNotMatch(
     main,
     /workspaceList|querySelector\(['"]#workspace-list['"]\)/,
@@ -636,18 +762,20 @@ test("Workspace navigation owns its list and busy attribute through Solid", () =
 });
 
 test("repository directory management is a page opened from top navigation", () => {
-  const nav =
-    html.match(/<aside class="navigation"[\s\S]*?<\/aside>/)?.[0] || "";
-  assert.match(nav, /id="show-directories-root"/);
-  assert.match(
-    nav,
-    /id="workspace-navigation-root"[\s\S]*id="show-directories-root"[\s\S]*id="new-work-menu-root"/,
+  const applicationRoot = readFileSync(
+    join(process.cwd(), "src/application/ApplicationRoot.jsx"),
+    "utf8",
   );
+  const nav =
+    applicationRoot.match(/<aside class="navigation"[\s\S]*?<\/aside>/)?.[0] ||
+    "";
+  assert.match(nav, /props\.workspaceNavigation/);
+  assert.match(nav, /props\.directoriesNavigationButton\(\)/);
   assert.match(
     directoriesNavigationButton,
-    /id="show-directories"[^>]*aria-label="Open directories"[^>]*onClick=\{props\.onOpen\}>☰ Directories/,
+    /id="show-directories"[\s\S]*aria-label="Open repositories"[\s\S]*onClick=\{props\.onOpen\}[\s\S]*Repos/,
   );
-  assert.match(rightContentShell, /id="directories-page-root"/);
+  assert.match(rightContentShell, /props\.directoriesPage\?\.\(\)/);
   const directoriesPage = readFileSync(
     join(process.cwd(), "src/views/directories/DirectoriesPage.jsx"),
     "utf8",
@@ -659,20 +787,27 @@ test("repository directory management is a page opened from top navigation", () 
   );
   assert.match(
     directoriesPage,
-    /id="directories-page"[\s\S]*id="directories-library-form-root"[\s\S]*id="directory-list"[\s\S]*id="directories-back"/,
+    /id="directories-page"[\s\S]*props\.libraryForm\?\.\(\)[\s\S]*id="directory-list"/,
   );
   assert.match(directoriesPage, /hidden={!props\.visible\(\)}/);
   assert.match(
     directoriesPage,
-    /id="repository-status" role="status" aria-live="polite">\{props\.status\(\)\}/,
+    /id="repository-status"[^>]*role="status"[^>]*aria-live="polite">[\s\S]*?\{props\.status\(\)\}/,
   );
   assert.match(
-    main,
-    /const \[repositoryStatus, setRepositoryStatus\] = createSignal\(''\)/,
+    readFileSync(
+      join(process.cwd(), "src/views/directories/createDirectories.js"),
+      "utf8",
+    ),
+    /const \[repositoryStatus, setRepositoryStatus\]\s*=\s*createSignal\(""\)/,
+  );
+  const directoriesState = readFileSync(
+    join(process.cwd(), "src/views/directories/createDirectories.js"),
+    "utf8",
   );
   assert.match(
-    main,
-    /DirectoriesPage\(\{ visible: directoriesVisible, status: repositoryStatus/,
+    directoriesState,
+    /DirectoriesPage\(\{[\s\S]*visible: destination\.visible[\s\S]*status: repositoryStatus/,
   );
   assert.doesNotMatch(
     main,
@@ -682,19 +817,18 @@ test("repository directory management is a page opened from top navigation", () 
     main,
     /const \[directoriesVisible, setDirectoriesVisible\] = createSignal\(false\)/,
   );
-  assert.match(main, /directoriesController\.showPage\(\)/);
+  assert.match(directoriesState, /controller\.showPage\(\)/);
   assert.match(
     controller,
-    /setFullRequestVisible\(false\); setDirectoriesVisible\(true\)/,
+    /setFullRequestVisible\(false\)[\s\S]*setDirectoriesVisible\(true\)/,
   );
-  assert.match(main, /directoriesController\.returnFromPage\(\)/);
-  assert.match(main, /DirectoriesNavigationButton\(\{ onOpen:/);
   assert.match(
-    controller,
-    /function returnFromPage\(\) \{ setDirectoriesVisible\(false\);/,
+    directoriesState,
+    /DirectoriesNavigationButton\(\s*\{\s*onOpen:/,
   );
+  assert.match(controller, /function showPage\(\)/);
   assert.doesNotMatch(main, /#directories-page['"]\)\.hidden/);
-  assert.match(directoriesPage, /id="directories-library-form-root"/);
+  assert.match(directoriesPage, /props\.libraryForm\?\.\(\)/);
   const directoriesForm = readFileSync(
     join(process.cwd(), "src/views/directories/DirectoriesLibraryForm.jsx"),
     "utf8",
@@ -708,10 +842,13 @@ test("repository directory management is a page opened from top navigation", () 
     /id="add-repository-directories"[^>]*disabled=\{props\.addingDirectories\(\)\}/,
   );
   assert.match(
-    main,
-    /const \[repositoryDirectoriesBusy, setRepositoryDirectoriesBusy\] = createSignal\(false\)/,
+    directoriesState,
+    /const \[repositoryDirectoriesBusy, setRepositoryDirectoriesBusy\]\s*=\s*createSignal\(false\)/,
   );
-  assert.match(main, /addingDirectories: repositoryDirectoriesBusy/);
+  assert.match(
+    directoriesState,
+    /addingDirectories: repositoryDirectoriesBusy/,
+  );
   assert.doesNotMatch(main, /add-repository-directories['"]\)\.disabled/);
   assert.match(directoriesPage, /id="directory-list"/);
   assert.doesNotMatch(
@@ -725,19 +862,34 @@ test("Workspace creation form offers direct repository linking and requires an e
   assert.match(newWorkModal, /id="workspace-repository-select"/);
   assert.match(newWorkModal, /Create an empty workspace/);
   assert.match(newWorkModal, /id="workspace-create-name"/);
-  assert.match(newWorkModal, /id="workspace-create-description"[\s\S]*required/);
+  assert.match(
+    newWorkModal,
+    /id="workspace-create-description"[\s\S]*required/,
+  );
   assert.match(newWorkModal, /form="workspace-create-form"/);
-  assert.doesNotMatch(newWorkModal, /proposal-repositories|workspace-review-directory|proposal-prompt-preview/);
+  assert.doesNotMatch(
+    newWorkModal,
+    /proposal-repositories|workspace-review-directory|proposal-prompt-preview/,
+  );
   const createWork = readFileSync(
     join(process.cwd(), "src/features/new-work/createNewWork.js"),
     "utf8",
   );
   const controller = readFileSync(
-    join(process.cwd(), "src/features/new-work/modal/workspaceCreationController.js"),
+    join(
+      process.cwd(),
+      "src/features/new-work/modal/workspaceCreationController.js",
+    ),
     "utf8",
   );
-  assert.match(createWork, /workspaceTitleFromRepositoryName\(repository\.name\)/);
-  assert.match(controller, /A short description is required for an empty workspace/);
+  assert.match(
+    createWork,
+    /workspaceTitleFromRepositoryName\(repository\.name\)/,
+  );
+  assert.match(
+    controller,
+    /A short description is required for an empty workspace/,
+  );
   assert.doesNotMatch(controller, /showSession|submitNewWorkStartingPrompt/);
 });
 
@@ -747,6 +899,10 @@ test("Quick Requests use a dedicated available-height page with a visible way ba
     join(process.cwd(), "src/views/quick-requests/QuickRequestList.jsx"),
     "utf8",
   );
+  const applicationRoot = readFileSync(
+    join(process.cwd(), "src/application/ApplicationRoot.jsx"),
+    "utf8",
+  );
   const quickHistoryController = readFileSync(
     join(
       process.cwd(),
@@ -754,28 +910,26 @@ test("Quick Requests use a dedicated available-height page with a visible way ba
     ),
     "utf8",
   );
-  assert.match(quickLists, /quick-request-list/);
+  assert.match(applicationRoot, /<ul id="quick-request-list"/);
+  assert.match(applicationRoot, /props\.quickRequestList\(\)/);
   assert.match(
     quickRequestHistoryPage,
-    /<section id="quick-request-full-list"[^>]*hidden=\{!props\.visible\(\)\}/,
+    /<section[\s\S]*?id="quick-request-full-list"[\s\S]*?hidden=\{!props\.visible\(\)\}/,
   );
   assert.match(
     quickRequestHistoryPage,
     /id="quick-request-search"[^>]*onInput=/,
   );
   assert.match(quickRequestHistoryPage, /class="quick-request-full-items"/);
-  assert.match(
-    ownerPanel,
-    /id="quick-request-back"[^>]*>Back to Quick Requests</,
+  const historyButton = readFileSync(
+    join(
+      process.cwd(),
+      "src/views/quick-requests/QuickRequestHistoryButton.jsx",
+    ),
+    "utf8",
   );
-  assert.match(
-    ownerPanel,
-    /id="quick-request-terminal-actions"[^>]*hidden=\{!props\.quickRequestTerminalActions\(\)\}/,
-  );
-  assert.match(
-    main,
-    /quickRequestTerminalActions: quickRequestTerminalActionsVisible/,
-  );
+  assert.match(historyButton, /id="show-history"/);
+  assert.match(historyButton, /label="Open all Quick Requests"/);
   assert.match(
     quickHistoryController,
     /await listQuickRequests\(invoke, history\)/,
@@ -783,7 +937,7 @@ test("Quick Requests use a dedicated available-height page with a visible way ba
   assert.match(management, /request\.created_at >= recent_cutoff/);
   assert.match(
     rightContentShell,
-    /'quick-request-terminal-page': props\.quickRequestTerminalPage\(\)/,
+    /"quick-request-terminal-page": props\.quickRequestTerminalPage\(\)/,
   );
   assert.match(main, /setQuickRequestTerminalPage\(isQuickRequest\)/);
   assert.doesNotMatch(
@@ -793,7 +947,7 @@ test("Quick Requests use a dedicated available-height page with a visible way ba
   assert.match(main, /setWorkspaceShellVisible\(!isQuickRequest\)/);
   assert.match(
     ownerPanel,
-    /id="selected-owner" hidden=\{!props\.visible\(\)\}/,
+    /id="selected-owner"[\s\S]*hidden=\{!props\.visible\(\)\}/,
   );
   assert.match(main, /visible: selectedOwnerVisible/);
   assert.doesNotMatch(
@@ -809,7 +963,7 @@ test("Quick Requests use a dedicated available-height page with a visible way ba
   );
   assert.match(
     quickRequestHistoryPage,
-    /id="new-quick-request"[^>]*onClick=\{props\.onNew\}>New Quick Request/,
+    /id="new-quick-request"[\s\S]*?onClick=\{props\.onNew\}[\s\S]*?New Quick Request/,
   );
   assert.match(
     quickHistoryController,
@@ -818,13 +972,16 @@ test("Quick Requests use a dedicated available-height page with a visible way ba
   assert.match(quickLists, /class=\{styles\.prompt\}/);
   assert.match(
     quickLists,
-    /<DeleteButton itemName=\{`Quick Request:[\s\S]*onClick=\{\(\) => props\.onDelete\(record\)\}/,
+    /<DeleteButton[\s\S]*?itemName=\{`Quick Request:[\s\S]*?onClick=\{\(\) => props\.onDelete\(record\(\)\)\}/,
   );
   assert.match(
     quickLists,
-    /<OpenItemButton\s+itemType="Quick Request"\s+itemName=\{prompt\(\)\}\s+onClick=\{\(\) => props\.onOpen\(record\)\}/,
+    /<OpenItemButton\s+itemType="Quick Request"\s+itemName=\{prompt\(\)\}\s+onClick=\{\(\) => props\.onOpen\(record\(\)\)\}/,
   );
-  assert.match(main, /deleteQuickRequestRecord\(record, true\)/);
+  assert.match(
+    quickHistoryController,
+    /deleteQuickRequestRecord\(record, history\)/,
+  );
   assert.doesNotMatch(quickLists, /dismiss|promote|retry/);
 });
 
@@ -841,15 +998,18 @@ test("Quick Requests heading has a separate chevron button to open the full list
     ),
     "utf8",
   );
+  assert.match(historyButton, /<IconButton\s+id="show-history"/);
+  assert.match(historyButton, /label="Open all Quick Requests"/);
   assert.match(
     historyButton,
-    /<IconButton\s+id="show-history"/,
+    /<Icon name="chevron" muted class=\{styles\.chevron\}/,
   );
-  assert.match(historyButton, /label="Open all Quick Requests"/);
-  assert.match(historyButton, /<Icon name="chevron" muted class=\{styles\.chevron\}/);
   assert.match(historyButton, /onClick=\{props\.onShow\}/);
   const quickRequestFactory = readFileSync(
-    new URL("../src/views/quick-requests/createQuickRequests.js", import.meta.url),
+    new URL(
+      "../src/views/quick-requests/createQuickRequests.js",
+      import.meta.url,
+    ),
     "utf8",
   );
   assert.match(
@@ -886,25 +1046,31 @@ test("Quick Requests heading has a separate chevron button to open the full list
 test("New-work offers direct Workspace creation and a separate Quick Request proposal flow", () => {
   const main = readFileSync(join(process.cwd(), "src", "main.js"), "utf8");
   const controller = readFileSync(
-    join(process.cwd(), "src/features/new-work/modal/newWorkModalController.js"),
+    join(
+      process.cwd(),
+      "src/features/new-work/modal/newWorkModalController.js",
+    ),
     "utf8",
   );
   const quickRequestController = readFileSync(
-    join(process.cwd(), "src/features/new-work/modal/quickRequestCreationController.js"),
+    join(
+      process.cwd(),
+      "src/features/new-work/modal/quickRequestCreationController.js",
+    ),
     "utf8",
   );
   assert.match(
     newWorkModal,
     /id="new-work-workspace"[\s\S]*id="workspace-create-form"[\s\S]*id="new-work"[\s\S]*id="new-work-review"/,
   );
-  assert.doesNotMatch(
-    html,
-    /id="new-workspace"|id="empty-workspaces"/,
-  );
+  assert.doesNotMatch(html, /id="new-workspace"|id="empty-workspaces"/);
   assert.match(newWorkModal, /id="workspace-repository-select"/);
   assert.match(newWorkModal, /Create an empty workspace/);
   assert.match(newWorkModal, /Short description/);
-  assert.doesNotMatch(newWorkModal, /proposal-prompt-preview|proposal-starting-prompt/);
+  assert.doesNotMatch(
+    newWorkModal,
+    /proposal-prompt-preview|proposal-starting-prompt/,
+  );
   assert.match(newWorkModal, /form="workspace-create-form"/);
   assert.match(controller, /modal\.showModal\(\)/);
   assert.match(
@@ -915,7 +1081,10 @@ test("New-work offers direct Workspace creation and a separate Quick Request pro
   assert.doesNotMatch(html, /<select id="new-work-type"/);
   assert.match(newWorkModal, /What do you want OpenCode to do\?/);
   assert.match(newWorkModal, /id="proposal-create"/);
-  assert.match(controller, /if \(workType === "workspace"\)[\s\S]*setView\("workspace"\)/);
+  assert.match(
+    controller,
+    /if \(workType === "workspace"\)[\s\S]*setView\("workspace"\)/,
+  );
   assert.match(newWorkModal, /id="quick-request-directory"/);
   assert.match(
     quickRequestController,
@@ -963,7 +1132,10 @@ test("regular Workspace navigation does not render retained legacy Task records"
     "utf8",
   );
   const navigation = readFileSync(
-    join(process.cwd(), "src/views/workspace/navigation/WorkspaceNavigation.jsx"),
+    join(
+      process.cwd(),
+      "src/views/workspace/navigation/WorkspaceNavigation.jsx",
+    ),
     "utf8",
   );
   const renderNavigation =
@@ -1009,14 +1181,27 @@ test("Workspace creation links a repository without creating an OpenCode session
     "utf8",
   );
   const controller = readFileSync(
-    join(process.cwd(), "src/features/new-work/modal/workspaceCreationController.js"),
+    join(
+      process.cwd(),
+      "src/features/new-work/modal/workspaceCreationController.js",
+    ),
     "utf8",
   );
-  const rust = readFileSync(join(process.cwd(), "src-tauri/src/lib.rs"), "utf8");
+  const rust = readFileSync(
+    join(process.cwd(), "src-tauri/src/lib.rs"),
+    "utf8",
+  );
   assert.match(createNewWork, /onWorkspaceSubmit: workspaceCreation\.create/);
-  assert.match(controller, /createWorkspace\([\s\S]*isEmptyWorkspace \? null : choice/);
-  assert.doesNotMatch(controller, /createSession|workspace_session_create|submit.*Prompt/);
-  const handler = rust.match(/async fn workspace_create\([\s\S]*?\n\}/)?.[0] || "";
+  assert.match(
+    controller,
+    /createWorkspace\([\s\S]*isEmptyWorkspace \? null : choice/,
+  );
+  assert.doesNotMatch(
+    controller,
+    /createSession|workspace_session_create|submit.*Prompt/,
+  );
+  const handler =
+    rust.match(/async fn workspace_create\([\s\S]*?\n\}/)?.[0] || "";
   assert.match(handler, /create_single_repository_workspace/);
   assert.doesNotMatch(handler, /Runtime|session_create|OpenCode/);
 });
@@ -1045,7 +1230,7 @@ test("pending starting-prompt editor and submit busy state are WorkspaceOwnerPan
   );
   assert.match(
     controller,
-    /setDisabled\(true\);[\s\S]*await showSession\(action\.sessionId\);[\s\S]*submitStartingPrompt\(invoke, action, promptText\)[\s\S]*clearPendingAction\(\);[\s\S]*setPromptVisible\(false\);[\s\S]*setPromptText\(''\);[\s\S]*finally \{\s*setDisabled\(false\);/,
+    /setDisabled\(true\);[\s\S]*await showSession\(action\.sessionId\);[\s\S]*submitStartingPrompt\(invoke, action, promptText\)[\s\S]*clearPendingAction\(\);[\s\S]*setPromptVisible\(false\);[\s\S]*setPromptText\(""\);[\s\S]*finally \{\s*setDisabled\(false\);/,
   );
   assert.doesNotMatch(
     main,
@@ -1196,8 +1381,10 @@ test("contracts leave opaque JSON only at explicitly reviewed protocol/form seam
     }
     if (value.type === "object") {
       assert.ok(
-        value.properties || value.additionalProperties === true ||
-          (value.additionalProperties && typeof value.additionalProperties === "object"),
+        value.properties ||
+          value.additionalProperties === true ||
+          (value.additionalProperties &&
+            typeof value.additionalProperties === "object"),
         `object lacks fields at ${path}`,
       );
     }
