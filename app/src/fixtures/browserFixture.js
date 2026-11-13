@@ -213,6 +213,20 @@ export async function invokeBrowserFixture(name, payload = {}) {
               hasWorkSession: false,
               modifiedAt: timestamp - 1,
             },
+            {
+              filename: "example-draft-session.md",
+              title: "Example draft in progress",
+              status: "draft",
+              hasWorkSession: true,
+              modifiedAt: timestamp - 2,
+            },
+            {
+              filename: "example-new-draft.md",
+              title: "Example new draft",
+              status: "draft",
+              hasWorkSession: false,
+              modifiedAt: timestamp - 3,
+            },
           ],
         },
       };

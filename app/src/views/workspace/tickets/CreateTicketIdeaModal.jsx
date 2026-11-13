@@ -86,10 +86,15 @@ export function CreateTicketIdeaModal(props) {
     >
       <div class={styles.progress}>
         <ol class={styles.steps} aria-label="Ticket creation steps">
-          <li aria-current={step() === 1 ? "step" : undefined} classList={{ [styles.current]: step() === 1 }}>1</li>
-          <li aria-current={step() === 2 ? "step" : undefined} classList={{ [styles.current]: step() === 2 }}>2</li>
+          <li aria-current={step() === 1 ? "step" : undefined} classList={{ [styles.current]: step() === 1 }}>
+            <span class={styles.stepNumber}>1</span>
+            <span class={styles.stepLabel}>Description</span>
+          </li>
+          <li aria-current={step() === 2 ? "step" : undefined} classList={{ [styles.current]: step() === 2 }}>
+            <span class={styles.stepNumber}>2</span>
+            <span class={styles.stepLabel}>Review</span>
+          </li>
         </ol>
-        <p class={styles.stepSummary}>{step() === 1 ? "Description" : "Review"}</p>
       </div>
       <ErrorMessage message={error} />
       <Show when={step() === 1}>

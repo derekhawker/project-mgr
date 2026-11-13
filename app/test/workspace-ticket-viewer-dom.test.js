@@ -120,8 +120,12 @@ test("ticket idea modal marks both current steps, keeps failed edits open, and c
   try {
     view.host.querySelector("button").click();
     assert.equal(view.host.querySelectorAll('[aria-label="Ticket creation steps"] li').length, 2);
-    assert.equal(view.host.querySelector('[aria-current="step"]').textContent, "1");
-    assert.match(view.host.querySelector("dialog").textContent, /Description/);
+    assert.equal(view.host.querySelector('[aria-current="step"]').firstElementChild.textContent, "1");
+    assert.deepEqual(
+      [...view.host.querySelectorAll('[aria-label="Ticket creation steps"] li')].map((item) => item.lastElementChild.textContent),
+      ["Description", "Review"],
+      "both step labels remain visible on the description step",
+    );
     const idea = view.host.querySelector("#ticket-idea");
     idea.value = "Capture onboarding pain";
     idea.dispatchEvent(new Event("input", { bubbles: true }));
@@ -129,8 +133,12 @@ test("ticket idea modal marks both current steps, keeps failed edits open, and c
     await flush();
     assert.deepEqual(proposals, ["Capture onboarding pain"]);
     assert.deepEqual(creations, [], "proposal review does not create a file");
-    assert.equal(view.host.querySelector('[aria-current="step"]').textContent, "2");
-    assert.match(view.host.querySelector("dialog").textContent, /Review/);
+    assert.equal(view.host.querySelector('[aria-current="step"]').firstElementChild.textContent, "2");
+    assert.deepEqual(
+      [...view.host.querySelectorAll('[aria-label="Ticket creation steps"] li')].map((item) => item.lastElementChild.textContent),
+      ["Description", "Review"],
+      "both step labels remain visible on the review step",
+    );
     assert.equal(view.host.querySelectorAll('[aria-label="Ticket creation steps"] li').length, 2);
     const title = view.host.querySelector("#ticket-title");
     const body = view.host.querySelector("#ticket-body");
@@ -256,7 +264,7 @@ test("archive toggle reports state and clears selection; create opens the first 
   });
   try {
     [...view.host.querySelectorAll("button")].find((button) => button.textContent === "Create ticket").click();
-    assert.equal(view.host.querySelector('[aria-label="Ticket creation steps"] [aria-current="step"]')?.textContent, "1");
+    assert.equal(view.host.querySelector('[aria-label="Ticket creation steps"] [aria-current="step"]')?.firstElementChild.textContent, "1");
     assert.match(view.host.querySelector("dialog").textContent, /Description/);
     view.host.querySelector('button[aria-label="Refresh tickets"]').click();
     const archiveSwitch = view.host.querySelector('input[role="switch"]');

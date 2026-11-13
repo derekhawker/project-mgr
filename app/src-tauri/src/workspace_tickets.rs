@@ -1074,7 +1074,8 @@ pub fn list(directory: &Path) -> Result<Vec<Ticket>, String> {
     Ok(tickets)
 }
 
-/// Lists only tickets shown in persistent Workspace navigation.
+/// Lists open tickets needed by persistent navigation: all countable tickets,
+/// including drafts, plus the in-progress and blocked rows shown there.
 pub fn list_for_navigation(directory: &Path) -> Result<Vec<NavigationTicket>, String> {
     if !directory.exists() {
         return Ok(Vec::new());
@@ -1093,7 +1094,7 @@ pub fn list_for_navigation(directory: &Path) -> Result<Vec<NavigationTicket>, St
         let file = fs::File::open(&path).map_err(|e| format!("{}: {e}", path.display()))?;
         let (title, status, has_work_session, opencode_status) =
             navigation_metadata(file, fallback).map_err(|e| format!("{}: {e}", path.display()))?;
-        if !matches!(status.as_str(), "in_progress" | "blocked") {
+        if !matches!(status.as_str(), "draft" | "in_progress" | "blocked") {
             continue;
         }
         tickets.push(NavigationTicket {
@@ -2087,7 +2088,7 @@ mod tests {
         assert!(record_opencode_status(&path, "unknown").is_err());
     }
     #[test]
-    fn navigation_lists_only_active_statuses_newest_first_by_file_mtime() {
+    fn navigation_data_includes_countable_statuses_newest_first_by_file_mtime() {
         use std::time::{Duration, SystemTime};
 
         let root = tempfile::tempdir().unwrap();
@@ -2096,6 +2097,8 @@ mod tests {
             ("blocked.md", "blocked", 30),
             ("draft.md", "draft", 40),
             ("newer.md", "in_progress", 20),
+            ("done.md", "done", 50),
+            ("cancelled.md", "cancelled", 60),
         ];
         for (name, status, seconds) in files {
             let path = root.path().join(name);
@@ -2119,9 +2122,11 @@ mod tests {
                 .iter()
                 .map(|ticket| ticket.filename.as_str())
                 .collect::<Vec<_>>(),
-            ["blocked.md", "newer.md", "older.md"],
+            ["draft.md", "blocked.md", "newer.md", "older.md"],
         );
-        assert!(tickets.iter().all(|ticket| ticket.status != "draft"));
+        assert!(tickets.iter().all(|ticket| {
+            matches!(ticket.status.as_str(), "draft" | "in_progress" | "blocked")
+        }));
     }
 
     #[test]
