@@ -35,6 +35,8 @@ defaults for the checkout arrangement: a dedicated worktree and branch unless
 project instructions specify another arrangement. A replacement session should
 resume from the ticket's recorded checkout and branch when the project tracks
 them.
+Prefer prefixing the ticket-based worktree name with the repository name (for
+example, `project-mgr-<ticket-slug>`).
 
 Before work, read the canonical Markdown ticket, confirm its identity and status,
 and follow its approved scope. When a session is created or resumed, ensure its
