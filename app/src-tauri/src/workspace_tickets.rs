@@ -662,7 +662,9 @@ pub fn record_observed_worktree(
         branch: (!branch.is_empty()).then_some(branch),
     };
     let updated = record_ticket_worktree(&original, Some(&worktree))?;
-    write_ticket_markdown_safely(&ticket, &original, &updated)?;
+    if updated != original {
+        write_ticket_markdown_safely(&ticket, &original, &updated)?;
+    }
     Ok(worktree)
 }
 
@@ -1674,8 +1676,9 @@ mod tests {
     }
 
     #[test]
-    fn observed_worktree_requires_a_bound_session_and_same_git_repository() {
+    fn observed_worktree_validates_binding_and_persists_only_changed_metadata() {
         use std::process::Command;
+        use std::time::{Duration, SystemTime};
         let root = tempfile::tempdir().unwrap();
         let repository = root.path().join("repo");
         let tickets = root.path().join("tickets");
@@ -1737,6 +1740,39 @@ mod tests {
         let observed =
             record_observed_worktree(&tickets, &repository, "ticket.md", "ses_bound", &worktree)
                 .unwrap();
+        let ticket_path = tickets.join("ticket.md");
+        let first_markdown = fs::read_to_string(&ticket_path).unwrap();
+        let old_modified = SystemTime::UNIX_EPOCH + Duration::from_secs(10);
+        fs::File::open(&ticket_path)
+            .unwrap()
+            .set_times(fs::FileTimes::new().set_modified(old_modified))
+            .unwrap();
+        record_observed_worktree(&tickets, &repository, "ticket.md", "ses_bound", &worktree)
+            .unwrap();
+        assert_eq!(fs::read_to_string(&ticket_path).unwrap(), first_markdown);
+        assert_eq!(
+            fs::metadata(&ticket_path).unwrap().modified().unwrap(),
+            old_modified
+        );
+        let other_ticket = tickets.join("other.md");
+        fs::write(
+            &other_ticket,
+            "---\ntitle: Other\nstatus: in_progress\n---\n",
+        )
+        .unwrap();
+        let other_modified = SystemTime::UNIX_EPOCH + Duration::from_secs(20);
+        fs::File::open(&other_ticket)
+            .unwrap()
+            .set_times(fs::FileTimes::new().set_modified(other_modified))
+            .unwrap();
+        assert_eq!(
+            list_for_navigation(&tickets)
+                .unwrap()
+                .iter()
+                .map(|ticket| ticket.filename.as_str())
+                .collect::<Vec<_>>(),
+            ["other.md", "ticket.md"]
+        );
         assert_eq!(
             observed.path,
             worktree.canonicalize().unwrap().to_string_lossy()
@@ -1755,6 +1791,7 @@ mod tests {
         );
         let mut runtime = FakeRuntime::default();
         runtime.known_sessions.insert("ses_bound".into());
+        runtime.session_directory = Some(worktree.canonicalize().unwrap());
         let opened = work(
             &tickets,
             &repository,
@@ -1765,6 +1802,51 @@ mod tests {
         .unwrap();
         assert_eq!(opened.active_session_id, "ses_bound");
         assert_eq!(runtime.attached[0].1, worktree.canonicalize().unwrap());
+        assert_eq!(
+            fs::metadata(&ticket_path).unwrap().modified().unwrap(),
+            old_modified
+        );
+        work(
+            &tickets,
+            &repository,
+            "Workspace",
+            "ticket.md",
+            &mut runtime,
+        )
+        .unwrap();
+        assert_eq!(runtime.attached.len(), 2);
+        assert_eq!(
+            fs::metadata(&ticket_path).unwrap().modified().unwrap(),
+            old_modified
+        );
+        assert_eq!(
+            list_for_navigation(&tickets)
+                .unwrap()
+                .iter()
+                .map(|ticket| ticket.filename.as_str())
+                .collect::<Vec<_>>(),
+            ["other.md", "ticket.md"]
+        );
+
+        let changed =
+            record_observed_worktree(&tickets, &repository, "ticket.md", "ses_bound", &repository)
+                .unwrap();
+        assert_eq!(
+            changed.path,
+            repository.canonicalize().unwrap().to_string_lossy()
+        );
+        assert_ne!(
+            fs::metadata(&ticket_path).unwrap().modified().unwrap(),
+            old_modified
+        );
+        assert_eq!(
+            list_for_navigation(&tickets)
+                .unwrap()
+                .iter()
+                .map(|ticket| ticket.filename.as_str())
+                .collect::<Vec<_>>(),
+            ["ticket.md", "other.md"]
+        );
 
         fs::create_dir(&foreign).unwrap();
         run(&foreign, &["init", "--quiet"]);
