@@ -86,25 +86,43 @@ Rust backfills missing or invalid timestamps from each ticket file's current
 modification time. Missing timestamps remain non-fatal if a file cannot be
 updated; the list falls back to modification time for display and ordering.
 
-For tickets with an active `work_session_id`, Rust subscribes to OpenCode's
-volatile `GET /api/event` stream and takes one `GET /api/session/active`
-snapshot after connecting, after each reconnect, and every 30 seconds. The
-snapshot is authoritative for this indicator: listed sessions are busy and
-sessions absent from the response are idle. SSE provides faster transitions;
-the periodic snapshot repairs missed events. It stores the active
-session's exact `idle`, `busy`, or `retry` status as app-maintained
-`opencode-status` frontmatter only when the ticket's current value differs.
-The ticket Markdown watcher refreshes navigation and the ticket reader. In left
-navigation, blocked tickets show their special blocked icon;
-`in_progress` tickets without a `work_session_id` show a caution triangle; and
-tickets with `opencode-status: idle` show a pause icon regardless of ticket
-lifecycle status. Running sessions show no attention icon. The ticket reader
-retains its caution triangle for `in_progress` tickets without a
-`work_session_id`, and a pause icon for `in_progress` tickets with
-`opencode-status: idle`. Icons appear before the title; the status field stays
-hidden from reader metadata.
-During a stream disconnect, the last persisted status remains visible until the
-next 30-second or reconnect snapshot updates it.
+For tickets with a `work_session_id`, Rust subscribes to OpenCode's volatile
+`GET /api/event` stream and reconciles the exact session after connecting, after
+each reconnect. A periodic pass snapshots `/api/session/active` once every 30
+seconds and reconciles every ticket session, including settled or unknown
+sessions, so missed events are repaired even when a prior transition was not
+observed.
+Relevant session execution/status and form/permission events trigger an
+immediate reconciliation. For each ticket session, reconciliation combines its
+pending form and permission lists, session outcome, a small history sample, and
+durable session events with the shared active-session snapshot. Pending forms or
+permissions take precedence over the active-session `running` signal and mean
+the session is waiting for human input. Replied/cancelled events trigger a fresh
+pending-input snapshot, so another outstanding request keeps the session in
+that state. SSE is an update path, not replay; periodic and reconnect snapshots
+repair missed events.
+
+The ticket-specific `opencode-status` frontmatter is app-maintained and records
+`starting`, `running`, `waiting_for_input`, `idle`, `retrying`,
+`ready_for_review`, `reconnecting`, `unknown`, or `failed` only when the value
+changes. Absence from `/api/session/active` is not enough to infer idle or
+completion: explicit idle evidence means idle; successful execution plus
+session history means ready for review; failed/interrupted evidence means
+failed; otherwise the result is unknown. If OpenCode cannot provide a complete
+reconciliation snapshot, the state is reconnecting and is retried. These states
+never change the ticket's workflow status.
+
+The ticket Markdown watcher refreshes navigation and the ticket reader. Blocked
+tickets keep their blocked icon; `in_progress` tickets without a
+`work_session_id` show an error/caution indicator. Session details collapse to
+four user-facing states: `starting`, `running`, and `retrying` show no icon;
+`waiting_for_input` shows a question-bubble icon; `idle` and
+`ready_for_review` show a pause icon; and `failed`, `reconnecting`, or
+`unknown` show an error/caution indicator. These session indicators appear in
+both navigation and the ticket reader independently of ticket workflow status.
+The status field stays hidden from reader metadata. If API reconciliation fails,
+the status becomes `reconnecting`; a later successful snapshot restores the
+current state.
 
 The application uses Tauri, Rust, raw HTML/CSS/JavaScript, a Rust-managed PTY,
 xterm.js, and OpenCode's shared local background server. Rust discovers the

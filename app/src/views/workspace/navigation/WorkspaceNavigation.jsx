@@ -1,6 +1,7 @@
 import { Index, Show, createSignal, onCleanup, onMount } from "solid-js";
 import { Icon, IconButton } from "@ui-lib";
 import { NavigationItem } from "../../../components/NavigationItem.jsx";
+import { TicketSessionIndicator } from "../../../components/TicketSessionIndicator.jsx";
 import { recordUiDiagnostic } from "../../../lib/uiDiagnostics.js";
 import styles from "./WorkspaceNavigation.module.css";
 
@@ -64,16 +65,11 @@ export function WorkspaceNavigation(props) {
           <Icon name="circleX" muted />
         </Show>
         <span class={styles.ticketTitleGroup}>
-          <Show when={ticket().status === "in_progress" && !ticket().hasWorkSession}>
-            <span class={styles.idleAttention} role="img" aria-label="Ticket has no work session">
-              <Icon name="caution" size="small" />
-            </span>
-          </Show>
-          <Show when={ticket().status !== "blocked" && ticket().opencodeStatus === "idle"}>
-            <span class={styles.idleAttention} role="img" aria-label="OpenCode session is idle">
-              <Icon name="pause" size="small" class={styles.pauseIcon} />
-            </span>
-          </Show>
+          <TicketSessionIndicator
+            ticketStatus={ticket().status}
+            hasWorkSession={ticket().hasWorkSession}
+            opencodeStatus={ticket().opencodeStatus}
+          />
           <span class={styles.ticketTitle}>{ticket().title}</span>
         </span>
       </NavigationItem>

@@ -1328,7 +1328,23 @@ pub fn opencode_status(text: &str) -> Option<String> {
         .lines()
         .filter_map(|line| line.strip_prefix("opencode-status:").map(str::trim));
     let value = values.next()?;
-    if values.next().is_some() || !matches!(value, "idle" | "busy" | "retry") {
+    if values.next().is_some()
+        || !matches!(
+            value,
+            "starting"
+                | "running"
+                | "waiting_for_input"
+                | "idle"
+                | "retrying"
+                | "ready_for_review"
+                | "reconnecting"
+                | "unknown"
+                | "failed"
+                // Read older app-maintained values until the next reconciliation.
+                | "busy"
+                | "retry"
+        )
+    {
         return None;
     }
     Some(value.to_owned())
@@ -1337,7 +1353,20 @@ pub fn opencode_status(text: &str) -> Option<String> {
 /// Updates the app-owned frontmatter field only when its current in-memory
 /// value differs, preserving all other ticket bytes and refusing stale writes.
 pub fn record_opencode_status(path: &Path, status: &str) -> Result<bool, String> {
-    if !matches!(status, "idle" | "busy" | "retry") {
+    if !matches!(
+        status,
+        "starting"
+            | "running"
+            | "waiting_for_input"
+            | "idle"
+            | "retrying"
+            | "ready_for_review"
+            | "reconnecting"
+            | "unknown"
+            | "failed"
+            | "busy"
+            | "retry"
+    ) {
         return Err("Invalid OpenCode session status".into());
     }
     let original = fs::read_to_string(path).map_err(|error| error.to_string())?;
@@ -2223,7 +2252,12 @@ mod tests {
             opencode_status(&fs::read_to_string(&path).unwrap()).as_deref(),
             Some("retry")
         );
-        assert!(record_opencode_status(&path, "unknown").is_err());
+        assert!(record_opencode_status(&path, "waiting_for_input").unwrap());
+        assert_eq!(
+            opencode_status(&fs::read_to_string(&path).unwrap()).as_deref(),
+            Some("waiting_for_input")
+        );
+        assert!(record_opencode_status(&path, "invalid").is_err());
     }
     #[test]
     fn navigation_data_includes_countable_statuses_newest_first_by_file_mtime() {
