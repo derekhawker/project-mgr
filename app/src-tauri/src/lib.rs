@@ -605,15 +605,7 @@ fn reconcile_startup(app: &AppHandle, store: &ManagementStore) -> Result<(), Str
                 session.event_cursor.as_deref(),
             )
             .and_then(|result| {
-                let status = match result.status {
-                    opencode::SessionApplicationStatus::Starting => "starting",
-                    opencode::SessionApplicationStatus::Running => "running",
-                    opencode::SessionApplicationStatus::WaitingForInput => "waiting_for_input",
-                    opencode::SessionApplicationStatus::ReadyForReview => "ready_for_review",
-                    opencode::SessionApplicationStatus::Reconnecting => "reconnecting",
-                    opencode::SessionApplicationStatus::Unknown => "unknown",
-                    opencode::SessionApplicationStatus::Failed => "failed",
-                };
+                let status = ticket_status_from_application_status(result.status);
                 let pending = serde_json::to_string(
                     &serde_json::json!({"permissions": result.permissions, "forms": result.forms}),
                 )
@@ -1564,6 +1556,7 @@ fn log_ticket_status_event_data(
     );
 }
 
+#[cfg(test)]
 fn apply_ticket_session_status(ticket_root: &std::path::Path, session_id: &str, status: &str) {
     apply_ticket_session_status_with_diagnostics(ticket_root, session_id, status, None, None);
 }
@@ -1646,10 +1639,12 @@ fn apply_ticket_session_status_with_diagnostics(
     }
 }
 
+#[cfg(test)]
 fn handle_ticket_status_event(ticket_root: &std::path::Path, value: &serde_json::Value) {
     handle_ticket_status_event_with_diagnostics(ticket_root, value, None);
 }
 
+#[cfg(test)]
 fn handle_ticket_status_event_with_diagnostics(
     ticket_root: &std::path::Path,
     value: &serde_json::Value,
@@ -1698,11 +1693,7 @@ fn diagnostic_ticket_session_id(ticket_root: &std::path::Path) -> Option<String>
     workspace_tickets::work_session_id(&markdown).ok().flatten()
 }
 
-fn ticket_session_status_event(value: &serde_json::Value) -> Option<(String, &'static str)> {
-    let (session_id, _, status) = ticket_session_status_event_details(value)?;
-    status.map(|status| (session_id, status))
-}
-
+#[cfg(test)]
 fn ticket_session_status_event_details(
     value: &serde_json::Value,
 ) -> Option<(String, String, Option<&'static str>)> {
@@ -1720,16 +1711,17 @@ fn ticket_session_status_event_details(
         "session.idle" => Some("idle"),
         // Status events are ephemeral. Durable execution lifecycle events
         // provide a fallback when a status transition is missed by the stream.
-        "session.execution.started" => Some("busy"),
-        "session.execution.succeeded" | "session.execution.interrupted" => Some("idle"),
+        "session.execution.started" => Some("running"),
+        "session.execution.succeeded" => None,
+        "session.execution.failed" | "session.execution.interrupted" => Some("failed"),
         "session.status" => match properties
             .get("status")
             .and_then(|status| status.get("type"))
             .and_then(serde_json::Value::as_str)
         {
             Some("idle") => Some("idle"),
-            Some("busy") => Some("busy"),
-            Some("retry") => Some("retry"),
+            Some("busy") => Some("running"),
+            Some("retry") => Some("retrying"),
             _ => None,
         },
         _ => None,
@@ -1737,24 +1729,124 @@ fn ticket_session_status_event_details(
     Some((session_id.to_owned(), kind.to_owned(), status))
 }
 
+#[cfg(test)]
+fn ticket_session_status_event(value: &serde_json::Value) -> Option<(String, &'static str)> {
+    let (session_id, _, status) = ticket_session_status_event_details(value)?;
+    status.map(|status| (session_id, status))
+}
+
+#[cfg(test)]
 fn ticket_snapshot_status(
     active: &HashMap<String, opencode::ActiveSession>,
     session_id: &str,
 ) -> &'static str {
     if active.contains_key(session_id) {
-        "busy"
+        "running"
     } else {
-        "idle"
+        "unknown"
     }
+}
+
+fn ticket_status_from_application_status(
+    status: opencode::SessionApplicationStatus,
+) -> &'static str {
+    match status {
+        opencode::SessionApplicationStatus::Starting => "starting",
+        opencode::SessionApplicationStatus::Running => "running",
+        opencode::SessionApplicationStatus::WaitingForInput => "waiting_for_input",
+        opencode::SessionApplicationStatus::Idle => "idle",
+        opencode::SessionApplicationStatus::Retrying => "retrying",
+        opencode::SessionApplicationStatus::ReadyForReview => "ready_for_review",
+        opencode::SessionApplicationStatus::Reconnecting => "reconnecting",
+        opencode::SessionApplicationStatus::Unknown => "unknown",
+        opencode::SessionApplicationStatus::Failed => "failed",
+    }
+}
+
+fn ticket_snapshot_application_status(
+    status: opencode::SessionApplicationStatus,
+    previous_status: Option<&str>,
+    is_active: bool,
+) -> &'static str {
+    if status == opencode::SessionApplicationStatus::Unknown
+        && previous_status == Some("idle")
+        && !is_active
+    {
+        // Idle is established by an explicit SSE event. The event is volatile,
+        // so retain that evidence across snapshots unless a newer signal
+        // contradicts it.
+        "idle"
+    } else {
+        ticket_status_from_application_status(status)
+    }
+}
+
+fn ticket_session_event_details(value: &serde_json::Value) -> Option<(String, String)> {
+    let event = value
+        .get("payload")
+        .or_else(|| value.get("event"))
+        .unwrap_or(value);
+    let kind = event.get("type")?.as_str()?.to_owned();
+    let properties = event.get("properties").unwrap_or(event);
+    let session_id = properties
+        .get("sessionID")
+        .or_else(|| {
+            properties
+                .get("form")
+                .and_then(|form| form.get("sessionID"))
+        })
+        .or_else(|| {
+            properties
+                .get("permission")
+                .and_then(|permission| permission.get("sessionID"))
+        })
+        .or_else(|| {
+            properties
+                .get("request")
+                .and_then(|request| request.get("sessionID"))
+        })?
+        .as_str()?
+        .to_owned();
+    Some((session_id, kind))
+}
+
+fn is_ticket_session_reconciliation_event(kind: &str) -> bool {
+    matches!(kind, "session.status" | "session.idle")
+        || kind.starts_with("session.execution.")
+        || kind.starts_with("form.")
+        || kind.starts_with("permission.")
+}
+
+fn ticket_has_session(ticket_root: &std::path::Path, session_id: &str) -> bool {
+    let Ok(workspaces) = std::fs::read_dir(ticket_root) else {
+        return false;
+    };
+    workspaces.flatten().any(|workspace| {
+        let Ok(entries) = std::fs::read_dir(workspace.path()) else {
+            return false;
+        };
+        entries.flatten().any(|entry| {
+            let path = entry.path();
+            if path.extension().and_then(|extension| extension.to_str()) != Some("md") {
+                return false;
+            }
+            std::fs::read_to_string(path)
+                .ok()
+                .and_then(|markdown| workspace_tickets::work_session_id(&markdown).ok().flatten())
+                .as_deref()
+                == Some(session_id)
+        })
+    })
 }
 
 const TICKET_STATUS_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(30);
 
 fn reconcile_ticket_status_snapshot(
     ticket_root: &std::path::Path,
-    active: &HashMap<String, opencode::ActiveSession>,
+    runtime: &opencode::Runtime,
     log_directory: Option<&std::path::Path>,
 ) {
+    let active = runtime.active_sessions();
     let Ok(workspaces) = std::fs::read_dir(ticket_root) else {
         return;
     };
@@ -1773,10 +1865,31 @@ fn reconcile_ticket_status_snapshot(
             let Ok(Some(session_id)) = workspace_tickets::work_session_id(&markdown) else {
                 continue;
             };
-            let status = ticket_snapshot_status(active, &session_id);
             let previous_status = workspace_tickets::opencode_status(&markdown);
+            let reconciliation = match &active {
+                Ok(active) => runtime.reconcile_session_with_active(
+                    &session_id,
+                    None,
+                    active.get(&session_id).cloned(),
+                ),
+                Err(error) => Err(error.clone()),
+            };
+            let status = match &reconciliation {
+                Ok(result) => ticket_snapshot_application_status(
+                    result.status,
+                    previous_status.as_deref(),
+                    active
+                        .as_ref()
+                        .is_ok_and(|sessions| sessions.contains_key(&session_id)),
+                ),
+                Err(_) => "reconnecting",
+            };
             let is_diagnostic_ticket = is_status_diagnostic_ticket(&path);
-            let mut result = "unchanged";
+            let mut result = if reconciliation.is_err() {
+                "reconciliation_failed"
+            } else {
+                "unchanged"
+            };
             if previous_status.as_deref() != Some(status) {
                 match workspace_tickets::record_opencode_status(&path, status) {
                     Ok(true) => result = "written",
@@ -1802,6 +1915,54 @@ fn reconcile_ticket_status_snapshot(
     }
 }
 
+fn handle_ticket_session_event_with_runtime(
+    ticket_root: &std::path::Path,
+    runtime: &opencode::Runtime,
+    value: &serde_json::Value,
+    log_directory: Option<&std::path::Path>,
+) {
+    let diagnostic_session_id = diagnostic_ticket_session_id(ticket_root);
+    if let Some(session_id) = diagnostic_session_id.as_deref() {
+        if let Some(event_data) = diagnostic_session_event_projection(value, session_id) {
+            log_ticket_status_event_data(log_directory, session_id, event_data);
+        }
+    }
+    let Some((session_id, event_type)) = ticket_session_event_details(value) else {
+        return;
+    };
+    if !is_ticket_session_reconciliation_event(&event_type)
+        || !ticket_has_session(ticket_root, &session_id)
+    {
+        return;
+    }
+    let result = runtime.reconcile_session_with_event(&session_id, None, value);
+    let (status, outcome) = match result {
+        Ok(reconciliation) => (
+            ticket_status_from_application_status(reconciliation.status),
+            "reconciled",
+        ),
+        Err(_) => ("reconnecting", "reconciliation_failed"),
+    };
+    apply_ticket_session_status_with_diagnostics(
+        ticket_root,
+        &session_id,
+        status,
+        Some(&event_type),
+        log_directory,
+    );
+    if diagnostic_session_id.as_deref() == Some(session_id.as_str()) {
+        log_ticket_status_diagnostic(
+            log_directory,
+            "event_reconcile",
+            Some(&session_id),
+            Some(&event_type),
+            Some(status),
+            None,
+            outcome,
+        );
+    }
+}
+
 fn start_ticket_status_worker(app: AppHandle, app_data: PathBuf) {
     let log_directory = match app.path().app_log_dir() {
         Ok(directory) => Some(directory),
@@ -1822,25 +1983,11 @@ fn start_ticket_status_worker(app: AppHandle, app_data: PathBuf) {
             if runtime.is_shutting_down() {
                 break;
             }
-            match runtime.active_sessions() {
-                Ok(active) => reconcile_ticket_status_snapshot(
-                    &poll_root,
-                    &active,
-                    poll_log_directory.as_deref(),
-                ),
-                Err(error) => {
-                    eprintln!("Could not refresh ticket OpenCode status snapshot: {error}");
-                    log_ticket_status_diagnostic(
-                        poll_log_directory.as_deref(),
-                        "poll",
-                        diagnostic_ticket_session_id(&poll_root).as_deref(),
-                        None,
-                        None,
-                        None,
-                        "failed",
-                    );
-                }
-            }
+            reconcile_ticket_status_snapshot(
+                &poll_root,
+                &runtime,
+                poll_log_directory.as_deref(),
+            );
             drop(runtime);
             thread::sleep(TICKET_STATUS_POLL_INTERVAL);
         });
@@ -1871,58 +2018,47 @@ fn start_ticket_status_worker(app: AppHandle, app_data: PathBuf) {
                     },
                 );
                 if let Ok(response) = stream {
-                    let snapshot = runtime.active_sessions();
-                    if let Ok(active) = snapshot {
-                        // The SSE connection is established before this one-time baseline.
-                        reconcile_ticket_status_snapshot(
-                            &ticket_root,
-                            &active,
-                            log_directory.as_deref(),
-                        );
-                        let mut reader = BufReader::new(response);
-                        let mut line = String::new();
-                        let mut data = String::new();
-                        loop {
-                            line.clear();
-                            match reader.read_line(&mut line) {
-                                Ok(0) | Err(_) => break,
-                                Ok(_) if line.trim().is_empty() => {
-                                    if !data.is_empty() {
-                                        if let Ok(value) =
-                                            serde_json::from_str::<serde_json::Value>(&data)
-                                        {
-                                            handle_ticket_status_event_with_diagnostics(
-                                                &ticket_root,
-                                                &value,
-                                                log_directory.as_deref(),
-                                            );
-                                        }
-                                        data.clear();
+                    // Subscribe first, then reconcile so input requests created
+                    // before the connection are recovered from the API snapshot.
+                    reconcile_ticket_status_snapshot(
+                        &ticket_root,
+                        &runtime,
+                        log_directory.as_deref(),
+                    );
+                    let mut reader = BufReader::new(response);
+                    let mut line = String::new();
+                    let mut data = String::new();
+                    loop {
+                        line.clear();
+                        match reader.read_line(&mut line) {
+                            Ok(0) | Err(_) => break,
+                            Ok(_) if line.trim().is_empty() => {
+                                if !data.is_empty() {
+                                    if let Ok(value) =
+                                        serde_json::from_str::<serde_json::Value>(&data)
+                                    {
+                                        handle_ticket_session_event_with_runtime(
+                                            &ticket_root,
+                                            &runtime,
+                                            &value,
+                                            log_directory.as_deref(),
+                                        );
                                     }
-                                }
-                                Ok(_) => {
-                                    if let Some(payload) = line.strip_prefix("data:") {
-                                        if !data.is_empty() {
-                                            data.push('\n');
-                                        }
-                                        data.push_str(payload.trim());
-                                    }
+                                    data.clear();
                                 }
                             }
-                            if runtime.is_shutting_down() {
-                                return;
+                            Ok(_) => {
+                                if let Some(payload) = line.strip_prefix("data:") {
+                                    if !data.is_empty() {
+                                        data.push('\n');
+                                    }
+                                    data.push_str(payload.trim());
+                                }
                             }
                         }
-                    } else {
-                        log_ticket_status_diagnostic(
-                            log_directory.as_deref(),
-                            "snapshot",
-                            diagnostic_session_id.as_deref(),
-                            None,
-                            None,
-                            None,
-                            "failed",
-                        );
+                        if runtime.is_shutting_down() {
+                            return;
+                        }
                     }
                     log_ticket_status_diagnostic(
                         log_directory.as_deref(),
@@ -2071,12 +2207,7 @@ fn new_work_proposal_start(
             return Err("New-work proposal registry is unavailable".to_owned());
         }
     };
-    sessions.insert(
-        session_id.clone(),
-        ProposalSession {
-            directory,
-        },
-    );
+    sessions.insert(session_id.clone(), ProposalSession { directory });
     Ok(NewWorkProposalSessionResult { session_id })
 }
 
@@ -2123,10 +2254,12 @@ fn new_work_proposal_run(
     let raw = runtime.generate_session_text(&request.session_id, &prompt)?;
     let repository_candidates = repositories
         .iter()
-        .map(|repository| serde_json::json!({
-            "id": repository.id,
-            "repositoryPath": repository.repository_path,
-        }))
+        .map(|repository| {
+            serde_json::json!({
+                "id": repository.id,
+                "repositoryPath": repository.repository_path,
+            })
+        })
         .collect::<Vec<_>>();
     let selected = resolve_quick_directory_proposal(
         &raw,
@@ -4085,15 +4218,7 @@ async fn opencode_session_reconcile(
         let state = app.state::<opencode::Runtime>();
         let store = app.state::<ManagementStore>();
         let result = state.reconcile_session(&request.session_id, request.cursor.as_deref())?;
-        let status = match result.status {
-            opencode::SessionApplicationStatus::Starting => "starting",
-            opencode::SessionApplicationStatus::Running => "running",
-            opencode::SessionApplicationStatus::WaitingForInput => "waiting_for_input",
-            opencode::SessionApplicationStatus::ReadyForReview => "ready_for_review",
-            opencode::SessionApplicationStatus::Reconnecting => "reconnecting",
-            opencode::SessionApplicationStatus::Unknown => "unknown",
-            opencode::SessionApplicationStatus::Failed => "failed",
-        };
+        let status = ticket_status_from_application_status(result.status);
         let pending_json = serde_json::to_string(
             &serde_json::json!({"permissions": &result.permissions, "forms": &result.forms}),
         )
@@ -4230,19 +4355,19 @@ mod tests {
                 kind: "running".into(),
             },
         )]);
-        assert_eq!(ticket_snapshot_status(&active, "ses_busy"), "busy");
-        assert_eq!(ticket_snapshot_status(&active, "ses_idle"), "idle");
+        assert_eq!(ticket_snapshot_status(&active, "ses_busy"), "running");
+        assert_eq!(ticket_snapshot_status(&active, "ses_idle"), "unknown");
         assert_eq!(
             ticket_session_status_event(
                 &json!({"payload":{"type":"session.status","properties":{"sessionID":"ses_one","status":{"type":"retry","attempt":2}}}})
             ),
-            Some(("ses_one".into(), "retry"))
+            Some(("ses_one".into(), "retrying"))
         );
         assert_eq!(
             ticket_session_status_event(
                 &json!({"type":"session.status","properties":{"sessionID":"ses_two","status":{"type":"busy"}}})
             ),
-            Some(("ses_two".into(), "busy"))
+            Some(("ses_two".into(), "running"))
         );
         assert_eq!(
             ticket_session_status_event(
@@ -4254,19 +4379,19 @@ mod tests {
             ticket_session_status_event(
                 &json!({"payload":{"type":"session.execution.started","properties":{"sessionID":"ses_four","executionID":"exec_one"}}})
             ),
-            Some(("ses_four".into(), "busy"))
+            Some(("ses_four".into(), "running"))
         );
         assert_eq!(
             ticket_session_status_event(
                 &json!({"payload":{"type":"session.execution.succeeded","properties":{"sessionID":"ses_four","executionID":"exec_one"}}})
             ),
-            Some(("ses_four".into(), "idle"))
+            None
         );
         assert_eq!(
             ticket_session_status_event(
                 &json!({"type":"session.execution.interrupted","properties":{"sessionID":"ses_four","executionID":"exec_one"}})
             ),
-            Some(("ses_four".into(), "idle"))
+            Some(("ses_four".into(), "failed"))
         );
         assert_eq!(
             ticket_session_status_event(
@@ -4277,35 +4402,74 @@ mod tests {
     }
 
     #[test]
-    fn ticket_status_poll_reconciles_running_to_inactive_without_sse_events() {
-        let root = tempfile::tempdir().unwrap();
-        let workspace = root.path().join(STATUS_DIAGNOSTIC_WORKSPACE_DIRECTORY);
-        std::fs::create_dir_all(&workspace).unwrap();
-        let ticket = workspace.join(STATUS_DIAGNOSTIC_TICKET_FILENAME);
-        std::fs::write(
-            &ticket,
-            "---\ntitle: Activity\nstatus: in_progress\nwork_session_id: ses_poll\n---\nBody\n",
-        )
-        .unwrap();
-        let running = HashMap::from([(
+    fn ticket_input_events_are_session_scoped_reconciliation_triggers() {
+        let form_created = json!({
+            "payload": {
+                "type": "form.created",
+                "properties": {"form": {"sessionID": "ses_form"}}
+            }
+        });
+        let permission_replied = json!({
+            "type": "permission.replied",
+            "properties": {"sessionID": "ses_permission"}
+        });
+        assert_eq!(
+            ticket_session_event_details(&form_created),
+            Some(("ses_form".into(), "form.created".into()))
+        );
+        assert_eq!(
+            ticket_session_event_details(&permission_replied),
+            Some(("ses_permission".into(), "permission.replied".into()))
+        );
+        assert!(is_ticket_session_reconciliation_event("form.created"));
+        assert!(is_ticket_session_reconciliation_event("form.cancelled"));
+        assert!(is_ticket_session_reconciliation_event("permission.asked"));
+        assert!(is_ticket_session_reconciliation_event("permission.replied"));
+        assert!(!is_ticket_session_reconciliation_event(
+            "session.text.delta"
+        ));
+    }
+
+    #[test]
+    fn inactive_snapshot_does_not_imply_idle_or_completion() {
+        let active = HashMap::from([(
             "ses_poll".to_owned(),
             opencode::ActiveSession {
                 kind: "running".into(),
             },
         )]);
-
-        reconcile_ticket_status_snapshot(root.path(), &running, None);
+        assert_eq!(ticket_snapshot_status(&active, "ses_poll"), "running");
         assert_eq!(
-            workspace_tickets::opencode_status(&std::fs::read_to_string(&ticket).unwrap())
-                .as_deref(),
-            Some("busy")
+            ticket_snapshot_status(&HashMap::new(), "ses_poll"),
+            "unknown"
         );
-
-        reconcile_ticket_status_snapshot(root.path(), &HashMap::new(), None);
         assert_eq!(
-            workspace_tickets::opencode_status(&std::fs::read_to_string(&ticket).unwrap())
-                .as_deref(),
-            Some("idle")
+            ticket_status_from_application_status(
+                opencode::SessionApplicationStatus::WaitingForInput
+            ),
+            "waiting_for_input"
+        );
+        assert_eq!(
+            ticket_status_from_application_status(
+                opencode::SessionApplicationStatus::ReadyForReview
+            ),
+            "ready_for_review"
+        );
+        assert_eq!(
+            ticket_snapshot_application_status(
+                opencode::SessionApplicationStatus::Unknown,
+                Some("idle"),
+                false,
+            ),
+            "idle"
+        );
+        assert_eq!(
+            ticket_snapshot_application_status(
+                opencode::SessionApplicationStatus::Unknown,
+                Some("idle"),
+                true,
+            ),
+            "unknown"
         );
     }
 
@@ -4349,11 +4513,20 @@ mod tests {
         assert_eq!(
             workspace_tickets::opencode_status(&std::fs::read_to_string(&active).unwrap())
                 .as_deref(),
-            Some("busy")
+            Some("running")
         );
         handle_ticket_status_event(
             root.path(),
             &json!({"payload":{"type":"session.execution.succeeded","properties":{"sessionID":"ses_active","executionID":"exec_one"}}}),
+        );
+        assert_eq!(
+            workspace_tickets::opencode_status(&std::fs::read_to_string(&active).unwrap())
+                .as_deref(),
+            Some("running")
+        );
+        handle_ticket_status_event(
+            root.path(),
+            &json!({"payload":{"type":"session.idle","properties":{"sessionID":"ses_active"}}}),
         );
         assert_eq!(
             workspace_tickets::opencode_status(&std::fs::read_to_string(&active).unwrap())
@@ -4367,7 +4540,7 @@ mod tests {
         assert_eq!(
             workspace_tickets::opencode_status(&std::fs::read_to_string(&active).unwrap())
                 .as_deref(),
-            Some("retry")
+            Some("retrying")
         );
     }
 
@@ -5331,19 +5504,32 @@ mod tests {
         assert!(validate_new_work_proposal(&proposal, &candidates).is_ok());
         assert!(validate_new_work_proposal(&proposal, &HashSet::new()).is_err());
         let duplicate = NewWorkProposal {
-            repositories: vec![proposal.repositories[0].clone(), proposal.repositories[0].clone()],
+            repositories: vec![
+                proposal.repositories[0].clone(),
+                proposal.repositories[0].clone(),
+            ],
             ..proposal.clone()
         };
         assert!(validate_new_work_proposal(&duplicate, &candidates).is_err());
         let multiple = NewWorkProposal {
             repositories: vec![
                 proposal.repositories[0].clone(),
-                ProposalRepository { repository_id: "repo-2".into(), reason: "Another match".into() },
+                ProposalRepository {
+                    repository_id: "repo-2".into(),
+                    reason: "Another match".into(),
+                },
             ],
             ..proposal.clone()
         };
-        assert!(validate_new_work_proposal(&multiple, &HashSet::from(["repo-enabled".into(), "repo-2".into()])).is_err());
-        let obsolete_workspace = NewWorkProposal { work_type: "workspace".into(), ..proposal };
+        assert!(validate_new_work_proposal(
+            &multiple,
+            &HashSet::from(["repo-enabled".into(), "repo-2".into()])
+        )
+        .is_err());
+        let obsolete_workspace = NewWorkProposal {
+            work_type: "workspace".into(),
+            ..proposal
+        };
         assert!(validate_new_work_proposal(&obsolete_workspace, &candidates).is_err());
     }
 

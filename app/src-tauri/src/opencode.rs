@@ -166,6 +166,8 @@ pub enum SessionApplicationStatus {
     Starting,
     Running,
     WaitingForInput,
+    Idle,
+    Retrying,
     ReadyForReview,
     Reconnecting,
     Unknown,
@@ -191,35 +193,19 @@ pub fn classify_session_status(evidence: SessionEvidence<'_>) -> SessionApplicat
     if matches!(evidence.outcome, Some("failed" | "error" | "interrupted")) {
         return SessionApplicationStatus::Failed;
     }
-    if !evidence.permissions.is_empty()
-        || !evidence.forms.is_empty()
-        || evidence.events.iter().any(|event| {
-            let text = event.to_string().to_ascii_lowercase();
-            text.contains("permission")
-                || text.contains("question")
-                || text.contains("input")
-                || text.contains("form")
-        })
-    {
+    if !evidence.permissions.is_empty() || !evidence.forms.is_empty() {
         return SessionApplicationStatus::WaitingForInput;
     }
-    if evidence.active.is_some()
-        || evidence.events.iter().any(|event| {
-            event
-                .get("type")
-                .and_then(Value::as_str)
-                .is_some_and(|kind| {
-                    matches!(
-                        kind,
-                        "session.status" | "session.updated" | "running" | "step.start"
-                    )
-                })
-        })
-    {
-        return SessionApplicationStatus::Running;
-    }
-    if evidence.reconnecting {
-        return SessionApplicationStatus::Reconnecting;
+    let event_status = latest_session_event_status(evidence.events);
+    match event_status {
+        Some("succeeded") if !evidence.history.is_empty() => {
+            return SessionApplicationStatus::ReadyForReview;
+        }
+        Some("succeeded") => return SessionApplicationStatus::Unknown,
+        Some("failed" | "interrupted") => return SessionApplicationStatus::Failed,
+        Some("running") => return SessionApplicationStatus::Running,
+        Some("retry") => return SessionApplicationStatus::Retrying,
+        _ => {}
     }
     if matches!(
         evidence.outcome,
@@ -228,9 +214,103 @@ pub fn classify_session_status(evidence: SessionEvidence<'_>) -> SessionApplicat
     {
         return SessionApplicationStatus::ReadyForReview;
     }
+    if evidence.active.is_some() {
+        return SessionApplicationStatus::Running;
+    }
+    if event_status == Some("idle") {
+        return SessionApplicationStatus::Idle;
+    }
+    if evidence.reconnecting {
+        return SessionApplicationStatus::Reconnecting;
+    }
     // An inactive session with no completion evidence is deliberately not
     // promoted to ReadyForReview.
     SessionApplicationStatus::Unknown
+}
+
+fn session_event_status(event: &Value) -> Option<&'static str> {
+    let event = event
+        .get("payload")
+        .or_else(|| event.get("event"))
+        .unwrap_or(event);
+    let kind = event.get("type")?.as_str()?;
+    let properties = event.get("properties").unwrap_or(event);
+    match kind {
+        "session.execution.started" => Some("running"),
+        "session.execution.succeeded" => Some("succeeded"),
+        "session.execution.failed" => Some("failed"),
+        "session.execution.interrupted" => Some("interrupted"),
+        "session.idle" => Some("idle"),
+        "session.status" => match properties.get("status")?.get("type")?.as_str()? {
+            "busy" => Some("running"),
+            "idle" => Some("idle"),
+            "retry" => Some("retry"),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn latest_session_event_status(events: &[Value]) -> Option<&'static str> {
+    let execution = events.iter().enumerate().rev().find_map(|(index, event)| {
+        let status = match session_event_status(event)? {
+            "succeeded" | "failed" | "interrupted" => session_event_status(event)?,
+            "running" if event_kind(event) == Some("session.execution.started") => "started",
+            _ => return None,
+        };
+        Some((index, status))
+    });
+    let activity = events.iter().enumerate().rev().find_map(|(index, event)| {
+        let status = session_event_status(event)?;
+        matches!(status, "running" | "idle" | "retry").then_some((index, status))
+    });
+    match (execution, activity) {
+        (Some((execution_index, "succeeded")), Some((activity_index, "running" | "retry")))
+            if activity_index > execution_index =>
+        {
+            activity.map(|(_, status)| status)
+        }
+        (Some((_, "succeeded")), _) => Some("succeeded"),
+        (Some((_, "failed")), _) => Some("failed"),
+        (Some((_, "interrupted")), _) => Some("interrupted"),
+        (Some((execution_index, "started")), Some((activity_index, status)))
+            if activity_index > execution_index =>
+        {
+            Some(status)
+        }
+        (Some((_, "started")), _) => Some("running"),
+        (_, Some((_, status))) => Some(status),
+        _ => None,
+    }
+}
+
+fn event_kind(event: &Value) -> Option<&str> {
+    event
+        .get("payload")
+        .or_else(|| event.get("event"))
+        .unwrap_or(event)
+        .get("type")?
+        .as_str()
+}
+
+fn apply_current_session_event(
+    classified: SessionApplicationStatus,
+    current_event: Option<&Value>,
+    has_pending_input: bool,
+) -> SessionApplicationStatus {
+    if !has_pending_input
+        && current_event
+            .and_then(session_event_status)
+            .is_some_and(|event_status| event_status == "idle")
+        && matches!(
+            classified,
+            SessionApplicationStatus::Running | SessionApplicationStatus::Retrying
+        )
+    {
+        SessionApplicationStatus::Idle
+    } else {
+        classified
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
@@ -708,22 +788,60 @@ impl Runtime {
         cursor: Option<&str>,
     ) -> Result<SessionReconciliation, String> {
         let id = validate_session_id(id)?;
+        let active = self.active_sessions()?.remove(&id);
+        self.reconcile_session_with_active(&id, cursor, active)
+    }
+    pub fn reconcile_session_with_active(
+        &self,
+        id: &str,
+        cursor: Option<&str>,
+        active: Option<ActiveSession>,
+    ) -> Result<SessionReconciliation, String> {
+        self.reconcile_session_with_active_and_event(id, cursor, active, None)
+    }
+    pub fn reconcile_session_with_event(
+        &self,
+        id: &str,
+        cursor: Option<&str>,
+        event: &Value,
+    ) -> Result<SessionReconciliation, String> {
+        let id = validate_session_id(id)?;
+        let active = self.active_sessions()?.remove(&id);
+        self.reconcile_session_with_active_and_event(&id, cursor, active, Some(event))
+    }
+    fn reconcile_session_with_active_and_event(
+        &self,
+        id: &str,
+        cursor: Option<&str>,
+        active: Option<ActiveSession>,
+        current_event: Option<&Value>,
+    ) -> Result<SessionReconciliation, String> {
+        let id = validate_session_id(id)?;
         // Reconciliation only needs to know whether any history exists to
         // distinguish a completed, empty session from one with output.
         let history = self.session_history(&id, "asc", 1)?;
-        let active = self.session_status(&id)?.active;
+        let outcome = self.session_outcome(&id)?;
         let permissions = self.permissions(&id)?;
         let forms = self.forms(&id)?;
-        let (durable_events, next_cursor) =
+        let (mut durable_events, next_cursor) =
             self.durable_session_events_with_cursor(&id, cursor, false)?;
-        let status = classify_session_status(SessionEvidence {
+        if let Some(event) = current_event {
+            durable_events.push(event.clone());
+        }
+        let classified_status = classify_session_status(SessionEvidence {
             active: active.as_ref(),
+            outcome: outcome.as_deref(),
             permissions: &permissions,
             forms: &forms,
             history: &history.data,
             events: &durable_events,
             ..Default::default()
         });
+        let status = apply_current_session_event(
+            classified_status,
+            current_event,
+            !permissions.is_empty() || !forms.is_empty(),
+        );
         Ok(SessionReconciliation {
             session_id: id,
             cursor: next_cursor.or_else(|| cursor.map(str::to_owned)),
@@ -734,6 +852,15 @@ impl Runtime {
             durable_events,
             status,
         })
+    }
+    fn session_outcome(&self, id: &str) -> Result<Option<String>, String> {
+        let id = validate_session_id(id)?;
+        let (client, url) = self.client_url()?;
+        let session = get_data_value(&client, &format!("{url}/api/session/{id}"))?;
+        Ok(session
+            .get("outcome")
+            .and_then(Value::as_str)
+            .map(str::to_owned))
     }
     fn session_pending(&self, id: &str, route: &str) -> Result<Vec<Value>, String> {
         let (client, url) = self.client_url()?;
@@ -1627,6 +1754,14 @@ mod tests {
         assert_eq!(status_wire["sessionId"], "ses_wire");
         assert_eq!(status_wire["active"], json!({"kind":"running"}));
         assert_eq!(status_wire["applicationStatus"], "running");
+        assert_eq!(
+            serde_json::to_value(SessionApplicationStatus::Idle).unwrap(),
+            json!("idle")
+        );
+        assert_eq!(
+            serde_json::to_value(SessionApplicationStatus::Retrying).unwrap(),
+            json!("retrying")
+        );
         assert!(status_wire.get("session_id").is_none());
 
         let reconciliation = SessionReconciliation {
@@ -1680,6 +1815,94 @@ mod tests {
                 ..Default::default()
             }),
             SessionApplicationStatus::Failed
+        );
+    }
+
+    #[test]
+    fn classifier_distinguishes_idle_completion_retry_and_unknown() {
+        let history = [json!({"type":"assistant"})];
+        assert_eq!(
+            classify_session_status(SessionEvidence {
+                events: &[json!({"type":"session.idle"})],
+                ..Default::default()
+            }),
+            SessionApplicationStatus::Idle
+        );
+        assert_eq!(
+            classify_session_status(SessionEvidence {
+                active: Some(&ActiveSession {
+                    kind: "running".into(),
+                }),
+                events: &[json!({"type":"session.idle"})],
+                ..Default::default()
+            }),
+            SessionApplicationStatus::Running
+        );
+        assert_eq!(
+            classify_session_status(SessionEvidence {
+                events: &[
+                    json!({"type":"session.status","properties":{"status":{"type":"retry"}}})
+                ],
+                ..Default::default()
+            }),
+            SessionApplicationStatus::Retrying
+        );
+        assert_eq!(
+            classify_session_status(SessionEvidence {
+                events: &[
+                    json!({"type":"session.execution.succeeded"}),
+                    json!({"type":"session.idle"}),
+                ],
+                history: &history,
+                ..Default::default()
+            }),
+            SessionApplicationStatus::ReadyForReview
+        );
+        assert_eq!(
+            classify_session_status(SessionEvidence {
+                events: &[json!({"type":"session.execution.failed"})],
+                ..Default::default()
+            }),
+            SessionApplicationStatus::Failed
+        );
+        assert_eq!(
+            classify_session_status(SessionEvidence {
+                active: Some(&ActiveSession {
+                    kind: "running".into(),
+                }),
+                forms: &[json!({"id":"form-1"})],
+                ..Default::default()
+            }),
+            SessionApplicationStatus::WaitingForInput
+        );
+        assert_eq!(
+            classify_session_status(SessionEvidence {
+                events: &[json!({"type":"session.updated","properties":{"title":"question"}})],
+                ..Default::default()
+            }),
+            SessionApplicationStatus::Unknown
+        );
+        assert_eq!(
+            classify_session_status(SessionEvidence::default()),
+            SessionApplicationStatus::Unknown
+        );
+        let active_idle = json!({"type":"session.idle","properties":{"sessionID":"ses_current"}});
+        assert_eq!(
+            apply_current_session_event(
+                SessionApplicationStatus::Running,
+                Some(&active_idle),
+                false,
+            ),
+            SessionApplicationStatus::Idle
+        );
+        assert_eq!(
+            apply_current_session_event(
+                SessionApplicationStatus::Running,
+                Some(&active_idle),
+                true,
+            ),
+            SessionApplicationStatus::Running,
+            "pending human input still takes precedence over an idle signal"
         );
     }
     #[test]
@@ -2537,13 +2760,13 @@ mod tests {
     }
 
     #[test]
-    fn session_reconciliation_fetches_only_the_history_evidence_it_needs() {
+    fn session_reconciliation_prioritizes_pending_requests_over_active_run() {
         let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
         let address = listener.local_addr().unwrap();
         let server = thread::spawn(move || {
             for expected_path in [
                 "/api/session/ses_exact/message?order=asc&limit=1",
-                "/api/session/active",
+                "/api/session/ses_exact",
                 "/api/session/ses_exact/permission",
                 "/api/session/ses_exact/form",
                 "/api/experimental/session/ses_exact/log?follow=false",
@@ -2567,8 +2790,12 @@ mod tests {
                     "data: {\"seq\":18}\n\n"
                 } else if expected_path.ends_with("/message?order=asc&limit=1") {
                     r#"{"data":[{"id":"m1"}],"cursor":{"next":"2"}}"#
-                } else if expected_path.ends_with("/active") {
-                    r#"{"data":{}}"#
+                } else if expected_path == "/api/session/ses_exact" {
+                    r#"{"data":{"outcome":null}}"#
+                } else if expected_path.ends_with("/permission") {
+                    r#"{"data":[{"id":"p1"}]}"#
+                } else if expected_path.ends_with("/form") {
+                    r#"{"data":[{"id":"f1"}]}"#
                 } else {
                     r#"{"data":[]}"#
                 };
@@ -2595,9 +2822,20 @@ mod tests {
             lifecycle_gate: Mutex::new(()),
         };
 
-        let result = runtime.reconcile_session("ses_exact", None).unwrap();
+        let result = runtime
+            .reconcile_session_with_active_and_event(
+                "ses_exact",
+                None,
+                Some(ActiveSession {
+                    kind: "running".into(),
+                }),
+                Some(&json!({"type":"session.idle","properties":{"sessionID":"ses_exact"}})),
+            )
+            .unwrap();
         assert_eq!(result.history.data, [json!({"id":"m1"})]);
-        assert_eq!(result.status, SessionApplicationStatus::Unknown);
+        assert_eq!(result.status, SessionApplicationStatus::WaitingForInput);
+        assert_eq!(result.permissions, [json!({"id":"p1"})]);
+        assert_eq!(result.forms, [json!({"id":"f1"})]);
         server.join().unwrap();
         runtime.shutdown();
     }

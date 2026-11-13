@@ -1,6 +1,7 @@
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { ActionMenu, ActionMenuItem, Button, ErrorMessage, Icon, IconButton, Switch, Tooltip } from "@ui-lib";
 import { AppPageLayout } from "../../../components/page/AppPageLayout.jsx";
+import { TicketSessionIndicator } from "../../../components/TicketSessionIndicator.jsx";
 import { TicketStatusBadge } from "./TicketStatusBadge.jsx";
 import { CreateTicketIdeaModal } from "./CreateTicketIdeaModal.jsx";
 import { recordUiDiagnostic } from "../../../lib/uiDiagnostics.js";
@@ -176,16 +177,11 @@ export function WorkspaceTicketViewer(props) {
                     >
                       <TicketStatusBadge status={ticket.status} />
                       <span class={styles.ticketTitleGroup}>
-                        <Show when={ticket.status === "in_progress" && !ticket.hasWorkSession}>
-                          <span class={styles.idleAttention} role="img" aria-label="Ticket has no work session">
-                            <Icon name="caution" size="small" />
-                          </span>
-                        </Show>
-                        <Show when={ticket.status === "in_progress" && ticket.opencodeStatus === "idle"}>
-                          <span class={styles.idleAttention} role="img" aria-label="OpenCode session is idle">
-                            <Icon name="pause" size="small" class={styles.pauseIcon} />
-                          </span>
-                        </Show>
+                        <TicketSessionIndicator
+                          ticketStatus={ticket.status}
+                          hasWorkSession={ticket.hasWorkSession}
+                          opencodeStatus={ticket.opencodeStatus}
+                        />
                         <span class={styles.ticketTitle}>{ticket.title}</span>
                       </span>
                     </button>

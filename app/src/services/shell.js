@@ -182,6 +182,8 @@ export const SESSION_STATUS_LABELS = Object.freeze({
   starting: "Starting",
   running: "Running",
   waitingForInput: "Waiting for input",
+  idle: "Idle",
+  retrying: "Retrying",
   readyForReview: "Ready for review",
   reconnecting: "Reconnecting",
   unknown: "Unknown",

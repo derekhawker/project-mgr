@@ -227,9 +227,9 @@ test("workspace tickets group, collapse, mark blocked, and flatten newest first"
       workspaces: [first, second],
       workspaceTickets: {
         a: [
-          { filename: "blocked.md", title: "Blocked ticket", status: "blocked", modifiedAt: 30 },
+          { filename: "blocked.md", title: "Blocked ticket", status: "blocked", opencodeStatus: "waiting_for_input", modifiedAt: 30 },
           { filename: "active.md", title: "Active ticket", status: "in_progress", hasWorkSession: false, modifiedAt: 10 },
-          { filename: "draft-session.md", title: "Draft with session", status: "draft", hasWorkSession: true, opencodeStatus: "idle", modifiedAt: 20 },
+          { filename: "draft-session.md", title: "Draft with session", status: "draft", hasWorkSession: true, opencodeStatus: "ready_for_review", modifiedAt: 20 },
           { filename: "draft.md", title: "Draft ticket", status: "draft", hasWorkSession: false, modifiedAt: 15 },
           { filename: "done.md", title: "Done ticket", status: "done", modifiedAt: 5 },
           { filename: "cancelled.md", title: "Cancelled ticket", status: "cancelled", modifiedAt: 4 },
@@ -264,7 +264,8 @@ test("workspace tickets group, collapse, mark blocked, and flatten newest first"
     /muted/,
     "Workspace disclosure icon uses the shared muted icon style",
   );
-  const idleIcon = view.host.querySelector('[aria-label="OpenCode session is idle"]');
+  const idleIcon = view.host.querySelector('[aria-label="OpenCode session is paused"]');
+  const waitingIcon = view.host.querySelector('[aria-label="OpenCode is waiting for your input"]');
   const cautionIcon = view.host.querySelector('[aria-label="Ticket has no work session"]');
   const blockedRow = [...view.host.querySelectorAll("button")].find((button) => button.textContent.includes("Blocked ticket"));
   const runningRow = [...view.host.querySelectorAll("button")].find((button) => button.textContent.includes("Newest ticket"));
@@ -280,12 +281,15 @@ test("workspace tickets group, collapse, mark blocked, and flatten newest first"
   assertDecorativeIcon(blockedRow);
   assert.match(blockedRow.firstElementChild.querySelector("path").getAttribute("d"), /M8 1\.5.*l5 5/);
   assert.ok(cautionIcon, "an in-progress ticket without a session keeps its caution icon");
-  assert.ok(idleIcon, "an idle draft with a session gets the pause icon");
+  assert.ok(idleIcon, "a completed session on a draft gets the pause icon");
+  assert.ok(waitingIcon, "waiting for input is shown independently of ticket workflow status");
+  assert.equal(waitingIcon.parentElement.firstElementChild, waitingIcon);
+  assert.ok(waitingIcon.querySelector("svg path").getAttribute("d"));
   assert.equal(idleIcon.parentElement.firstElementChild, idleIcon);
   assert.match(idleIcon.querySelector("svg path").getAttribute("d"), /a6\.5 6\.5.*v5m4-5v5$/);
   assert.match(idleIcon.parentElement.textContent, /Draft with session/);
   assert.equal(runningRow.querySelectorAll("svg").length, 0, "running sessions have no attention icon");
-  assert.equal(view.host.querySelectorAll("svg").length, 5);
+  assert.equal(view.host.querySelectorAll("svg").length, 6);
   view.host.querySelector('button[aria-label="Collapse Alpha tickets"]').click();
   assert.doesNotMatch(view.host.textContent, /Blocked ticket|Active ticket|Draft with session|Draft ticket|Done ticket|Cancelled ticket/);
   assert.match(view.host.textContent, /Beta1Newest ticket/);
@@ -309,7 +313,7 @@ test("workspace tickets group, collapse, mark blocked, and flatten newest first"
     "Tickets",
   );
   assert.equal(view.host.textContent.includes("Alpha ·"), false);
-  assert.equal(view.host.querySelectorAll("svg").length, 3);
+  assert.equal(view.host.querySelectorAll("svg").length, 4);
   [...view.host.querySelectorAll("button")].find((button) => button.textContent.includes("Newest ticket")).click();
   assert.deepEqual(worked, [["b", "newest.md"]]);
   assert.equal(

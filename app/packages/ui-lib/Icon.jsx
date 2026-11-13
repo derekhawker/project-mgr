@@ -19,6 +19,8 @@ const icons = {
   refresh: "M13 5.5A5.5 5.5 0 1 0 13.5 9M13 2.5v3h-3",
   ports: "M2 4h12v8H2zM5 4v3h6V4M5 10h.1M8 10h.1M11 10h.1",
   questionMark: "M5.5 5.5a2.5 2.5 0 1 1 4.2 1.8C8.5 8.4 8 8.8 8 10m0 2.5v.1",
+  questionBubble:
+    "M1.5 2.5h13v9H8l-3.5 3v-3h-3zM5.5 5.2a2 2 0 1 1 3.5 1.4C8 7.3 7.5 7.7 7.5 8.7m0 1.2v.1",
   trash: "M2.5 4h11M6 4V2.5h4V4m2.5 0-.7 9.5h-7.6L3.5 4m3 2.5v4m3-4v4",
 };
 

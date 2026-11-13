@@ -122,14 +122,6 @@
   min-width: 0;
 }
 
-.idleAttention {
-  display: inline-flex;
-  flex: 0 0 auto;
-  color: var(--ui-muted);
-}
-
-.pauseIcon { color: var(--ui-primary); }
-
 .selectTicket {
   display: grid;
   grid-template-columns: subgrid;

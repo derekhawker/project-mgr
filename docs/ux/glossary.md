@@ -34,6 +34,9 @@ discussions. For workflow behavior beyond the UX vocabulary, see
 - **OpenCode session:** One OpenCode conversation, with history owned by
   OpenCode. Except for the internal proposal step in New work, a session runs
   attached to an interactive terminal.
+- **Waiting for input:** An OpenCode session with one or more pending question
+  forms or permission decisions. This is a session attention state, separate from
+  the ticket's workflow status; the user responds in the interactive terminal.
 - **Interactive terminal:** The user's live interface to an OpenCode session or
   interactive tool process. Users watch progress and handle follow-ups,
   approvals, input, and changes there. The terminal is not an app-rendered
