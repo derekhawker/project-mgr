@@ -35,8 +35,10 @@ defaults for the checkout arrangement: a dedicated worktree and branch unless
 project instructions specify another arrangement. A replacement session should
 resume from the ticket's recorded checkout and branch when the project tracks
 them.
-Prefer prefixing the ticket-based worktree name with the repository name (for
-example, `project-mgr-<ticket-slug>`).
+Name ticket worktrees with the repository name as a prefix, followed by the
+ticket slug (for example, `project-mgr-<ticket-slug>`). Keep the name within the
+configured worktree directory; choose a disambiguating suffix only if that name
+is already in use.
 
 Before work, read the canonical Markdown ticket, confirm its identity and status,
 and follow its approved scope. When a session is created or resumed, ensure its
@@ -60,9 +62,12 @@ to proceed. This confirmation is a prerequisite to the entire sequence, not a
 per-action approval gate.
 
 For completion, record verification and set `done` only when approved work and
-required checks are complete. For selected ticket work, follow the shared
-ticket-workflow defaults for publishing, squash-merging, and safely removing the
-clean ticket worktree and local branch before marking the ticket done. For
+required checks are complete. Ticket completion includes delivery and cleanup:
+for selected ticket work, follow the shared ticket-workflow defaults to publish
+and squash-merge, verify delivery, then remove the clean ticket worktree and
+local branch. Do this before marking the ticket `done`; if cleanup is unsafe or
+blocked, preserve the worktree and leave the ticket open or blocked with the
+reason and next step recorded. Remote branch deletion is not implied. For
 cancellation, record why work stopped and what was completed or remains, then
 set `cancelled`. Archive either terminal ticket under `archived/<slug>.md`. Never
 archive an active ticket. Before moving a terminal ticket into `archived/`, add
