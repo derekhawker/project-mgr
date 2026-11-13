@@ -264,7 +264,7 @@ test("workspace tickets group, collapse, mark blocked, and flatten newest first"
     /muted/,
     "Workspace disclosure icon uses the shared muted icon style",
   );
-  const idleIcon = view.host.querySelector('[aria-label="OpenCode session is idle"]');
+  const statusIcons = view.host.querySelectorAll('[aria-label="Ticket status"]');
   const blockedRow = [...view.host.querySelectorAll("button")].find((button) => button.textContent.includes("Blocked ticket"));
   assert.ok(
     [...view.host.querySelectorAll("button")].some((button) => button.textContent.includes("Draft with session")),
@@ -275,16 +275,17 @@ test("workspace tickets group, collapse, mark blocked, and flatten newest first"
     false,
     "a new draft without a saved work session stays out of navigation",
   );
-  assertDecorativeIcon(blockedRow);
-  assert.match(blockedRow.firstElementChild.className, /muted/);
-  assert.match(blockedRow.firstElementChild.querySelector("path").getAttribute("d"), /M8 1\.5.*l5 5/);
-  assert.ok(idleIcon);
-  assert.equal(idleIcon.parentElement.firstElementChild, idleIcon, "the icon precedes the ticket title");
-  assert.match(idleIcon.querySelector("svg path").getAttribute("d"), /a6\.5 6\.5.*v5m4-5v5$/, "idle status uses a circled pause icon");
-  assert.match(idleIcon.parentElement.textContent, /Active ticket/);
-  assert.equal(view.host.querySelectorAll('[aria-label="Ticket has saved session"]').length, 0);
-  assert.ok(view.host.querySelector('[aria-label="Ticket has no work session"]'), "a missing work_session_id uses the caution icon");
-  assert.equal(view.host.querySelectorAll("svg").length, 5);
+  const blockedIcon = blockedRow.querySelector('[aria-label="Ticket blocked"]');
+  assertDecorativeIcon(blockedIcon);
+  assert.match(blockedIcon.querySelector("svg path").getAttribute("d"), /M8 1\.5.*l5 5/);
+  assert.equal(statusIcons.length, 3, "every visible non-blocked ticket has the regular icon");
+  for (const icon of statusIcons) {
+    assert.equal(icon.parentElement.firstElementChild, icon, "the icon precedes the ticket title");
+    assert.ok(icon.nextElementSibling.textContent.trim(), "the ticket title follows the icon");
+    assert.match(icon.querySelector("svg path").getAttribute("d"), /a6\.5 6\.5.*v5m4-5v5$/, "the regular ticket icon is pause");
+  }
+  assert.equal(view.host.querySelectorAll('[aria-label="Ticket has no work session"]').length, 0);
+  assert.equal(view.host.querySelectorAll("svg").length, 6);
   view.host.querySelector('button[aria-label="Collapse Alpha tickets"]').click();
   assert.doesNotMatch(view.host.textContent, /Blocked ticket|Active ticket|Draft with session|Draft ticket|Done ticket|Cancelled ticket/);
   assert.match(view.host.textContent, /Beta1Newest ticket/);
@@ -308,7 +309,7 @@ test("workspace tickets group, collapse, mark blocked, and flatten newest first"
     "Tickets",
   );
   assert.equal(view.host.textContent.includes("Alpha ·"), false);
-  assert.equal(view.host.querySelectorAll("svg").length, 3);
+  assert.equal(view.host.querySelectorAll("svg").length, 4);
   [...view.host.querySelectorAll("button")].find((button) => button.textContent.includes("Newest ticket")).click();
   assert.deepEqual(worked, [["b", "newest.md"]]);
   assert.equal(
