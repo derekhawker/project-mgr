@@ -60,17 +60,18 @@ export function WorkspaceNavigation(props) {
           props.onWork(workspace(), ticket().filename);
         }}
       >
+        <Show when={ticket().status === "blocked"}>
+          <Icon name="circleX" muted />
+        </Show>
         <span class={styles.ticketTitleGroup}>
-          <Show
-            when={ticket().status === "blocked"}
-            fallback={
-              <span class={styles.idleAttention} role="img" aria-label="Ticket status">
-                <Icon name="pause" size="small" class={styles.pauseIcon} />
-              </span>
-            }
-          >
-            <span class={styles.idleAttention} role="img" aria-label="Ticket blocked">
-              <Icon name="circleX" muted />
+          <Show when={ticket().status === "in_progress" && !ticket().hasWorkSession}>
+            <span class={styles.idleAttention} role="img" aria-label="Ticket has no work session">
+              <Icon name="caution" size="small" />
+            </span>
+          </Show>
+          <Show when={ticket().status !== "blocked" && ticket().opencodeStatus === "idle"}>
+            <span class={styles.idleAttention} role="img" aria-label="OpenCode session is idle">
+              <Icon name="pause" size="small" class={styles.pauseIcon} />
             </span>
           </Show>
           <span class={styles.ticketTitle}>{ticket().title}</span>

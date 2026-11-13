@@ -84,11 +84,14 @@ the periodic snapshot repairs missed events. It stores the active
 session's exact `idle`, `busy`, or `retry` status as app-maintained
 `opencode-status` frontmatter only when the ticket's current value differs.
 The ticket Markdown watcher refreshes navigation and the ticket reader. In left
-navigation, every displayed non-blocked ticket has the regular pause/status
-icon; blocked tickets use their special blocked icon. The ticket reader retains
-its caution triangle for `in_progress` tickets without a `work_session_id`, and
-a pause icon for `in_progress` tickets with `opencode-status: idle`. Icons
-appear before the title; the status field stays hidden from reader metadata.
+navigation, blocked tickets show their special blocked icon;
+`in_progress` tickets without a `work_session_id` show a caution triangle; and
+tickets with `opencode-status: idle` show a pause icon regardless of ticket
+lifecycle status. Running sessions show no attention icon. The ticket reader
+retains its caution triangle for `in_progress` tickets without a
+`work_session_id`, and a pause icon for `in_progress` tickets with
+`opencode-status: idle`. Icons appear before the title; the status field stays
+hidden from reader metadata.
 During a stream disconnect, the last persisted status remains visible until the
 next 30-second or reconnect snapshot updates it.
 
