@@ -1023,6 +1023,72 @@ pub fn selected_ticket_repository(
     Ok((repository, binding.repository_id.clone()))
 }
 
+/// Resolve the selected ticket's verified repository checkout or its recorded
+/// worktree. A missing worktree deliberately falls back to the checkout.
+pub fn selected_ticket_working_directory(
+    store: &crate::management::ManagementStore,
+    app_data: &Path,
+    workspace_id: &str,
+    filename: &str,
+) -> Result<(PathBuf, String), String> {
+    let (repository, repository_id) =
+        selected_ticket_repository(store, app_data, workspace_id, filename)?;
+    let workspace = store
+        .get_workspace(workspace_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Workspace was not found.".to_owned())?;
+    let directory = workspace_ticket_dir(app_data, &workspace.slug)?;
+    let ticket = canonical_ticket(&directory, filename)?;
+    let markdown = fs::read_to_string(ticket).map_err(|e| format!("Could not read ticket: {e}"))?;
+    let working_directory =
+        resolve_ticket_directory(&repository, ticket_worktree(&markdown)?.as_ref())?;
+    Ok((working_directory, repository_id))
+}
+
+/// Resolve the active Workspace's sole verified repository for workspace-level
+/// tools that intentionally do not require a selected ticket.
+pub fn workspace_repository_checkout(
+    store: &crate::management::ManagementStore,
+    workspace_id: &str,
+) -> Result<(PathBuf, String), String> {
+    let workspace = store
+        .get_workspace(workspace_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Workspace was not found.".to_owned())?;
+    if workspace.kind != crate::management::WorkspaceKind::Regular
+        || workspace.status != crate::management::WorkspaceStatus::Active
+    {
+        return Err("Workspace tools require an active regular Workspace.".into());
+    }
+    let bindings = store
+        .list_workspace_repository_bindings(workspace_id)
+        .map_err(|e| e.to_string())?;
+    if bindings.len() != 1
+        || bindings[0].verification_status != crate::management::VerificationStatus::Verified
+    {
+        return Err("Workspace must have exactly one verified repository for tools.".into());
+    }
+    let binding = &bindings[0];
+    let path = crate::change_review::validate_repo_root(Path::new(&binding.checkout_path))?;
+    let metadata = store
+        .workspace_repository_checkout_metadata(workspace_id, &binding.repository_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Repository has no verified Workspace checkout.".to_owned())?;
+    if path.display().to_string() != metadata.checkout_path {
+        let recorded = Path::new(&metadata.checkout_path)
+            .canonicalize()
+            .map_err(|e| format!("Recorded Workspace checkout is unavailable: {e}"))?;
+        if path != recorded {
+            return Err("Workspace checkout path no longer matches its verified binding.".into());
+        }
+    }
+    let facts = crate::safety::inspect_repository(&path).map_err(|e| e.to_string())?;
+    if facts.repository.identity != metadata.checkout_identity {
+        return Err("Workspace checkout identity no longer matches its verified binding.".into());
+    }
+    Ok((path, binding.repository_id.clone()))
+}
+
 pub fn validate_workbench_context(
     store: &crate::management::ManagementStore,
     app_data: &Path,
@@ -1542,13 +1608,45 @@ mod tests {
             id: "ticket-workspace".into(),
             name: "Ticket Workspace".into(),
             slug: "ticket-workspace".into(),
-            description: None,
+            description: Some("A workspace for ticket context testing".into()),
             kind: crate::management::WorkspaceKind::Regular,
             created_at: 42,
         };
         let (workspace, repository) = store
             .create_single_repository_workspace(&input, None)
             .unwrap();
+        let (main_directory, main_repository_id) =
+            workspace_repository_checkout(&store, &workspace.id).unwrap();
+        assert_eq!(main_directory, PathBuf::from(&repository.repository_path));
+        assert_eq!(main_repository_id, repository.id);
+        fs::write(
+            Path::new(&repository.repository_path).join("tracked.txt"),
+            "fixture\n",
+        )
+        .unwrap();
+        assert!(std::process::Command::new("git")
+            .arg("-C")
+            .arg(&repository.repository_path)
+            .args(["add", "."])
+            .status()
+            .unwrap()
+            .success());
+        assert!(std::process::Command::new("git")
+            .arg("-C")
+            .arg(&repository.repository_path)
+            .args([
+                "-c",
+                "user.name=Ticket test",
+                "-c",
+                "user.email=ticket@example.invalid",
+                "commit",
+                "--quiet",
+                "-m",
+                "fixture",
+            ])
+            .status()
+            .unwrap()
+            .success());
         let app_data = root.path().join("app-data");
         let dir = workspace_ticket_dir(&app_data, &workspace.slug).unwrap();
         fs::create_dir_all(&dir).unwrap();
@@ -1557,6 +1655,50 @@ mod tests {
             selected_ticket_repository(&store, &app_data, &workspace.id, "one.md").unwrap();
         assert_eq!(actual_path, PathBuf::from(&repository.repository_path));
         assert_eq!(actual_id, repository.id);
+        assert_eq!(
+            selected_ticket_working_directory(&store, &app_data, &workspace.id, "one.md")
+                .unwrap()
+                .0,
+            PathBuf::from(&repository.repository_path)
+                .canonicalize()
+                .unwrap()
+        );
+        let worktree = root.path().join("ticket-worktree");
+        let output = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&repository.repository_path)
+            .args(["worktree", "add", "--quiet", "-b", "ticket/test"])
+            .arg(&worktree)
+            .arg("HEAD")
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let markdown = format!(
+            "---\ntitle: One\nstatus: draft\nworktree_path: {}\nworktree_branch: ticket/test\n---\n",
+            worktree.display()
+        );
+        fs::write(dir.join("one.md"), markdown).unwrap();
+        fs::write(worktree.join("README.md"), "ticket worktree docs\n").unwrap();
+        assert_eq!(
+            selected_ticket_working_directory(&store, &app_data, &workspace.id, "one.md")
+                .unwrap()
+                .0,
+            worktree.canonicalize().unwrap()
+        );
+        let docs = crate::docs_reader::list_for_repository_path(&store, &repository.id, &worktree)
+            .unwrap();
+        assert!(docs.iter().any(|document| document.path == "README.md"));
+        let reviews =
+            crate::change_review::load_for_repository_path(&store, &repository.id, &worktree)
+                .unwrap();
+        assert_eq!(
+            reviews[0].path,
+            worktree.canonicalize().unwrap().display().to_string()
+        );
         assert!(
             selected_ticket_repository(&store, &app_data, &workspace.id, "missing.md").is_err()
         );

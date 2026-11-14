@@ -594,7 +594,7 @@ test("Change Review toolbar availability and selection are WorkspaceShell state"
   assert.match(workspaceShell, /props\.changeReviewSelected\(\)/);
   assert.match(
     main,
-    /onOpenChangeReview: \(event\) => \{ setTicketViewerVisible\(false\); void handleChangeReviewClick\(event\); \}/,
+    /onOpenChangeReview: \(event\) => \{\s*setTicketViewerVisible\(false\);\s*void handleChangeReviewClick\(event\);\s*\}/,
   );
   assert.match(
     controller,
@@ -641,7 +641,7 @@ test("Tools toolbar disabled state is presented by the repository-tools componen
   );
   assert.match(
     repositoryToolsMenu,
-    /triggerId="show-repo-tools"[\s\S]*?disabled=\{props\.disabled\(\)\}[\s\S]*?hidden=\{!props\.available\(\)\}[\s\S]*?open=\{props\.open\(\)\}/,
+    /triggerId=\{props\.triggerId \?\? "show-repo-tools"\}[\s\S]*?disabled=\{props\.disabled\(\)\}[\s\S]*?hidden=\{!props\.available\(\)\}[\s\S]*?open=\{props\.open\(\)\}/,
   );
   assert.match(
     main,

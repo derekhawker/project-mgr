@@ -39,8 +39,11 @@ Confirmation creates the ticket in external Workspace storage; success closes
 the dialog and selects the refreshed ticket, while failure keeps the review step
 and edits visible.
 
-Selecting a ticket establishes context but does not show the session tabs or tools.
-Activating **Work** opens or resumes its interactive session. The heading is
+The ticket browser's **Tools** menu is available even with no selected ticket.
+It offers only external-terminal, IntelliJ, and folder actions, using the
+Workspace's verified repository checkout. It has no in-app terminal or
+project-command actions. Selecting a ticket establishes context but does
+not show the session tabs. Activating **Work** opens or resumes its interactive session. The heading is
 `Workspace / <workspace name> / Tickets / <shortened ticket title>`; the
 workspace name is a button that returns to the ticket list without closing the
 session.
@@ -74,6 +77,12 @@ worktree, or in the Workspace repository checkout when no worktree is recorded.
 A stale or foreign recorded path is reported instead of silently routing to a
 different checkout. Native OpenCode worktree creation may update the ticket's
 current associated path; shell-created worktrees are not automatically tracked.
+Ticket-workbench Tools, Change Review, and Docs use that same selected-ticket
+directory. The workbench Tools menu offers both its in-app terminal and a
+separate external-terminal action; discovered commands identify their source
+directory and run there. With no selected ticket, only the Tickets-view Tools
+menu is shown and it offers external actions targeting the Workspace repository
+checkout.
 The ticket workspace after Work has no Workspace options collapsible or its
 controls. Clear the workspace-loading status after the terminal opens.
 

@@ -480,9 +480,27 @@ export class TerminalRuntime {
             cols: session.terminal.cols,
             rows: session.terminal.rows,
           };
-    return prefix === "opencode_terminal"
-      ? invokeCommand(this.invoke, "opencode_terminal_resize", payload)
-      : repoToolTerminalCommand(this.invoke, "resize", payload);
+    const pending = Promise.resolve().then(() =>
+      prefix === "opencode_terminal"
+        ? invokeCommand(this.invoke, "opencode_terminal_resize", payload)
+        : repoToolTerminalCommand(this.invoke, "resize", payload),
+    );
+    session.pendingResizes ??= new Set();
+    session.pendingResizes.add(pending);
+    try {
+      return await pending;
+    } finally {
+      session.pendingResizes.delete(pending);
+    }
+  }
+
+  async suspendResizing(sessionId) {
+    const session = this.sessions.get(sessionId);
+    if (!session) return;
+    session.hidden = true;
+    await Promise.all(
+      [...(session.pendingResizes ?? [])].map((pending) => pending.catch(() => {})),
+    );
   }
 
   hide(sessionId) {

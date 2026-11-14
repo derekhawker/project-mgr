@@ -4,6 +4,7 @@ import { createSignal } from "solid-js";
 import {
   createRepositoryToolsActionForwarders,
   createRepositoryToolsController,
+  isRepositoryToolsMenuOpen,
 } from "../src/views/workspace/repository-tools/repositoryToolsController.js";
 const vi = {
   fn: (impl = () => {}) => {
@@ -106,6 +107,20 @@ test("repository tools controller loads groups/errors and clears disabled", asyn
   assert.equal(b.state.error, "Could not load repository tools: oops");
   assert.equal(b.state.disabled, false);
 });
+test("external-actions menu skips repository command discovery", async () => {
+  const a = setup();
+  await a.ctl.toggleRepositoryTools({ includeProjectTools: false });
+  assert.equal(a.deps.listRepositoryTools.calls.length, 0);
+  assert.deepEqual(a.state.groups, []);
+  assert.equal(a.state.error, "");
+  assert.equal(a.state.disabled, false);
+  assert.equal(a.state.actions.onHandoff instanceof Function, true);
+});
+test("only the active Workspace Tools instance is considered open", () => {
+  assert.equal(isRepositoryToolsMenuOpen(true, "ticket-reader", "ticket-reader"), true);
+  assert.equal(isRepositoryToolsMenuOpen(true, "ticket-reader", "ticket-workbench"), false);
+  assert.equal(isRepositoryToolsMenuOpen(false, "ticket-reader", "ticket-reader"), false);
+});
 test("repository tools controller ignores stale owner identity", async () => {
   for (const nextOwner of [
     null,
@@ -131,11 +146,13 @@ test("repository tools controller ignores stale owner identity", async () => {
 test("repository tools controller preserves handoff/install semantics", async () => {
   const a = setup({
     launchWorkspaceOsHandoff: vi.fn().mockRejectedValue("denied"),
+    reportHandoffError: vi.fn(),
   });
   await a.ctl.toggleRepositoryTools();
   const v = view();
   await a.state.actions.onHandoff("folder", v);
   assert.equal(v.setStatus.calls.at(-1)[0], "Could not open: denied");
+  assert.deepEqual(a.deps.reportHandoffError.calls, [["Could not open: denied"]]);
   assert.equal(v.setDisabled.calls.at(-1)[0], false);
   const repo = { repositoryId: "r", path: "/repo" },
     installView = view();
@@ -223,7 +240,7 @@ test("group publication can immediately install with current actions; reopen doe
   });
   await a.ctl.toggleRepositoryTools();
   assert.deepEqual(a.deps.openRepositoryToolTerminal.calls, [
-    [repo, "npm_install", "", "workspace:w1:r:/repo"],
+    [repo, "npm_install", "", "", "workspace:w1:r:/repo"],
   ]);
   assert.equal(installViews[0].setStatus.calls[0][0], "Starting npm install…");
   assert.deepEqual(installViews[0].setHidden.calls, [[true]]);
@@ -250,7 +267,7 @@ test("group publication can immediately install with current actions; reopen doe
   await a.ctl.toggleRepositoryTools();
   assert.equal(a.deps.openRepositoryToolTerminal.calls.length, 2);
   assert.equal(
-    a.deps.openRepositoryToolTerminal.calls[1][3],
+    a.deps.openRepositoryToolTerminal.calls[1][4],
     "workspace:w2:r:/repo",
   );
   finishInstall(true);
@@ -274,10 +291,10 @@ test("current controller actions run tools and handoffs with existing busy/statu
   menu.onRun(repo, "npm_script", "test");
   menu.onRun(repo, "make_target", "check");
   assert.deepEqual(a.deps.openRepositoryToolTerminal.calls, [
-    [repo, "npm_script", "test"],
-    [repo, "make_target", "check"],
+    [repo, "npm_script", "test", ""],
+    [repo, "make_target", "check", ""],
   ]);
-  for (const action of ["shell", "idea", "folder"]) {
+  for (const action of ["shell", "external_terminal", "idea", "folder"]) {
     const v = view();
     await menu.onHandoff(action, v);
     assert.deepEqual(v.setDisabled.calls, [[true], [false]]);
@@ -291,8 +308,9 @@ test("current controller actions run tools and handoffs with existing busy/statu
     [{ type: "workspace", id: "w1" }],
   ]);
   assert.deepEqual(a.deps.launchWorkspaceOsHandoff.calls, [
-    [a.deps.invoke, "workspace", "w1", "idea"],
-    [a.deps.invoke, "workspace", "w1", "folder"],
+    [a.deps.invoke, "workspace", "w1", "external_terminal", undefined],
+    [a.deps.invoke, "workspace", "w1", "idea", undefined],
+    [a.deps.invoke, "workspace", "w1", "folder", undefined],
   ]);
   a.deps.openWorkspaceShellTerminal.mockResolvedValue(false);
   const v = view();
@@ -311,12 +329,14 @@ test("current controller actions run tools and handoffs with existing busy/statu
     "workspace",
     "w2",
     "folder",
+    undefined,
   ]);
   menu.onRun(repo, "npm_script", "build");
   assert.deepEqual(a.deps.openRepositoryToolTerminal.calls.at(-1), [
     repo,
     "npm_script",
     "build",
+    "",
   ]);
 });
 

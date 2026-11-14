@@ -57,8 +57,12 @@ discussions. For workflow behavior beyond the UX vocabulary, see
 - **Docs reader:** The destination for reading discovered Markdown and text
   files by paths relative to their Workspace or repository source. It is not a
   general file browser or editor.
-- **Tools menu:** The menu opened by **Tools** in the Workspace screen
-  toolbar. It offers OS handoff actions and tools for associated repositories.
+ - **Tools menu:** The menu opened by **Tools** in the Workspace Tickets view or
+  ticket-workbench toolbar. The Tickets-view menu works without a selected
+  ticket, offers external terminal/IntelliJ/folder actions only, and targets the
+  Workspace repository checkout. The ticket-workbench menu includes project
+  commands and uses the ticket worktree when recorded, otherwise the Workspace
+  checkout.
 
 ## Avoid as product vocabulary
 

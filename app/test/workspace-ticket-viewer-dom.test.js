@@ -102,6 +102,26 @@ test("ticket viewer exposes the remembered OpenCode default model selector", () 
   } finally { view.dispose(); }
 });
 
+test("ticket viewer keeps workspace tools available with no selected ticket", () => {
+  const view = mount({
+    workspaceName: () => "Example Workspace",
+    tickets: () => [],
+    selectedFilename: () => null,
+    loading: () => false,
+    error: () => "",
+    toolsMenu: () => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = "Tools";
+      return button;
+    },
+  });
+  try {
+    assert.match(view.host.textContent, /No active tickets/);
+    assert.ok([...view.host.querySelectorAll("button")].some((button) => button.textContent === "Tools"));
+  } finally { view.dispose(); }
+});
+
 test("ticket idea modal marks both current steps, keeps failed edits open, and closes after success", async () => {
   let failures = 1;
   const proposals = [];

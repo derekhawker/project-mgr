@@ -188,6 +188,36 @@ pub fn list_for_owner(
     Ok(documents)
 }
 
+pub fn list_for_repository_path(
+    store: &ManagementStore,
+    repository_id: &str,
+    path: &Path,
+) -> Result<Vec<DocumentPath>, String> {
+    let repository = repository_root(
+        store,
+        repository_id.to_owned(),
+        path.to_string_lossy().into_owned(),
+    )?;
+    let mut found = Vec::new();
+    discover_documents(&repository.path, false, &mut found)?;
+    let canonical_root = fs::canonicalize(&repository.path).map_err(|error| error.to_string())?;
+    let mut documents = found
+        .into_iter()
+        .map(|file| {
+            let relative = file
+                .strip_prefix(&canonical_root)
+                .map_err(|error| error.to_string())?;
+            Ok(DocumentPath {
+                path: relative.to_string_lossy().replace('\\', "/"),
+                repository_id: repository.repository_id.clone(),
+                repository_name: repository.repository_name.clone(),
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    documents.sort_by(|left, right| left.path.cmp(&right.path));
+    Ok(documents)
+}
+
 pub fn read_for_owner(
     store: &ManagementStore,
     owner_type: &str,
@@ -214,6 +244,40 @@ pub fn read_for_owner(
         .find(|root| root.repository_id.as_deref() == repository_id)
         .ok_or_else(|| "Document source is not available in this Workspace.".to_owned())?;
     let canonical_root = fs::canonicalize(&root.path).map_err(|error| error.to_string())?;
+    let requested =
+        fs::canonicalize(canonical_root.join(relative)).map_err(|error| error.to_string())?;
+    if !requested.starts_with(&canonical_root) {
+        return Err("Document path escapes its Workspace or repository.".into());
+    }
+    let contents = fs::read_to_string(&requested)
+        .map_err(|error| format!("Could not read {}: {error}", requested.display()))?;
+    Ok(DocumentContent {
+        path: requested_path.to_owned(),
+        contents,
+    })
+}
+
+pub fn read_for_repository_path(
+    store: &ManagementStore,
+    repository_id: &str,
+    root: &Path,
+    requested_path: &str,
+) -> Result<DocumentContent, String> {
+    if !list_for_repository_path(store, repository_id, root)?
+        .iter()
+        .any(|document| document.path == requested_path)
+    {
+        return Err("Document is not available in this Workspace.".into());
+    }
+    let relative = Path::new(requested_path);
+    if relative.is_absolute()
+        || relative
+            .components()
+            .any(|part| !matches!(part, std::path::Component::Normal(_)))
+    {
+        return Err("Document path must be relative to its Workspace or repository.".into());
+    }
+    let canonical_root = validate_repo_root(root)?;
     let requested =
         fs::canonicalize(canonical_root.join(relative)).map_err(|error| error.to_string())?;
     if !requested.starts_with(&canonical_root) {

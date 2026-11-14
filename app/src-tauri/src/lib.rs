@@ -951,6 +951,38 @@ fn require_ticket_context(
     )
 }
 
+fn resolve_workspace_tools_directory(
+    app: &AppHandle,
+    store: &ManagementStore,
+    owner_type: &str,
+    owner_id: &str,
+    ticket_filename: Option<&str>,
+) -> Result<(std::path::PathBuf, String), String> {
+    if owner_type != "workspace" {
+        return Err("Workspace tools require a Workspace owner.".into());
+    }
+    match ticket_filename {
+        Some(filename) => {
+            let app_data = app.path().app_data_dir().map_err(|e| e.to_string())?;
+            require_ticket_context(
+                app,
+                store,
+                owner_type,
+                owner_id,
+                Some(filename),
+                None,
+            )?;
+            workspace_tickets::selected_ticket_working_directory(
+                store,
+                &app_data,
+                owner_id,
+                filename,
+            )
+        }
+        None => workspace_tickets::workspace_repository_checkout(store, owner_id),
+    }
+}
+
 #[tauri::command]
 fn presentation_preferences_get(
     store: State<'_, ManagementStore>,
@@ -1020,7 +1052,14 @@ async fn change_review_load(
             request.ticket_filename.as_deref(),
             None,
         )?;
-        change_review::load_for_owner(&store, &request.owner_type, &request.owner_id)
+        let app_data = app.path().app_data_dir().map_err(|e| e.to_string())?;
+        let (directory, repository_id) = workspace_tickets::selected_ticket_working_directory(
+            &store,
+            &app_data,
+            &request.owner_id,
+            request.ticket_filename.as_deref().ok_or("Select a ticket before opening Change Review.")?,
+        )?;
+        change_review::load_for_repository_path(&store, &repository_id, &directory)
     })
     .await
 }
@@ -1050,13 +1089,17 @@ async fn change_review_full_diff(
             request.ticket_filename.as_deref(),
             Some(&request.repository_id),
         )?;
-        change_review::full_diff_for_owner(
+        let app_data = app.path().app_data_dir().map_err(|e| e.to_string())?;
+        let (directory, repository_id) = workspace_tickets::selected_ticket_working_directory(
             &store,
-            &request.owner_type,
+            &app_data,
             &request.owner_id,
-            &request.repository_id,
-            &request.path,
-        )
+            request.ticket_filename.as_deref().ok_or("Select a ticket before opening Change Review.")?,
+        )?;
+        if repository_id != request.repository_id {
+            return Err("Repository does not belong to the selected ticket's Workspace.".into());
+        }
+        change_review::full_diff_for_path(&directory, &request.path)
     })
     .await
 }
@@ -1076,7 +1119,14 @@ async fn docs_list(
             request.ticket_filename.as_deref(),
             None,
         )?;
-        docs_reader::list_for_owner(&store, &request.owner_type, &request.owner_id)
+        let app_data = app.path().app_data_dir().map_err(|e| e.to_string())?;
+        let (directory, repository_id) = workspace_tickets::selected_ticket_working_directory(
+            &store,
+            &app_data,
+            &request.owner_id,
+            request.ticket_filename.as_deref().ok_or("Select a ticket before opening Docs.")?,
+        )?;
+        docs_reader::list_for_repository_path(&store, &repository_id, &directory)
     })
     .await
 }
@@ -1106,12 +1156,21 @@ async fn docs_read(
             request.ticket_filename.as_deref(),
             request.repository_id.as_deref(),
         )?;
-        docs_reader::read_for_owner(
+        let app_data = app.path().app_data_dir().map_err(|e| e.to_string())?;
+        let (directory, repository_id) = workspace_tickets::selected_ticket_working_directory(
             &store,
-            &request.owner_type,
+            &app_data,
             &request.owner_id,
+            request.ticket_filename.as_deref().ok_or("Select a ticket before opening Docs.")?,
+        )?;
+        if request.repository_id.as_deref() != Some(repository_id.as_str()) {
+            return Err("Document source is not available in this Workspace.".into());
+        }
+        docs_reader::read_for_repository_path(
+            &store,
+            &repository_id,
+            &directory,
             &request.path,
-            request.repository_id.as_deref(),
         )
     })
     .await
@@ -1132,15 +1191,19 @@ async fn repo_tools_list(
 ) -> Result<Vec<repo_tools::RepositoryToolGroup>, String> {
     run_ports_work(move || {
         let store = app.state::<ManagementStore>();
-        require_ticket_context(
+        let (directory, repository_id) = resolve_workspace_tools_directory(
             &app,
             &store,
             &request.owner_type,
             &request.owner_id,
             request.ticket_filename.as_deref(),
-            None,
         )?;
-        repo_tools::list_for_owner(&store, &request.owner_type, &request.owner_id)
+        let name = store
+            .get_repository(&repository_id)
+            .map_err(|e| e.to_string())?
+            .map(|repository| repository.name)
+            .unwrap_or_else(|| repository_id.clone());
+        repo_tools::list_for_repository_path(&repository_id, &name, &directory)
     })
     .await
 }
@@ -1153,6 +1216,7 @@ struct RepositoryToolStartRequest {
     repository_id: String,
     kind: String,
     name: String,
+    source_directory: Option<String>,
     ticket_filename: Option<String>,
 }
 
@@ -1175,19 +1239,19 @@ async fn repo_tool_terminal_start(
     run_ports_work(move || {
         let store = app.state::<ManagementStore>();
         let runtime = app.state::<opencode::Runtime>();
-        require_ticket_context(
+        let (directory, repository_id) = resolve_workspace_tools_directory(
             &app,
             &store,
             &request.owner_type,
             &request.owner_id,
             request.ticket_filename.as_deref(),
-            Some(&request.repository_id),
         )?;
-        let launch = repo_tools::launch_for_owner(
-            &store,
-            &request.owner_type,
-            &request.owner_id,
-            &request.repository_id,
+        if repository_id != request.repository_id {
+            return Err("Repository is not associated with the selected Workspace or ticket.".into());
+        }
+        let launch = repo_tools::launch_for_subdirectory(
+            &directory,
+            request.source_directory.as_deref().unwrap_or_default(),
             &request.kind,
             &request.name,
         )?;
@@ -1273,15 +1337,13 @@ async fn workbench_shell_terminal_start(
     run_ports_work(move || {
         let store = app.state::<ManagementStore>();
         let runtime = app.state::<opencode::Runtime>();
-        require_ticket_context(
+        let (directory, _) = resolve_workspace_tools_directory(
             &app,
             &store,
             &request.owner_type,
             &request.owner_id,
             request.ticket_filename.as_deref(),
-            None,
         )?;
-        let directory = os_handoff::owner_home(&store, &request.owner_type, &request.owner_id)?;
         let shell = if cfg!(target_os = "windows") {
             std::env::var_os("COMSPEC")
                 .map(std::path::PathBuf::from)
@@ -1322,23 +1384,16 @@ async fn workbench_os_handoff(
 ) -> Result<(), String> {
     run_ports_work(move || {
         let store = app.state::<ManagementStore>();
-        require_ticket_context(
+        let (directory, _) = resolve_workspace_tools_directory(
             &app,
             &store,
             &request.owner_type,
             &request.owner_id,
             request.ticket_filename.as_deref(),
-            None,
         )?;
-        let directory = os_handoff::owner_home(&store, &request.owner_type, &request.owner_id)?;
         let launch =
             os_handoff::external_launch(&request.action, &directory, os_handoff::platform())?;
-        let child = os_handoff::spawn_external(&launch)?;
-        std::thread::spawn(move || {
-            let mut child = child;
-            let _ = child.wait();
-        });
-        Ok(())
+        os_handoff::spawn_external(&launch)
     })
     .await
 }

@@ -15,6 +15,11 @@ const groups = [
     path: "/workspace/repos/alpha",
     packageScripts: ["build", "test"],
     makeTargets: ["check"],
+    packageScriptEntries: [
+      { name: "build", directory: "" },
+      { name: "test", directory: "app" },
+    ],
+    makeTargetEntries: [{ name: "check", directory: "app" }],
     npmInstallNeeded: true,
   },
   {
@@ -23,6 +28,8 @@ const groups = [
     path: "/workspace/repos/beta",
     packageScripts: [],
     makeTargets: ["lint"],
+    packageScriptEntries: [],
+    makeTargetEntries: [{ name: "lint", directory: "" }],
     npmInstallNeeded: false,
   },
 ];
@@ -49,6 +56,8 @@ test("repository tool commands carry the selected owner/repository and reject in
       "r1",
       "make_target",
       "check",
+      "app",
+      "ticket.md",
     ),
     {
       terminalId: "tool-1",
@@ -71,6 +80,8 @@ test("repository tool commands carry the selected owner/repository and reject in
       repositoryId: "r1",
       kind: "make_target",
       name: "check",
+      sourceDirectory: "app",
+      ticketFilename: "ticket.md",
     },
   });
   await assert.rejects(

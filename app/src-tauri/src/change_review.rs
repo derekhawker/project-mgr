@@ -270,18 +270,8 @@ pub fn full_diff_for_owner(
     repository_id: &str,
     file: &str,
 ) -> Result<String, String> {
-    const LIMIT: u64 = 1024 * 1024;
     if owner_type != "workspace" {
         return Err("Change Review owner type must be workspace.".into());
-    }
-    if file.is_empty()
-        || file.len() > 4096
-        || file.contains('\0')
-        || !Path::new(file)
-            .components()
-            .all(|part| matches!(part, std::path::Component::Normal(_)))
-    {
-        return Err("Invalid repository-relative file path.".into());
     }
     let workspace = store
         .get_workspace(owner_id)
@@ -297,6 +287,21 @@ pub fn full_diff_for_owner(
         })
         .ok_or("Repository is not associated with this workspace.")?;
     let root = validate_repo_root(Path::new(&binding.checkout_path))?;
+    full_diff_for_path(&root, file)
+}
+
+pub fn full_diff_for_path(root: &Path, file: &str) -> Result<String, String> {
+    const LIMIT: u64 = 1024 * 1024;
+    if file.is_empty()
+        || file.len() > 4096
+        || file.contains('\0')
+        || !Path::new(file)
+            .components()
+            .all(|part| matches!(part, std::path::Component::Normal(_)))
+    {
+        return Err("Invalid repository-relative file path.".into());
+    }
+    let root = validate_repo_root(root)?;
     let target = resolve_comparison_target(&root)?.0;
     let file_path = root.join(file);
     let mut ancestor = root.clone();
@@ -419,6 +424,19 @@ pub fn load_for_owner(
     Ok(reviews)
 }
 
+pub fn load_for_repository_path(
+    store: &ManagementStore,
+    repository_id: &str,
+    path: &Path,
+) -> Result<Vec<ReviewRepository>, String> {
+    let name = store
+        .get_repository(repository_id)
+        .map_err(|error| error.to_string())?
+        .map(|repository| repository.name)
+        .unwrap_or_else(|| repository_id.to_owned());
+    Ok(vec![review_repository(repository_id, &name, path)])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -474,6 +492,18 @@ mod tests {
             .unwrap();
         assert_eq!(untracked.status, "untracked");
         assert!(untracked.diff.as_deref().unwrap().contains("+added"));
+    }
+
+    #[test]
+    fn review_excludes_untracked_files_ignored_by_gitignore() {
+        let dir = repository();
+        fs::write(dir.path().join(".gitignore"), "ignored.tmp\n").unwrap();
+        fs::write(dir.path().join("ignored.tmp"), "ignored\n").unwrap();
+        let review = review_repository("repo", "Example", dir.path());
+        assert!(
+            review.files.iter().all(|file| file.path != "ignored.tmp"),
+            "ignored untracked files must not appear in Change Review"
+        );
     }
 
     #[test]

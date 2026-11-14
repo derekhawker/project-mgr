@@ -22,13 +22,13 @@ Application shell (fixed to the window)
 │   └── New work (Workspace or Quick Request; primary action pinned to bottom)
 └── Main work area (only this pane scrolls)
     ├── Settings / Repositories page (saved scan roots and enabled/disabled repositories)
-    ├── Workspace / name / Tickets masthead (compact list beside a ticket reader)
+    ├── Workspace / name / Tickets masthead (Tools menu; compact list beside a ticket reader)
     ├── Workspace / name masthead and recessed tab strip (OpenCode, open terminals, Change Review, Docs)
     ├── Full-size interactive terminal occupying the available work area
     ├── Quick Request / name masthead and terminal (no tabs or task/workspace tools)
     ├── Change Review (only when repositories are associated)
     ├── Docs reader (always shown; disabled when no documents are found)
-    └── Tools menu (OS handoff above a divider, then repo tools grouped side by side)
+    └── Ticket-workbench Tools menu (ticket worktree when known, otherwise Workspace checkout)
 
 Modal: New work; leaves the current destination intact
 Separate navigation destination: full Quick Requests list (all retained items)

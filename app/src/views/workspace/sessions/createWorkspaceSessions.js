@@ -4,9 +4,9 @@ import { invokeCommand } from "../../../services/commandContract.js";
 import { SessionTabList } from "./SessionTabList.jsx";
 import { PendingInputList } from "./PendingInputList.jsx";
 import {
-  linkedTicketFilename,
   scopedSessionOwnerKey,
   sessionInTicketScope,
+  ticketFilenameForSessionClose,
 } from "./ticketSessionScope.js";
 import {
   ownerSessionTabState,
@@ -191,13 +191,21 @@ export function createWorkspaceSessions({
     if (sessionId === proposalSessionId()) return;
     const ownerKey = sessionOwners.get(sessionId);
     const owningTab = sessionTabEntries().find((entry) => entry.sessionId === sessionId);
-    const ticketScope = ownerKey?.startsWith("workspace:") &&
-      owningTab?.ticketScope === getSessionScope()
-      ? linkedTicketFilename(owningTab.ticketScope)
-      : undefined;
+    const isToolTerminal = repositoryToolTerminals.has(sessionId);
+    const ticketScope = ticketFilenameForSessionClose(
+      owningTab,
+      getSessionScope(),
+      isToolTerminal,
+    );
     let nextTicketSessionId;
+    let runtime = null;
     try {
-      if (repositoryToolTerminals.has(sessionId))
+      if (isToolTerminal) {
+        runtime = await getRuntime();
+        // Stop observer-driven resizes before Rust removes this ephemeral PTY.
+        await runtime?.suspendResizing(sessionId);
+      }
+      if (isToolTerminal)
         await repoToolTerminalCommand(invoke, "cleanup", {
           terminalId: sessionId,
         });
@@ -212,14 +220,15 @@ export function createWorkspaceSessions({
         );
       }
     } catch (error) {
+      runtime?.reopen(sessionId);
       const message = formatWorkspaceError("Close terminal", error);
       setOwnerStatus(message);
       setCommandResultMessage(message);
       return;
     }
-    const runtime = await getRuntime();
+    const activeRuntime = runtime ?? (await getRuntime());
     if (appLifetime.disposed) return;
-    runtime?.forget(sessionId);
+    activeRuntime?.forget(sessionId);
     terminalSurfaces.remove(sessionId);
     removeSessionTab(sessionId);
     openSessions.delete(sessionId);
@@ -458,6 +467,7 @@ export function createWorkspaceSessions({
     repository,
     kind,
     name = "",
+    sourceDirectory = "",
     installKey = null,
   ) {
     const owner = getToolsOwner();
@@ -470,6 +480,8 @@ export function createWorkspaceSessions({
         repository.repositoryId,
         kind,
         name,
+        sourceDirectory,
+        owner.ticketFilename,
       );
       if (installKey) installTerminalKeys.set(started.terminalId, installKey);
       return await attachManagedTerminal(
@@ -478,6 +490,9 @@ export function createWorkspaceSessions({
         `${repository.name} · ${started.label}`,
       );
     } catch (error) {
+      // The ticket reader hides the Workspace shell. Bring the owner page
+      // forward so command-start failures are visible there as well.
+      showOwnerTerminal();
       setSessionStatus(`Could not start ${name || kind}: ${String(error)}`);
       return false;
     }
@@ -486,7 +501,12 @@ export function createWorkspaceSessions({
   async function openWorkspaceShellTerminal(owner) {
     let started = null;
     try {
-      started = await startWorkspaceShell(invoke, owner.type, owner.id);
+      started = await startWorkspaceShell(
+        invoke,
+        owner.type,
+        owner.id,
+        owner.ticketFilename,
+      );
       return await attachManagedTerminal(started, owner, started.label);
     } catch (error) {
       if (

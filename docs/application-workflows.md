@@ -51,6 +51,15 @@ ticket uses the saved model only when Rust creates a new session; a valid
 recorded session is resumed without model lookup or change. If the saved model
 is no longer available, the user must select an available model.
 
+The Tickets view's **Tools** menu is available even when no ticket is selected.
+It offers external-terminal, IntelliJ, and folder actions only, all targeting the
+Workspace's verified repository checkout; it has no app-managed terminal or
+project-command actions. In the ticket workbench, tools,
+Change Review, and Docs use the selected ticket's verified worktree when one is
+recorded, falling back to the Workspace checkout only when the ticket has no
+worktree. Nested project commands run from and show the directory containing
+their `package.json` or Makefile.
+
 Creating a ticket uses a two-step dialog. The first step captures the user's
 idea and asks OpenCode for a proposal in the Workspace's sole verified
 repository. The request explicitly invokes the ticket-management skill's

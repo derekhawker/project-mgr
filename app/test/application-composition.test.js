@@ -197,7 +197,7 @@ test("application areas compose once and retain terminals across navigation and 
     $("#show-repo-tools").click();
     const toolAction = () =>
       [...$("#repo-tools-menu").querySelectorAll("button")].find(
-        (button) => button.textContent === "test",
+        (button) => button.textContent === "test · repository root",
       );
     await waitFor(toolAction);
     toolAction().click();

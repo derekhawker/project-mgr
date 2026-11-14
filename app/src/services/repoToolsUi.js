@@ -13,10 +13,19 @@ export function startRepositoryTool(
   repositoryId,
   kind,
   name = "",
+  sourceDirectory = "",
   ticketFilename,
 ) {
   return invokeCommand(invoke, "repo_tool_terminal_start", {
-    request: { ownerType, ownerId, repositoryId, kind, name, ...(ticketFilename ? { ticketFilename } : {}) },
+    request: {
+      ownerType,
+      ownerId,
+      repositoryId,
+      kind,
+      name,
+      ...(sourceDirectory ? { sourceDirectory } : {}),
+      ...(ticketFilename ? { ticketFilename } : {}),
+    },
   });
 }
 

@@ -20,6 +20,7 @@ export { SessionTabList } from ${JSON.stringify(resolve(root, "src/views/workspa
 export { WorkspaceShell } from ${JSON.stringify(resolve(root, "src/views/workspace/WorkspaceShell.jsx"))};
 export { TabList } from "@ui-lib";
 export { RepositoryToolsMenu } from ${JSON.stringify(resolve(root, "src/views/workspace/repository-tools/RepositoryToolsMenu.jsx"))};
+export { isRepositoryToolsMenuOpen } from ${JSON.stringify(resolve(root, "src/views/workspace/repository-tools/repositoryToolsController.js"))};
 export { WorkspaceOwnerPanel } from ${JSON.stringify(resolve(root, "src/views/workspace/sessions/WorkspaceOwnerPanel.jsx"))};
 export { NewWorkModal } from ${JSON.stringify(resolve(root, "src/features/new-work/modal/NewWorkModal.jsx"))};
 export { createQuickRequestCreationController } from ${JSON.stringify(resolve(root, "src/features/new-work/modal/quickRequestCreationController.js"))};
@@ -68,6 +69,7 @@ const {
   WorkspaceShell,
   TabList,
   RepositoryToolsMenu,
+  isRepositoryToolsMenuOpen,
   WorkspaceOwnerPanel,
   NewWorkModal,
   createQuickRequestCreationController,
@@ -382,7 +384,7 @@ test("ticket Workbench heading keeps workspace, Tickets, and shortened ticket co
   }
 });
 
-test("repository menu remains controlled and forwards selected tool", () => {
+test("repository menu opens, forwards selected tool, and closes after selection", () => {
   const [open, setOpen] = createSignal(false);
   const calls = [];
   const view = mount(RepositoryToolsMenu, {
@@ -400,13 +402,14 @@ test("repository menu remains controlled and forwards selected tool", () => {
   const disclosure = toggle.closest("details");
   assert.equal(disclosure.open, false);
   toggle.click();
-  assert.equal(toggle.getAttribute("aria-expanded"), "true");
+  assert.equal(open(), true);
   assert.equal(disclosure.open, true);
   [...menu.querySelectorAll("button")]
-    .find((button) => button.textContent === "test")
+    .find((button) => button.textContent === "test · repository root")
     .click();
   assert.equal(calls[0][1], "npm_script");
   assert.equal(calls[0][2], "test");
+  assert.equal(open(), false);
   view.dispose();
 });
 
@@ -433,6 +436,96 @@ test("repository menu omits the repository section when empty", () => {
   setGroups([]);
   assert.equal(menu.querySelector("hr"), null);
   view.dispose();
+});
+
+test("Tickets-view Tools exposes only external actions", () => {
+  const view = mount(RepositoryToolsMenu, {
+    open: () => true,
+    available: () => true,
+    disabled: () => false,
+    error: () => "",
+    groups: () => [{ name: "Repo", packageScripts: ["test"], makeTargets: [] }],
+    externalActionsOnly: true,
+    onToggle: () => {},
+    onHandoff: () => {},
+    onRun: () => {},
+  });
+  try {
+    const menu = view.host.querySelector("#repo-tools-menu");
+    assert.match(menu.textContent, /Open in external terminal/);
+    assert.match(menu.textContent, /Open in IntelliJ/);
+    assert.match(menu.textContent, /Show in folder/);
+    assert.doesNotMatch(menu.textContent, /Open terminal/);
+    assert.doesNotMatch(menu.textContent, /test · repository root/);
+  } finally {
+    view.dispose();
+  }
+});
+
+test("hidden workbench Tools menu cannot dismiss ticket-reader Tools before its action runs", async () => {
+  const [open, setOpen] = createSignal(true);
+  const activeTrigger = () => "ticket-reader";
+  const handoffs = [];
+  const host = document.createElement("div");
+  document.body.append(host);
+  const propsFor = (triggerId, externalActionsOnly) => ({
+    triggerId,
+    contentId: `${triggerId}-menu`,
+    open: () => isRepositoryToolsMenuOpen(open(), activeTrigger(), triggerId),
+    available: () => true,
+    disabled: () => false,
+    error: () => "",
+    groups: () => [],
+    externalActionsOnly,
+    onToggle: () => setOpen(false),
+    onHandoff: (action, handoffView) => {
+      handoffs.push([triggerId, action]);
+      handoffView.setDisabled(true);
+      // A pending handoff must not hold the menu open while its OS action runs.
+      return new Promise(() => {});
+    },
+    onRun: () => {},
+  });
+  const dispose = render(() => [
+    createComponent(RepositoryToolsMenu, propsFor("ticket-reader", true)),
+    createComponent(RepositoryToolsMenu, propsFor("ticket-workbench", false)),
+  ], host);
+  try {
+    const button = host.querySelector("#ticket-reader-menu button");
+    button.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
+    button.click();
+    await Promise.resolve();
+    assert.equal(open(), false);
+    assert.equal(button.closest("details").open, false);
+    assert.deepEqual(handoffs, [["ticket-reader", "external_terminal"]]);
+  } finally {
+    dispose();
+    host.remove();
+  }
+});
+
+test("ticket-workbench Tools closes when a menu action is selected", async () => {
+  const [open, setOpen] = createSignal(true);
+  const view = mount(RepositoryToolsMenu, {
+    open,
+    available: () => true,
+    disabled: () => false,
+    error: () => "",
+    groups: () => [],
+    onToggle: () => setOpen(false),
+    onHandoff: () => {},
+    onRun: () => {},
+  });
+  try {
+    const action = [...view.host.querySelectorAll("button")]
+      .find((button) => button.textContent === "Open terminal")
+    action.click();
+    await Promise.resolve();
+    assert.equal(open(), false);
+    assert.equal(action.closest("details").open, false);
+  } finally {
+    view.dispose();
+  }
 });
 
 test("owner visibility preserves the terminal while removed workspace controls stay absent", () => {

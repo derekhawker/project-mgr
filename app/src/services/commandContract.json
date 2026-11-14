@@ -5517,6 +5517,30 @@
               "type": "string"
             }
           },
+          "packageScriptEntries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string" },
+                "directory": { "type": "string" }
+              },
+              "required": ["name", "directory"],
+              "additionalProperties": false
+            }
+          },
+          "makeTargetEntries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string" },
+                "directory": { "type": "string" }
+              },
+              "required": ["name", "directory"],
+              "additionalProperties": false
+            }
+          },
           "npmInstallNeeded": {
             "type": "boolean"
           }
@@ -5527,6 +5551,8 @@
           "path",
           "packageScripts",
           "makeTargets",
+          "packageScriptEntries",
+          "makeTargetEntries",
           "npmInstallNeeded"
         ],
         "additionalProperties": false
@@ -5553,6 +5579,9 @@
               "type": "string"
             },
             "name": {
+              "type": "string"
+            },
+            "sourceDirectory": {
               "type": "string"
             },
             "ticketFilename": {
