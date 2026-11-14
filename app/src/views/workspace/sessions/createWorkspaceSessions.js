@@ -7,6 +7,7 @@ import {
   scopedSessionOwnerKey,
   sessionInTicketScope,
   ticketFilenameForSessionClose,
+  TICKET_SESSION_TAB_LABEL,
 } from "./ticketSessionScope.js";
 import {
   ownerSessionTabState,
@@ -187,7 +188,7 @@ export function createWorkspaceSessions({
     }
   }
 
-  async function closeWorkspaceSession(sessionId) {
+  async function closeWorkspaceSession(sessionId, { unlinkTicket = true } = {}) {
     if (sessionId === proposalSessionId()) return;
     const ownerKey = sessionOwners.get(sessionId);
     const owningTab = sessionTabEntries().find((entry) => entry.sessionId === sessionId);
@@ -210,7 +211,7 @@ export function createWorkspaceSessions({
           terminalId: sessionId,
         });
       else await cleanupTerminal(invoke, sessionId);
-      if (ticketScope) {
+      if (ticketScope && unlinkTicket) {
         const workspaceId = ownerKey.slice("workspace:".length);
         nextTicketSessionId = await closeWorkspaceTicketSession(
           invoke,
@@ -317,7 +318,7 @@ export function createWorkspaceSessions({
           const label = proposal
             ? "Proposal"
             : ownerKey?.startsWith("workspace:") && getSessionScope()
-              ? `Session ${sessionTabEntries().filter((entry) => entry.ownerKey === ownerKey && entry.ticketScope === getSessionScope()).length + 1}`
+              ? TICKET_SESSION_TAB_LABEL
             : workspaceSessionTabLabel(
                 restored,
                 data.workspaceSessionContexts,
@@ -553,6 +554,13 @@ export function createWorkspaceSessions({
     selectedSessionId: () =>
       sessionTabEntries().find((entry) => entry.visible && entry.selected)
         ?.sessionId,
+    ticketSessionId: () => sessionTabEntries().find(
+      (entry) =>
+        entry.ownerKey === selectedOwnerKey() &&
+        entry.ticketScope === getSessionScope(),
+    )?.sessionId,
+    closeReplacedTicketSession: (sessionId) =>
+      closeWorkspaceSession(sessionId, { unlinkTicket: false }),
     tabs: () => SessionTabList({ tabs: sessionTabEntries }),
     pendingInputs: () =>
       PendingInputList({

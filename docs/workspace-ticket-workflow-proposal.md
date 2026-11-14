@@ -229,21 +229,21 @@ truth for ticket sessions.
   sufficient; no second ticket-content copy or ticket registry is required.
   Never infer the assigned ticket from the shared repository directory or
   current UI selection.
-- Create or refresh the entry for each exact ticket session before opening its
-  interactive terminal; refresh the current status from Markdown when restoring
-  sessions. `work_session_id` remains the active session for compatibility and
-  `work_session_ids` retains all ticket-linked sessions. The new-session control
-  creates and activates an additional session without discarding older IDs.
+- Create or refresh the entry for the ticket's one exact session before opening
+  its interactive terminal; refresh the current status from Markdown when
+  restoring it. `work_session_id` is the sole ticket-session binding. The
+  new-session control creates and attaches a replacement first, switches the
+  ticket binding only after attach succeeds, then closes the prior session's
+  terminal. Older OpenCode conversation history is not deleted.
 - New ticket sessions use the ticket's associated verified worktree when present;
   otherwise they use the Workspace's verified repository checkout. After
   attaching a ticket session, read OpenCode's actual session directory and record
   any worktree OpenCode assigned during session creation. A stale or unrelated
   recorded worktree is an error, not a fallback. Existing OpenCode conversation
   history remains OpenCode-owned.
-- Closing a ticket tab closes its terminal and removes that session ID from the
-  ticket. If the active ID closes, the most recently retained ID becomes active.
-  Closing does not delete the OpenCode conversation. Quick Requests and other
-  unbound sessions never receive ticket-specific plugin behavior.
+- Closing a ticket tab closes its terminal and clears the ticket's sole session
+  binding. Closing does not delete the OpenCode conversation. Quick Requests and
+  other unbound sessions never receive ticket-specific plugin behavior.
 - OpenCode-assigned worktrees are read from the exact ticket session's live
   location after attach. The shared plugin also observes later native worktree
   creation and passes the exact runtime session ID and native result to the Rust
@@ -267,11 +267,12 @@ truth for ticket sessions.
 - Tickets remain open to clarification and detail improvements. Use OpenCode and
   the ticket guidance to update the Markdown ticket; do not make draft status a
   barrier to refining its contents.
-- A ticket retains multiple OpenCode work sessions and one active-session
-  pointer. Work restores retained sessions, creates a replacement if the active
-  session is missing, and makes a new ticket session active when requested.
-  Record exact IDs in ticket YAML front matter so they can be restored later.
-  Keep ticket status authoritative in Markdown according to the global skill.
+- A ticket has one OpenCode work session. Work restores that session or creates
+  and attaches a replacement if it is missing. Starting a new session replaces
+  the ticket binding only after the new terminal attaches, then closes the old
+  terminal without deleting its OpenCode conversation. Record the exact session
+  ID in ticket YAML front matter. Keep ticket status authoritative in Markdown
+  according to the global skill.
 - The precise status transition, if any, is performed in OpenCode and persisted
   in the Markdown ticket; the app's Work action does not change status.
 
@@ -309,12 +310,13 @@ an implementation detail, not a second authority.
   Confirmed in conversation.
 - **Database reset:** deletion is already complete; no database task is included.
   Prior repository associations are out of scope. Confirmed in conversation.
-- **Sessions per ticket:** originally one work/resume session; expanded on
-  2026-11-09 to retain multiple sessions with one active pointer. The ticket
-  investigation record is authoritative for that implementation.
-- **Session metadata:** preserve `work_session_id` as the active ID and add
-  `work_session_ids` for retained sessions. Closing unlinks but does not delete
-  OpenCode history.
+- **Sessions per ticket:** one OpenCode session per ticket. Starting a new
+  session attaches it before replacing the ticket binding, then closes the old
+  terminal. The old conversation remains in OpenCode history. Confirmed on
+  2026-11-12.
+- **Session metadata:** `work_session_id` is the sole ticket binding. Legacy
+  `work_session_ids` lists are normalized to that one binding; the application
+  does not retain a multi-session list.
 - **Worktree association:** one current verified path/branch in front matter;
   latest native OpenCode worktree creation replaces it. Shell-created trees are
   out of automatic attribution. New sessions use it or fall back to the verified

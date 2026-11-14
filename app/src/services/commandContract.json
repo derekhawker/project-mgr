@@ -1023,8 +1023,7 @@
       "additionalProperties": false
     },
     "result": {
-      "type": "string",
-      "nullable": true
+      "type": "null"
     }
   },
   "opencode_terminal_attach": {
@@ -6107,13 +6106,8 @@
     "result": {
       "type": "object",
       "properties": {
-        "activeSessionId": {
-          "type": "string"
-        },
-        "sessions": {
-          "type": "array",
-          "items": {
-            "type": "object",
+        "session": {
+          "type": "object",
             "properties": {
               "openCodeSessionId": {
                 "type": "string"
@@ -6179,12 +6173,10 @@
               "selectedModel"
             ],
             "additionalProperties": false
-          }
         }
       },
       "required": [
-        "activeSessionId",
-        "sessions"
+        "session"
       ],
       "additionalProperties": false
     }

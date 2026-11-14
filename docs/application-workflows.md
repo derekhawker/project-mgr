@@ -84,6 +84,13 @@ overwritten. The dialog closes after the create command succeeds and remains
 open with the reviewed edits if creation fails; the ticket list then refreshes
 and selects the created draft.
 
+Each ticket tracks at most one OpenCode work session in `work_session_id`.
+Starting **New session** creates and attaches the replacement before updating
+that ticket binding; only after the new session is attached does the app close
+the previous session's terminal. Closing the terminal does not delete the old
+OpenCode conversation. Older `work_session_ids` front matter is normalized to
+the one active binding when the ticket is worked.
+
 The Workspace ticket list keeps separate sort selections for active and archived
 tickets. Active tickets retain the **Status**, **Recently modified**, and
 **Title** options with **Status** as the default. Archived tickets offer

@@ -1,3 +1,5 @@
+export const TICKET_SESSION_TAB_LABEL = "OpenCode";
+
 export function scopedSessionOwnerKey(ownerKey, scope) {
   return ownerKey?.startsWith("workspace:") && scope !== undefined
     ? `${ownerKey}|${scope || "none"}` : ownerKey;
@@ -22,4 +24,15 @@ export function ticketFilenameForSessionClose(entry, activeScope, isToolTerminal
   )
     return undefined;
   return linkedTicketFilename(entry.ticketScope);
+}
+
+export async function attachReplacementBeforeClosingPrevious(
+  previousSessionId,
+  replacementSessionId,
+  attachReplacement,
+  closePrevious,
+) {
+  await attachReplacement();
+  if (previousSessionId && previousSessionId !== replacementSessionId)
+    await closePrevious(previousSessionId);
 }

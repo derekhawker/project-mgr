@@ -45,6 +45,7 @@ import {
 import { handleEnterToSubmit } from "./lib/formKeyboard.js";
 import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
+import { attachReplacementBeforeClosingPrevious } from "./views/workspace/sessions/ticketSessionScope.js";
 import { createApplicationLifetime } from "./application/applicationLifetime.js";
 import { createWorkspaceTicketCache } from "./views/workspace/tickets/workspaceTicketCache.js";
 import { recordUiDiagnostic } from "./lib/uiDiagnostics.js";
@@ -316,14 +317,13 @@ async function workWorkspaceTicket(workspaceId, filename) {
     const result = await workOnWorkspaceTicket(invoke, workspaceId, filename);
     recordUiDiagnostic("WorkspaceTicketWork", "command-success");
     if (selectedWorkspace?.id !== workspaceId || selectedTicketFilename() !== filename) return;
-    for (const session of result.sessions) rememberWorkspaceSession(session);
+    rememberWorkspaceSession(result.session);
     setTicketSessionScope(filename);
     setTicketWorkbenchActive(true);
     setTicketViewerVisible(false);
     setWorkspaceShellVisible(true);
     setSelectedOwnerVisible(true);
-    for (const session of result.sessions) await showSession(session.openCodeSessionId);
-    await showSession(result.activeSessionId);
+    await showSession(result.session.openCodeSessionId);
   } catch (error) {
     recordUiDiagnostic("WorkspaceTicketWork", "command-error");
     if (selectedWorkspace?.id !== workspaceId || selectedTicketFilename() !== filename) return;
@@ -357,16 +357,25 @@ async function startNewWorkspaceTicketSession() {
   const filename = selectedTicketFilename();
   if (ticketWorking() || !workspaceId || !filename || ticketArchived()) return;
   setTicketWorking(true);
+  const replacedSessionId = sessions.ticketSessionId();
   try {
     const session = await createWorkspaceTicketSession(invoke, workspaceId, filename);
-    if (selectedWorkspace?.id !== workspaceId || selectedTicketFilename() !== filename) return;
-    rememberWorkspaceSession(session);
-    setTicketSessionScope(filename);
-    setTicketWorkbenchActive(true);
-    setTicketViewerVisible(false);
-    setWorkspaceShellVisible(true);
-    setSelectedOwnerVisible(true);
-    await sessions.showSession(session.openCodeSessionId);
+    await attachReplacementBeforeClosingPrevious(
+      replacedSessionId,
+      session.openCodeSessionId,
+      async () => {
+        if (selectedWorkspace?.id === workspaceId && selectedTicketFilename() === filename) {
+          rememberWorkspaceSession(session);
+          setTicketSessionScope(filename);
+          setTicketWorkbenchActive(true);
+          setTicketViewerVisible(false);
+          setWorkspaceShellVisible(true);
+          setSelectedOwnerVisible(true);
+          await sessions.showSession(session.openCodeSessionId);
+        }
+      },
+      (oldSessionId) => sessions.closeReplacedTicketSession(oldSessionId),
+    );
   } catch (error) {
     setOwnerStatus(formatWorkspaceError("Create ticket session", error));
   } finally {
