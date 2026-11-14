@@ -4,6 +4,7 @@ import {
   linkedTicketFilename,
   scopedSessionOwnerKey,
   sessionInTicketScope,
+  ticketFilenameForSessionClose,
 } from "../src/views/workspace/sessions/ticketSessionScope.js";
 
 test("Workspace sessions and tools are visible only in their ticket scope", () => {
@@ -19,4 +20,10 @@ test("only saved ticket filenames are linked on close; ticket creation stays unb
   assert.equal(linkedTicketFilename("ticket.md"), "ticket.md");
   assert.equal(linkedTicketFilename("__ticket_creation__"), undefined);
   assert.equal(linkedTicketFilename(null), undefined);
+});
+
+test("closing a repository-tool terminal does not close its owning ticket session", () => {
+  const entry = { ownerKey: "workspace:w", ticketScope: "ticket.md" };
+  assert.equal(ticketFilenameForSessionClose(entry, "ticket.md", true), undefined);
+  assert.equal(ticketFilenameForSessionClose(entry, "ticket.md", false), "ticket.md");
 });

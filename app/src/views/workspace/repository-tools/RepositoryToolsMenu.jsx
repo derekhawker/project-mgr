@@ -10,6 +10,12 @@ import { InstallControl } from "./InstallControl.jsx";
 
 const handoffActions = [
   ["shell", "Open terminal"],
+  ["external_terminal", "Open in external terminal"],
+  ["idea", "Open in IntelliJ"],
+  ["folder", "Show in folder"],
+];
+const ticketsViewHandoffActions = [
+  ["external_terminal", "Open in external terminal"],
   ["idea", "Open in IntelliJ"],
   ["folder", "Show in folder"],
 ];
@@ -22,19 +28,21 @@ export function RepositoryToolsMenu(props) {
     <ActionMenu
       class={styles.menu}
       label="Tools"
-      triggerId="show-repo-tools"
-      contentId="repo-tools-menu"
+      triggerId={props.triggerId ?? "show-repo-tools"}
+      contentId={props.contentId ?? "repo-tools-menu"}
       contentClass={styles.content}
       actionsLabel="Repository tools"
       disabled={props.disabled()}
       hidden={!props.available()}
-      open={props.open()}
+      open={props.open}
       onRequestToggle={props.onToggle}
       onRequestClose={props.onToggle}
-      closeOnSelect={false}
+      closeOnSelect
     >
       <ActionMenuGroup label="Open in…">
-        <For each={handoffActions}>
+        <For each={
+          props.externalActionsOnly ? ticketsViewHandoffActions : handoffActions
+        }>
           {([action, label]) => (
             <ActionMenuItem
               type="button"
@@ -60,7 +68,7 @@ export function RepositoryToolsMenu(props) {
           {props.error()}
         </p>
       </Show>
-      <Show when={props.groups().length > 0}>
+      <Show when={!props.externalActionsOnly && props.groups().length > 0}>
         <ActionMenuSeparator />
         <div class={styles.repositories}>
           <For each={props.groups()}>
@@ -74,27 +82,48 @@ export function RepositoryToolsMenu(props) {
                 </Show>
                 <For
                   each={[
-                    ["npm_script", repository.packageScripts],
-                    ["make_target", repository.makeTargets],
+                    [
+                      "npm_script",
+                      repository.packageScriptEntries ??
+                        (repository.packageScripts ?? []).map((name) => ({
+                          name,
+                          directory: "",
+                        })),
+                    ],
+                    [
+                      "make_target",
+                      repository.makeTargetEntries ??
+                        (repository.makeTargets ?? []).map((name) => ({
+                          name,
+                          directory: "",
+                        })),
+                    ],
                   ]}
                 >
-                  {([kind, names]) => (
-                    <Show when={names.length > 0}>
+                  {([kind, entries]) => (
+                    <Show when={entries.length > 0}>
                       <ActionMenuGroup
                         label={
                           kind === "npm_script" ? "package.json" : "Makefile"
                         }
                         headingLevel={3}
                       >
-                        <For each={names}>
-                          {(name) => (
+                        <For each={entries}>
+                          {(entry) => (
                             <ActionMenuItem
                               type="button"
                               onClick={() =>
-                                props.onRun(repository, kind, name)
+                                props.onRun(
+                                  repository,
+                                  kind,
+                                  entry.name,
+                                  entry.directory,
+                                )
                               }
                             >
-                              {name}
+                              {entry.directory
+                                ? `${entry.name} · ${entry.directory}/`
+                                : `${entry.name} · repository root`}
                             </ActionMenuItem>
                           )}
                         </For>

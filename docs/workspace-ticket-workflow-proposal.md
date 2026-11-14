@@ -114,9 +114,10 @@ OpenCode. Workspace and repository records live in SQLite. Each Workspace owns
 Markdown tickets stored outside Git under the
 application data directory. OpenCode sessions guide ticket
 creation and work. The Markdown ticket is the source of truth for ticket status
-and records the one OpenCode work session needed to resume work. Workspace screen
-destinations and tools are entered through a selected ticket; a ticket is
-required to work.
+and records the one OpenCode work session needed to resume work. Ticket-workbench
+destinations are scoped to a selected ticket. The Tickets view also has a
+Workspace-level Tools menu available without a selected ticket; it uses the
+Workspace's verified repository checkout.
 
 This approved ticket-specific creation scope supersedes the older proposal and
 the zero/multiple-repository assumptions in
@@ -139,7 +140,8 @@ truth for ticket sessions.
 | Create tickets with `draft` status; keep the Markdown ticket authoritative for all statuses. | In scope | Status ownership section. |
 | Keep ticket-session instructions concise and prove session resumption. | In scope | Task 4; see linked session research. |
 | Start with a simple list that truncates ticket content, and track a task to improve the viewer. | In scope | Tasks 3 and 6. |
-| Require a selected ticket for Change Review, Docs, and repository tools. | In scope | Task 5. |
+| Require a selected ticket for ticket-workbench Change Review, Docs, and repository tools. | In scope | Task 5; use the ticket worktree when recorded, otherwise the Workspace checkout. |
+| Provide external Tools actions on the Workspace Tickets view without requiring a ticket, targeting the main repository checkout. | In scope | Approved follow-up in `improve-the-ticket-screen-tools-menu-and-tab-bar.md`; the view offers external terminal, IntelliJ, and folder only. Project commands and the in-app terminal remain in the ticket workbench. |
 | Execute the existing task list in order, with observable proof recorded for each task. | Tasks 1–5 approved; Task 6 deferred | Defer discussion of Task 6 until the others are done, as requested by the user. |
 | Preserve existing worktree changes and reuse the running live runtime. | In scope as execution constraints | All tasks; do not restart the runtime without explaining a demonstrated need. |
 | Respect frontend/backend test boundaries and avoid end-to-end tests. | In scope as execution constraints | Focused tests below command handlers and separate frontend tests; manual proof where applicable. |
@@ -172,10 +174,14 @@ truth for ticket sessions.
 - Selecting a ticket selects its context; a separate explicit **Work** action
   opens or resumes that ticket's session. Selecting a ticket alone does not
   start an OpenCode session or change ticket status.
-- Existing work destinations and tools—including OpenCode terminals, Change
-  Review, Docs, and repository tools—are scoped under a selected ticket. Users
-  must select a ticket to work; these are not independent Workspace-level work
-  destinations.
+- Ticket-workbench destinations and tools—including OpenCode terminals, Change
+  Review, Docs, and repository tools—are scoped under a selected ticket. They
+  use the ticket's recorded worktree when available, falling back to the
+  Workspace repository checkout only when no ticket worktree exists.
+- Exception: the Workspace Tickets view has a **Tools** menu that works without
+  a selected ticket. It offers external-terminal, IntelliJ, and folder actions
+  using the Workspace's verified repository checkout. It has no app-managed
+  terminal or project-command actions.
 
 ### Ticket files and lifecycle
 
@@ -326,8 +332,11 @@ an implementation detail, not a second authority.
   Confirmed in conversation.
 - **Archived tickets:** separate archive browsing; the default list contains
   non-archived tickets. Confirmed in conversation.
-- **Workspace screen:** existing work destinations and tools are scoped under
-  a selected ticket; a ticket is required to work. Confirmed in conversation.
+- **Workspace screen:** ticket-workbench destinations are scoped under the
+  selected ticket. The Tickets view's Tools menu is available without a selected
+  ticket and offers only external terminal, IntelliJ, and folder actions using
+  the Workspace repository checkout. Approved in the
+  `improve-the-ticket-screen-tools-menu-and-tab-bar` ticket on 2026-11-12.
 - **Ticket selection:** selecting a ticket and explicitly choosing **Work** are
   separate actions; Work opens/resumes the ticket session. Confirmed from the
   original request.

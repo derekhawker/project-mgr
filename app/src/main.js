@@ -34,6 +34,7 @@ import { createChangeReviewController } from "./views/workspace/change-review/ch
 import {
   createRepositoryToolsActionForwarders,
   createRepositoryToolsController,
+  isRepositoryToolsMenuOpen,
 } from "./views/workspace/repository-tools/repositoryToolsController.js";
 import { createDocsController } from "./views/workspace/docs/docsController.js";
 import { createDocsView } from "./views/workspace/docs/docsView.js";
@@ -122,7 +123,11 @@ const invoke = (name, payload) => {
     return Promise.reject(
       new Error("Application presentation has been disposed."),
     );
-  payload = withSelectedTicketContext(name, payload, selectedTicketFilename());
+  payload = withSelectedTicketContext(
+    name,
+    payload,
+    ticketWorkbenchActive() ? selectedTicketFilename() : undefined,
+  );
   return payload === undefined
     ? invokeCommand(name)
     : invokeCommand(name, payload);
@@ -235,6 +240,7 @@ const [ticketError, setTicketError] = createSignal("");
 const [selectedTicketFilename, setSelectedTicketFilename] = createSignal(null);
 const [ticketSessionScope, setTicketSessionScope] = createSignal(null);
 const [ticketArchived, setTicketArchived] = createSignal(false);
+const [ticketWorkbenchActive, setTicketWorkbenchActive] = createSignal(false);
 const [workspaceTicketView, setWorkspaceTicketView] = createSignal("grouped");
 const workspaceTicketCache = createWorkspaceTicketCache(
   async (workspaceId, archived) => {
@@ -312,6 +318,7 @@ async function workWorkspaceTicket(workspaceId, filename) {
     if (selectedWorkspace?.id !== workspaceId || selectedTicketFilename() !== filename) return;
     for (const session of result.sessions) rememberWorkspaceSession(session);
     setTicketSessionScope(filename);
+    setTicketWorkbenchActive(true);
     setTicketViewerVisible(false);
     setWorkspaceShellVisible(true);
     setSelectedOwnerVisible(true);
@@ -322,6 +329,7 @@ async function workWorkspaceTicket(workspaceId, filename) {
     if (selectedWorkspace?.id !== workspaceId || selectedTicketFilename() !== filename) return;
     setTicketViewerVisible(true);
     setWorkspaceShellVisible(false);
+    setTicketWorkbenchActive(false);
     setTicketError(formatWorkspaceError("Work on ticket", error));
   } finally {
     setTicketWorking(false);
@@ -354,6 +362,7 @@ async function startNewWorkspaceTicketSession() {
     if (selectedWorkspace?.id !== workspaceId || selectedTicketFilename() !== filename) return;
     rememberWorkspaceSession(session);
     setTicketSessionScope(filename);
+    setTicketWorkbenchActive(true);
     setTicketViewerVisible(false);
     setWorkspaceShellVisible(true);
     setSelectedOwnerVisible(true);
@@ -377,9 +386,11 @@ const workspaceTicketViewerProps = {
   modelBusy: ticketModelBusy,
   modelError: ticketModelError,
   onModelChange: (value) => { void saveTicketDefaultModel(value); },
+  toolsMenu: () => repositoryTools("ticket-view-show-repo-tools"),
   onSelect: (filename) => {
     setSelectedTicketFilename(filename);
     setTicketSessionScope(filename);
+    setTicketWorkbenchActive(false);
     sessions.hide();
     setWorkspaceShellVisible(false);
     setSelectedOwnerVisible(false);
@@ -449,7 +460,11 @@ const sessions = createWorkspaceSessions({
   proposalSessionId: () => newWork.proposalSessionId(),
   getToolsOwner: repositoryToolsOwner,
   getSessionScope: ticketSessionScope,
-  showOwnerTerminal: () => { setTicketViewerVisible(false); showOwnerTerminal(); },
+  showOwnerTerminal: () => {
+    setTicketViewerVisible(false);
+    setWorkspaceShellVisible(true);
+    showOwnerTerminal();
+  },
   setOwnerStatus,
   ownerStatus,
   setCommandResultMessage,
@@ -587,6 +602,7 @@ const docsController = createDocsController({
 const [repositoryToolGroups, setRepositoryToolGroups] = createSignal([]);
 const [repositoryToolLoadError, setRepositoryToolLoadError] = createSignal("");
 const [repositoryToolsOpen, setRepositoryToolsOpen] = createSignal(false);
+const [repositoryToolsTriggerId, setRepositoryToolsTriggerId] = createSignal(null);
 const [repositoryToolsAvailable, setRepositoryToolsAvailable] =
   createSignal(false);
 const [repositoryToolsDisabled, setRepositoryToolsDisabled] =
@@ -596,14 +612,28 @@ const [repositoryToolActions, setRepositoryToolActions] = createSignal({
   onInstall: () => {},
   onHandoff: () => {},
 });
-const repositoryTools = () =>
+const repositoryTools = (triggerId = "show-repo-tools") =>
   RepositoryToolsMenu({
     groups: repositoryToolGroups,
     error: repositoryToolLoadError,
-    open: repositoryToolsOpen,
+    open: () =>
+      isRepositoryToolsMenuOpen(
+        repositoryToolsOpen(),
+        repositoryToolsTriggerId(),
+        triggerId,
+      ),
     available: repositoryToolsAvailable,
     disabled: repositoryToolsDisabled,
-    onToggle: () => toggleRepositoryTools(),
+    triggerId,
+    contentId:
+      triggerId === "show-repo-tools" ? "repo-tools-menu" : `${triggerId}-menu`,
+    externalActionsOnly: triggerId === "ticket-view-show-repo-tools",
+    onToggle: () => {
+      setRepositoryToolsTriggerId(triggerId);
+      void toggleRepositoryTools({
+        includeProjectTools: triggerId !== "ticket-view-show-repo-tools",
+      });
+    },
     ...createRepositoryToolsActionForwarders(repositoryToolActions),
   });
 const repositoryToolsController = createRepositoryToolsController({
@@ -620,6 +650,7 @@ const repositoryToolsController = createRepositoryToolsController({
   openWorkspaceShellTerminal: sessions.openWorkspaceShellTerminal,
   launchWorkspaceOsHandoff,
   installStarted: sessions.installStarted,
+  reportHandoffError: setAppNotice,
 });
 let selectedOwnerRepositoryCount = 0;
 
@@ -656,8 +687,16 @@ const {
 } = changeReviewController;
 
 function repositoryToolsOwner() {
-  if (!selectedWorkspace || !selectedTicketFilename() || ticketArchived() || selectedQuickRequest()?.quickRequest) return null;
-  return { type: "workspace", id: selectedWorkspace.id };
+  if (!selectedWorkspace || selectedQuickRequest()?.quickRequest) return null;
+  const filename = selectedTicketFilename();
+  const ticketWorkbench = ticketWorkbenchActive() && filename && !ticketArchived();
+  return {
+    type: "workspace",
+    id: selectedWorkspace.id,
+    // The Tickets-view menu always targets the main checkout, even while a
+    // ticket is selected. Ticket workbench tools use that ticket's worktree.
+    ...(ticketWorkbench ? { ticketFilename: filename } : {}),
+  };
 }
 
 function syncRepositoryToolsAvailability() {
@@ -790,6 +829,7 @@ function selectWorkspace(workspace, data = navigationData) {
   setTicketArchived(false);
   setSelectedTicketFilename(null);
   setTicketSessionScope(null);
+  setTicketWorkbenchActive(false);
   setTicketViewerVisible(true);
   showCachedTicketList(false);
   newWork.hide();

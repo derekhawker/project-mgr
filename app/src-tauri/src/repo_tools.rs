@@ -14,7 +14,17 @@ pub struct RepositoryToolGroup {
     pub path: String,
     pub package_scripts: Vec<String>,
     pub make_targets: Vec<String>,
+    pub package_script_entries: Vec<RepositoryToolEntry>,
+    pub make_target_entries: Vec<RepositoryToolEntry>,
     pub npm_install_needed: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RepositoryToolEntry {
+    pub name: String,
+    /// Repository-relative directory containing the package.json or Makefile.
+    pub directory: String,
 }
 
 #[derive(Clone, Debug)]
@@ -198,6 +208,99 @@ fn discover_make_targets(path: &Path) -> Vec<String> {
     targets
 }
 
+fn project_directories(root: &Path) -> Vec<(String, PathBuf)> {
+    const SKIP: &[&str] = &[
+        ".git",
+        "node_modules",
+        "vendor",
+        "bower_components",
+        "third_party",
+        "pods",
+        "carthage",
+        "venv",
+        "virtualenv",
+        "site-packages",
+        "target",
+        "dist",
+        "build",
+        "release",
+    ];
+    fn visit(root: &Path, directory: &Path, depth: usize, found: &mut Vec<(String, PathBuf)>) {
+        if depth > 12 {
+            return;
+        }
+        found.push((
+            directory
+                .strip_prefix(root)
+                .unwrap_or(directory)
+                .to_string_lossy()
+                .replace('\\', "/"),
+            directory.to_path_buf(),
+        ));
+        let Ok(entries) = fs::read_dir(directory) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let Ok(kind) = entry.file_type() else {
+                continue;
+            };
+            if kind.is_dir()
+                && !kind.is_symlink()
+                && path.file_name().is_some_and(|name| {
+                    !name.to_string_lossy().starts_with('.')
+                        && !SKIP.iter().any(|skip| name == *skip)
+                })
+            {
+                visit(root, &path, depth + 1, found);
+            }
+        }
+    }
+    let mut found = Vec::new();
+    visit(root, root, 0, &mut found);
+    found
+}
+
+fn discover_package_script_entries(root: &Path) -> Vec<RepositoryToolEntry> {
+    let mut entries = project_directories(root)
+        .into_iter()
+        .flat_map(|(directory, path)| {
+            discover_package_scripts(&path)
+                .into_iter()
+                .map(move |name| RepositoryToolEntry {
+                    name,
+                    directory: directory.clone(),
+                })
+        })
+        .collect::<Vec<_>>();
+    entries.sort_by(|a, b| {
+        a.directory
+            .cmp(&b.directory)
+            .then_with(|| a.name.cmp(&b.name))
+    });
+    entries
+}
+
+fn discover_make_target_entries(root: &Path) -> Vec<RepositoryToolEntry> {
+    let mut entries = project_directories(root)
+        .into_iter()
+        .flat_map(|(directory, path)| {
+            discover_make_targets(&path)
+                .into_iter()
+                .map(move |name| RepositoryToolEntry {
+                    name,
+                    directory: directory.clone(),
+                })
+        })
+        .collect::<Vec<_>>();
+    entries.sort_by(|a, b| {
+        a.directory
+            .cmp(&b.directory)
+            .then_with(|| a.name.cmp(&b.name))
+    });
+    entries
+}
+
 pub fn list_for_owner(
     store: &ManagementStore,
     owner_type: &str,
@@ -208,6 +311,8 @@ pub fn list_for_owner(
         .map(|(repository_id, name, path)| {
             let canonical = crate::change_review::validate_repo_root(&path)
                 .map_err(|error| format!("Repository {name} is unavailable: {error}"))?;
+            let package_script_entries = discover_package_script_entries(&canonical);
+            let make_target_entries = discover_make_target_entries(&canonical);
             let package_scripts = discover_package_scripts(&canonical);
             let make_targets = discover_make_targets(&canonical);
             Ok(RepositoryToolGroup {
@@ -218,9 +323,37 @@ pub fn list_for_owner(
                     && !canonical.join("node_modules").is_dir(),
                 package_scripts,
                 make_targets,
+                package_script_entries,
+                make_target_entries,
             })
         })
         .collect()
+}
+
+pub fn list_for_repository_path(
+    repository_id: &str,
+    name: &str,
+    path: &Path,
+) -> Result<Vec<RepositoryToolGroup>, String> {
+    let canonical = crate::change_review::validate_repo_root(path)
+        .map_err(|error| format!("Repository {name} is unavailable: {error}"))?;
+    Ok(vec![RepositoryToolGroup {
+        repository_id: repository_id.to_owned(),
+        name: name.to_owned(),
+        path: canonical.display().to_string(),
+        npm_install_needed: canonical.join("package.json").is_file()
+            && !canonical.join("node_modules").is_dir(),
+        package_scripts: discover_package_script_entries(&canonical)
+            .into_iter()
+            .map(|entry| entry.name)
+            .collect(),
+        make_targets: discover_make_target_entries(&canonical)
+            .into_iter()
+            .map(|entry| entry.name)
+            .collect(),
+        package_script_entries: discover_package_script_entries(&canonical),
+        make_target_entries: discover_make_target_entries(&canonical),
+    }])
 }
 
 pub fn launch_for_owner(
@@ -238,7 +371,43 @@ pub fn launch_for_owner(
         .ok_or_else(|| {
             "Repository is not associated with the selected Workspace or Task.".to_owned()
         })?;
-    let path = crate::change_review::validate_repo_root(&path)?;
+    launch_for_directory(&path, kind, name)
+}
+
+pub fn launch_for_directory(
+    directory: &Path,
+    kind: &str,
+    name: &str,
+) -> Result<ToolLaunch, String> {
+    launch_for_subdirectory(directory, "", kind, name)
+}
+
+pub fn launch_for_subdirectory(
+    repository: &Path,
+    source_directory: &str,
+    kind: &str,
+    name: &str,
+) -> Result<ToolLaunch, String> {
+    let root = crate::change_review::validate_repo_root(repository)?;
+    let path = if source_directory.is_empty() {
+        root.clone()
+    } else {
+        if Path::new(source_directory).is_absolute()
+            || Path::new(source_directory)
+                .components()
+                .any(|part| !matches!(part, std::path::Component::Normal(_)))
+        {
+            return Err("Invalid repository tool source directory.".into());
+        }
+        let path = root
+            .join(source_directory)
+            .canonicalize()
+            .map_err(|e| format!("Tool source directory is unavailable: {e}"))?;
+        if !path.starts_with(&root) || !path.is_dir() {
+            return Err("Tool source directory must be inside the repository.".into());
+        }
+        path
+    };
     let scripts = discover_package_scripts(&path);
     let targets = discover_make_targets(&path);
     let (executable, args, label) = match kind {
@@ -314,6 +483,46 @@ mod tests {
         let root = tempdir().unwrap();
         fs::write(root.path().join("package.json"), "not json").unwrap();
         assert!(discover_package_scripts(root.path()).is_empty());
+    }
+
+    #[test]
+    fn nested_project_tools_include_their_source_directory_and_run_there() {
+        let root = tempdir().unwrap();
+        git(root.path(), &["init", "--quiet", "--initial-branch=main"]);
+        fs::create_dir_all(root.path().join("app")).unwrap();
+        fs::create_dir_all(root.path().join("node_modules/ignored")).unwrap();
+        fs::write(
+            root.path().join("app/package.json"),
+            r#"{"scripts":{"test":"node test.js"}}"#,
+        )
+        .unwrap();
+        fs::write(root.path().join("app/Makefile"), "check:\n\ttrue\n").unwrap();
+        fs::write(
+            root.path().join("node_modules/ignored/package.json"),
+            r#"{"scripts":{"bad":"false"}}"#,
+        )
+        .unwrap();
+        let groups = list_for_repository_path("repo", "Example", root.path()).unwrap();
+        assert_eq!(groups.len(), 1);
+        assert!(groups[0]
+            .package_script_entries
+            .iter()
+            .any(|entry| { entry.name == "test" && entry.directory == "app" }));
+        assert!(!groups[0]
+            .package_script_entries
+            .iter()
+            .any(|entry| entry.name == "bad"));
+        assert!(groups[0]
+            .make_target_entries
+            .iter()
+            .any(|entry| { entry.name == "check" && entry.directory == "app" }));
+        let launch = launch_for_subdirectory(root.path(), "app", "npm_script", "test").unwrap();
+        assert_eq!(
+            launch.directory,
+            root.path().join("app").canonicalize().unwrap()
+        );
+        assert_eq!(launch.args, ["run", "--", "test"]);
+        assert!(launch_for_subdirectory(root.path(), "../", "npm_script", "test").is_err());
     }
 
     #[test]

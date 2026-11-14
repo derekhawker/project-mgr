@@ -7,6 +7,7 @@ import { CreateTicketIdeaModal } from "./CreateTicketIdeaModal.jsx";
 import { recordUiDiagnostic } from "../../../lib/uiDiagnostics.js";
 import { renderTicketMarkdown, splitTicketFrontmatter } from "./ticketContent.js";
 import styles from "./WorkspaceTicketViewer.module.css";
+import repositoryToolsStyles from "../repository-tools/RepositoryToolsMenu.module.css";
 
 const statusOrder = { blocked: 0, in_progress: 1, draft: 2 };
 const activeSortOptions = [
@@ -108,6 +109,9 @@ export function WorkspaceTicketViewer(props) {
                 </ActionMenuItem>
               }</For>
             </ActionMenu>
+          </div>
+          <div class={repositoryToolsStyles.control}>
+            {props.toolsMenu?.()}
           </div>
           <CreateTicketIdeaModal
             disabled={() => Boolean(props.modelBusy?.() || !props.selectedModel?.())}

@@ -593,6 +593,8 @@ export async function invokeBrowserFixture(name, payload = {}) {
                 path: "/fixture/repository",
                 packageScripts: ["test"],
                 makeTargets: ["build"],
+                packageScriptEntries: [{ name: "test", directory: "" }],
+                makeTargetEntries: [{ name: "build", directory: "" }],
                 npmInstallNeeded: false,
               },
             ]

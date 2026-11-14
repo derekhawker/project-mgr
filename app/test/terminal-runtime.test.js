@@ -357,6 +357,31 @@ test("repository tool terminal routes input and resize through its separate proc
   ]);
 });
 
+test("suspending a tool terminal waits for in-flight resize before cleanup", async () => {
+  let finishResize;
+  const runtime = new TerminalRuntime({
+    invoke: () => new Promise((resolve) => { finishResize = resolve; }),
+  });
+  const session = {
+    terminal: { cols: 91, rows: 27 },
+    fit: { fit() {} },
+    hidden: false,
+    commandPrefix: "repo_tool_terminal",
+  };
+  runtime.sessions.set("repo-tool-1", session);
+  const resize = runtime.resize("repo-tool-1");
+  await Promise.resolve();
+  const suspended = runtime.suspendResizing("repo-tool-1");
+  let completed = false;
+  void suspended.then(() => { completed = true; });
+  await Promise.resolve();
+  assert.equal(completed, false);
+  assert.equal(session.hidden, true);
+  finishResize(null);
+  await Promise.all([resize, suspended]);
+  assert.equal(completed, true);
+});
+
 test("exit marks only its session unavailable for input", async () => {
   const calls = [];
   const runtime = new TerminalRuntime({

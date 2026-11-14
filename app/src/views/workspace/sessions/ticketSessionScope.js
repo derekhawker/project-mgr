@@ -13,3 +13,13 @@ export function linkedTicketFilename(scope) {
     ? scope
     : undefined;
 }
+
+export function ticketFilenameForSessionClose(entry, activeScope, isToolTerminal) {
+  if (
+    isToolTerminal ||
+    !entry?.ownerKey?.startsWith("workspace:") ||
+    entry.ticketScope !== activeScope
+  )
+    return undefined;
+  return linkedTicketFilename(entry.ticketScope);
+}
