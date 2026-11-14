@@ -22,8 +22,7 @@ pub trait TicketWorkRuntime {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TicketWorkResult<S> {
-    pub sessions: Vec<S>,
-    pub active_session_id: String,
+    pub session: S,
 }
 
 fn ticket_work_lock() -> Result<std::sync::MutexGuard<'static, ()>, String> {
@@ -33,8 +32,8 @@ fn ticket_work_lock() -> Result<std::sync::MutexGuard<'static, ()>, String> {
         .map_err(|error| error.to_string())
 }
 
-/// Restore every retained session, creating a replacement only when the active
-/// OpenCode session is confirmed missing. The lock covers this whole flow.
+/// Restore the ticket's sole session, creating and attaching a replacement only
+/// when its recorded OpenCode session is confirmed missing.
 pub fn work<R: TicketWorkRuntime>(
     directory: &Path,
     repository: &Path,
@@ -54,19 +53,15 @@ pub fn work<R: TicketWorkRuntime>(
     let markdown =
         fs::read_to_string(&ticket).map_err(|e| format!("Could not read ticket: {e}"))?;
     let (title, status) = ticket_metadata(&markdown, filename);
-    let original_ids = ticket_session_ids(&markdown)?;
-    let mut ids = Vec::new();
-    for id in original_ids {
-        if runtime.exists(&id)? {
-            ids.push(id);
-        }
-    }
+    let recorded_session = ticket_session_id(&markdown)?;
     // A retained OpenCode session already has an exact, persisted working
     // directory. Do not make restoring it depend on ticket worktree metadata:
     // that path may have been removed after delivery while the session remains
     // valid. Resolve the ticket worktree only when a replacement is needed.
-    let mut active =
-        work_session_id(&markdown)?.filter(|id| ids.iter().any(|retained| retained == id));
+    let mut active = match recorded_session {
+        Some(id) if runtime.exists(&id)? => Some(id),
+        _ => None,
+    };
     let recorded_worktree = ticket_worktree(&markdown)?;
     let removed_worktree = active.is_some()
         && recorded_worktree.as_ref().is_some_and(|worktree| {
@@ -86,33 +81,39 @@ pub fn work<R: TicketWorkRuntime>(
             &format!("{workspace_name}: {title}"),
             target.as_deref().expect("replacement target was resolved"),
         )?;
-        ids.push(id.clone());
         active = Some(id);
     }
-    if ticket_session_ids(&markdown)? != ids || work_session_id(&markdown)? != active {
-        let updated = record_ticket_sessions(&markdown, &ids, active.as_deref())?;
-        write_ticket_markdown_safely(&ticket, &markdown, &updated)?;
-    }
     let active_id = active.expect("active session was retained or created");
-    let mut sessions = Vec::new();
-    for id in ids {
-        let instructions = ticket_instructions(
-            &title,
-            filename,
-            &status,
+    let instructions = ticket_instructions(
+        &title,
+        filename,
+        &status,
+        &ticket,
+        &ticket_dir,
+        &repository,
+        &active_id,
+    );
+    runtime.prepare(&active_id, &ticket_dir, &instructions)?;
+    let session = runtime.attach(
+        &active_id,
+        target.as_deref().unwrap_or(repository.as_path()),
+    )?;
+    let updated = record_ticket_session(&markdown, Some(&active_id))?;
+    if updated != markdown {
+        record_attached_session(
             &ticket,
-            &ticket_dir,
+            directory,
             &repository,
-            &id,
-        );
-        runtime.prepare(&id, &ticket_dir, &instructions)?;
-        sessions.push(runtime.attach(&id, target.as_deref().unwrap_or(repository.as_path()))?);
-        record_session_worktree(directory, &repository, filename, &id, runtime)?;
+            filename,
+            &active_id,
+            &markdown,
+            &updated,
+            runtime,
+        )?;
+    } else {
+        record_session_worktree(directory, &repository, filename, &active_id, runtime)?;
     }
-    Ok(TicketWorkResult {
-        sessions,
-        active_session_id: active_id,
-    })
+    Ok(TicketWorkResult { session })
 }
 
 pub fn new_session<R: TicketWorkRuntime>(
@@ -138,10 +139,6 @@ pub fn new_session<R: TicketWorkRuntime>(
     let (title, status) = ticket_metadata(&original, filename);
     let target = resolve_ticket_directory(&repository, ticket_worktree(&original)?.as_ref())?;
     let id = runtime.create(&format!("{workspace_name}: {title}"), &target)?;
-    let mut ids = ticket_session_ids(&original)?;
-    ids.push(id.clone());
-    let updated = record_ticket_sessions(&original, &ids, Some(&id))?;
-    write_ticket_markdown_safely(&ticket, &original, &updated)?;
     let instructions = ticket_instructions(
         &title,
         filename,
@@ -153,7 +150,17 @@ pub fn new_session<R: TicketWorkRuntime>(
     );
     runtime.prepare(&id, &ticket_dir, &instructions)?;
     let session = runtime.attach(&id, &target)?;
-    record_session_worktree(directory, &repository, filename, &id, runtime)?;
+    let updated = record_ticket_session(&original, Some(&id))?;
+    record_attached_session(
+        &ticket,
+        directory,
+        &repository,
+        filename,
+        &id,
+        &original,
+        &updated,
+        runtime,
+    )?;
     Ok(session)
 }
 
@@ -186,11 +193,31 @@ fn record_session_worktree<R: TicketWorkRuntime>(
     Ok(())
 }
 
-pub fn close_session(
+fn record_attached_session<R: TicketWorkRuntime>(
+    ticket: &Path,
     directory: &Path,
+    repository: &Path,
     filename: &str,
     session_id: &str,
-) -> Result<Option<String>, String> {
+    original: &str,
+    updated: &str,
+    runtime: &mut R,
+) -> Result<(), String> {
+    write_ticket_markdown_safely(ticket, original, updated)?;
+    if let Err(error) =
+        record_session_worktree(directory, repository, filename, session_id, runtime)
+    {
+        return match write_ticket_markdown_safely(ticket, updated, original) {
+            Ok(()) => Err(error),
+            Err(rollback_error) => Err(format!(
+                "{error}; could not restore the prior ticket session binding: {rollback_error}"
+            )),
+        };
+    }
+    Ok(())
+}
+
+pub fn close_session(directory: &Path, filename: &str, session_id: &str) -> Result<(), String> {
     if !valid_ticket_session_id(session_id) {
         return Err("Invalid OpenCode session ID".into());
     }
@@ -198,20 +225,12 @@ pub fn close_session(
     let ticket = canonical_ticket(directory, filename)?;
     let original =
         fs::read_to_string(&ticket).map_err(|error| format!("Could not read ticket: {error}"))?;
-    let mut ids = ticket_session_ids(&original)?;
-    if !ids.iter().any(|id| id == session_id) {
+    if ticket_session_id(&original)?.as_deref() != Some(session_id) {
         return Err("Session is not associated with this ticket".into());
     }
-    ids.retain(|id| id != session_id);
-    let active = work_session_id(&original)?;
-    let next_active = if active.as_deref() == Some(session_id) {
-        ids.last().map(String::as_str)
-    } else {
-        active.as_deref()
-    };
-    let updated = record_ticket_sessions(&original, &ids, next_active)?;
+    let updated = record_ticket_session(&original, None)?;
     write_ticket_markdown_safely(&ticket, &original, &updated)?;
-    Ok(next_active.map(str::to_owned))
+    Ok(())
 }
 
 fn ticket_instructions(
@@ -320,7 +339,7 @@ fn valid_ticket_session_id(id: &str) -> bool {
             .all(|character| character.is_ascii_alphanumeric() || matches!(character, '_' | '-'))
 }
 
-pub fn ticket_session_ids(markdown: &str) -> Result<Vec<String>, String> {
+pub fn ticket_session_id(markdown: &str) -> Result<Option<String>, String> {
     let lines: Vec<String> = markdown.split_inclusive('\n').map(str::to_owned).collect();
     let end = frontmatter_bounds(&lines)?;
     let mut active = None;
@@ -362,17 +381,14 @@ pub fn ticket_session_ids(markdown: &str) -> Result<Vec<String>, String> {
             }
         }
     }
-    if list_start.is_none() && ids.is_empty() {
-        if let Some(active) = active.as_ref() {
-            ids.push(active.clone());
-        }
-    }
     if let Some(active) = active.as_ref() {
-        if !ids.iter().any(|id| id == active) {
+        if !ids.is_empty() && !ids.iter().any(|id| id == active) {
             return Err("Active work_session_id is not present in work_session_ids".into());
         }
     }
-    Ok(ids)
+    // Older tickets may have retained several IDs. Prefer their active pointer;
+    // otherwise keep only the most recently recorded ID when migrating.
+    Ok(active.or_else(|| ids.pop()))
 }
 
 fn yaml_string(value: &str) -> String {
@@ -469,47 +485,19 @@ fn replace_frontmatter_fields(
     Ok(kept.concat())
 }
 
-pub fn record_ticket_sessions(
-    markdown: &str,
-    ids: &[String],
-    active: Option<&str>,
-) -> Result<String, String> {
+pub fn record_ticket_session(markdown: &str, session_id: Option<&str>) -> Result<String, String> {
     let previous_active = work_session_id(markdown)?;
-    let mut seen = std::collections::HashSet::new();
-    for id in ids {
-        if !valid_ticket_session_id(id) {
+    if let Some(session_id) = session_id {
+        if !valid_ticket_session_id(session_id) {
             return Err("Invalid OpenCode session ID".into());
         }
-        if !seen.insert(id) {
-            return Err("Duplicate OpenCode session ID".into());
-        }
     }
-    if let Some(active) = active {
-        if !seen.iter().any(|id| id.as_str() == active) {
-            return Err("Active session must be present in the retained session list".into());
-        }
-    } else if !ids.is_empty() {
-        return Err("A non-empty session list must have an active session".into());
-    }
-    let list = if ids.is_empty() {
-        None
-    } else {
-        Some(format!(
-            "\n{}",
-            ids.iter()
-                .map(|id| format!("  - {id}\n"))
-                .collect::<String>()
-        ))
-    };
-    let mut fields = Vec::new();
-    if let Some(active) = active {
-        fields.push(("work_session_id", Some(active.to_owned())));
-    } else {
-        fields.push(("work_session_id", None));
-    }
-    fields.push(("work_session_ids", list));
+    let fields = [
+        ("work_session_id", session_id.map(str::to_owned)),
+        ("work_session_ids", None),
+    ];
     let updated = replace_frontmatter_fields(markdown, &fields)?;
-    if previous_active.as_deref() != active {
+    if previous_active.as_deref() != session_id {
         replace_frontmatter_fields(&updated, &[("opencode-status", None)])
     } else {
         Ok(updated)
@@ -638,8 +626,7 @@ pub fn record_observed_worktree(
     }
     let original =
         fs::read_to_string(&ticket).map_err(|error| format!("Could not read ticket: {error}"))?;
-    let ids = ticket_session_ids(&original)?;
-    if !ids.iter().any(|id| id == session_id) {
+    if ticket_session_id(&original)?.as_deref() != Some(session_id) {
         return Err("OpenCode session is not associated with this ticket".into());
     }
     let path = candidate_path
@@ -711,10 +698,7 @@ pub fn record_observed_worktree_for_session(
             continue;
         }
         let markdown = fs::read_to_string(entry.path()).map_err(|error| error.to_string())?;
-        if ticket_session_ids(&markdown)?
-            .iter()
-            .any(|id| id == session_id)
-        {
+        if ticket_session_id(&markdown)?.as_deref() == Some(session_id) {
             if binding.is_some() {
                 return Err("OpenCode session is bound to multiple tickets".into());
             }
@@ -1382,6 +1366,7 @@ mod tests {
     struct FakeRuntime {
         creates: usize,
         fail_exists: bool,
+        fail_attach: bool,
         known_sessions: std::collections::HashSet<String>,
         prepared: Vec<(String, String)>,
         attached: Vec<(String, PathBuf)>,
@@ -1409,6 +1394,9 @@ mod tests {
             Ok(())
         }
         fn attach(&mut self, id: &str, repository: &Path) -> Result<String, String> {
+            if self.fail_attach {
+                return Err("terminal attach failed".into());
+            }
             self.attached.push((id.into(), repository.into()));
             Ok(id.into())
         }
@@ -1432,16 +1420,14 @@ mod tests {
         .unwrap();
         let mut runtime = FakeRuntime::default();
         let opened = work(&dir, &repo, "Workspace", "test.md", &mut runtime).unwrap();
-        assert_eq!(opened.active_session_id, "ses_1");
-        assert_eq!(opened.sessions, ["ses_1"]);
+        assert_eq!(opened.session, "ses_1");
         let first = fs::read_to_string(&path).unwrap();
         assert!(first.contains("status: draft") && first.ends_with("# Test\nPrivate body\n"));
         assert!(!runtime.prepared[0].1.contains("Private body"));
         assert_eq!(runtime.attached[0].1, repo.canonicalize().unwrap());
         fs::write(&path, first.replace("status: draft", "status: in_progress")).unwrap();
         let opened = work(&dir, &repo, "Workspace", "test.md", &mut runtime).unwrap();
-        assert_eq!(opened.active_session_id, "ses_1");
-        assert_eq!(opened.sessions, ["ses_1"]);
+        assert_eq!(opened.session, "ses_1");
         assert_eq!(runtime.creates, 1);
         assert!(runtime.prepared[1]
             .1
@@ -1454,14 +1440,13 @@ mod tests {
         runtime.fail_exists = false;
         runtime.known_sessions.remove("ses_1");
         let opened = work(&dir, &repo, "Workspace", "test.md", &mut runtime).unwrap();
-        assert_eq!(opened.active_session_id, "ses_2");
-        assert_eq!(opened.sessions, ["ses_2"]);
+        assert_eq!(opened.session, "ses_2");
         let last = fs::read_to_string(&path).unwrap();
         assert!(last.contains("status: in_progress") && last.ends_with("# Test\nPrivate body\n"));
     }
 
     #[test]
-    fn work_restores_every_retained_session_and_new_session_activates_latest() {
+    fn work_restores_only_active_session_and_new_session_replaces_ticket_binding() {
         let root = tempfile::tempdir().unwrap();
         let tickets = root.path().join("tickets");
         let repository = root.path().join("repository");
@@ -1478,8 +1463,7 @@ mod tests {
             .known_sessions
             .extend(["ses_old".into(), "ses_active".into()]);
         let restored = work(&tickets, &repository, "Workspace", "multi.md", &mut runtime).unwrap();
-        assert_eq!(restored.active_session_id, "ses_active");
-        assert_eq!(restored.sessions, ["ses_old", "ses_active"]);
+        assert_eq!(restored.session, "ses_active");
         assert_eq!(runtime.creates, 0);
 
         let created =
@@ -1487,9 +1471,10 @@ mod tests {
         assert_eq!(created, "ses_1");
         let markdown = fs::read_to_string(path).unwrap();
         assert_eq!(
-            ticket_session_ids(&markdown).unwrap(),
-            ["ses_old", "ses_active", "ses_1"]
+            ticket_session_id(&markdown).unwrap().as_deref(),
+            Some("ses_1")
         );
+        assert!(!markdown.contains("work_session_ids:"));
         assert_eq!(
             work_session_id(&markdown).unwrap().as_deref(),
             Some("ses_1")
@@ -1523,7 +1508,7 @@ mod tests {
         )
         .expect("an existing session should be restored from its own recorded directory");
 
-        assert_eq!(result.active_session_id, "ses_existing");
+        assert_eq!(result.session, "ses_existing");
         assert_eq!(runtime.creates, 0);
         assert_eq!(
             runtime.attached,
@@ -1610,51 +1595,43 @@ mod tests {
     }
 
     #[test]
-    fn ticket_session_metadata_migrates_legacy_id_and_tracks_active_session() {
+    fn ticket_session_metadata_migrates_legacy_lists_to_one_id() {
         let legacy = "---\ntitle: T\nstatus: in_progress\nwork_session_id: ses_old\nopencode-status: idle\n---\n# T\nBody\n";
-        assert_eq!(ticket_session_ids(legacy).unwrap(), ["ses_old"]);
-        let updated = record_ticket_sessions(
-            legacy,
-            &["ses_old".into(), "ses_new".into()],
-            Some("ses_new"),
-        )
-        .unwrap();
+        assert_eq!(
+            ticket_session_id(legacy).unwrap().as_deref(),
+            Some("ses_old")
+        );
+        let legacy_multiple = "---\ntitle: T\nstatus: in_progress\nwork_session_id: ses_old\nwork_session_ids:\n  - ses_old\n  - ses_new\n---\n# T\nBody\n";
+        assert_eq!(
+            ticket_session_id(legacy_multiple).unwrap().as_deref(),
+            Some("ses_old")
+        );
+        let updated = record_ticket_session(legacy_multiple, Some("ses_new")).unwrap();
         assert!(updated.contains("work_session_id: ses_new\n"));
         assert!(
             !updated.contains("opencode-status:"),
             "session changes clear the prior session's status"
         );
-        assert!(updated.contains("work_session_ids:\n  - ses_old\n  - ses_new\n"));
+        assert!(!updated.contains("work_session_ids:"));
         assert!(updated.ends_with("# T\nBody\n"));
         assert_eq!(
-            ticket_session_ids(&updated).unwrap(),
-            ["ses_old", "ses_new"]
+            ticket_session_id(&updated).unwrap().as_deref(),
+            Some("ses_new")
         );
         assert_eq!(
             work_session_id(&updated).unwrap().as_deref(),
             Some("ses_new")
         );
-        let closed =
-            record_ticket_sessions(&updated, &["ses_old".into()], Some("ses_old")).unwrap();
-        assert_eq!(ticket_session_ids(&closed).unwrap(), ["ses_old"]);
-        assert_eq!(
-            work_session_id(&closed).unwrap().as_deref(),
-            Some("ses_old")
-        );
+        let closed = record_ticket_session(&updated, None).unwrap();
+        assert!(ticket_session_id(&closed).unwrap().is_none());
+        assert!(work_session_id(&closed).unwrap().is_none());
     }
 
     #[test]
-    fn ticket_session_metadata_rejects_invalid_or_inconsistent_ids() {
+    fn ticket_session_metadata_rejects_invalid_ids_and_malformed_legacy_lists() {
         let source = "---\ntitle: T\n---\nBody\n";
-        assert!(record_ticket_sessions(source, &["bad id".into()], Some("bad id")).is_err());
-        assert!(record_ticket_sessions(source, &["ses_one".into()], Some("ses_other")).is_err());
-        assert!(record_ticket_sessions(
-            source,
-            &["ses_one".into(), "ses_one".into()],
-            Some("ses_one")
-        )
-        .is_err());
-        assert!(ticket_session_ids("---\nwork_session_ids:\n  - invalid\n---\n").is_err());
+        assert!(record_ticket_session(source, Some("bad id")).is_err());
+        assert!(ticket_session_id("---\nwork_session_ids:\n  - invalid\n---\n").is_err());
     }
 
     #[test]
@@ -1763,7 +1740,7 @@ mod tests {
             &mut runtime,
         )
         .unwrap();
-        assert_eq!(opened.active_session_id, "ses_bound");
+        assert_eq!(opened.session, "ses_bound");
         assert_eq!(runtime.attached[0].1, worktree.canonicalize().unwrap());
 
         fs::create_dir(&foreign).unwrap();
@@ -1883,7 +1860,10 @@ mod tests {
                     .as_str()
             )
         );
-        assert_eq!(ticket_session_ids(&markdown).unwrap(), ["ses_1"]);
+        assert_eq!(
+            ticket_session_id(&markdown).unwrap().as_deref(),
+            Some("ses_1")
+        );
     }
 
     #[test]
@@ -2016,24 +1996,81 @@ mod tests {
     }
 
     #[test]
-    fn closing_ticket_session_unlinks_it_and_selects_previous_active() {
+    fn closing_ticket_session_unlinks_it_without_deleting_conversation() {
         let root = tempfile::tempdir().unwrap();
         let path = root.path().join("ticket.md");
         fs::write(&path, "---\ntitle: T\nstatus: in_progress\nwork_session_id: ses_two\nwork_session_ids:\n  - ses_one\n  - ses_two\n---\nBody\n").unwrap();
-        assert_eq!(
-            close_session(root.path(), "ticket.md", "ses_two")
-                .unwrap()
-                .as_deref(),
-            Some("ses_one")
-        );
+        close_session(root.path(), "ticket.md", "ses_two").unwrap();
         let updated = fs::read_to_string(&path).unwrap();
-        assert_eq!(ticket_session_ids(&updated).unwrap(), ["ses_one"]);
-        assert_eq!(
-            work_session_id(&updated).unwrap().as_deref(),
-            Some("ses_one")
-        );
+        assert!(ticket_session_id(&updated).unwrap().is_none());
+        assert!(work_session_id(&updated).unwrap().is_none());
+        assert!(!updated.contains("work_session_ids:"));
         assert!(updated.ends_with("Body\n"));
         assert!(close_session(root.path(), "ticket.md", "ses_two").is_err());
+    }
+
+    #[test]
+    fn failed_replacement_attach_keeps_the_previous_ticket_session() {
+        let root = tempfile::tempdir().unwrap();
+        let tickets = root.path().join("tickets");
+        let repository = root.path().join("repository");
+        fs::create_dir(&tickets).unwrap();
+        fs::create_dir(&repository).unwrap();
+        let path = tickets.join("ticket.md");
+        fs::write(
+            &path,
+            "---\ntitle: T\nstatus: in_progress\nwork_session_id: ses_old\n---\nBody\n",
+        )
+        .unwrap();
+        let mut runtime = FakeRuntime {
+            fail_attach: true,
+            ..FakeRuntime::default()
+        };
+        assert!(new_session(
+            &tickets,
+            &repository,
+            "Workspace",
+            "ticket.md",
+            &mut runtime
+        )
+        .is_err());
+        let markdown = fs::read_to_string(path).unwrap();
+        assert_eq!(
+            work_session_id(&markdown).unwrap().as_deref(),
+            Some("ses_old")
+        );
+    }
+
+    #[test]
+    fn failed_replacement_worktree_tracking_rolls_back_the_ticket_binding() {
+        let root = tempfile::tempdir().unwrap();
+        let tickets = root.path().join("tickets");
+        let repository = root.path().join("repository");
+        fs::create_dir(&tickets).unwrap();
+        fs::create_dir(&repository).unwrap();
+        let path = tickets.join("ticket.md");
+        fs::write(
+            &path,
+            "---\ntitle: T\nstatus: in_progress\nwork_session_id: ses_old\n---\nBody\n",
+        )
+        .unwrap();
+        let mut runtime = FakeRuntime {
+            session_directory: Some(root.path().join("missing-session-worktree")),
+            ..FakeRuntime::default()
+        };
+        assert!(new_session(
+            &tickets,
+            &repository,
+            "Workspace",
+            "ticket.md",
+            &mut runtime
+        )
+        .is_err());
+        let markdown = fs::read_to_string(path).unwrap();
+        assert_eq!(
+            work_session_id(&markdown).unwrap().as_deref(),
+            Some("ses_old")
+        );
     }
     #[test]
     fn lists_markdown_and_reads_current_status_after_file_edit() {

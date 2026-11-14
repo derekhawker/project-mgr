@@ -46,11 +46,12 @@ workspace name is a button that returns to the ticket list without closing the
 session.
 
 The ticket workbench starts with a **New session** button immediately before the
-session/view tab strip. It creates a fresh conversation bound to the selected
-ticket, makes it active, and keeps earlier ticket sessions available as tabs.
-Ticket tabs use stable session labels. Closing a tab closes its terminal and
-removes its ID from that ticket; it does not delete OpenCode's conversation
-history. Closing the active tab selects the most recently retained session.
+session/view tab strip. It creates a fresh conversation for the selected ticket.
+The workbench shows one session tab labeled **OpenCode**. Starting a new session
+attaches the replacement before changing the ticket binding, then closes the old
+terminal without deleting its OpenCode conversation. Closing the tab closes the
+terminal and clears the ticket's session binding; it does not delete OpenCode's
+conversation history.
 
 ## Purpose and layout
 

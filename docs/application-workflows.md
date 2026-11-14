@@ -75,6 +75,13 @@ overwritten. The dialog closes after the create command succeeds and remains
 open with the reviewed edits if creation fails; the ticket list then refreshes
 and selects the created draft.
 
+Each ticket tracks at most one OpenCode work session in `work_session_id`.
+Starting **New session** creates and attaches the replacement before updating
+that ticket binding; only after the new session is attached does the app close
+the previous session's terminal. Closing the terminal does not delete the old
+OpenCode conversation. Older `work_session_ids` front matter is normalized to
+the one active binding when the ticket is worked.
+
 For tickets with an active `work_session_id`, Rust subscribes to OpenCode's
 volatile `GET /api/event` stream and takes one `GET /api/session/active`
 snapshot after connecting, after each reconnect, and every 30 seconds. The

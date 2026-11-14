@@ -156,7 +156,7 @@ test("checked-in command inventory has one contract for every registered Rust co
   assert.deepEqual([...COMMAND_NAMES].sort(), [...rustAttributes].sort());
 });
 
-test("ticket session commands validate the multi-session and close wire shapes", async () => {
+test("ticket session commands validate the single-session and close wire shapes", async () => {
   const payloads = [];
   const invoke = async (name, payload) => {
     payloads.push([name, payload]);
@@ -166,8 +166,8 @@ test("ticket session commands validate the multi-session and close wire shapes",
     workspaceId: "workspace-1",
     filename: "ticket.md",
   });
-  assert.deepEqual(Object.keys(work).sort(), ["activeSessionId", "sessions"]);
-  assert.equal(work.sessions[0].openCodeSessionId, "ses-1");
+  assert.deepEqual(Object.keys(work), ["session"]);
+  assert.equal(work.session.openCodeSessionId, "ses-1");
   const created = await invokeCommand(
     invoke,
     "workspace_ticket_session_create",
@@ -182,7 +182,7 @@ test("ticket session commands validate the multi-session and close wire shapes",
     filename: "ticket.md",
     sessionId: "ses-ticket-new",
   });
-  assert.equal(next, "ses-ticket-old");
+  assert.equal(next, null);
   assert.deepEqual(
     payloads.map(([name]) => name),
     [
@@ -296,7 +296,7 @@ test("ticket Workbench selection does not expose tools until row Work is activat
   );
   assert.match(
     main,
-    /async function workWorkspaceTicket\(workspaceId, filename\)[\s\S]*setWorkspaceShellVisible\(true\)[\s\S]*await showSession\(result\.activeSessionId\)/,
+    /async function workWorkspaceTicket\(workspaceId, filename\)[\s\S]*setWorkspaceShellVisible\(true\)[\s\S]*await showSession\(result\.session\.openCodeSessionId\)/,
   );
 });
 

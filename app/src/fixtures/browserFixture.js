@@ -5,6 +5,7 @@ let navigatorWidth = 300;
 let changeReviewMode = "unified";
 let defaultModel = { providerId: "fixture", id: "model" };
 let createdWorkspaceTickets = [];
+let ticketSessionSequence = 0;
 let portSelection = "3000-3010,4200,4321,5000-5010,5173-5180,5432,6379,8000-8010,8080-8090,9229,27017";
 let fixtureListeners = [
   { pid: 18432, identity: "fixture-node-18432", name: "node", owner: "derekhawker", addresses: ["127.0.0.1:3000"], ports: [3000], cwd: "/fixture/repository", command: "node ./node_modules/.bin/vite --host 127.0.0.1", startTime: "2026-10-30 09:14:22" },
@@ -321,19 +322,17 @@ export async function invokeBrowserFixture(name, payload = {}) {
         if (!session) { session = { ...makeSession(workspace), openCodeSessionId: sessionId }; sessions.push(session); }
         return session;
       });
-      result = { sessions: entries, activeSessionId: ids.at(-1) };
+      result = { session: entries.at(-1) };
       break;
     }
     case "workspace_ticket_session_create": {
       const workspace = workspaces.find((item) => item.id === payload.workspaceId);
       if (!workspace) throw new Error("Workspace was not found");
       const key = `${workspace.id}:${payload.filename}`;
-      const ids = [...(ticketSessions.get(key) || [])];
-      const sessionId = `fixture-ticket-session-${ids.length + 1}`;
+      const sessionId = `fixture-ticket-session-${++ticketSessionSequence}`;
       result = { ...makeSession(workspace), openCodeSessionId: sessionId };
       sessions.push(result);
-      ids.push(sessionId);
-      ticketSessions.set(key, ids);
+      ticketSessions.set(key, [sessionId]);
       break;
     }
     case "workspace_ticket_session_close": {

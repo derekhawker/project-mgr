@@ -434,7 +434,7 @@ async fn workspace_ticket_session_close(
     workspace_id: String,
     filename: String,
     session_id: String,
-) -> Result<Option<String>, String> {
+) -> Result<(), String> {
     run_ports_work(move || {
         let store = app.state::<ManagementStore>();
         let workspace = store
