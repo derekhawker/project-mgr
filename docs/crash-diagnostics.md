@@ -77,3 +77,21 @@ Replace `1782997` with the coredump PID. The explicit startup marker is the reli
 - **Native crash:** Linux `journalctl -b` and `coredumpctl info <PID>`; macOS `~/Library/Logs/DiagnosticReports/`; Windows Event Viewer → **Windows Logs > Application** (WER dumps exist only when available/configured).
 
 Run logs preserve raw process output and may include sensitive material printed by tools. Do not intentionally print or log prompts, PII, credentials, secrets, environment dumps, or process command lines. Review logs and dumps before sharing; never include prompt contents.
+
+### Opt-in WebKit custom-protocol tracing
+
+For a future Linux `npm run live` reproduction, enable Wry's custom-protocol
+callback spans for that run:
+
+```sh
+PROJECT_MGR_TRACE_WEBKIT_PROTOCOL=1 npm run live --prefix app
+```
+
+The captured live-run log will contain `webkit-protocol-span-start` and
+`webkit-protocol-span-end` events with a process-local span ID, Wry span name,
+thread ID, and elapsed milliseconds. This identifies callback/handler timing
+around Wry's WebKit URI-scheme handling. It does **not** include the URI, request
+or response contents, status, response size, or the later GLib main-context
+response completion; it cannot identify the request URL or prove the source of
+heap corruption. Tracing is opt-in because enabling it installs a process-wide
+tracing subscriber, and output is captured in the normal per-run live log.
