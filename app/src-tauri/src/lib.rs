@@ -20,6 +20,7 @@ pub mod opencode;
 pub mod os_handoff;
 pub mod ports;
 pub mod presentation_preferences;
+pub mod protocol_trace;
 pub mod repo_tools;
 pub mod safety;
 pub mod session_restore;
@@ -132,6 +133,7 @@ fn tray_icon() -> Image<'static> {
 }
 
 pub fn run() {
+    protocol_trace::enable_if_requested();
     live_diagnostics::announce_process();
     let mut builder = tauri::Builder::default().plugin(tauri_plugin_dialog::init());
     // `live` sets this per-worktree port so development instances do not hand
