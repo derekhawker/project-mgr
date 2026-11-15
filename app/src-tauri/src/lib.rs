@@ -14,6 +14,7 @@ use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
 
 pub mod change_review;
 pub mod docs_reader;
+pub mod live_diagnostics;
 pub mod management;
 pub mod opencode;
 pub mod os_handoff;
@@ -29,7 +30,6 @@ pub mod workspace_setup;
 pub mod workspace_tickets;
 
 use management::ManagementStore;
-
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -132,6 +132,7 @@ fn tray_icon() -> Image<'static> {
 }
 
 pub fn run() {
+    live_diagnostics::announce_process();
     let mut builder = tauri::Builder::default().plugin(tauri_plugin_dialog::init());
     // `live` sets this per-worktree port so development instances do not hand
     // off to the first worktree's app. Installed launches keep single-instance
