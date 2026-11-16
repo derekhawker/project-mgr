@@ -34,10 +34,15 @@ dialog. Its progress indicator shows connected numbered circles **1** and **2**,
 outlines the active circle, fills the other, and places one summary below:
 **Description** or **Review**. The first
 step captures an idea; the second displays an editable title and Markdown body
-with the app-managed `draft` status read-only. Cancel creates no file.
-Confirmation creates the ticket in external Workspace storage; success closes
-the dialog and selects the refreshed ticket, while failure keeps the review step
-and edits visible.
+with the app-managed `draft` status read-only. It also offers an unchecked by
+default **Start an investigation now** checkbox. Its helper text says the
+investigation will not open the ticket or start implementation. Cancel creates
+no file. Confirmation creates the ticket in external Workspace storage. When
+investigation is selected, the app starts a persistent research prompt in a
+ticket-bound session without opening its terminal or workbench. Success closes
+the dialog and selects the refreshed ticket, while ticket-creation failure keeps
+the review step and edits visible. An investigation failure after ticket
+creation is reported without inviting duplicate submission.
 
 The ticket browser's **Tools** menu is available even with no selected ticket.
 It offers only external-terminal, IntelliJ, and folder actions, using the

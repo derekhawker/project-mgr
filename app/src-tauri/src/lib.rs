@@ -374,6 +374,7 @@ async fn workspace_ticket_work(
             store: &store,
             runtime: &runtime,
             workspace_id: &workspace.id,
+            investigation_model: None,
         };
         workspace_tickets::work(
             &directory,
@@ -418,6 +419,7 @@ async fn workspace_ticket_session_create(
             store: &store,
             runtime: &runtime,
             workspace_id: &workspace.id,
+            investigation_model: None,
         };
         workspace_tickets::new_session(
             &directory,
@@ -467,6 +469,7 @@ struct TicketWorkAdapter<'a> {
     store: &'a ManagementStore,
     runtime: &'a opencode::Runtime,
     workspace_id: &'a str,
+    investigation_model: Option<opencode::ModelReference>,
 }
 
 impl workspace_tickets::TicketWorkRuntime for TicketWorkAdapter<'_> {
@@ -476,6 +479,7 @@ impl workspace_tickets::TicketWorkRuntime for TicketWorkAdapter<'_> {
     }
     fn create(&mut self, title: &str, repository: &std::path::Path) -> Result<String, String> {
         let model = ticket_work_model(self.store)?;
+        self.investigation_model = Some(model.clone());
         session_id_from_response(&self.runtime.create_session(title, repository, model)?)
     }
     fn prepare(
@@ -533,6 +537,58 @@ impl workspace_tickets::TicketWorkRuntime for TicketWorkAdapter<'_> {
 
     fn session_directory(&mut self, id: &str) -> Result<Option<std::path::PathBuf>, String> {
         self.runtime.session_directory(id).map(Some)
+    }
+}
+
+impl workspace_tickets::TicketInvestigationRuntime for TicketWorkAdapter<'_> {
+    fn create(&mut self, title: &str, repository: &std::path::Path) -> Result<String, String> {
+        let model = ticket_work_model(self.store)?;
+        self.investigation_model = Some(model.clone());
+        session_id_from_response(&self.runtime.create_session(title, repository, model)?)
+    }
+
+    fn prepare(
+        &mut self,
+        id: &str,
+        ticket_directory: &std::path::Path,
+        instructions: &str,
+    ) -> Result<(), String> {
+        self.runtime
+            .allow_ticket_directory_read_only(id, ticket_directory)?;
+        self.runtime
+            .set_instruction_entry(id, "workspace-ticket", instructions)
+    }
+
+    fn submit_prompt(&mut self, id: &str, prompt: &str) -> Result<(), String> {
+        let app = self.app.clone();
+        let session_id = id.to_owned();
+        let prompt = prompt.to_owned();
+        let model = self
+            .investigation_model
+            .clone()
+            .ok_or_else(|| "Ticket investigation model was not selected".to_owned())?;
+        tauri::async_runtime::spawn(async move {
+            let worker_app = app.clone();
+            let worker_session_id = session_id.clone();
+            let send_result = run_ports_work(move || {
+                let runtime = worker_app.state::<opencode::Runtime>();
+                runtime.set_session_model(&worker_session_id, model)?;
+                runtime.submit_session_prompt(&worker_session_id, &prompt)
+            })
+            .await;
+            if send_result.is_err() {
+                log_ticket_investigation_failure(
+                    &app,
+                    Some(&session_id),
+                    "prompt_submission",
+                );
+            }
+        });
+        Ok(())
+    }
+
+    fn delete(&mut self, id: &str) -> Result<(), String> {
+        self.runtime.delete_session(id)
     }
 }
 
@@ -785,6 +841,8 @@ struct WorkspaceTicketCreateCommand {
     workspace_id: String,
     title: String,
     body: String,
+    #[serde(default)]
+    start_investigation: bool,
 }
 
 fn ticket_workspace_repository(
@@ -897,7 +955,7 @@ async fn workspace_ticket_proposal(
 async fn workspace_ticket_create(
     app: AppHandle,
     request: WorkspaceTicketCreateCommand,
-) -> Result<workspace_tickets::Ticket, String> {
+) -> Result<workspace_tickets::TicketCreationResult, String> {
     run_ports_work(move || {
         let store = app.state::<ManagementStore>();
         let (workspace, repository) = ticket_workspace_repository(&store, &request.workspace_id)?;
@@ -906,12 +964,31 @@ async fn workspace_ticket_create(
             .app_data_dir()
             .map_err(|error| error.to_string())?;
         let ticket_directory = workspace_tickets::workspace_ticket_dir(&app_data, &workspace.slug)?;
-        workspace_tickets::create_draft(
+        let runtime = app.state::<opencode::Runtime>();
+        let mut adapter = TicketWorkAdapter {
+            app: app.clone(),
+            store: &store,
+            runtime: &runtime,
+            workspace_id: &workspace.id,
+            investigation_model: None,
+        };
+        let result = workspace_tickets::create_draft_with_investigation(
             &ticket_directory,
             &repository,
+            &workspace.name,
             &request.title,
             &request.body,
-        )
+            request.start_investigation,
+            &mut adapter,
+        )?;
+        if let Some(stage) = result.investigation_failure_stage.as_deref() {
+            log_ticket_investigation_failure(
+                &app,
+                result.investigation_session_id.as_deref(),
+                stage,
+            );
+        }
+        Ok(result)
     })
     .await
 }
@@ -3240,6 +3317,34 @@ fn log_ticket_proposal_event(app: &AppHandle, session_id: &str, event: &str) {
     })();
     if let Err(error) = result {
         eprintln!("could not write ticket proposal failure metadata: {error}");
+    }
+}
+
+fn log_ticket_investigation_failure(app: &AppHandle, session_id: Option<&str>, stage: &str) {
+    let directory = match app.path().app_log_dir() {
+        Ok(directory) => directory,
+        Err(error) => {
+            eprintln!("could not resolve ticket investigation log directory: {error}");
+            return;
+        }
+    };
+    let result = (|| {
+        std::fs::create_dir_all(&directory)?;
+        let entry = serde_json::json!({
+            "timestamp": now_millis(),
+            "level": "ERROR",
+            "event": "ticket_investigation_failed",
+            "sessionId": session_id,
+            "errorCategory": stage,
+        });
+        let mut log = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(directory.join("application.log"))?;
+        writeln!(log, "{entry}")
+    })();
+    if let Err(error) = result {
+        eprintln!("could not write ticket investigation failure metadata: {error}");
     }
 }
 

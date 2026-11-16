@@ -76,13 +76,33 @@ is not written to application logs; failures log only session and error-category
 metadata.
 
 The review step lets the user edit the title and Markdown body; `status: draft`
-is displayed read-only. Canceling creates no ticket. Confirmation rechecks the
-active regular Workspace and verified repository, derives a safe filename from
-the reviewed title, and creates a new Markdown file exclusively under the
+is displayed read-only. A **Start an investigation now** checkbox is unchecked
+by default. Canceling creates no ticket. Confirmation rechecks the active
+regular Workspace and verified repository, derives a safe filename from the
+reviewed title, and creates a new Markdown file exclusively under the
 Workspace's canonical external ticket directory. Existing files are never
-overwritten. The dialog closes after the create command succeeds and remains
-open with the reviewed edits if creation fails; the ticket list then refreshes
-and selects the created draft.
+overwritten. With the checkbox off, this is the existing draft-only flow. With
+it on, Rust creates a persistent OpenCode session in the Workspace repository,
+adds its exact ID to the draft ticket, and submits an investigation prompt. The
+session receives read-only access to the external ticket directory and is not
+attached to a terminal. The prompt asks OpenCode to inspect requirements,
+unclear behavior, behavior changes, and integration risks; assess readiness for
+implementation; and identify questions and needed decisions. For complex work
+or new library integrations it asks for deeper analysis and subagents when
+helpful. It explicitly forbids implementation and file changes. Creating the
+session does not open the ticket workbench or terminal; the user can later use
+**Work** to open/resume the saved session. The ticket remains `draft`.
+
+Investigation prompt delivery runs on the bounded blocking worker pool so model
+research does not keep the creation dialog open. If session setup fails after
+ticket creation, the draft remains created and selected; the UI reports that
+investigation setup failed rather than keeping a retryable create form that
+could create a duplicate. If prompt delivery fails asynchronously, the session
+binding remains for inspection through **Work**. Failures are logged to the
+application log with session/error-category metadata only, never prompt
+contents. A ticket creation failure keeps the review step and edits visible.
+The ticket list refreshes and selects the created draft after a successful
+create command.
 
 Each ticket tracks at most one OpenCode work session in `work_session_id`.
 Starting **New session** creates and attaches the replacement before updating
@@ -342,8 +362,12 @@ remain pinned in the navigation.
 
 ## 5. Common Session Flow
 
-Every session type uses the same terminal runtime. Only the context resolver
-changes how the owner, session ID, and working directory are found.
+Interactive session types use the same terminal runtime. Only the context
+resolver changes how the owner, session ID, and working directory are found.
+The internal ticket-proposal session and the opt-in ticket-investigation session
+are non-interactive API prompt flows: proposals are temporary, while
+investigations persist their exact session ID in the ticket and can be opened
+later through **Work**.
 
 ### 5.1 Create and start a new session
 

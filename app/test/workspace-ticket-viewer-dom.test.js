@@ -131,8 +131,8 @@ test("ticket idea modal marks both current steps, keeps failed edits open, and c
       proposals.push(idea);
       return { title: "Proposed title", body: "# Proposed title\n\nOriginal body" };
     },
-    onCreate: async (title, body) => {
-      creations.push([title, body]);
+    onCreate: async (title, body, startInvestigation) => {
+      creations.push([title, body, startInvestigation]);
       if (failures-- > 0) throw new Error("disk unavailable");
     },
   });
@@ -175,12 +175,52 @@ test("ticket idea modal marks both current steps, keeps failed edits open, and c
     view.host.querySelector("dialog footer button:last-child").click();
     await flush();
     assert.equal(view.host.querySelector("dialog").open, false);
-    assert.deepEqual(creations, [["Edited title", "Edited Markdown"], ["Edited title", "Edited Markdown"]]);
+    assert.deepEqual(creations, [
+      ["Edited title", "Edited Markdown", false],
+      ["Edited title", "Edited Markdown", false],
+    ]);
     view.host.querySelector("button").click();
     view.host.querySelector('button[type="submit"]').closest("dialog").querySelector('button[aria-label="Close dialog"]').click();
     assert.equal(view.host.querySelector("dialog").open, false);
     assert.equal(creations.length, 2, "cancel does not create a ticket");
     assert.equal(proposals.length, 1, "cancel does not start another proposal");
+  } finally { view.dispose(); }
+});
+
+test("ticket creation investigation checkbox is opt-in and resets for each new ticket", async () => {
+  const creations = [];
+  const view = mountIdeaModal({
+    onPropose: async () => ({ title: "Ticket", body: "Ticket body" }),
+    onCreate: async (...args) => creations.push(args),
+  });
+  const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+  try {
+    view.host.querySelector("button").click();
+    const idea = view.host.querySelector("#ticket-idea");
+    idea.value = "Investigate this";
+    idea.dispatchEvent(new Event("input", { bubbles: true }));
+    view.host.querySelector('button[type="submit"]').click();
+    await flush();
+    const option = [...view.host.querySelectorAll('input[type="checkbox"]')]
+      .find((input) => input.closest("label")?.textContent.includes("Start an investigation now"));
+    assert.ok(option);
+    assert.equal(option.checked, false);
+    assert.match(option.closest("label").textContent, /won’t open the ticket or start implementation/);
+    option.checked = true;
+    option.dispatchEvent(new Event("change", { bubbles: true }));
+    view.host.querySelector("dialog footer button:last-child").click();
+    await flush();
+    assert.deepEqual(creations, [["Ticket", "Ticket body", true]]);
+
+    view.host.querySelector("button").click();
+    const reopenedIdea = view.host.querySelector("#ticket-idea");
+    reopenedIdea.value = "Another idea";
+    reopenedIdea.dispatchEvent(new Event("input", { bubbles: true }));
+    view.host.querySelector('button[type="submit"]').click();
+    await flush();
+    const reopenedOption = [...view.host.querySelectorAll('input[type="checkbox"]')]
+      .find((input) => input.closest("label")?.textContent.includes("Start an investigation now"));
+    assert.equal(reopenedOption.checked, false);
   } finally { view.dispose(); }
 });
 

@@ -6300,12 +6300,16 @@
             },
             "body": {
               "type": "string"
+            },
+            "startInvestigation": {
+              "type": "boolean"
             }
           },
           "required": [
             "workspaceId",
             "title",
-            "body"
+            "body",
+            "startInvestigation"
           ],
           "additionalProperties": false
         }
@@ -6318,42 +6322,65 @@
     "result": {
       "type": "object",
       "properties": {
-        "filename": {
-          "type": "string"
+        "ticket": {
+          "type": "object",
+          "properties": {
+            "filename": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "hasWorkSession": {
+              "type": "boolean"
+            },
+            "opencodeStatus": {
+              "type": "string",
+              "nullable": true
+            },
+            "content": {
+              "type": "string"
+            },
+            "modifiedAt": {
+              "type": "number"
+            },
+            "archivedAt": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          "required": [
+            "filename",
+            "title",
+            "status",
+            "hasWorkSession",
+            "opencodeStatus",
+            "content",
+            "modifiedAt",
+            "archivedAt"
+          ],
+          "additionalProperties": false
         },
-        "title": {
-          "type": "string"
-        },
-        "status": {
-          "type": "string"
-        },
-        "hasWorkSession": {
-          "type": "boolean"
-        },
-        "opencodeStatus": {
+        "investigationSessionId": {
           "type": "string",
           "nullable": true
         },
-        "content": {
-          "type": "string"
+        "investigationStarted": {
+          "type": "boolean"
         },
-        "modifiedAt": {
-          "type": "number"
-        },
-        "archivedAt": {
+        "investigationFailureStage": {
           "type": "string",
           "nullable": true
         }
       },
       "required": [
-        "filename",
-        "title",
-        "status",
-        "hasWorkSession",
-        "opencodeStatus",
-        "content",
-        "modifiedAt",
-        "archivedAt"
+        "ticket",
+        "investigationSessionId",
+        "investigationStarted",
+        "investigationFailureStage"
       ],
       "additionalProperties": false
     }

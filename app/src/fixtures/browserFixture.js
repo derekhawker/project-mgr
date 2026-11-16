@@ -301,17 +301,27 @@ export async function invokeBrowserFixture(name, payload = {}) {
       let filename = `${base}.md`;
       let suffix = 2;
       while (createdWorkspaceTickets.some((ticket) => ticket.workspaceId === workspace.id && ticket.filename === filename)) filename = `${base}-${suffix++}.md`;
-      result = {
+      const investigationSessionId = request.startInvestigation
+        ? `ses-fixture-ticket-${createdWorkspaceTickets.length + 1}`
+        : null;
+      const content = `---\ntitle: ${JSON.stringify(request.title)}\nstatus: draft\n${investigationSessionId ? `work_session_id: ${investigationSessionId}\n` : ""}---\n\n${request.body}\n`;
+      const ticket = {
         filename,
         title: request.title,
         status: "draft",
-        hasWorkSession: false,
+        hasWorkSession: Boolean(investigationSessionId),
         opencodeStatus: null,
-        content: `---\ntitle: ${JSON.stringify(request.title)}\nstatus: draft\n---\n\n${request.body}\n`,
+        content,
         modifiedAt: Date.now(),
         archivedAt: null,
       };
-      createdWorkspaceTickets.push({ ...result, workspaceId: workspace.id });
+      createdWorkspaceTickets.push({ ...ticket, workspaceId: workspace.id });
+      result = {
+        ticket,
+        investigationSessionId,
+        investigationStarted: Boolean(investigationSessionId),
+        investigationFailureStage: null,
+      };
       break;
     }
     case "workspace_ticket_work": {

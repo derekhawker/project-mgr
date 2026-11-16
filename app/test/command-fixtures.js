@@ -218,14 +218,19 @@ export function resultForCommand(name) {
       return { title: "Fixture proposal", body: "# Fixture proposal\n\n## Idea\n\nFixture body." };
     case "workspace_ticket_create":
       return {
-        filename: "fixture-proposal.md",
-        title: "Fixture proposal",
-        status: "draft",
-        hasWorkSession: false,
-        opencodeStatus: null,
-        content: "---\ntitle: Fixture proposal\nstatus: draft\n---\n\nFixture body.\n",
-        modifiedAt: 1,
-        archivedAt: null,
+        ticket: {
+          filename: "fixture-proposal.md",
+          title: "Fixture proposal",
+          status: "draft",
+          hasWorkSession: false,
+          opencodeStatus: null,
+          content: "---\ntitle: Fixture proposal\nstatus: draft\n---\n\nFixture body.\n",
+          modifiedAt: 1,
+          archivedAt: null,
+        },
+        investigationSessionId: null,
+        investigationStarted: false,
+        investigationFailureStage: null,
       };
     case "app_shell_info":
       return {
