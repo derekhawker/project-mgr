@@ -198,13 +198,21 @@ pub fn classify_session_status(evidence: SessionEvidence<'_>) -> SessionApplicat
     }
     let event_status = latest_session_event_status(evidence.events);
     match event_status {
+        Some("failed" | "interrupted") => return SessionApplicationStatus::Failed,
+        Some("running") => return SessionApplicationStatus::Running,
+        Some("retry") => return SessionApplicationStatus::Retrying,
+        _ => {}
+    }
+    // The active-session snapshot is current; successful outcomes/history may
+    // belong to a prior turn and must not hide a newly running follow-up.
+    if evidence.active.is_some() {
+        return SessionApplicationStatus::Running;
+    }
+    match event_status {
         Some("succeeded") if !evidence.history.is_empty() => {
             return SessionApplicationStatus::ReadyForReview;
         }
         Some("succeeded") => return SessionApplicationStatus::Unknown,
-        Some("failed" | "interrupted") => return SessionApplicationStatus::Failed,
-        Some("running") => return SessionApplicationStatus::Running,
-        Some("retry") => return SessionApplicationStatus::Retrying,
         _ => {}
     }
     if matches!(
@@ -213,9 +221,6 @@ pub fn classify_session_status(evidence: SessionEvidence<'_>) -> SessionApplicat
     ) && !evidence.history.is_empty()
     {
         return SessionApplicationStatus::ReadyForReview;
-    }
-    if evidence.active.is_some() {
-        return SessionApplicationStatus::Running;
     }
     if event_status == Some("idle") {
         return SessionApplicationStatus::Idle;
@@ -3028,6 +3033,94 @@ mod tests {
         assert_eq!(result.status, SessionApplicationStatus::WaitingForInput);
         assert_eq!(result.permissions, [json!({"id":"p1"})]);
         assert_eq!(result.forms, [json!({"id":"f1"})]);
+        server.join().unwrap();
+        runtime.shutdown();
+    }
+
+    #[test]
+    fn active_session_snapshot_reopens_idle_ticket_when_start_event_was_missed() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let address = listener.local_addr().unwrap();
+        let mut responses = Vec::new();
+        for (active, history, outcome, events) in [
+            (
+                r#"{"data":{}}"#,
+                r#"{"data":[]}"#,
+                r#"{"data":{"outcome":null}}"#,
+                "data: {\"type\":\"session.idle\",\"properties\":{\"sessionID\":\"ses_exact\"}}\n\n",
+            ),
+            (
+                r#"{"data":{"ses_exact":{"type":"running"}}}"#,
+                r#"{"data":[{"id":"prior-message"}]}"#,
+                r#"{"data":{"outcome":"succeeded"}}"#,
+                "data: {\"type\":\"session.execution.succeeded\",\"properties\":{\"sessionID\":\"ses_exact\"}}\n\ndata: {\"type\":\"session.idle\",\"properties\":{\"sessionID\":\"ses_exact\"}}\n\n",
+            ),
+        ] {
+            responses.extend([
+                ("/api/session/active", active),
+                (
+                    "/api/session/ses_exact/message?order=asc&limit=1",
+                    history,
+                ),
+                ("/api/session/ses_exact", outcome),
+                ("/api/session/ses_exact/permission", r#"{"data":[]}"#),
+                ("/api/session/ses_exact/form", r#"{"data":[]}"#),
+                (
+                    "/api/experimental/session/ses_exact/log?follow=false",
+                    events,
+                ),
+            ]);
+        }
+        let server = thread::spawn(move || {
+            for (expected_path, body) in responses {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                let mut request_line = String::new();
+                reader.read_line(&mut request_line).unwrap();
+                assert_eq!(
+                    request_line.split_whitespace().collect::<Vec<_>>(),
+                    vec!["GET", expected_path, "HTTP/1.1"]
+                );
+                loop {
+                    let mut line = String::new();
+                    reader.read_line(&mut line).unwrap();
+                    if line == "\r\n" {
+                        break;
+                    }
+                }
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                stream.write_all(response.as_bytes()).unwrap();
+            }
+        });
+        let runtime = Runtime {
+            server: Mutex::new(Some(Server {
+                info: RuntimeInfo {
+                    executable: "fake".into(),
+                    version: "2.1.4".into(),
+                    base_url: format!("http://{address}"),
+                },
+                _password: "secret".into(),
+                client: api_client("secret").unwrap(),
+            })),
+            terminals: TerminalManager::default(),
+            lifecycle: AtomicU8::new(0),
+            lifecycle_gate: Mutex::new(()),
+        };
+
+        assert_eq!(
+            runtime.reconcile_session("ses_exact", None).unwrap().status,
+            SessionApplicationStatus::Idle
+        );
+        assert_eq!(
+            runtime.reconcile_session("ses_exact", None).unwrap().status,
+            SessionApplicationStatus::Running,
+            "a fresh active-session snapshot must recover a missed execution-start event"
+        );
+
         server.join().unwrap();
         runtime.shutdown();
     }
