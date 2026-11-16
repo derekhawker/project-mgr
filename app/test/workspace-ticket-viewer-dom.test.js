@@ -205,7 +205,12 @@ test("ticket creation investigation checkbox is opt-in and resets for each new t
       .find((input) => input.closest("label")?.textContent.includes("Start an investigation now"));
     assert.ok(option);
     assert.equal(option.checked, false);
-    assert.match(option.closest("label").textContent, /won’t open the ticket or start implementation/);
+    const optionLabel = option.closest("label");
+    assert.equal(optionLabel.parentElement, view.host.querySelector("dialog footer > div"));
+    assert.match(optionLabel.textContent, /won’t open the ticket or start implementation/);
+    const footerItems = [...optionLabel.parentElement.children];
+    const createButton = footerItems.find((item) => item.textContent.includes("Create ticket"));
+    assert.ok(footerItems.indexOf(optionLabel) < footerItems.indexOf(createButton));
     option.checked = true;
     option.dispatchEvent(new Event("change", { bubbles: true }));
     view.host.querySelector("dialog footer button:last-child").click();

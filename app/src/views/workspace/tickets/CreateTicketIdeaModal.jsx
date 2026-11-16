@@ -70,6 +70,19 @@ export function CreateTicketIdeaModal(props) {
       onCloseRequest={close}
       footer={() => <div class={styles.actions}>
         <Show when={step() === 2}>
+          <label class={styles.investigationOption}>
+            <Checkbox
+              checked={startInvestigation()}
+              disabled={busy()}
+              onChange={(event) => setStartInvestigation(event.currentTarget.checked)}
+            />
+            <span>
+              <strong>Start an investigation now</strong>
+              <span class={styles.note}>Research only; won’t open the ticket or start implementation.</span>
+            </span>
+          </label>
+        </Show>
+        <Show when={step() === 2}>
           <Button type="button" disabled={busy()} onClick={() => { setStep(1); setError(""); }}>Back</Button>
         </Show>
         <Button type="button" disabled={busy()} onClick={close}>Cancel</Button>
@@ -122,17 +135,6 @@ export function CreateTicketIdeaModal(props) {
           <label for="ticket-body">Markdown body</label>
           <TextArea id="ticket-body" rows="15" required value={body()} disabled={busy()} onInput={(event) => setBody(event.currentTarget.value)} />
           <p class={styles.note}>The status is managed by the app. Your title and Markdown body are editable.</p>
-          <label class={styles.investigationOption}>
-            <Checkbox
-              checked={startInvestigation()}
-              disabled={busy()}
-              onChange={(event) => setStartInvestigation(event.currentTarget.checked)}
-            />
-            <span>
-              <strong>Start an investigation now</strong>
-              <span class={styles.note}>Research requirements and behavior; this won’t open the ticket or start implementation.</span>
-            </span>
-          </label>
         </div>
       </Show>
     </Modal>
