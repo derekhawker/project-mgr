@@ -207,7 +207,7 @@ test("ticket creation investigation checkbox is opt-in and resets for each new t
     assert.equal(option.checked, false);
     const optionLabel = option.closest("label");
     assert.equal(optionLabel.parentElement, view.host.querySelector("dialog footer > div"));
-    assert.match(optionLabel.textContent, /won’t open the ticket or start implementation/);
+    assert.match(optionLabel.textContent, /clear, low-effort, and one obvious path/);
     const footerItems = [...optionLabel.parentElement.children];
     const createButton = footerItems.find((item) => item.textContent.includes("Create ticket"));
     assert.ok(footerItems.indexOf(optionLabel) < footerItems.indexOf(createButton));

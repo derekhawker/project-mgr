@@ -19,8 +19,10 @@ discussions. For workflow behavior beyond the UX vocabulary, see
 - **Ticket investigation:** An opt-in research turn started when a draft ticket
   is created. It uses a persistent ticket-bound OpenCode session to identify
   requirements gaps, unclear or changing behavior, integration risks, and
-  readiness questions. It does not implement the ticket or automatically open
-  its terminal/workbench.
+  readiness questions. It may implement only when the task is clearly defined,
+  low-effort (a small, localized change using existing patterns), and has one
+  obvious narrow solution; otherwise it stops for discussion. It does not
+  automatically open its terminal/workbench.
 - **Legacy Task record:** A retained pre-refactor database record, not a target
   product concept or a creation option. Existing archived metadata remains
   internal compatibility data and is not exposed as an in-app destination.
