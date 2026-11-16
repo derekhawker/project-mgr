@@ -59,8 +59,8 @@
 .form { display: grid; gap: var(--ui-space-6); }
 .form label { font-weight: 700; }
 .note { margin: 0; color: var(--ui-muted); font-size: 0.85rem; }
-.investigationOption { display: flex; align-items: flex-start; gap: var(--ui-space-3); font-weight: 400; }
+.investigationOption { display: flex; flex: 1 1 14rem; align-items: flex-start; gap: var(--ui-space-3); margin-inline-end: auto; font-weight: 400; }
 .investigationOption > :first-child { margin-block-start: 2px; }
 .investigationOption > span { display: grid; gap: var(--ui-space-2); }
 .investigationOption strong { font-weight: 700; }
-.actions { display: flex; justify-content: flex-end; gap: var(--ui-space-6); }
+.actions { display: flex; align-items: center; justify-content: flex-end; gap: var(--ui-space-6); }
