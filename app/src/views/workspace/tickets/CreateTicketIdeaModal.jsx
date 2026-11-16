@@ -78,7 +78,7 @@ export function CreateTicketIdeaModal(props) {
             />
             <span>
               <strong>Start an investigation now</strong>
-              <span class={styles.note}>Research only; won’t open the ticket or start implementation.</span>
+              <span class={styles.note}>Implement only if clear, low-effort, and one obvious path.</span>
             </span>
           </label>
         </Show>

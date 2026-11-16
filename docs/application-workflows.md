@@ -89,9 +89,14 @@ attached to a terminal. The prompt asks OpenCode to inspect requirements,
 unclear behavior, behavior changes, and integration risks; assess readiness for
 implementation; and identify questions and needed decisions. For complex work
 or new library integrations it asks for deeper analysis and subagents when
-helpful. It explicitly forbids implementation and file changes. Creating the
-session does not open the ticket workbench or terminal; the user can later use
-**Work** to open/resume the saved session. The ticket remains `draft`.
+helpful. It uses a conservative gate: most tasks need discussion. After
+investigation, it permits implementation only when the task is clearly defined,
+low-effort (a small, localized change using existing patterns), and has one
+obvious, narrow solution. A straightforward bug fix may qualify. Redesigns and
+tasks with plausible alternatives stop for discussion rather than guessing a
+direction. Creating the session does not open the ticket workbench or terminal;
+the user can later use **Work** to open/resume the saved session. The ticket
+remains `draft`.
 
 Investigation prompt delivery runs on the bounded blocking worker pool so model
 research does not keep the creation dialog open. If session setup fails after
