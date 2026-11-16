@@ -297,8 +297,10 @@ fn apply_current_session_event(
     classified: SessionApplicationStatus,
     current_event: Option<&Value>,
     has_pending_input: bool,
+    is_active: bool,
 ) -> SessionApplicationStatus {
-    if !has_pending_input
+    if !is_active
+        && !has_pending_input
         && current_event
             .and_then(session_event_status)
             .is_some_and(|event_status| event_status == "idle")
@@ -876,6 +878,7 @@ impl Runtime {
             classified_status,
             current_event,
             !permissions.is_empty() || !forms.is_empty(),
+            active.is_some(),
         );
         Ok(SessionReconciliation {
             session_id: id,
@@ -1943,14 +1946,27 @@ mod tests {
                 SessionApplicationStatus::Running,
                 Some(&active_idle),
                 false,
+                true,
             ),
-            SessionApplicationStatus::Idle
+            SessionApplicationStatus::Running,
+            "an idle event must not replace stronger active-running evidence"
+        );
+        assert_eq!(
+            apply_current_session_event(
+                SessionApplicationStatus::Running,
+                Some(&active_idle),
+                false,
+                false,
+            ),
+            SessionApplicationStatus::Idle,
+            "an idle event still marks an inactive session idle"
         );
         assert_eq!(
             apply_current_session_event(
                 SessionApplicationStatus::Running,
                 Some(&active_idle),
                 true,
+                false,
             ),
             SessionApplicationStatus::Running,
             "pending human input still takes precedence over an idle signal"
