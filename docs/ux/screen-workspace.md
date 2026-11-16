@@ -31,7 +31,8 @@ enabled catalog. Use the shared ActionMenu for the model dropdown. If its saved
 value is unavailable, show an explicit choose-model state instead of silently
 selecting another model. The primary **Create ticket** action opens a two-step
 dialog. Its progress indicator shows connected numbered circles **1** and **2**,
-outlines the active circle, fills the other, and places one summary below:
+fills both circles, colors the active circle with the primary accent, leaves the
+other grey, and places one summary below:
 **Description** or **Review**. The first
 step captures an idea; the second displays an editable title and Markdown body
 with the app-managed `draft` status read-only. The footer offers an unchecked by

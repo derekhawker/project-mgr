@@ -38,7 +38,11 @@
 
 ## Delivery
 
-- For ticket work, do not create pull requests. Push the ticket branch and squash-merge directly into `main`, then fast-forward the primary `main` worktree to `origin/main`. Check that worktree for uncommitted changes first; preserve its work and ask before proceeding if it is dirty. Verify it is clean and up to date before removing the ticket worktree.
+- Keep a dedicated branch and worktree for each ticket; multiple ticket worktrees may remain open. Do all implementation and revisions in the ticket worktree.
+- Use the primary checkout as a single, serialized manual-verification lane. Before testing, confirm it is clean, then check out the exact committed candidate in detached HEAD state. Do not implement or commit from the primary checkout. Record the candidate commit and manual-verification results in the ticket. A follow-up change is a new candidate and must be checked out and verified there too.
+- Preserve changes made during manual verification. Inspect a dirty primary checkout before switching away; preserve its work and ask before proceeding if it is dirty. Keep the existing `npm run live --prefix app` runtime running and use its normal reload behavior.
+- Before delivery, ensure the ticket branch includes the latest `main`. If `main` has advanced and the ticket branch cannot fast-forward, merge the latest `main` into the ticket branch and repeat relevant verification. Do not rebase unless the user asks.
+- For ticket work, do not create pull requests. After required checks and manual verification pass, push the ticket branch and fast-forward `main` to its verified tip; do not squash-merge, so delivery retains the commits that were tested. Publish the updated `main`, then verify the primary checkout is clean and up to date before removing the ticket worktree and local branch. Preserve its work and ask before proceeding if it is dirty. Remote branch deletion is separate and is not implied.
 
 ## Testing
 - Avoid end-to-end tests; their cost is not justified.
