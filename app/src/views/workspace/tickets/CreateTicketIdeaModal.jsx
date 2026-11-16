@@ -77,7 +77,7 @@ export function CreateTicketIdeaModal(props) {
               onChange={(event) => setStartInvestigation(event.currentTarget.checked)}
             />
             <span>
-              <strong>Investigate, then implement if actionable</strong>
+              <strong>Start ticket</strong>
               <span class={styles.note}>Implement only if clear, low-effort, and one obvious path.</span>
             </span>
           </label>

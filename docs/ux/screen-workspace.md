@@ -36,7 +36,7 @@ other grey, and places one summary below:
 **Description** or **Review**. The first
 step captures an idea; the second displays an editable title and Markdown body
 with the app-managed `draft` status read-only. The footer offers an unchecked by
-default **Investigate, then implement if actionable** checkbox to the left of **Create ticket**.
+default **Start ticket** checkbox to the left of **Create ticket**.
 Its helper text says implementation proceeds only for clearly defined,
 low-effort tasks with one obvious solution. Cancel creates no file.
 Confirmation creates the ticket in external Workspace storage. When selected,
