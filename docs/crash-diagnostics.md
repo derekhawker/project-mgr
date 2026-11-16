@@ -88,9 +88,11 @@ PROJECT_MGR_TRACE_WEBKIT_PROTOCOL=1 npm run live --prefix app
 ```
 
 The captured live-run log will contain `webkit-protocol-span-start` and
-`webkit-protocol-span-end` events with a process-local span ID, Wry span name,
-thread ID, and elapsed milliseconds. This identifies callback/handler timing
-around Wry's WebKit URI-scheme handling. It does **not** include the URI, request
+`webkit-protocol-span-end` events for only Wry's custom-protocol `handle` and
+`call_handler` spans, with a process-local span ID, span name, thread ID, and
+elapsed milliseconds. Other Wry spans (such as frequent `eval` spans) are
+excluded. This identifies callback/handler timing around Wry's WebKit URI-scheme
+handling. It does **not** include the URI, request
 or response contents, status, response size, or the later GLib main-context
 response completion; it cannot identify the request URL or prove the source of
 heap corruption. Tracing is opt-in because enabling it installs a process-wide

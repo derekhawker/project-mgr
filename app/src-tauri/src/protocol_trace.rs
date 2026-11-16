@@ -18,6 +18,13 @@ use tracing::{
 
 const ENABLE_ENV: &str = "PROJECT_MGR_TRACE_WEBKIT_PROTOCOL";
 
+fn is_protocol_span(name: &str) -> bool {
+    matches!(
+        name,
+        "wry::custom_protocol::handle" | "wry::custom_protocol::call_handler"
+    )
+}
+
 struct SpanInfo {
     name: &'static str,
     started: Instant,
@@ -39,11 +46,11 @@ impl ProtocolTraceSubscriber {
 
 impl Subscriber for ProtocolTraceSubscriber {
     fn enabled(&self, metadata: &Metadata<'_>) -> bool {
-        metadata.target().starts_with("wry::")
+        is_protocol_span(metadata.name())
     }
 
     fn register_callsite(&self, metadata: &'static Metadata<'static>) -> Interest {
-        if metadata.target().starts_with("wry::") {
+        if is_protocol_span(metadata.name()) {
             Interest::always()
         } else {
             Interest::never()
@@ -135,5 +142,12 @@ mod tests {
         });
 
         assert!(spans.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn only_custom_protocol_spans_are_enabled() {
+        assert!(is_protocol_span("wry::custom_protocol::handle"));
+        assert!(is_protocol_span("wry::custom_protocol::call_handler"));
+        assert!(!is_protocol_span("wry::eval"));
     }
 }
