@@ -154,7 +154,7 @@ pub fn render_ticket_investigation_prompt(
     repository: &Path,
 ) -> String {
     format!(
-        "Investigate the requirements for ticket {title} ({filename}). Do not implement the ticket. Do not modify any files. Read the canonical ticket at {} and inspect relevant project guidance and code in the Workspace repository at {}. Identify missing requirements, unclear or ambiguous behavior, existing behavior that may change, and integration or design risks. For complex functionality or new library integrations, analyze the relevant contracts and risks in depth and use subagents when helpful; synthesize their findings. Return evidence with relevant paths, unresolved questions, decisions and acceptance criteria still needed, and an explicit assessment of whether the ticket appears ready for implementation. If it is not ready, explain what must be clarified. Treat the ticket as the scope to investigate, not as permission to implement.",
+        "Investigate ticket {title} ({filename}) before taking action. Read the canonical ticket at {} and relevant project guidance and code in the Workspace repository at {}. Identify missing requirements, unclear behavior, existing behavior that may change, and integration or design risks. Use a conservative gate: most tasks need discussion. Assess whether the task is clearly defined, low-effort, and has one obvious, narrow solution. Low-effort means a small, localized change using existing patterns. A straightforward bug fix may qualify. Proceed with implementation in this session only when all three conditions are clearly met. If any condition is uncertain or false, make no file changes: report findings, evidence, unresolved questions, decisions or acceptance criteria needed, and why the task needs discussion. Do not guess a product or visual-design direction when plausible alternatives exist. For complex functionality or new library integrations, investigate contracts and risks deeply and use subagents when helpful; these tasks will usually need discussion rather than immediate implementation. When the task qualifies, briefly state why, implement only the ticket's requested change, run focused validation, and summarize the changes and results. Finish with an explicit verdict: ready for implementation now, or needs discussion; explain the clarity, effort, and solution-path assessment. Treat the canonical ticket as the scope; do not infer another task from repository contents or UI selection.",
         ticket_path.display(),
         repository.display(),
     )
@@ -395,7 +395,7 @@ fn ticket_investigation_instructions(
     repository: &Path,
     session_id: &str,
 ) -> String {
-    format!("Investigate requirements only for ticket {title} ({filename}); do not implement it or modify files. Exact OpenCode session ID: {session_id}. Canonical ticket Markdown: {}. Current status: {status}. Workspace ticket directory: {}. Workspace repository root: {}. Follow the globally available ticket-management skill. Read the canonical Markdown as the complete scope to investigate and the latest status; identify missing requirements and behavior questions without taking implementation action. Do not infer another ticket from repository contents or UI selection.", ticket.display(), ticket_dir.display(), repository.display())
+    format!("Investigate ticket {title} ({filename}) before taking action. Use a conservative gate: most tasks need discussion. Implement only if the task is clearly defined, low-effort, and has one obvious, narrow solution; otherwise report findings/questions and stop without file edits. Exact OpenCode session ID: {session_id}. Canonical ticket Markdown: {}. Current status: {status}. Workspace ticket directory: {}. Workspace repository root: {}. Follow the globally available ticket-management skill. Read the canonical Markdown for complete scope and latest status. Do not guess product/design direction or infer another ticket from repository contents or UI selection.", ticket.display(), ticket_dir.display(), repository.display())
 }
 
 /// Resolve only a direct Markdown child of the canonical ticket directory.
@@ -2497,7 +2497,7 @@ mod tests {
     }
 
     #[test]
-    fn investigation_opt_in_creates_a_bound_session_and_sends_research_only_prompt() {
+    fn investigation_opt_in_binds_session_and_gates_implementation_on_actionability() {
         let root = tempfile::tempdir().unwrap();
         let repository = root.path().join("repository");
         let tickets = root.path().join("app-data/workspace-tickets/workspace");
@@ -2531,7 +2531,7 @@ mod tests {
         assert_eq!(runtime.prepared.len(), 1);
         assert!(runtime.prepared[0]
             .1
-            .contains("Investigate requirements only"));
+            .contains("Implement only if the task is clearly defined, low-effort"));
         assert!(runtime.prepared[0]
             .1
             .contains("Follow the globally available ticket-management skill"));
@@ -2539,12 +2539,23 @@ mod tests {
         let prompt = runtime.prompts[0].1.to_lowercase();
         for expected in [
             "missing requirements",
-            "ambiguous behavior",
+            "unclear behavior",
             "behavior that may change",
             "subagents",
             "ready for implementation",
-            "do not implement",
-            "do not modify",
+            "clearly defined",
+            "low-effort",
+            "most tasks need discussion",
+            "small, localized change using existing patterns",
+            "one obvious, narrow solution",
+            "only when all three conditions are clearly met",
+            "straightforward bug fix may qualify",
+            "make no file changes",
+            "visual-design direction",
+            "usually need discussion",
+            "implement only the ticket's requested change",
+            "focused validation",
+            "ready for implementation now",
         ] {
             assert!(
                 prompt.contains(expected),
