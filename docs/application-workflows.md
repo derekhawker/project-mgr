@@ -76,7 +76,7 @@ is not written to application logs; failures log only session and error-category
 metadata.
 
 The review step lets the user edit the title and Markdown body; `status: draft`
-is displayed read-only. A **Start an investigation now** checkbox is unchecked
+is displayed read-only. An **Investigate, then implement if actionable** checkbox is unchecked
 by default. Canceling creates no ticket. Confirmation rechecks the active
 regular Workspace and verified repository, derives a safe filename from the
 reviewed title, and creates a new Markdown file exclusively under the
