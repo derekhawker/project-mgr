@@ -202,7 +202,7 @@ test("ticket creation investigation checkbox is opt-in and resets for each new t
     view.host.querySelector('button[type="submit"]').click();
     await flush();
     const option = [...view.host.querySelectorAll('input[type="checkbox"]')]
-      .find((input) => input.closest("label")?.textContent.includes("Start an investigation now"));
+      .find((input) => input.closest("label")?.textContent.includes("Investigate, then implement if actionable"));
     assert.ok(option);
     assert.equal(option.checked, false);
     const optionLabel = option.closest("label");
@@ -224,7 +224,7 @@ test("ticket creation investigation checkbox is opt-in and resets for each new t
     view.host.querySelector('button[type="submit"]').click();
     await flush();
     const reopenedOption = [...view.host.querySelectorAll('input[type="checkbox"]')]
-      .find((input) => input.closest("label")?.textContent.includes("Start an investigation now"));
+      .find((input) => input.closest("label")?.textContent.includes("Investigate, then implement if actionable"));
     assert.equal(reopenedOption.checked, false);
   } finally { view.dispose(); }
 });
