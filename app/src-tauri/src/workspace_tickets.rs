@@ -20,6 +20,146 @@ pub trait TicketWorkRuntime {
     }
 }
 
+/// Effects needed to create a persistent investigation without attaching its
+/// interactive terminal to the application UI.
+pub trait TicketInvestigationRuntime {
+    fn create(&mut self, title: &str, repository: &Path) -> Result<String, String>;
+    fn prepare(
+        &mut self,
+        id: &str,
+        ticket_directory: &Path,
+        instructions: &str,
+    ) -> Result<(), String>;
+    fn submit_prompt(&mut self, id: &str, prompt: &str) -> Result<(), String>;
+    fn delete(&mut self, id: &str) -> Result<(), String>;
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TicketCreationResult {
+    pub ticket: Ticket,
+    pub investigation_session_id: Option<String>,
+    pub investigation_started: bool,
+    pub investigation_failure_stage: Option<String>,
+}
+
+/// Creates a reviewed draft and, when opted in, starts a ticket-bound research
+/// turn without attaching/opening its TUI. Investigation failures never turn a
+/// successful ticket creation into a retryable creation error.
+pub fn create_draft_with_investigation<R: TicketInvestigationRuntime>(
+    directory: &Path,
+    repository: &Path,
+    workspace_name: &str,
+    title: &str,
+    body: &str,
+    start_investigation: bool,
+    runtime: &mut R,
+) -> Result<TicketCreationResult, String> {
+    let mut ticket = create_draft(directory, repository, title, body)?;
+    let mut result = TicketCreationResult {
+        ticket: ticket.clone(),
+        investigation_session_id: None,
+        investigation_started: false,
+        investigation_failure_stage: None,
+    };
+    if !start_investigation {
+        return Ok(result);
+    }
+
+    let context = (|| {
+        let repository = repository
+            .canonicalize()
+            .map_err(|error| error.to_string())?;
+        let ticket_directory = directory
+            .canonicalize()
+            .map_err(|error| error.to_string())?;
+        let ticket_path = canonical_ticket(&ticket_directory, &ticket.filename)?;
+        let original = fs::read_to_string(&ticket_path).map_err(|error| error.to_string())?;
+        Ok::<_, String>((repository, ticket_directory, ticket_path, original))
+    })();
+    let (repository, ticket_directory, ticket_path, original) = match context {
+        Ok(context) => context,
+        Err(_) => {
+            result.investigation_failure_stage = Some("ticket_context".into());
+            return Ok(result);
+        }
+    };
+    let session_id = match runtime.create(
+        &format!("{workspace_name}: {} investigation", ticket.title),
+        &repository,
+    ) {
+        Ok(id) => id,
+        Err(_) => {
+            result.investigation_failure_stage = Some("session_creation".into());
+            return Ok(result);
+        }
+    };
+    result.investigation_session_id = Some(session_id.clone());
+
+    let instructions = ticket_investigation_instructions(
+        &ticket.title,
+        &ticket.filename,
+        "draft",
+        &ticket_path,
+        &ticket_directory,
+        &repository,
+        &session_id,
+    );
+    if runtime
+        .prepare(&session_id, &ticket_directory, &instructions)
+        .is_err()
+    {
+        let _ = runtime.delete(&session_id);
+        result.investigation_failure_stage = Some("session_preparation".into());
+        return Ok(result);
+    }
+
+    let updated = match record_ticket_session(&original, Some(&session_id)) {
+        Ok(updated) => updated,
+        Err(_) => {
+            let _ = runtime.delete(&session_id);
+            result.investigation_failure_stage = Some("ticket_binding".into());
+            return Ok(result);
+        }
+    };
+    if write_ticket_markdown_safely(&ticket_path, &original, &updated).is_err() {
+        let _ = runtime.delete(&session_id);
+        result.investigation_failure_stage = Some("ticket_binding".into());
+        return Ok(result);
+    }
+    ticket.has_work_session = true;
+    ticket.content = updated;
+
+    let prompt = render_ticket_investigation_prompt(
+        &ticket.title,
+        &ticket.filename,
+        &ticket_path,
+        &repository,
+    );
+    if runtime.submit_prompt(&session_id, &prompt).is_err() {
+        result.ticket = ticket;
+        result.investigation_failure_stage = Some("prompt_submission".into());
+        return Ok(result);
+    }
+
+    result.ticket = ticket;
+    result.investigation_started = true;
+    Ok(result)
+}
+
+pub fn render_ticket_investigation_prompt(
+    title: &str,
+    filename: &str,
+    ticket_path: &Path,
+    repository: &Path,
+) -> String {
+    format!(
+        "Investigate the requirements for ticket {title} ({filename}). Do not implement the ticket. Do not modify any files. Read the canonical ticket at {} and inspect relevant project guidance and code in the Workspace repository at {}. Identify missing requirements, unclear or ambiguous behavior, existing behavior that may change, and integration or design risks. For complex functionality or new library integrations, analyze the relevant contracts and risks in depth and use subagents when helpful; synthesize their findings. Return evidence with relevant paths, unresolved questions, decisions and acceptance criteria still needed, and an explicit assessment of whether the ticket appears ready for implementation. If it is not ready, explain what must be clarified. Treat the ticket as the scope to investigate, not as permission to implement.",
+        ticket_path.display(),
+        repository.display(),
+    )
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TicketWorkResult<S> {
@@ -244,6 +384,18 @@ fn ticket_instructions(
     session_id: &str,
 ) -> String {
     format!("Work on ticket {title} ({filename}). Exact OpenCode session ID: {session_id}. Canonical ticket Markdown: {}. Current status: {status}. Workspace ticket directory: {}. Workspace repository root: {}. Follow the globally available ticket-management skill. Read the canonical Markdown for the complete assignment and latest status; it is authoritative. Do not infer another ticket from repository contents or UI selection.", ticket.display(), ticket_dir.display(), repository.display())
+}
+
+fn ticket_investigation_instructions(
+    title: &str,
+    filename: &str,
+    status: &str,
+    ticket: &Path,
+    ticket_dir: &Path,
+    repository: &Path,
+    session_id: &str,
+) -> String {
+    format!("Investigate requirements only for ticket {title} ({filename}); do not implement it or modify files. Exact OpenCode session ID: {session_id}. Canonical ticket Markdown: {}. Current status: {status}. Workspace ticket directory: {}. Workspace repository root: {}. Follow the globally available ticket-management skill. Read the canonical Markdown as the complete scope to investigate and the latest status; identify missing requirements and behavior questions without taking implementation action. Do not infer another ticket from repository contents or UI selection.", ticket.display(), ticket_dir.display(), repository.display())
 }
 
 /// Resolve only a direct Markdown child of the canonical ticket directory.
@@ -1516,6 +1668,46 @@ mod tests {
     use super::*;
 
     #[derive(Default)]
+    struct FakeInvestigationRuntime {
+        creates: usize,
+        prepared: Vec<(String, String)>,
+        prompts: Vec<(String, String)>,
+        deleted: Vec<String>,
+        fail_prepare: bool,
+        fail_prompt: bool,
+    }
+
+    impl TicketInvestigationRuntime for FakeInvestigationRuntime {
+        fn create(&mut self, _: &str, _: &Path) -> Result<String, String> {
+            self.creates += 1;
+            Ok(format!("ses_investigation_{}", self.creates))
+        }
+
+        fn prepare(&mut self, id: &str, _: &Path, instructions: &str) -> Result<(), String> {
+            self.prepared.push((id.into(), instructions.into()));
+            if self.fail_prepare {
+                Err("setup failed".into())
+            } else {
+                Ok(())
+            }
+        }
+
+        fn submit_prompt(&mut self, id: &str, prompt: &str) -> Result<(), String> {
+            self.prompts.push((id.into(), prompt.into()));
+            if self.fail_prompt {
+                Err("send failed".into())
+            } else {
+                Ok(())
+            }
+        }
+
+        fn delete(&mut self, id: &str) -> Result<(), String> {
+            self.deleted.push(id.into());
+            Ok(())
+        }
+    }
+
+    #[derive(Default)]
     struct FakeRuntime {
         creates: usize,
         fail_exists: bool,
@@ -2302,6 +2494,164 @@ mod tests {
         assert!(create_draft(&repo, &repo, "Unsafe", "Body").is_err());
         assert!(create_draft(&dir, &repo, "  ", "Body").is_err());
         assert!(create_draft(&dir, &repo, "Title", " ").is_err());
+    }
+
+    #[test]
+    fn investigation_opt_in_creates_a_bound_session_and_sends_research_only_prompt() {
+        let root = tempfile::tempdir().unwrap();
+        let repository = root.path().join("repository");
+        let tickets = root.path().join("app-data/workspace-tickets/workspace");
+        fs::create_dir_all(&repository).unwrap();
+        let mut runtime = FakeInvestigationRuntime::default();
+
+        let result = create_draft_with_investigation(
+            &tickets,
+            &repository,
+            "Example Workspace",
+            "Improve onboarding",
+            "## Idea\n\nMake onboarding clearer.",
+            true,
+            &mut runtime,
+        )
+        .unwrap();
+
+        assert!(result.investigation_started);
+        assert_eq!(
+            result.investigation_session_id.as_deref(),
+            Some("ses_investigation_1")
+        );
+        assert!(result.ticket.has_work_session);
+        assert_eq!(result.ticket.status, "draft");
+        assert_eq!(
+            ticket_session_id(&result.ticket.content)
+                .unwrap()
+                .as_deref(),
+            Some("ses_investigation_1")
+        );
+        assert_eq!(runtime.prepared.len(), 1);
+        assert!(runtime.prepared[0]
+            .1
+            .contains("Investigate requirements only"));
+        assert!(runtime.prepared[0]
+            .1
+            .contains("Follow the globally available ticket-management skill"));
+        assert_eq!(runtime.prompts.len(), 1);
+        let prompt = runtime.prompts[0].1.to_lowercase();
+        for expected in [
+            "missing requirements",
+            "ambiguous behavior",
+            "behavior that may change",
+            "subagents",
+            "ready for implementation",
+            "do not implement",
+            "do not modify",
+        ] {
+            assert!(
+                prompt.contains(expected),
+                "prompt should mention {expected:?}"
+            );
+        }
+        assert!(runtime.deleted.is_empty());
+        assert_eq!(
+            fs::read_to_string(tickets.join(&result.ticket.filename)).unwrap(),
+            result.ticket.content
+        );
+    }
+
+    #[test]
+    fn ticket_creation_remains_successful_when_investigation_prompt_fails() {
+        let root = tempfile::tempdir().unwrap();
+        let repository = root.path().join("repository");
+        let tickets = root.path().join("app-data/workspace-tickets/workspace");
+        fs::create_dir_all(&repository).unwrap();
+        let mut runtime = FakeInvestigationRuntime {
+            fail_prompt: true,
+            ..FakeInvestigationRuntime::default()
+        };
+
+        let result = create_draft_with_investigation(
+            &tickets,
+            &repository,
+            "Example Workspace",
+            "Improve onboarding",
+            "Ticket body",
+            true,
+            &mut runtime,
+        )
+        .unwrap();
+
+        assert_eq!(
+            result.investigation_failure_stage.as_deref(),
+            Some("prompt_submission")
+        );
+        assert!(!result.investigation_started);
+        assert!(result.ticket.has_work_session);
+        assert_eq!(
+            ticket_session_id(&result.ticket.content)
+                .unwrap()
+                .as_deref(),
+            Some("ses_investigation_1")
+        );
+        assert!(tickets.join(&result.ticket.filename).is_file());
+    }
+
+    #[test]
+    fn investigation_setup_failure_keeps_draft_and_cleans_up_unbound_session() {
+        let root = tempfile::tempdir().unwrap();
+        let repository = root.path().join("repository");
+        let tickets = root.path().join("app-data/workspace-tickets/workspace");
+        fs::create_dir_all(&repository).unwrap();
+        let mut runtime = FakeInvestigationRuntime {
+            fail_prepare: true,
+            ..FakeInvestigationRuntime::default()
+        };
+
+        let result = create_draft_with_investigation(
+            &tickets,
+            &repository,
+            "Example Workspace",
+            "Improve onboarding",
+            "Ticket body",
+            true,
+            &mut runtime,
+        )
+        .unwrap();
+
+        assert_eq!(
+            result.investigation_failure_stage.as_deref(),
+            Some("session_preparation")
+        );
+        assert!(!result.ticket.has_work_session);
+        assert_eq!(ticket_session_id(&result.ticket.content).unwrap(), None);
+        assert_eq!(runtime.deleted, ["ses_investigation_1"]);
+        assert!(runtime.prompts.is_empty());
+        assert!(tickets.join(&result.ticket.filename).is_file());
+    }
+
+    #[test]
+    fn opting_out_does_not_create_or_prompt_a_session() {
+        let root = tempfile::tempdir().unwrap();
+        let repository = root.path().join("repository");
+        let tickets = root.path().join("app-data/workspace-tickets/workspace");
+        fs::create_dir_all(&repository).unwrap();
+        let mut runtime = FakeInvestigationRuntime::default();
+
+        let result = create_draft_with_investigation(
+            &tickets,
+            &repository,
+            "Example Workspace",
+            "Improve onboarding",
+            "Ticket body",
+            false,
+            &mut runtime,
+        )
+        .unwrap();
+
+        assert!(!result.investigation_started);
+        assert!(result.investigation_session_id.is_none());
+        assert!(!result.ticket.has_work_session);
+        assert_eq!(runtime.creates, 0);
+        assert!(runtime.prompts.is_empty());
     }
 
     #[test]

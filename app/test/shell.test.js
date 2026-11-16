@@ -1240,12 +1240,12 @@ test("Workspace ticket proposal and confirmation adapters preserve their explici
     return Promise.resolve(resultForCommand(args[0]));
   };
   const proposal = await proposeWorkspaceTicket(invoke, "workspace-1", "An idea");
-  const ticket = await createWorkspaceTicket(invoke, "workspace-1", "Fixture proposal", "Edited body");
+  const ticket = await createWorkspaceTicket(invoke, "workspace-1", "Fixture proposal", "Edited body", true);
   assert.equal(proposal.title, "Fixture proposal");
-  assert.equal(ticket.status, "draft");
+  assert.equal(ticket.ticket.status, "draft");
   assert.deepEqual(calls, [
     ["workspace_ticket_proposal", { workspaceId: "workspace-1", idea: "An idea" }],
-    ["workspace_ticket_create", { workspaceId: "workspace-1", title: "Fixture proposal", body: "Edited body" }],
+    ["workspace_ticket_create", { workspaceId: "workspace-1", title: "Fixture proposal", body: "Edited body", startInvestigation: true }],
   ]);
 });
 

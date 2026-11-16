@@ -218,6 +218,6 @@ test("created ticket fixtures stay scoped to their owning workspace", async () =
 
   const ownerTickets = await listWorkspaceTickets(invokeBrowserFixture, workspaceId);
   const otherTickets = await listWorkspaceTickets(invokeBrowserFixture, "fixture-workspace");
-  assert.equal(ownerTickets.some((item) => item.filename === ticket.filename), true);
-  assert.equal(otherTickets.some((item) => item.filename === ticket.filename), false);
+  assert.equal(ownerTickets.some((item) => item.filename === ticket.ticket.filename), true);
+  assert.equal(otherTickets.some((item) => item.filename === ticket.ticket.filename), false);
 });

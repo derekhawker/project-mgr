@@ -1,5 +1,5 @@
 import { createSignal, Show } from "solid-js";
-import { Button, ErrorMessage, Input, Modal, TextArea } from "@ui-lib";
+import { Button, Checkbox, ErrorMessage, Input, Modal, TextArea } from "@ui-lib";
 import styles from "./CreateTicketIdeaModal.module.css";
 
 /** Captures an idea, reviews generated content, then asks the owner to save it. */
@@ -9,6 +9,7 @@ export function CreateTicketIdeaModal(props) {
   const [idea, setIdea] = createSignal("");
   const [title, setTitle] = createSignal("");
   const [body, setBody] = createSignal("");
+  const [startInvestigation, setStartInvestigation] = createSignal(false);
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal("");
 
@@ -40,7 +41,7 @@ export function CreateTicketIdeaModal(props) {
     setBusy(true);
     setError("");
     try {
-      await props.onCreate(title(), body());
+      await props.onCreate(title(), body(), startInvestigation());
       setOpen(false);
       setIdea("");
       setTitle("");
@@ -58,7 +59,7 @@ export function CreateTicketIdeaModal(props) {
       type="button"
       variant="primary"
       disabled={Boolean(props.disabled?.())}
-      onClick={() => { setStep(1); setIdea(""); setTitle(""); setBody(""); setError(""); setOpen(true); }}
+      onClick={() => { setStep(1); setIdea(""); setTitle(""); setBody(""); setStartInvestigation(false); setError(""); setOpen(true); }}
     >
       Create ticket
     </Button>
@@ -121,6 +122,17 @@ export function CreateTicketIdeaModal(props) {
           <label for="ticket-body">Markdown body</label>
           <TextArea id="ticket-body" rows="15" required value={body()} disabled={busy()} onInput={(event) => setBody(event.currentTarget.value)} />
           <p class={styles.note}>The status is managed by the app. Your title and Markdown body are editable.</p>
+          <label class={styles.investigationOption}>
+            <Checkbox
+              checked={startInvestigation()}
+              disabled={busy()}
+              onChange={(event) => setStartInvestigation(event.currentTarget.checked)}
+            />
+            <span>
+              <strong>Start an investigation now</strong>
+              <span class={styles.note}>Research requirements and behavior; this won’t open the ticket or start implementation.</span>
+            </span>
+          </label>
         </div>
       </Show>
     </Modal>

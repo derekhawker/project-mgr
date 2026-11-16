@@ -418,15 +418,18 @@ const workspaceTicketViewerProps = {
     if (!ticketModelSelected()) throw new Error("Choose an enabled OpenCode model before creating a ticket.");
     return proposeWorkspaceTicket(invoke, workspaceId, idea);
   },
-  onCreateTicket: async (title, body) => {
+  onCreateTicket: async (title, body, startInvestigation) => {
     const workspaceId = selectedWorkspace?.id;
     if (!workspaceId) throw new Error("Select a Workspace first.");
-    const ticket = await createWorkspaceTicket(invoke, workspaceId, title, body);
+    const result = await createWorkspaceTicket(invoke, workspaceId, title, body, startInvestigation);
     if (selectedWorkspace?.id !== workspaceId) return;
     setTicketArchived(false);
     workspaceTicketCache.invalidate();
     await refreshTicketList(false);
-    setSelectedTicketFilename(ticket.filename);
+    setSelectedTicketFilename(result.ticket.filename);
+    setTicketError(result.investigationFailureStage
+      ? "Ticket created, but its investigation could not be started. You can open the ticket with Work and continue manually."
+      : "");
   },
 };
 const [fullRequestVisible, setFullRequestVisible] = createSignal(false);

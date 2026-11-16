@@ -16,6 +16,11 @@ discussions. For workflow behavior beyond the UX vocabulary, see
 - **Ticket idea proposal:** Transient OpenCode-generated title and Markdown
   content shown for review before Rust creates a new `draft` ticket. It is not a
   ticket record or an interactive session.
+- **Ticket investigation:** An opt-in research turn started when a draft ticket
+  is created. It uses a persistent ticket-bound OpenCode session to identify
+  requirements gaps, unclear or changing behavior, integration risks, and
+  readiness questions. It does not implement the ticket or automatically open
+  its terminal/workbench.
 - **Legacy Task record:** A retained pre-refactor database record, not a target
   product concept or a creation option. Existing archived metadata remains
   internal compatibility data and is not exposed as an in-app destination.
@@ -32,8 +37,8 @@ discussions. For workflow behavior beyond the UX vocabulary, see
 ## OpenCode interaction
 
 - **OpenCode session:** One OpenCode conversation, with history owned by
-  OpenCode. Except for the internal proposal step in New work, a session runs
-  attached to an interactive terminal.
+  OpenCode. Except for internal proposal steps and an opt-in ticket
+  investigation, a session runs attached to an interactive terminal.
 - **Waiting for input:** An OpenCode session with one or more pending question
   forms or permission decisions. This is a session attention state, separate from
   the ticket's workflow status; the user responds in the interactive terminal.

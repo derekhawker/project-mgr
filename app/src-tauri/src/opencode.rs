@@ -537,6 +537,21 @@ impl Runtime {
         }
     }
 
+    /// Submit a persistent session prompt without waiting for generated output.
+    /// This lets a ticket investigation run without opening its TUI.
+    pub fn submit_session_prompt(&self, id: &str, prompt: &str) -> Result<(), String> {
+        let id = validate_session_id(id)?;
+        let (client, url) = self.client_url()?;
+        post_data_value(
+            &client,
+            &format!("{url}/api/session/{id}/prompt"),
+            &PromptRequest {
+                text: prompt.to_owned(),
+            },
+        )
+        .map(|_| ())
+    }
+
     /// Delete a temporary proposal session after capturing its result.
     pub fn delete_session(&self, id: &str) -> Result<(), String> {
         let id = validate_session_id(id)?;
@@ -617,6 +632,26 @@ impl Runtime {
         }
         let (client, url) = self.client_url()?;
         allow_directory_at(&client, &url, &id, path)
+    }
+
+    /// Allow investigation sessions to read ticket files without granting edit access.
+    pub fn allow_ticket_directory_read_only(
+        &self,
+        id: &str,
+        directory: &Path,
+    ) -> Result<(), String> {
+        let id = validate_session_id(id)?;
+        let directory = directory
+            .canonicalize()
+            .map_err(|error| error.to_string())?;
+        let path = directory
+            .to_str()
+            .ok_or("Ticket directory is not valid UTF-8")?;
+        if path.contains(['*', '?']) {
+            return Err("Ticket directory cannot contain permission wildcard characters".into());
+        }
+        let (client, url) = self.client_url()?;
+        allow_directory_actions_at(&client, &url, &id, path, &["external_directory", "read"])
     }
     pub fn generate_session_text(&self, id: &str, prompt: &str) -> Result<String, String> {
         let id = validate_session_id(id)?;
@@ -1221,7 +1256,23 @@ fn set_instruction_entry_at(
     )
 }
 fn allow_directory_at(client: &Client, base_url: &str, id: &str, path: &str) -> Result<(), String> {
-    let permissions = ["external_directory", "read", "edit"]
+    allow_directory_actions_at(
+        client,
+        base_url,
+        id,
+        path,
+        &["external_directory", "read", "edit"],
+    )
+}
+fn allow_directory_actions_at(
+    client: &Client,
+    base_url: &str,
+    id: &str,
+    path: &str,
+    actions: &[&str],
+) -> Result<(), String> {
+    let permissions = actions
+        .iter()
         .into_iter()
         .flat_map(|action| {
             [path.to_owned(), format!("{path}/*")].into_iter().map(
@@ -2565,6 +2616,75 @@ mod tests {
     }
 
     #[test]
+    fn ticket_investigation_directory_access_is_read_only() {
+        let directory = tempfile::tempdir().unwrap();
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let address = listener.local_addr().unwrap();
+        let expected_directory = directory.path().canonicalize().unwrap();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut request_line = String::new();
+            reader.read_line(&mut request_line).unwrap();
+            assert_eq!(
+                request_line.split_whitespace().take(2).collect::<Vec<_>>(),
+                ["PATCH", "/api/session/ses_investigation"]
+            );
+            let mut content_length = 0;
+            loop {
+                let mut line = String::new();
+                reader.read_line(&mut line).unwrap();
+                if line == "\r\n" {
+                    break;
+                }
+                if let Some(length) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                    content_length = length.trim().parse::<usize>().unwrap();
+                }
+            }
+            let mut body = vec![0; content_length];
+            reader.read_exact(&mut body).unwrap();
+            let permissions: Value = serde_json::from_slice(&body).unwrap();
+            let permissions = permissions["permissions"].as_array().unwrap();
+            let actions = permissions
+                .iter()
+                .map(|permission| permission["action"].as_str().unwrap())
+                .collect::<std::collections::HashSet<_>>();
+            assert_eq!(
+                actions,
+                ["external_directory", "read"].into_iter().collect()
+            );
+            assert!(permissions.iter().any(|permission| {
+                permission["resource"] == expected_directory.to_string_lossy().as_ref()
+            }));
+            stream
+                .write_all(
+                    b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                )
+                .unwrap();
+        });
+        let runtime = Runtime {
+            server: Mutex::new(Some(Server {
+                info: RuntimeInfo {
+                    executable: "fake".into(),
+                    version: "2.1.4".into(),
+                    base_url: format!("http://{address}"),
+                },
+                _password: "secret".into(),
+                client: api_client("secret").unwrap(),
+            })),
+            terminals: TerminalManager::default(),
+            lifecycle: AtomicU8::new(0),
+            lifecycle_gate: Mutex::new(()),
+        };
+
+        runtime
+            .allow_ticket_directory_read_only("ses_investigation", directory.path())
+            .unwrap();
+        server.join().unwrap();
+        runtime.shutdown();
+    }
+
+    #[test]
     fn generated_session_text_rejects_empty_output_with_actionable_error() {
         for response in [json!({"text": ""}), json!({"text": "  \n\t"})] {
             let error = generated_session_text(&response).unwrap_err();
@@ -2704,6 +2824,62 @@ mod tests {
             .unwrap();
         assert_eq!(text, r#"{"title":"Example","body":"Idea"}"#);
         runtime.delete_session("ses_proposal").unwrap();
+        server.join().unwrap();
+        runtime.shutdown();
+    }
+
+    #[test]
+    fn submit_session_prompt_posts_without_waiting_for_session_history() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut request_line = String::new();
+            reader.read_line(&mut request_line).unwrap();
+            let mut content_length = 0;
+            loop {
+                let mut line = String::new();
+                reader.read_line(&mut line).unwrap();
+                if line == "\r\n" {
+                    break;
+                }
+                if let Some(length) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                    content_length = length.trim().parse::<usize>().unwrap();
+                }
+            }
+            let mut body = vec![0; content_length];
+            reader.read_exact(&mut body).unwrap();
+            assert_eq!(
+                request_line.split_whitespace().collect::<Vec<_>>(),
+                ["POST", "/api/session/ses_investigation/prompt", "HTTP/1.1",]
+            );
+            assert_eq!(
+                serde_json::from_slice::<Value>(&body).unwrap(),
+                json!({"text":"Investigate requirements only"})
+            );
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 11\r\nConnection: close\r\n\r\n{\"data\":{}}")
+                .unwrap();
+        });
+        let runtime = Runtime {
+            server: Mutex::new(Some(Server {
+                info: RuntimeInfo {
+                    executable: "fake".into(),
+                    version: "2.1.4".into(),
+                    base_url: format!("http://{address}"),
+                },
+                _password: "secret".into(),
+                client: api_client("secret").unwrap(),
+            })),
+            terminals: TerminalManager::default(),
+            lifecycle: AtomicU8::new(0),
+            lifecycle_gate: Mutex::new(()),
+        };
+
+        runtime
+            .submit_session_prompt("ses_investigation", "Investigate requirements only")
+            .unwrap();
         server.join().unwrap();
         runtime.shutdown();
     }

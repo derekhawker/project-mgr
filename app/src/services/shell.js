@@ -687,11 +687,12 @@ export function proposeWorkspaceTicket(invoke, workspaceId, idea) {
   });
 }
 
-export function createWorkspaceTicket(invoke, workspaceId, title, body) {
+export function createWorkspaceTicket(invoke, workspaceId, title, body, startInvestigation = false) {
   return invokeCommand(invoke, "workspace_ticket_create", {
     workspaceId,
     title,
     body,
+    startInvestigation,
   });
 }
 
