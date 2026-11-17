@@ -2,6 +2,7 @@ export function buildReviewItems(repositories, parsePatchFiles) {
   const items = [];
   const itemByFile = new Map();
   const fileByDiff = new Map();
+  const fileByDiffKey = new Map();
 
   for (const repository of repositories) {
     for (const file of repository.files) {
@@ -12,6 +13,7 @@ export function buildReviewItems(repositories, parsePatchFiles) {
       if (!file.diff || file.diffError) {
         const id = `${prefix}:unavailable`;
         const fileContents = {
+          reviewKey: prefix,
           name: file.path,
           contents: `Diff unavailable\n\n${file.diffError || "No text diff is available."}`,
         };
@@ -23,6 +25,7 @@ export function buildReviewItems(repositories, parsePatchFiles) {
         });
         itemByFile.set(file, id);
         fileByDiff.set(fileContents, { repository, file });
+        fileByDiffKey.set(prefix, { repository, file });
         continue;
       }
       const parsed = parsePatchFiles(file.diff, { cacheKeyPrefix: prefix });
@@ -32,20 +35,27 @@ export function buildReviewItems(repositories, parsePatchFiles) {
           // Git's untracked patches use `+++ b/path` without a `diff --git`
           // header, so the parser otherwise treats `b/` as part of the path.
           fileDiff.name = file.path;
+          fileDiff.reviewKey = fileDiff.cacheKey || `${prefix}:${fileIndex}`;
           const id = `${prefix}:${fileIndex++}`;
           items.push({ id, type: "diff", fileDiff, collapsed: file.viewed });
           itemByFile.set(file, id);
           fileByDiff.set(fileDiff, { repository, file });
+          fileByDiffKey.set(fileDiff.reviewKey, { repository, file });
         }
       }
     }
   }
 
-  return { items, itemByFile, fileByDiff };
+  return { items, itemByFile, fileByDiff, fileByDiffKey };
+}
+
+function reviewKey(fileDiff) {
+  return fileDiff?.reviewKey || fileDiff?.cacheKey;
 }
 
 export function createReviewHeaderPrefix({
   fileByDiff,
+  fileByDiffKey,
   itemByFile,
   items,
   viewer,
@@ -55,7 +65,8 @@ export function createReviewHeaderPrefix({
   styles,
 }) {
   return (fileDiff) => {
-    const entry = fileByDiff.get(fileDiff);
+    const entry =
+      fileByDiff.get(fileDiff) || fileByDiffKey.get(reviewKey(fileDiff));
     if (!entry) return undefined;
     const label = document.createElement("label");
     label.className = styles.viewedControl;

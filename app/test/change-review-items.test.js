@@ -39,6 +39,13 @@ test("review items keep branch and working-tree diffs distinct by file identity"
     result.fileByDiff.get(result.items[1].fileDiff).file.changeSource,
     "workingTree",
   );
+  for (const item of result.items) {
+    const remountedDiff = { ...item.fileDiff };
+    assert.equal(
+      result.fileByDiffKey.get(remountedDiff.reviewKey).file.changeSource,
+      item.id.includes(":branch:") ? "branch" : "workingTree",
+    );
+  }
 });
 
 test("review items retain files without textual patches as navigable notices", () => {
