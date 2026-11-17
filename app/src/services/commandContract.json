@@ -17,12 +17,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "appName",
-        "version",
-        "status",
-        "message"
-      ],
+      "required": ["appName", "version", "status", "message"],
       "additionalProperties": false
     }
   },
@@ -41,11 +36,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "executable",
-        "version",
-        "baseUrl"
-      ],
+      "required": ["executable", "version", "baseUrl"],
       "additionalProperties": false
     }
   },
@@ -74,13 +65,7 @@
             "nullable": true
           }
         },
-        "required": [
-          "providerID",
-          "id",
-          "name",
-          "enabled",
-          "status"
-        ],
+        "required": ["providerID", "id", "name", "enabled", "status"],
         "additionalProperties": false
       }
     }
@@ -97,10 +82,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "providerId",
-        "id"
-      ],
+      "required": ["providerId", "id"],
       "additionalProperties": false
     }
   },
@@ -118,16 +100,11 @@
               "type": "string"
             }
           },
-          "required": [
-            "providerId",
-            "id"
-          ],
+          "required": ["providerId", "id"],
           "additionalProperties": false
         }
       },
-      "required": [
-        "request"
-      ],
+      "required": ["request"],
       "additionalProperties": false
     },
     "result": {
@@ -140,10 +117,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "providerId",
-        "id"
-      ],
+      "required": ["providerId", "id"],
       "additionalProperties": false
     }
   },
@@ -170,10 +144,7 @@
                   "type": "string"
                 }
               },
-              "required": [
-                "providerId",
-                "id"
-              ],
+              "required": ["providerId", "id"],
               "additionalProperties": false
             },
             "repositoryId": {
@@ -181,17 +152,11 @@
               "nullable": true
             }
           },
-          "required": [
-            "title",
-            "directory",
-            "model"
-          ],
+          "required": ["title", "directory", "model"],
           "additionalProperties": false
         }
       },
-      "required": [
-        "request"
-      ],
+      "required": ["request"],
       "additionalProperties": false
     },
     "result": {
@@ -212,22 +177,15 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "directory"
-                  ],
+                  "required": ["directory"],
                   "additionalProperties": false
                 }
               },
-              "required": [
-                "id",
-                "location"
-              ],
+              "required": ["id", "location"],
               "additionalProperties": false
             }
           },
-          "required": [
-            "data"
-          ],
+          "required": ["data"],
           "additionalProperties": false
         },
         {
@@ -243,16 +201,11 @@
                   "type": "string"
                 }
               },
-              "required": [
-                "directory"
-              ],
+              "required": ["directory"],
               "additionalProperties": false
             }
           },
-          "required": [
-            "id",
-            "location"
-          ],
+          "required": ["id", "location"],
           "additionalProperties": false
         }
       ]
@@ -278,10 +231,7 @@
                   "type": "string"
                 }
               },
-              "required": [
-                "providerId",
-                "id"
-              ],
+              "required": ["providerId", "id"],
               "additionalProperties": false
             },
             "repositoryId": {
@@ -289,16 +239,11 @@
               "nullable": true
             }
           },
-          "required": [
-            "sessionId",
-            "model"
-          ],
+          "required": ["sessionId", "model"],
           "additionalProperties": false
         }
       },
-      "required": [
-        "request"
-      ],
+      "required": ["request"],
       "additionalProperties": false
     },
     "result": {
@@ -328,24 +273,15 @@
                   "type": "string"
                 }
               },
-              "required": [
-                "providerId",
-                "id"
-              ],
+              "required": ["providerId", "id"],
               "additionalProperties": false
             }
           },
-          "required": [
-            "sessionId",
-            "prompt",
-            "model"
-          ],
+          "required": ["sessionId", "prompt", "model"],
           "additionalProperties": false
         }
       },
-      "required": [
-        "request"
-      ],
+      "required": ["request"],
       "additionalProperties": false
     },
     "result": {
@@ -373,17 +309,11 @@
               "nullable": true
             }
           },
-          "required": [
-            "sessionId",
-            "requestId",
-            "decision"
-          ],
+          "required": ["sessionId", "requestId", "decision"],
           "additionalProperties": false
         }
       },
-      "required": [
-        "request"
-      ],
+      "required": ["request"],
       "additionalProperties": false
     },
     "result": {
@@ -407,17 +337,11 @@
               "type": "json"
             }
           },
-          "required": [
-            "sessionId",
-            "requestId",
-            "answer"
-          ],
+          "required": ["sessionId", "requestId", "answer"],
           "additionalProperties": false
         }
       },
-      "required": [
-        "request"
-      ],
+      "required": ["request"],
       "additionalProperties": false
     },
     "result": {
@@ -438,16 +362,11 @@
               "type": "string"
             }
           },
-          "required": [
-            "sessionId",
-            "requestId"
-          ],
+          "required": ["sessionId", "requestId"],
           "additionalProperties": false
         }
       },
-      "required": [
-        "request"
-      ],
+      "required": ["request"],
       "additionalProperties": false
     },
     "result": {
@@ -471,17 +390,11 @@
               "type": "number"
             }
           },
-          "required": [
-            "sessionId",
-            "order",
-            "limit"
-          ],
+          "required": ["sessionId", "order", "limit"],
           "additionalProperties": false
         }
       },
-      "required": [
-        "request"
-      ],
+      "required": ["request"],
       "additionalProperties": false
     },
     "result": {
@@ -508,18 +421,11 @@
               "nullable": true
             }
           },
-          "required": [
-            "previous",
-            "next"
-          ],
+          "required": ["previous", "next"],
           "additionalProperties": false
         }
       },
-      "required": [
-        "sessionId",
-        "data",
-        "cursor"
-      ],
+      "required": ["sessionId", "data", "cursor"],
       "additionalProperties": false
     }
   },
@@ -534,15 +440,11 @@
               "type": "string"
             }
           },
-          "required": [
-            "sessionId"
-          ],
+          "required": ["sessionId"],
           "additionalProperties": false
         }
       },
-      "required": [
-        "request"
-      ],
+      "required": ["request"],
       "additionalProperties": false
     },
     "result": {
@@ -558,9 +460,7 @@
               "type": "string"
             }
           },
-          "required": [
-            "kind"
-          ],
+          "required": ["kind"],
           "additionalProperties": false,
           "nullable": true
         },
@@ -572,12 +472,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "sessionId",
-        "active",
-        "outcome",
-        "applicationStatus"
-      ],
+      "required": ["sessionId", "active", "outcome", "applicationStatus"],
       "additionalProperties": false
     }
   },
@@ -596,15 +491,11 @@
               "nullable": true
             }
           },
-          "required": [
-            "sessionId"
-          ],
+          "required": ["sessionId"],
           "additionalProperties": false
         }
       },
-      "required": [
-        "request"
-      ],
+      "required": ["request"],
       "additionalProperties": false
     },
     "result": {
@@ -641,18 +532,11 @@
                   "nullable": true
                 }
               },
-              "required": [
-                "previous",
-                "next"
-              ],
+              "required": ["previous", "next"],
               "additionalProperties": false
             }
           },
-          "required": [
-            "sessionId",
-            "data",
-            "cursor"
-          ],
+          "required": ["sessionId", "data", "cursor"],
           "additionalProperties": false
         },
         "active": {
@@ -662,9 +546,7 @@
               "type": "string"
             }
           },
-          "required": [
-            "kind"
-          ],
+          "required": ["kind"],
           "additionalProperties": false,
           "nullable": true
         },
@@ -714,15 +596,11 @@
               "type": "string"
             }
           },
-          "required": [
-            "sessionId"
-          ],
+          "required": ["sessionId"],
           "additionalProperties": false
         }
       },
-      "required": [
-        "request"
-      ],
+      "required": ["request"],
       "additionalProperties": false
     },
     "result": {
@@ -744,11 +622,7 @@
           }
         }
       },
-      "required": [
-        "sessionId",
-        "permissions",
-        "forms"
-      ],
+      "required": ["sessionId", "permissions", "forms"],
       "additionalProperties": false
     }
   },
@@ -775,11 +649,7 @@
             }
           }
         },
-        "required": [
-          "sessionId",
-          "permissions",
-          "forms"
-        ],
+        "required": ["sessionId", "permissions", "forms"],
         "additionalProperties": false
       }
     }
@@ -795,15 +665,11 @@
               "type": "string"
             }
           },
-          "required": [
-            "sessionId"
-          ],
+          "required": ["sessionId"],
           "additionalProperties": false
         }
       },
-      "required": [
-        "request"
-      ],
+      "required": ["request"],
       "additionalProperties": false
     },
     "result": {
@@ -825,11 +691,7 @@
           }
         }
       },
-      "required": [
-        "sessionId",
-        "permissions",
-        "forms"
-      ],
+      "required": ["sessionId", "permissions", "forms"],
       "additionalProperties": false
     }
   },
@@ -841,9 +703,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "sessionId"
-      ],
+      "required": ["sessionId"],
       "additionalProperties": false
     },
     "result": {
@@ -862,10 +722,7 @@
               "type": "string"
             }
           },
-          "required": [
-            "owner_type",
-            "owner_id"
-          ],
+          "required": ["owner_type", "owner_id"],
           "additionalProperties": false
         },
         "directory": {
@@ -926,10 +783,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "workspaceId",
-        "filename"
-      ],
+      "required": ["workspaceId", "filename"],
       "additionalProperties": false
     },
     "result": {
@@ -948,10 +802,7 @@
               "type": "string"
             }
           },
-          "required": [
-            "owner_type",
-            "owner_id"
-          ],
+          "required": ["owner_type", "owner_id"],
           "additionalProperties": false
         },
         "directory": {
@@ -1015,11 +866,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "workspaceId",
-        "filename",
-        "sessionId"
-      ],
+      "required": ["workspaceId", "filename", "sessionId"],
       "additionalProperties": false
     },
     "result": {
@@ -1037,10 +884,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "sessionId",
-        "directory"
-      ],
+      "required": ["sessionId", "directory"],
       "additionalProperties": false
     },
     "result": {
@@ -1081,9 +925,7 @@
           }
         }
       },
-      "required": [
-        "replay"
-      ],
+      "required": ["replay"],
       "additionalProperties": false
     }
   },
@@ -1095,9 +937,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "sessionId"
-      ],
+      "required": ["sessionId"],
       "additionalProperties": false
     },
     "result": {
@@ -1138,9 +978,7 @@
           }
         }
       },
-      "required": [
-        "replay"
-      ],
+      "required": ["replay"],
       "additionalProperties": false
     }
   },
@@ -1155,10 +993,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "sessionId",
-        "directory"
-      ],
+      "required": ["sessionId", "directory"],
       "additionalProperties": false
     },
     "result": {
@@ -1199,9 +1034,7 @@
           }
         }
       },
-      "required": [
-        "replay"
-      ],
+      "required": ["replay"],
       "additionalProperties": false
     }
   },
@@ -1213,9 +1046,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "sessionId"
-      ],
+      "required": ["sessionId"],
       "additionalProperties": false
     },
     "result": {
@@ -1233,10 +1064,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "sessionId",
-        "data"
-      ],
+      "required": ["sessionId", "data"],
       "additionalProperties": false
     },
     "result": {
@@ -1257,11 +1085,7 @@
           "type": "number"
         }
       },
-      "required": [
-        "sessionId",
-        "cols",
-        "rows"
-      ],
+      "required": ["sessionId", "cols", "rows"],
       "additionalProperties": false
     },
     "result": {
@@ -1276,9 +1100,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "sessionId"
-      ],
+      "required": ["sessionId"],
       "additionalProperties": false
     },
     "result": {
@@ -1293,9 +1115,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "sessionId"
-      ],
+      "required": ["sessionId"],
       "additionalProperties": false
     },
     "result": {
@@ -1312,6 +1132,9 @@
             "prompt": {
               "type": "string"
             },
+            "startingPrompt": {
+              "type": "string"
+            },
             "model": {
               "type": "object",
               "properties": {
@@ -1322,10 +1145,7 @@
                   "type": "string"
                 }
               },
-              "required": [
-                "providerId",
-                "id"
-              ],
+              "required": ["providerId", "id"],
               "additionalProperties": false
             },
             "repositoryId": {
@@ -1337,17 +1157,11 @@
               "nullable": true
             }
           },
-          "required": [
-            "prompt",
-            "model",
-            "repositoryId"
-          ],
+          "required": ["prompt", "model", "repositoryId"],
           "additionalProperties": false
         }
       },
-      "required": [
-        "request"
-      ],
+      "required": ["request"],
       "additionalProperties": false
     },
     "result": {
@@ -1474,10 +1288,7 @@
                   "type": "string"
                 }
               },
-              "required": [
-                "owner_type",
-                "owner_id"
-              ],
+              "required": ["owner_type", "owner_id"],
               "additionalProperties": false
             },
             "directory": {
@@ -1531,11 +1342,7 @@
           "nullable": true
         }
       },
-      "required": [
-        "task",
-        "session",
-        "prompt"
-      ],
+      "required": ["task", "session", "prompt"],
       "additionalProperties": false
     }
   },
@@ -1551,15 +1358,11 @@
               "nullable": true
             }
           },
-          "required": [
-            "repositoryId"
-          ],
+          "required": ["repositoryId"],
           "additionalProperties": false
         }
       },
-      "required": [
-        "request"
-      ],
+      "required": ["request"],
       "additionalProperties": false
     },
     "result": {
@@ -1586,23 +1389,15 @@
                   "type": "string"
                 }
               },
-              "required": [
-                "providerId",
-                "id"
-              ],
+              "required": ["providerId", "id"],
               "additionalProperties": false
             }
           },
-          "required": [
-            "requestId",
-            "model"
-          ],
+          "required": ["requestId", "model"],
           "additionalProperties": false
         }
       },
-      "required": [
-        "request"
-      ],
+      "required": ["request"],
       "additionalProperties": false
     },
     "result": {
@@ -1629,23 +1424,15 @@
                   "type": "string"
                 }
               },
-              "required": [
-                "providerId",
-                "id"
-              ],
+              "required": ["providerId", "id"],
               "additionalProperties": false
             }
           },
-          "required": [
-            "requestId",
-            "model"
-          ],
+          "required": ["requestId", "model"],
           "additionalProperties": false
         }
       },
-      "required": [
-        "request"
-      ],
+      "required": ["request"],
       "additionalProperties": false
     },
     "result": {
@@ -1670,19 +1457,14 @@
               "type": "string"
             }
           },
-          "required": [
-            "requestId"
-          ],
+          "required": ["requestId"],
           "additionalProperties": false
         },
         "data": {
           "type": "string"
         }
       },
-      "required": [
-        "request",
-        "data"
-      ],
+      "required": ["request", "data"],
       "additionalProperties": false
     },
     "result": {
@@ -1700,15 +1482,11 @@
               "type": "string"
             }
           },
-          "required": [
-            "requestId"
-          ],
+          "required": ["requestId"],
           "additionalProperties": false
         }
       },
-      "required": [
-        "request"
-      ],
+      "required": ["request"],
       "additionalProperties": false
     },
     "result": {
@@ -1835,10 +1613,7 @@
                   "type": "string"
                 }
               },
-              "required": [
-                "owner_type",
-                "owner_id"
-              ],
+              "required": ["owner_type", "owner_id"],
               "additionalProperties": false
             },
             "directory": {
@@ -1892,11 +1667,7 @@
           "nullable": true
         }
       },
-      "required": [
-        "task",
-        "session",
-        "prompt"
-      ],
+      "required": ["task", "session", "prompt"],
       "additionalProperties": false
     }
   },
@@ -1915,9 +1686,7 @@
           "additionalProperties": false
         }
       },
-      "required": [
-        "request"
-      ],
+      "required": ["request"],
       "additionalProperties": false
     },
     "result": {
@@ -2046,10 +1815,7 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "owner_type",
-                  "owner_id"
-                ],
+                "required": ["owner_type", "owner_id"],
                 "additionalProperties": false
               },
               "directory": {
@@ -2103,11 +1869,7 @@
             "nullable": true
           }
         },
-        "required": [
-          "task",
-          "session",
-          "prompt"
-        ],
+        "required": ["task", "session", "prompt"],
         "additionalProperties": false
       }
     }
@@ -2123,15 +1885,11 @@
               "type": "string"
             }
           },
-          "required": [
-            "requestId"
-          ],
+          "required": ["requestId"],
           "additionalProperties": false
         }
       },
-      "required": [
-        "request"
-      ],
+      "required": ["request"],
       "additionalProperties": false
     },
     "result": {
@@ -2250,15 +2008,11 @@
               "type": "string"
             }
           },
-          "required": [
-            "requestId"
-          ],
+          "required": ["requestId"],
           "additionalProperties": false
         }
       },
-      "required": [
-        "request"
-      ],
+      "required": ["request"],
       "additionalProperties": false
     },
     "result": {
@@ -2276,15 +2030,11 @@
               "type": "string"
             }
           },
-          "required": [
-            "requestId"
-          ],
+          "required": ["requestId"],
           "additionalProperties": false
         }
       },
-      "required": [
-        "request"
-      ],
+      "required": ["request"],
       "additionalProperties": false
     },
     "result": {
@@ -2415,15 +2165,11 @@
               "nullable": true
             }
           },
-          "required": [
-            "requestId"
-          ],
+          "required": ["requestId"],
           "additionalProperties": false
         }
       },
-      "required": [
-        "request"
-      ],
+      "required": ["request"],
       "additionalProperties": false
     },
     "result": {
@@ -2548,22 +2294,15 @@
                   "type": "string"
                 }
               },
-              "required": [
-                "providerId",
-                "id"
-              ],
+              "required": ["providerId", "id"],
               "additionalProperties": false
             }
           },
-          "required": [
-            "model"
-          ],
+          "required": ["model"],
           "additionalProperties": false
         }
       },
-      "required": [
-        "request"
-      ],
+      "required": ["request"],
       "additionalProperties": false
     },
     "result": {
@@ -2573,9 +2312,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "sessionId"
-      ],
+      "required": ["sessionId"],
       "additionalProperties": false
     }
   },
@@ -2594,25 +2331,17 @@
             },
             "workType": {
               "type": "string",
-              "enum": [
-                "quick_request"
-              ]
+              "enum": ["quick_request"]
             },
             "explicitDirectory": {
               "type": "string"
             }
           },
-          "required": [
-            "sessionId",
-            "originalPrompt",
-            "workType"
-          ],
+          "required": ["sessionId", "originalPrompt", "workType"],
           "additionalProperties": false
         }
       },
-      "required": [
-        "request"
-      ],
+      "required": ["request"],
       "additionalProperties": false
     },
     "result": {
@@ -2636,19 +2365,15 @@
                 "type": "string"
               }
             },
-            "required": [
-              "repositoryId",
-              "reason"
-            ],
+            "required": ["repositoryId", "reason"],
             "additionalProperties": false
           }
+        },
+        "suggestedPrompt": {
+          "type": "string"
         }
       },
-      "required": [
-        "schemaVersion",
-        "workType",
-        "repositories"
-      ],
+      "required": ["schemaVersion", "workType", "repositories"],
       "additionalProperties": false
     }
   },
@@ -2660,9 +2385,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "sessionId"
-      ],
+      "required": ["sessionId"],
       "additionalProperties": false
     },
     "result": {
@@ -2848,10 +2571,7 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "owner_type",
-                  "owner_id"
-                ],
+                "required": ["owner_type", "owner_id"],
                 "additionalProperties": false
               },
               "directory": {
@@ -2953,11 +2673,7 @@
               },
               "role": {
                 "type": "string",
-                "enum": [
-                  "workspace",
-                  "orchestrator",
-                  "worker"
-                ]
+                "enum": ["workspace", "orchestrator", "worker"]
               },
               "repositoryId": {
                 "type": "string",
@@ -3099,10 +2815,7 @@
                         "type": "string"
                       }
                     },
-                    "required": [
-                      "owner_type",
-                      "owner_id"
-                    ],
+                    "required": ["owner_type", "owner_id"],
                     "additionalProperties": false
                   },
                   "directory": {
@@ -3156,11 +2869,7 @@
                 "nullable": true
               }
             },
-            "required": [
-              "task",
-              "session",
-              "prompt"
-            ],
+            "required": ["task", "session", "prompt"],
             "additionalProperties": false
           }
         },
@@ -3234,15 +2943,11 @@
               "nullable": true
             }
           },
-          "required": [
-            "name"
-          ],
+          "required": ["name"],
           "additionalProperties": false
         }
       },
-      "required": [
-        "request"
-      ],
+      "required": ["request"],
       "additionalProperties": false
     },
     "result": {
@@ -3303,15 +3008,11 @@
               "type": "string"
             }
           },
-          "required": [
-            "workspaceId"
-          ],
+          "required": ["workspaceId"],
           "additionalProperties": false
         }
       },
-      "required": [
-        "request"
-      ],
+      "required": ["request"],
       "additionalProperties": false
     },
     "result": {
@@ -3372,15 +3073,11 @@
               "type": "string"
             }
           },
-          "required": [
-            "workspaceId"
-          ],
+          "required": ["workspaceId"],
           "additionalProperties": false
         }
       },
-      "required": [
-        "request"
-      ],
+      "required": ["request"],
       "additionalProperties": false
     },
     "result": {
@@ -3450,10 +3147,7 @@
                   "type": "string"
                 }
               },
-              "required": [
-                "providerId",
-                "id"
-              ],
+              "required": ["providerId", "id"],
               "additionalProperties": false
             },
             "name": {
@@ -3470,18 +3164,11 @@
               }
             }
           },
-          "required": [
-            "workspaceId",
-            "model",
-            "name",
-            "repositoryIds"
-          ],
+          "required": ["workspaceId", "model", "name", "repositoryIds"],
           "additionalProperties": false
         }
       },
-      "required": [
-        "request"
-      ],
+      "required": ["request"],
       "additionalProperties": false
     },
     "result": {
@@ -3506,11 +3193,7 @@
           }
         }
       },
-      "required": [
-        "task",
-        "sessions",
-        "repositories"
-      ],
+      "required": ["task", "sessions", "repositories"],
       "additionalProperties": false
     }
   },
@@ -3525,15 +3208,11 @@
               "type": "string"
             }
           },
-          "required": [
-            "taskId"
-          ],
+          "required": ["taskId"],
           "additionalProperties": false
         }
       },
-      "required": [
-        "request"
-      ],
+      "required": ["request"],
       "additionalProperties": false
     },
     "result": {
@@ -3707,10 +3386,7 @@
           }
         }
       },
-      "required": [
-        "task",
-        "cleanupJobs"
-      ],
+      "required": ["task", "cleanupJobs"],
       "additionalProperties": false
     }
   },
@@ -3725,15 +3401,11 @@
               "type": "string"
             }
           },
-          "required": [
-            "taskId"
-          ],
+          "required": ["taskId"],
           "additionalProperties": false
         }
       },
-      "required": [
-        "request"
-      ],
+      "required": ["request"],
       "additionalProperties": false
     },
     "result": {
@@ -3811,15 +3483,11 @@
               "type": "string"
             }
           },
-          "required": [
-            "taskId"
-          ],
+          "required": ["taskId"],
           "additionalProperties": false
         }
       },
-      "required": [
-        "request"
-      ],
+      "required": ["request"],
       "additionalProperties": false
     },
     "result": {
@@ -3897,15 +3565,11 @@
               "type": "string"
             }
           },
-          "required": [
-            "taskId"
-          ],
+          "required": ["taskId"],
           "additionalProperties": false
         }
       },
-      "required": [
-        "request"
-      ],
+      "required": ["request"],
       "additionalProperties": false
     },
     "result": {
@@ -4032,10 +3696,7 @@
                   "type": "string"
                 }
               },
-              "required": [
-                "owner_type",
-                "owner_id"
-              ],
+              "required": ["owner_type", "owner_id"],
               "additionalProperties": false
             },
             "directory": {
@@ -4141,12 +3802,7 @@
           }
         }
       },
-      "required": [
-        "task",
-        "session",
-        "repositories",
-        "repositoryIds"
-      ],
+      "required": ["task", "session", "repositories", "repositoryIds"],
       "additionalProperties": false
     }
   },
@@ -4161,15 +3817,11 @@
               "type": "string"
             }
           },
-          "required": [
-            "taskId"
-          ],
+          "required": ["taskId"],
           "additionalProperties": false
         }
       },
-      "required": [
-        "request"
-      ],
+      "required": ["request"],
       "additionalProperties": false
     },
     "result": {
@@ -4294,17 +3946,11 @@
               "type": "string"
             }
           },
-          "required": [
-            "taskId",
-            "operationId",
-            "sessionId"
-          ],
+          "required": ["taskId", "operationId", "sessionId"],
           "additionalProperties": false
         }
       },
-      "required": [
-        "request"
-      ],
+      "required": ["request"],
       "additionalProperties": false
     },
     "result": {
@@ -4432,23 +4078,15 @@
                   "type": "string"
                 }
               },
-              "required": [
-                "providerId",
-                "id"
-              ],
+              "required": ["providerId", "id"],
               "additionalProperties": false
             }
           },
-          "required": [
-            "taskId",
-            "model"
-          ],
+          "required": ["taskId", "model"],
           "additionalProperties": false
         }
       },
-      "required": [
-        "request"
-      ],
+      "required": ["request"],
       "additionalProperties": false
     },
     "result": {
@@ -4473,11 +4111,7 @@
           }
         }
       },
-      "required": [
-        "task",
-        "sessions",
-        "repositories"
-      ],
+      "required": ["task", "sessions", "repositories"],
       "additionalProperties": false
     }
   },
@@ -4492,15 +4126,11 @@
               "type": "string"
             }
           },
-          "required": [
-            "taskId"
-          ],
+          "required": ["taskId"],
           "additionalProperties": false
         }
       },
-      "required": [
-        "request"
-      ],
+      "required": ["request"],
       "additionalProperties": false
     },
     "result": {
@@ -4576,15 +4206,11 @@
               }
             }
           },
-          "required": [
-            "paths"
-          ],
+          "required": ["paths"],
           "additionalProperties": false
         }
       },
-      "required": [
-        "request"
-      ],
+      "required": ["request"],
       "additionalProperties": false
     },
     "result": {
@@ -4641,10 +4267,7 @@
           }
         }
       },
-      "required": [
-        "repositories",
-        "errors"
-      ],
+      "required": ["repositories", "errors"],
       "additionalProperties": false
     }
   },
@@ -4758,25 +4381,17 @@
                       "type": "boolean"
                     }
                   },
-                  "required": [
-                    "repository",
-                    "enabled"
-                  ],
+                  "required": ["repository", "enabled"],
                   "additionalProperties": false
                 }
               }
             },
-            "required": [
-              "path",
-              "repositories"
-            ],
+            "required": ["path", "repositories"],
             "additionalProperties": false
           }
         }
       },
-      "required": [
-        "directories"
-      ],
+      "required": ["directories"],
       "additionalProperties": false
     }
   },
@@ -4797,15 +4412,11 @@
               "type": "string"
             }
           },
-          "required": [
-            "path"
-          ],
+          "required": ["path"],
           "additionalProperties": false
         }
       },
-      "required": [
-        "request"
-      ],
+      "required": ["request"],
       "additionalProperties": false
     },
     "result": {
@@ -4826,16 +4437,11 @@
               "type": "boolean"
             }
           },
-          "required": [
-            "repositoryId",
-            "enabled"
-          ],
+          "required": ["repositoryId", "enabled"],
           "additionalProperties": false
         }
       },
-      "required": [
-        "request"
-      ],
+      "required": ["request"],
       "additionalProperties": false
     },
     "result": {
@@ -4856,15 +4462,11 @@
               }
             }
           },
-          "required": [
-            "repositoryIds"
-          ],
+          "required": ["repositoryIds"],
           "additionalProperties": false
         }
       },
-      "required": [
-        "request"
-      ],
+      "required": ["request"],
       "additionalProperties": false
     },
     "result": {
@@ -4895,23 +4497,15 @@
                   "type": "string"
                 }
               },
-              "required": [
-                "providerId",
-                "id"
-              ],
+              "required": ["providerId", "id"],
               "additionalProperties": false
             }
           },
-          "required": [
-            "workspaceId",
-            "model"
-          ],
+          "required": ["workspaceId", "model"],
           "additionalProperties": false
         }
       },
-      "required": [
-        "request"
-      ],
+      "required": ["request"],
       "additionalProperties": false
     },
     "result": {
@@ -4930,10 +4524,7 @@
               "type": "string"
             }
           },
-          "required": [
-            "owner_type",
-            "owner_id"
-          ],
+          "required": ["owner_type", "owner_id"],
           "additionalProperties": false
         },
         "directory": {
@@ -5006,24 +4597,15 @@
                   "type": "string"
                 }
               },
-              "required": [
-                "providerId",
-                "id"
-              ],
+              "required": ["providerId", "id"],
               "additionalProperties": false
             }
           },
-          "required": [
-            "taskId",
-            "repositoryId",
-            "model"
-          ],
+          "required": ["taskId", "repositoryId", "model"],
           "additionalProperties": false
         }
       },
-      "required": [
-        "request"
-      ],
+      "required": ["request"],
       "additionalProperties": false
     },
     "result": {
@@ -5042,10 +4624,7 @@
               "type": "string"
             }
           },
-          "required": [
-            "owner_type",
-            "owner_id"
-          ],
+          "required": ["owner_type", "owner_id"],
           "additionalProperties": false
         },
         "directory": {
@@ -5100,24 +4679,17 @@
     "result": {
       "type": "object",
       "additionalProperties": true,
-      "required": [
-        "shared",
-        "changeReview"
-      ],
+      "required": ["shared", "changeReview"],
       "properties": {
         "shared": {
           "type": "object",
           "additionalProperties": true,
-          "required": [
-            "fileNavigator"
-          ],
+          "required": ["fileNavigator"],
           "properties": {
             "fileNavigator": {
               "type": "object",
               "additionalProperties": true,
-              "required": [
-                "width"
-              ],
+              "required": ["width"],
               "properties": {
                 "width": {
                   "type": "number"
@@ -5129,9 +4701,7 @@
         "changeReview": {
           "type": "object",
           "additionalProperties": true,
-          "required": [
-            "mode"
-          ],
+          "required": ["mode"],
           "properties": {
             "mode": {
               "type": "string"
@@ -5144,15 +4714,11 @@
   "presentation_preferences_set_navigator_width": {
     "payload": {
       "type": "object",
-      "required": [
-        "request"
-      ],
+      "required": ["request"],
       "properties": {
         "request": {
           "type": "object",
-          "required": [
-            "width"
-          ],
+          "required": ["width"],
           "properties": {
             "width": {
               "type": "number"
@@ -5164,24 +4730,17 @@
     "result": {
       "type": "object",
       "additionalProperties": true,
-      "required": [
-        "shared",
-        "changeReview"
-      ],
+      "required": ["shared", "changeReview"],
       "properties": {
         "shared": {
           "type": "object",
           "additionalProperties": true,
-          "required": [
-            "fileNavigator"
-          ],
+          "required": ["fileNavigator"],
           "properties": {
             "fileNavigator": {
               "type": "object",
               "additionalProperties": true,
-              "required": [
-                "width"
-              ],
+              "required": ["width"],
               "properties": {
                 "width": {
                   "type": "number"
@@ -5193,9 +4752,7 @@
         "changeReview": {
           "type": "object",
           "additionalProperties": true,
-          "required": [
-            "mode"
-          ],
+          "required": ["mode"],
           "properties": {
             "mode": {
               "type": "string"
@@ -5208,15 +4765,11 @@
   "presentation_preferences_set_change_review_mode": {
     "payload": {
       "type": "object",
-      "required": [
-        "request"
-      ],
+      "required": ["request"],
       "properties": {
         "request": {
           "type": "object",
-          "required": [
-            "mode"
-          ],
+          "required": ["mode"],
           "properties": {
             "mode": {
               "type": "string"
@@ -5228,24 +4781,17 @@
     "result": {
       "type": "object",
       "additionalProperties": true,
-      "required": [
-        "shared",
-        "changeReview"
-      ],
+      "required": ["shared", "changeReview"],
       "properties": {
         "shared": {
           "type": "object",
           "additionalProperties": true,
-          "required": [
-            "fileNavigator"
-          ],
+          "required": ["fileNavigator"],
           "properties": {
             "fileNavigator": {
               "type": "object",
               "additionalProperties": true,
-              "required": [
-                "width"
-              ],
+              "required": ["width"],
               "properties": {
                 "width": {
                   "type": "number"
@@ -5257,9 +4803,7 @@
         "changeReview": {
           "type": "object",
           "additionalProperties": true,
-          "required": [
-            "mode"
-          ],
+          "required": ["mode"],
           "properties": {
             "mode": {
               "type": "string"
@@ -5292,18 +4836,11 @@
               "type": "string"
             }
           },
-          "required": [
-            "ownerType",
-            "ownerId",
-            "repositoryId",
-            "path"
-          ],
+          "required": ["ownerType", "ownerId", "repositoryId", "path"],
           "additionalProperties": false
         }
       },
-      "required": [
-        "request"
-      ],
+      "required": ["request"],
       "additionalProperties": false
     },
     "result": {
@@ -5327,16 +4864,11 @@
               "type": "string"
             }
           },
-          "required": [
-            "ownerType",
-            "ownerId"
-          ],
+          "required": ["ownerType", "ownerId"],
           "additionalProperties": false
         }
       },
-      "required": [
-        "request"
-      ],
+      "required": ["request"],
       "additionalProperties": false
     },
     "result": {
@@ -5424,7 +4956,13 @@
       "properties": {
         "request": {
           "type": "object",
-          "required": ["ownerType", "ownerId", "repositoryId", "path", "viewed"],
+          "required": [
+            "ownerType",
+            "ownerId",
+            "repositoryId",
+            "path",
+            "viewed"
+          ],
           "properties": {
             "ownerType": { "type": "string" },
             "ownerId": { "type": "string" },
@@ -5465,16 +5003,11 @@
               "type": "string"
             }
           },
-          "required": [
-            "ownerType",
-            "ownerId"
-          ],
+          "required": ["ownerType", "ownerId"],
           "additionalProperties": false
         }
       },
-      "required": [
-        "request"
-      ],
+      "required": ["request"],
       "additionalProperties": false
     },
     "result": {
@@ -5574,19 +5107,11 @@
               "type": "string"
             }
           },
-          "required": [
-            "ownerType",
-            "ownerId",
-            "repositoryId",
-            "kind",
-            "name"
-          ],
+          "required": ["ownerType", "ownerId", "repositoryId", "kind", "name"],
           "additionalProperties": false
         }
       },
-      "required": [
-        "request"
-      ],
+      "required": ["request"],
       "additionalProperties": false
     },
     "result": {
@@ -5602,11 +5127,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "terminalId",
-        "label",
-        "directory"
-      ],
+      "required": ["terminalId", "label", "directory"],
       "additionalProperties": false
     }
   },
@@ -5621,10 +5142,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "terminalId",
-        "data"
-      ],
+      "required": ["terminalId", "data"],
       "additionalProperties": false
     },
     "result": {
@@ -5645,11 +5163,7 @@
           "type": "number"
         }
       },
-      "required": [
-        "terminalId",
-        "cols",
-        "rows"
-      ],
+      "required": ["terminalId", "cols", "rows"],
       "additionalProperties": false
     },
     "result": {
@@ -5664,9 +5178,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "terminalId"
-      ],
+      "required": ["terminalId"],
       "additionalProperties": false
     },
     "result": {
@@ -5707,9 +5219,7 @@
           }
         }
       },
-      "required": [
-        "replay"
-      ],
+      "required": ["replay"],
       "additionalProperties": false
     }
   },
@@ -5721,9 +5231,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "terminalId"
-      ],
+      "required": ["terminalId"],
       "additionalProperties": false
     },
     "result": {
@@ -5747,16 +5255,11 @@
               "type": "string"
             }
           },
-          "required": [
-            "ownerType",
-            "ownerId"
-          ],
+          "required": ["ownerType", "ownerId"],
           "additionalProperties": false
         }
       },
-      "required": [
-        "request"
-      ],
+      "required": ["request"],
       "additionalProperties": false
     },
     "result": {
@@ -5772,11 +5275,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "terminalId",
-        "label",
-        "directory"
-      ],
+      "required": ["terminalId", "label", "directory"],
       "additionalProperties": false
     }
   },
@@ -5800,17 +5299,11 @@
               "type": "string"
             }
           },
-          "required": [
-            "ownerType",
-            "ownerId",
-            "action"
-          ],
+          "required": ["ownerType", "ownerId", "action"],
           "additionalProperties": false
         }
       },
-      "required": [
-        "request"
-      ],
+      "required": ["request"],
       "additionalProperties": false
     },
     "result": {
@@ -5834,16 +5327,11 @@
               "type": "string"
             }
           },
-          "required": [
-            "ownerType",
-            "ownerId"
-          ],
+          "required": ["ownerType", "ownerId"],
           "additionalProperties": false
         }
       },
-      "required": [
-        "request"
-      ],
+      "required": ["request"],
       "additionalProperties": false
     },
     "result": {
@@ -5863,11 +5351,7 @@
             "nullable": true
           }
         },
-        "required": [
-          "path",
-          "repositoryId",
-          "repositoryName"
-        ],
+        "required": ["path", "repositoryId", "repositoryName"],
         "additionalProperties": false
       }
     }
@@ -5896,18 +5380,11 @@
               "type": "string"
             }
           },
-          "required": [
-            "ownerType",
-            "ownerId",
-            "path",
-            "repositoryId"
-          ],
+          "required": ["ownerType", "ownerId", "path", "repositoryId"],
           "additionalProperties": false
         }
       },
-      "required": [
-        "request"
-      ],
+      "required": ["request"],
       "additionalProperties": false
     },
     "result": {
@@ -5920,25 +5397,18 @@
           "type": "string"
         }
       },
-      "required": [
-        "path",
-        "contents"
-      ],
+      "required": ["path", "contents"],
       "additionalProperties": false
     }
   },
   "presentation_preferences_set_port_selection": {
     "payload": {
       "type": "object",
-      "required": [
-        "request"
-      ],
+      "required": ["request"],
       "properties": {
         "request": {
           "type": "object",
-          "required": [
-            "selection"
-          ],
+          "required": ["selection"],
           "properties": {
             "selection": {
               "type": "string"
@@ -5952,24 +5422,17 @@
     "result": {
       "type": "object",
       "additionalProperties": true,
-      "required": [
-        "shared",
-        "changeReview"
-      ],
+      "required": ["shared", "changeReview"],
       "properties": {
         "shared": {
           "type": "object",
           "additionalProperties": true,
-          "required": [
-            "fileNavigator"
-          ],
+          "required": ["fileNavigator"],
           "properties": {
             "fileNavigator": {
               "type": "object",
               "additionalProperties": true,
-              "required": [
-                "width"
-              ],
+              "required": ["width"],
               "properties": {
                 "width": {
                   "type": "number"
@@ -5981,9 +5444,7 @@
         "changeReview": {
           "type": "object",
           "additionalProperties": true,
-          "required": [
-            "mode"
-          ],
+          "required": ["mode"],
           "properties": {
             "mode": {
               "type": "string"
@@ -6055,10 +5516,7 @@
   "ports_stop": {
     "payload": {
       "type": "object",
-      "required": [
-        "pid",
-        "identity"
-      ],
+      "required": ["pid", "identity"],
       "properties": {
         "pid": {
           "type": "number"
@@ -6084,10 +5542,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "workspaceId",
-        "filename"
-      ],
+      "required": ["workspaceId", "filename"],
       "additionalProperties": false
     },
     "result": {
@@ -6095,76 +5550,71 @@
       "properties": {
         "session": {
           "type": "object",
-            "properties": {
-              "openCodeSessionId": {
-                "type": "string"
-              },
-              "owner": {
-                "type": "object",
-                "properties": {
-                  "owner_type": {
-                    "type": "string"
-                  },
-                  "owner_id": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "owner_type",
-                  "owner_id"
-                ],
-                "additionalProperties": false
-              },
-              "directory": {
-                "type": "string"
-              },
-              "lastKnownStatus": {
-                "type": "string"
-              },
-              "createdAt": {
-                "type": "number"
-              },
-              "updatedAt": {
-                "type": "number"
-              },
-              "eventCursor": {
-                "type": "string",
-                "nullable": true
-              },
-              "reconciliationStatus": {
-                "type": "string"
-              },
-              "reconciliationUncertain": {
-                "type": "boolean"
-              },
-              "pendingInputJson": {
-                "type": "string",
-                "nullable": true
-              },
-              "selectedModel": {
-                "type": "string",
-                "nullable": true
-              }
+          "properties": {
+            "openCodeSessionId": {
+              "type": "string"
             },
-            "required": [
-              "openCodeSessionId",
-              "owner",
-              "directory",
-              "lastKnownStatus",
-              "createdAt",
-              "updatedAt",
-              "eventCursor",
-              "reconciliationStatus",
-              "reconciliationUncertain",
-              "pendingInputJson",
-              "selectedModel"
-            ],
-            "additionalProperties": false
+            "owner": {
+              "type": "object",
+              "properties": {
+                "owner_type": {
+                  "type": "string"
+                },
+                "owner_id": {
+                  "type": "string"
+                }
+              },
+              "required": ["owner_type", "owner_id"],
+              "additionalProperties": false
+            },
+            "directory": {
+              "type": "string"
+            },
+            "lastKnownStatus": {
+              "type": "string"
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "updatedAt": {
+              "type": "number"
+            },
+            "eventCursor": {
+              "type": "string",
+              "nullable": true
+            },
+            "reconciliationStatus": {
+              "type": "string"
+            },
+            "reconciliationUncertain": {
+              "type": "boolean"
+            },
+            "pendingInputJson": {
+              "type": "string",
+              "nullable": true
+            },
+            "selectedModel": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          "required": [
+            "openCodeSessionId",
+            "owner",
+            "directory",
+            "lastKnownStatus",
+            "createdAt",
+            "updatedAt",
+            "eventCursor",
+            "reconciliationStatus",
+            "reconciliationUncertain",
+            "pendingInputJson",
+            "selectedModel"
+          ],
+          "additionalProperties": false
         }
       },
-      "required": [
-        "session"
-      ],
+      "required": ["session"],
       "additionalProperties": false
     }
   },
@@ -6179,9 +5629,7 @@
           "type": "boolean"
         }
       },
-      "required": [
-        "workspaceId"
-      ],
+      "required": ["workspaceId"],
       "additionalProperties": false
     },
     "result": {
@@ -6243,16 +5691,11 @@
               "type": "string"
             }
           },
-          "required": [
-            "workspaceId",
-            "idea"
-          ],
+          "required": ["workspaceId", "idea"],
           "additionalProperties": false
         }
       },
-      "required": [
-        "request"
-      ],
+      "required": ["request"],
       "additionalProperties": false
     },
     "result": {
@@ -6265,10 +5708,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "title",
-        "body"
-      ],
+      "required": ["title", "body"],
       "additionalProperties": false
     }
   },
@@ -6292,18 +5732,11 @@
               "type": "boolean"
             }
           },
-          "required": [
-            "workspaceId",
-            "title",
-            "body",
-            "startInvestigation"
-          ],
+          "required": ["workspaceId", "title", "body", "startInvestigation"],
           "additionalProperties": false
         }
       },
-      "required": [
-        "request"
-      ],
+      "required": ["request"],
       "additionalProperties": false
     },
     "result": {

@@ -1,7 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { recordCommandFailure, getDiagnostics } from "../src/lib/diagnostics.js";
+import {
+  recordCommandFailure,
+  getDiagnostics,
+} from "../src/lib/diagnostics.js";
 import { isBrowserFixture } from "../src/lib/runtimeMode.js";
 
 test("local entry points do not start Tauri and live is explicit without recursive beforeDevCommand", () => {

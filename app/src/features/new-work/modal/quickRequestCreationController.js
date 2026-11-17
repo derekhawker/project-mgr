@@ -4,6 +4,7 @@ export function createQuickRequestCreationController(deps) {
     modelsReady,
     quickRequestDirectoryReady,
     getOriginalPrompt,
+    getStartingPrompt = getOriginalPrompt,
     getSelectedModel,
     getRepositoryId,
     getDirectory,
@@ -92,6 +93,7 @@ export function createQuickRequestCreationController(deps) {
       await submitResolvedQuickRequestFlow({
         invoke,
         originalPrompt: getOriginalPrompt(),
+        startingPrompt: getStartingPrompt(),
         model,
         repositoryId: getRepositoryId() || null,
         directory: getDirectory?.() || null,

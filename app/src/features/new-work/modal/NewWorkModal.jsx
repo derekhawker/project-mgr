@@ -1,5 +1,5 @@
 import { createEffect, Show } from "solid-js";
-import { Button, Input, Modal, Select, TextArea } from "@ui-lib";
+import { Button, Input, Modal, Select, Tabs, TextArea } from "@ui-lib";
 import { SetupProgressPanel } from "./SetupProgressPanel.jsx";
 import { newWorkProgressDestination } from "./newWorkProgress.js";
 import styles from "./NewWorkModal.module.css";
@@ -16,7 +16,9 @@ export function NewWorkModal(props) {
         : review
           ? recoveringQuickRequest()
             ? "#quick-request-retry-startup"
-            : "#quick-request-directory"
+            : proposal().workType === "quick_request"
+              ? `#quick-request-prompt-${props.promptChoice()}`
+              : "#quick-request-directory"
           : "#new-work-prompt";
       modal.querySelector(selector)?.focus({ preventScroll: true });
     });
@@ -255,11 +257,53 @@ export function NewWorkModal(props) {
               hidden={proposal().workType !== "quick_request"}
             >
               <h3>Confirm working directory</h3>
-              <h3>Original prompt</h3>
-              <blockquote id="quick-request-original">
-                {proposal().originalPrompt}
-              </blockquote>
-              <p>The original prompt will be sent unchanged after confirmation.</p>
+              <Tabs
+                label="Quick Request prompt"
+                value={props.promptChoice()}
+                onChange={props.onPromptChoiceChange}
+                tabs={[
+                  {
+                    id: "original",
+                    label: "Original",
+                    panel: (
+                      <div class={styles.promptEditor}>
+                        <label for="quick-request-prompt-original">
+                          Original prompt
+                        </label>
+                        <TextArea
+                          id="quick-request-prompt-original"
+                          rows="9"
+                          class={styles.promptTextArea}
+                          value={props.originalPrompt()}
+                          readOnly
+                        />
+                      </div>
+                    ),
+                  },
+                  {
+                    id: "suggested",
+                    label: "Suggested",
+                    panel: (
+                      <div class={styles.promptEditor}>
+                        <label for="quick-request-prompt-suggested">
+                          Suggested prompt to send
+                        </label>
+                        <TextArea
+                          id="quick-request-prompt-suggested"
+                          rows="9"
+                          class={styles.promptTextArea}
+                          value={props.suggestedPrompt()}
+                          onInput={(event) =>
+                            props.onSuggestedPromptChange(
+                              event.currentTarget.value,
+                            )
+                          }
+                        />
+                      </div>
+                    ),
+                  },
+                ]}
+              />
               <Show
                 when={recoveringQuickRequest()}
                 fallback={

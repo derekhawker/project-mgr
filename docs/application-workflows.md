@@ -215,17 +215,18 @@ SQLite records include:
 - Task repository bindings, branches, and worktree paths.
 - OpenCode session IDs, session owners, working directories, and last-known
   status.
-- Quick Request creation time and original prompt; deletion removes the app-owned
+- Quick Request creation time, original prompt, and selected starting prompt; deletion removes the app-owned
   request/prompt/session association while preserving OpenCode conversation data.
-- Original Quick Request prompts in a dedicated task-linked table; regular
+- Original and selected starting Quick Request prompts in a dedicated task-linked table; regular
   workspace/task prompts remain transient inputs.
 - Cleanup jobs, attempts, deferrals, and failure details.
 - User preferences, including the project-home root.
 
-SQLite does not store a second copy of conversation messages. The sole prompt
-exception is a Quick Request's original prompt, stored in a dedicated table
-linked to its request so the full list can display it without reading OpenCode
-history. Workspace/task original and starting prompts remain transient.
+SQLite does not store a second copy of conversation messages. Quick Requests
+store both the original prompt and the selected starting prompt in a dedicated
+table linked to the request. The original is used for history/list display; the
+selected starting prompt is used for initial delivery and retry. Workspace/task
+original and starting prompts remain transient.
 
 ### 3.2 User project home
 
@@ -349,9 +350,9 @@ remain pinned in the navigation.
 8. OpenCode owns conversation history; SQLite stores associations only.
 9. Regular workspace/task original and starting prompts are transient command
    inputs. The application does not persist them in SQLite or files; OpenCode
-   owns any submitted conversation history. A Quick Request's original prompt is
-   the explicit exception: SQLite stores it in `quick_request_prompts`, linked
-   to its task, while OpenCode continues to own the conversation history.
+   owns any submitted conversation history. A Quick Request stores its original
+   and selected starting prompts in `quick_request_prompts`, linked to its task,
+   while OpenCode continues to own the conversation history.
 10. A new session means a new OpenCode conversation in the same owner context;
    it does not create a child task.
 11. Completed tasks cannot be reopened. Further work starts as a new task.
@@ -808,12 +809,12 @@ recreates a missing worktree automatically.
 | Step | Actor | Action | Result |
 |---:|---|---|---|
 | 1 | User | Chooses **Quick Request**, reviews the prefilled default directory, optionally types or chooses another existing directory, and enters an original prompt. | The directory choice applies only to this request; the shared New-work modal preserves the current destination. |
-| 2 | GUI/Rust/OpenCode | Runs an internal directory proposal. An explicit directory must be returned unchanged, without supplying the repository catalog; otherwise the proposal may choose an enabled repository. | Rust validates the exact path or repository; no record or terminal is created. |
-| 3 | User | Reviews the directory, optionally types a path, chooses a folder, or resets to the default, then confirms. If no directory was explicitly chosen and no repository is identified, the default is `<configured OpenCode Projects root>/Quick Requests/`. | The original prompt remains unchanged; no workspace choice or starting-prompt rewrite is involved. |
+| 2 | GUI/Rust/OpenCode | Runs an internal proposal that lightly rewrites the prompt and resolves a directory. An explicit directory must be returned unchanged, without supplying the repository catalog; otherwise the proposal may choose an enabled repository. | Rust validates the exact path or repository; no record or terminal is created. |
+| 3 | User | Reviews the original and suggested prompts and directory; chooses which prompt to send, may edit the directory, then confirms. If no directory was explicitly chosen and no repository is identified, the default is `<configured OpenCode Projects root>/Quick Requests/`. | The suggested prompt is selected by default; the original remains available and unchanged. |
 | 4 | Rust | Ensures the special Quick Requests workspace and resolved directory, then connects to the shared OpenCode service (starting it only if absent). | The working directory is the identified repository or shared default. |
-| 5 | Rust | Creates the Quick Request task, stores its original prompt in `quick_request_prompts`, and records the OpenCode session ID, working directory, and creation time in one transaction. | The request and its exact prompt/session association are durable; the task's generic description remains unused. |
+| 5 | Rust | Creates the Quick Request task, stores its original and selected starting prompts in `quick_request_prompts`, and records the OpenCode session ID, working directory, and creation time in one transaction. | The request, original, selected prompt, and exact session association are durable; the task's generic description remains unused. |
 | 6 | Rust/GUI | Attaches the exact session in a PTY without revealing its terminal or reconciling owner evidence yet. | The saved request/session remains associated while startup is incomplete. |
-| 7 | Rust | Sends the original prompt unchanged through the session. | Prompt acceptance must succeed before the terminal is revealed. |
+| 7 | Rust | Sends the selected starting prompt through the session. | Prompt acceptance must succeed before the terminal is revealed; retry uses that same selected text. |
 | 8 | GUI | Reveals the attached session and reconciles its evidence only after prompt acceptance. | The dedicated page fills the available main work area; navigation remains visible and no session tabs or workspace/task controls are shown. |
 | 9 | OpenCode/TUI and Rust/GUI | Streams output, handles tools and input, and stores status without copying transcript content into SQLite. | The user interacts in the same session. |
 | 10 | Rust/GUI | Applies the 24-hour creation-time cutoff to recent navigation; follow-ups do not reset it. | Older requests remain in the full Quick Requests list. |

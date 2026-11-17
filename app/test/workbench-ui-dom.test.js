@@ -95,27 +95,38 @@ test("Quick Request confirmation disables repeat clicks and allows retry after c
   const [disabled, setDisabled] = createSignal(false);
   const [error, setError] = createSignal("");
   const [review, setReview] = createSignal(true);
+  const [promptChoice, setPromptChoice] = createSignal("suggested");
+  const [suggestedPrompt, setSuggestedPrompt] = createSignal(
+    "Improve the clarity of this prompt",
+  );
   const proposal = {
     workType: "quick_request",
     title: "Confirm",
     createLabel: "Start Quick Request",
     originalPrompt: "Keep this prompt",
+    suggestedPrompt: "Improve the clarity of this prompt",
   };
   let rejectCreation;
   let attempts = 0;
   let pending;
+  const submittedStartingPrompts = [];
   const noop = () => {};
   const controller = createQuickRequestCreationController({
     getProposal: () => proposal,
     modelsReady: () => true,
     quickRequestDirectoryReady: () => true,
     getOriginalPrompt: () => proposal.originalPrompt,
+    getStartingPrompt: () =>
+      promptChoice() === "original"
+        ? proposal.originalPrompt
+        : suggestedPrompt(),
     getSelectedModel: () => '{"providerId":"p","id":"m"}',
     getRepositoryId: () => null,
     getDirectory: () => "/work",
     proposalSessionId: () => null,
-    submitResolvedQuickRequestFlow: () => {
+    submitResolvedQuickRequestFlow: ({ startingPrompt }) => {
       attempts++;
+      submittedStartingPrompts.push(startingPrompt);
       if (attempts === 1)
         return new Promise((_, reject) => {
           rejectCreation = reject;
@@ -159,6 +170,21 @@ test("Quick Request confirmation disables repeat clicks and allows retry after c
     onEnterToSubmit: noopSetter,
     workType: () => "quick_request",
     proposal: () => proposal,
+    promptChoice,
+    onPromptChoiceChange: setPromptChoice,
+    originalPrompt: () => proposal.originalPrompt,
+    suggestedPrompt,
+    onSuggestedPromptChange: setSuggestedPrompt,
+    workspaceVisible: no,
+    workspaceError: empty,
+    workspaceCreateDisabled: no,
+    workspaceCatalogLoading: no,
+    workspaceRepositoryChoice: empty,
+    workspaceRepositories: () => [],
+    workspaceEmptySelected: no,
+    emptyWorkspaceChoice: "__empty__",
+    onWorkspaceRepositoryChange: noopSetter,
+    onWorkspaceSubmit: noopSetter,
     proposalError: error,
     proposalCreateDisabled: disabled,
     onConfirm: () => {
@@ -180,6 +206,42 @@ test("Quick Request confirmation disables repeat clicks and allows retry after c
     setStartingPrompt: noopSetter,
   });
   try {
+    const promptTabs = [...view.host.querySelectorAll('[role="tab"]')];
+    const suggestedTab = promptTabs.find(
+      (tab) => tab.textContent.trim() === "Suggested",
+    );
+    const originalTab = promptTabs.find(
+      (tab) => tab.textContent.trim() === "Original",
+    );
+    assert.deepEqual(
+      promptTabs.map((tab) => tab.textContent.trim()),
+      ["Original", "Suggested"],
+    );
+    assert.equal(suggestedTab.getAttribute("aria-selected"), "true");
+    assert.equal(originalTab.getAttribute("aria-selected"), "false");
+    const suggestedArea = view.host.querySelector(
+      "#quick-request-prompt-suggested",
+    );
+    assert.equal(suggestedArea.value, "Improve the clarity of this prompt");
+    assert.equal(suggestedArea.readOnly, false);
+    suggestedArea.value = "A longer edited suggestion";
+    suggestedArea.dispatchEvent(new window.Event("input", { bubbles: true }));
+    assert.equal(suggestedPrompt(), "A longer edited suggestion");
+    originalTab.click();
+    assert.equal(promptChoice(), "original");
+    assert.equal(originalTab.getAttribute("aria-selected"), "true");
+    const originalArea = view.host.querySelector(
+      "#quick-request-prompt-original",
+    );
+    assert.equal(originalArea.value, "Keep this prompt");
+    assert.equal(originalArea.readOnly, true);
+    suggestedTab.click();
+    assert.equal(promptChoice(), "suggested");
+    assert.equal(
+      view.host.querySelector("#quick-request-prompt-suggested").value,
+      "A longer edited suggestion",
+    );
+
     const button = view.host.querySelector("#proposal-create");
     button.click();
     assert.equal(button.disabled, true);
@@ -191,14 +253,15 @@ test("Quick Request confirmation disables repeat clicks and allows retry after c
       view.host.querySelector("#proposal-error").textContent,
       /Cannot create request/,
     );
-    assert.equal(
-      view.host.querySelector("#quick-request-original").textContent,
-      "Keep this prompt",
-    );
+    assert.deepEqual(submittedStartingPrompts, ["A longer edited suggestion"]);
     assert.equal(button.disabled, false);
     button.click();
     await pending;
     assert.equal(attempts, 2);
+    assert.deepEqual(submittedStartingPrompts, [
+      "A longer edited suggestion",
+      "A longer edited suggestion",
+    ]);
     assert.equal(view.host.querySelector("#proposal-error"), null);
     assert.equal(review(), false);
   } finally {

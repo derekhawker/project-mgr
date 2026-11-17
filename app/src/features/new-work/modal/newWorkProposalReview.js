@@ -8,6 +8,7 @@ export function prepareProposalReview(proposal, originalPrompt, { repositoryCata
     workType: "quick_request",
     title: "New Quick Request — Confirm directory",
     originalPrompt,
+    suggestedPrompt: proposal.suggestedPrompt,
     createLabel: "Confirm directory and start Quick Request",
     quickRequestDirectories: catalog,
     quickRequestDirectoryId: catalog.some((repository) => repository.id === proposedId)

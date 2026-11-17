@@ -402,6 +402,11 @@ test("Workspace creation presents direct repository choices in the native dialog
   const props = {
     setModal: () => {},
     proposal: () => proposal,
+    promptChoice: () => "suggested",
+    onPromptChoiceChange: () => {},
+    originalPrompt: () => "original",
+    suggestedPrompt: () => "suggested",
+    onSuggestedPromptChange: () => {},
     captureVisible: () => false,
     reviewVisible: () => false,
     workType: () => "workspace",

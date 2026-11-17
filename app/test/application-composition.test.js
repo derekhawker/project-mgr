@@ -73,7 +73,9 @@ test("application areas compose once and retain terminals across navigation and 
         if (name === "quick_request_create") {
           calls++;
           globalThis.__quickRequestCreateCalls = calls;
-          globalThis.__quickRequestCreatePrompts.push(payload.request.prompt);
+          globalThis.__quickRequestCreatePrompts.push(
+            payload.request.startingPrompt || payload.request.prompt,
+          );
           if (calls === 1) return new Promise((_, reject) => { globalThis.__rejectQuickRequestCreate = reject; });
         }
         return invoke(name, payload);
@@ -245,19 +247,13 @@ test("application areas compose once and retain terminals across navigation and 
         !$("#change-review-page").hidden && !$("#show-change-review").disabled,
     );
     $('[role="switch"]').click();
-    assert.equal(
-      $('[role="switch"]').checked,
-      true,
-    );
+    assert.equal($('[role="switch"]').checked, true);
     await waitFor(() => !$("#show-docs").disabled);
     $("#show-docs").click();
     await waitFor(() => !$("#docs-page").hidden);
     $("#show-change-review").click();
     await waitFor(() => !$("#change-review-page").hidden);
-    assert.equal(
-      $('[role="switch"]').checked,
-      true,
-    );
+    assert.equal($('[role="switch"]').checked, true);
     window.document.getElementById(`session-tab-${ticketSessionId}`).click();
     $('[aria-label="Close Example repository · Fixture test"]').click();
     await waitFor(
@@ -322,11 +318,17 @@ test("application areas compose once and retain terminals across navigation and 
     );
     await waitFor(() => !$("#new-work-review").hidden);
     await waitFor(() => !$("#proposal-create").disabled);
+    [...window.document.querySelectorAll('[role="tab"]')]
+      .find((tab) => tab.textContent === "Suggested")
+      .click();
     input("#quick-request-directory", "");
     assert.equal($("#proposal-create").disabled, true);
     input("#quick-request-directory", "/fixture/custom-working-directory");
     assert.equal($("#proposal-create").disabled, false);
-    assert.equal($("#quick-request-original").textContent, originalPrompt);
+    assert.equal(
+      $("#quick-request-prompt-suggested").value,
+      `Clarify this Quick Request: ${originalPrompt}`,
+    );
     $("#proposal-create").click();
     await waitFor(() => globalThis.__quickRequestCreateCalls === 1);
     assert.equal($("#proposal-create").disabled, true);
@@ -340,12 +342,18 @@ test("application areas compose once and retain terminals across navigation and 
         .querySelector("#proposal-error")
         ?.textContent.includes("Deferred creation failed"),
     );
-    assert.equal($("#quick-request-original").textContent, originalPrompt);
+    assert.equal(
+      $("#quick-request-prompt-suggested").value,
+      `Clarify this Quick Request: ${originalPrompt}`,
+    );
     assert.equal($("#proposal-create").disabled, false);
     $("#proposal-create").click();
     await waitFor(() => !$("#new-work-modal").open);
     assert.equal(globalThis.__quickRequestCreateCalls, 2);
-    assert.equal(globalThis.__quickRequestCreatePrompts[1], originalPrompt);
+    assert.equal(
+      globalThis.__quickRequestCreatePrompts[1],
+      `Clarify this Quick Request: ${originalPrompt}`,
+    );
     assert.match(
       $("#quick-request-list").textContent,
       /A quick fixture prompt/,
