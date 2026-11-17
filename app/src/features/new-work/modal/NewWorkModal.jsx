@@ -263,6 +263,24 @@ export function NewWorkModal(props) {
                 onChange={props.onPromptChoiceChange}
                 tabs={[
                   {
+                    id: "original",
+                    label: "Original",
+                    panel: (
+                      <div class={styles.promptEditor}>
+                        <label for="quick-request-prompt-original">
+                          Original prompt
+                        </label>
+                        <TextArea
+                          id="quick-request-prompt-original"
+                          rows="9"
+                          class={styles.promptTextArea}
+                          value={props.originalPrompt()}
+                          readOnly
+                        />
+                      </div>
+                    ),
+                  },
+                  {
                     id: "suggested",
                     label: "Suggested",
                     panel: (
@@ -280,24 +298,6 @@ export function NewWorkModal(props) {
                               event.currentTarget.value,
                             )
                           }
-                        />
-                      </div>
-                    ),
-                  },
-                  {
-                    id: "original",
-                    label: "Original",
-                    panel: (
-                      <div class={styles.promptEditor}>
-                        <label for="quick-request-prompt-original">
-                          Original prompt
-                        </label>
-                        <TextArea
-                          id="quick-request-prompt-original"
-                          rows="9"
-                          class={styles.promptTextArea}
-                          value={props.originalPrompt()}
-                          readOnly
                         />
                       </div>
                     ),

@@ -213,6 +213,10 @@ test("Quick Request confirmation disables repeat clicks and allows retry after c
     const originalTab = promptTabs.find(
       (tab) => tab.textContent.trim() === "Original",
     );
+    assert.deepEqual(
+      promptTabs.map((tab) => tab.textContent.trim()),
+      ["Original", "Suggested"],
+    );
     assert.equal(suggestedTab.getAttribute("aria-selected"), "true");
     assert.equal(originalTab.getAttribute("aria-selected"), "false");
     const suggestedArea = view.host.querySelector(
