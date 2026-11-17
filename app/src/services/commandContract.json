@@ -2645,6 +2645,9 @@
             ],
             "additionalProperties": false
           }
+        },
+        "suggestedPrompt": {
+          "type": "string"
         }
       },
       "required": [

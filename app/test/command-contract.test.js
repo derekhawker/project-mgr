@@ -1471,6 +1471,25 @@ test("result validation is recursive and errors retain command identity", async 
   );
 });
 
+test("Quick Request proposal result contract accepts the suggested prompt", async () => {
+  const proposal = {
+    schemaVersion: 1,
+    workType: "quick_request",
+    repositories: [],
+    suggestedPrompt: "Summarize the request clearly.",
+  };
+  const result = await invokeCommand(
+    () => proposal,
+    "new_work_proposal_run",
+    {
+      sessionId: "proposal-1",
+      originalPrompt: "summarize this",
+      workType: "quick_request",
+    },
+  );
+  assert.equal(result.suggestedPrompt, proposal.suggestedPrompt);
+});
+
 test("command tagging and nested quick-request shape are enforced", async () => {
   await assert.rejects(
     () => invokeCommand(() => [], "quick_request_list", { history: true }),
