@@ -47,6 +47,7 @@ export function buildReviewItems(repositories, parsePatchFiles) {
 export function createReviewHeaderPrefix({
   fileByDiff,
   itemByFile,
+  items,
   viewer,
   onViewedChange,
   onError,
@@ -68,13 +69,13 @@ export function createReviewHeaderPrefix({
       const viewed = checkbox.checked;
       checkbox.disabled = true;
       const itemId = itemByFile.get(entry.file);
-      const item = itemId ? viewer.getItem(itemId) : undefined;
+      const item = itemId
+        ? items.find((candidate) => candidate.id === itemId)
+        : undefined;
+      entry.file.viewed = viewed;
       if (item) {
-        viewer.updateItem({
-          ...item,
-          collapsed: viewed,
-          version: (item.version ?? 0) + 1,
-        });
+        item.collapsed = viewed;
+        viewer.setItems(items);
       }
       try {
         await onViewedChange?.(
@@ -82,16 +83,13 @@ export function createReviewHeaderPrefix({
           entry.file.path,
           viewed,
         );
-        entry.file.viewed = viewed;
         onSuccess?.();
       } catch (error) {
         checkbox.checked = !viewed;
+        entry.file.viewed = !viewed;
         if (item) {
-          viewer.updateItem({
-            ...item,
-            collapsed: !viewed,
-            version: (item.version ?? 0) + 1,
-          });
+          item.collapsed = !viewed;
+          viewer.setItems(items);
         }
         onError?.(error);
       } finally {

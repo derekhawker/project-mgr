@@ -8,6 +8,7 @@ export function MultiFileDiffView(props) {
   let root;
   let viewer;
   let viewerOptions;
+  let viewerItems = [];
   let itemByFile = new Map();
   let fileByDiff = new Map();
   let generation = 0;
@@ -33,6 +34,7 @@ export function MultiFileDiffView(props) {
               createReviewHeaderPrefix({
                 fileByDiff,
                 itemByFile,
+                items: viewerItems,
                 viewer,
                 onViewedChange: props.onFileViewed,
                 onError: (error) =>
@@ -48,6 +50,7 @@ export function MultiFileDiffView(props) {
         const review = buildReviewItems(repositories, parsePatchFiles);
         itemByFile = review.itemByFile;
         fileByDiff = review.fileByDiff;
+        viewerItems = review.items;
         viewer.setItems(review.items);
         if (props.selectedFile()) scrollToFile(props.selectedFile());
       })
