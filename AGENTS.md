@@ -36,13 +36,18 @@
 
 - When using Codesitter in this repository, keep the frontend and Rust indexes separate: index `app/` with `--lang js,ts,tsx`, and `app/src-tauri/` with `--lang rust`. These are distinct project roots, each with its own `.codesitter` index; run queries against the matching root and use file paths relative to that root. `app/` is the frontend root because it includes its source, tests, and HTML entry point; `app/src-tauri/` is the Rust root. Codesitter skips generated `target/` directories.
 
+## Manual verification
+
+- Use the main worktree as the single, serialized manual-verification lane, not the ticket worktree. The existing `npm run live --prefix app` process runs from the main worktree; checking out the candidate there lets it hot-reload without restarting the dev build. Keep that runtime running and use its normal reload behavior.
+- At verification time, identify the current worktree. If it is a ticket worktree, locate the main worktree with `git worktree list`. Before changing the main worktree's checkout, confirm it is clean. Then check out the exact committed candidate there in detached HEAD state. If it is dirty, inspect and preserve its changes; ask before proceeding if switching would affect them.
+- Do not implement or commit from the main worktree. Record the candidate commit and verification results in the ticket. Each follow-up change is a new candidate and must be checked out and verified there too.
+
 ## Delivery
 
 - Keep a dedicated branch and worktree for each ticket; multiple ticket worktrees may remain open. Do all implementation and revisions in the ticket worktree.
-- Use the primary checkout as a single, serialized manual-verification lane. Before testing, confirm it is clean, then check out the exact committed candidate in detached HEAD state. Do not implement or commit from the primary checkout. Record the candidate commit and manual-verification results in the ticket. A follow-up change is a new candidate and must be checked out and verified there too.
-- Preserve changes made during manual verification. Inspect a dirty primary checkout before switching away; preserve its work and ask before proceeding if it is dirty. Keep the existing `npm run live --prefix app` runtime running and use its normal reload behavior.
+- For manual verification, follow [Manual verification](#manual-verification).
 - Before delivery, ensure the ticket branch includes the latest `main`. If `main` has advanced and the ticket branch cannot fast-forward, merge the latest `main` into the ticket branch and repeat relevant verification. Do not rebase unless the user asks.
-- For ticket work, do not create pull requests. After required checks and manual verification pass, push the ticket branch and fast-forward `main` to its verified tip; do not squash-merge, so delivery retains the commits that were tested. Publish the updated `main`, then verify the primary checkout is clean and up to date before removing the ticket worktree and local branch. Preserve its work and ask before proceeding if it is dirty. Remote branch deletion is separate and is not implied.
+- For ticket work, do not create pull requests. After required checks and manual verification pass, push the ticket branch and fast-forward `main` to its verified tip; do not squash-merge, so delivery retains the commits that were tested. Publish the updated `main`, then verify the main worktree is clean and up to date before removing the ticket worktree and local branch. Preserve its work and ask before proceeding if it is dirty. Remote branch deletion is separate and is not implied.
 
 ## Testing
 - Avoid end-to-end tests; their cost is not justified.
