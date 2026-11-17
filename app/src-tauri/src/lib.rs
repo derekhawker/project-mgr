@@ -3378,6 +3378,25 @@ fn mark_prompt_failed(store: &ManagementStore, session_id: &str, error: String) 
     }
 }
 
+fn mark_retry_evidence_unknown(
+    store: &ManagementStore,
+    session: &management::SessionRecord,
+) -> String {
+    match store.update_session_reconciliation(
+        &session.open_code_session_id,
+        "unknown",
+        session.event_cursor.as_deref(),
+        true,
+        session.pending_input_json.as_deref(),
+        now_millis(),
+    ) {
+        Ok(_) => "Session state is unknown; the original prompt was not resent.".into(),
+        Err(error) => format!(
+            "Session state is unknown and the original prompt was not resent; recording that state failed: {error}"
+        ),
+    }
+}
+
 fn request_id() -> String {
     static NEXT_REQUEST: AtomicU64 = AtomicU64::new(0);
     format!(
@@ -3518,123 +3537,183 @@ struct QuickRequestStartCommand {
 /// The second phase is intentionally explicit: the WebView mounts xterm and
 /// registers its listeners after create returns, then asks Rust to generate.
 #[tauri::command]
-fn quick_request_start_prompt(
-    runtime: State<'_, opencode::Runtime>,
-    store: State<'_, ManagementStore>,
+async fn quick_request_start_prompt(
+    app: AppHandle,
     request: QuickRequestStartCommand,
 ) -> Result<(), String> {
-    let record = store
-        .get_task(&request.request_id)
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "Quick Request not found".to_owned())?;
-    if record.quick_request.is_none() {
-        return Err("Record is not a Quick Request".into());
-    }
-    let prompt = store
-        .quick_request_prompt(&record.id)
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "Quick Request original prompt is unavailable".to_owned())?;
-    let session = store
-        .list_sessions(&management::SessionOwner::Task(record.id.clone()))
-        .map_err(|e| e.to_string())?
-        .into_iter()
-        .next()
-        .ok_or_else(|| "Quick Request session not found".to_owned())?;
-    if session.last_known_status != "starting" {
-        return Err(format!(
-            "Quick Request is not startable from `{}`.",
-            session.last_known_status
-        ));
-    }
-    let model = request.model.clone().runtime_model();
-    let result = (|| {
-        ensure_session_model(&session, &request.model)?;
-        if !runtime.terminal_attached(&session.open_code_session_id) {
-            return Err("The Quick Request terminal is not attached.".to_owned());
+    run_terminal_work(move || {
+        let runtime = app.state::<opencode::Runtime>();
+        let store = app.state::<ManagementStore>();
+        let record = store
+            .get_task(&request.request_id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| "Quick Request not found".to_owned())?;
+        if record.quick_request.is_none() {
+            return Err("Record is not a Quick Request".into());
         }
-        runtime.wait_for_terminal_ready(&session.open_code_session_id)?;
-        store
-            .claim_initial_prompt(&session.open_code_session_id)
-            .map_err(|e| e.to_string())?;
-        runtime.set_session_model(&session.open_code_session_id, model)?;
-        runtime.prompt(&session.open_code_session_id, &prompt)
-    })();
-    match result {
-        Ok(()) => {
-            match store.update_session_status(
-                &session.open_code_session_id,
-                "running",
-                now_millis(),
-            ) {
-                Ok(_) => Ok(()),
-                Err(error) => Err(mark_prompt_failed(
-                    &store,
-                    &session.open_code_session_id,
-                    error.to_string(),
-                )),
+        let prompt = store
+            .quick_request_prompt(&record.id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| "Quick Request original prompt is unavailable".to_owned())?;
+        let session = store
+            .list_sessions(&management::SessionOwner::Task(record.id.clone()))
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .next()
+            .ok_or_else(|| "Quick Request session not found".to_owned())?;
+        if session.last_known_status != "starting" {
+            return Err(format!(
+                "Quick Request is not startable from `{}`.",
+                session.last_known_status
+            ));
+        }
+        let model = request.model.clone().runtime_model();
+        let result = (|| {
+            ensure_session_model(&session, &request.model)?;
+            if !runtime.terminal_attached(&session.open_code_session_id) {
+                return Err("The Quick Request terminal is not attached.".to_owned());
             }
+            runtime.wait_for_terminal_ready(&session.open_code_session_id)?;
+            store
+                .claim_initial_prompt(&session.open_code_session_id)
+                .map_err(|e| e.to_string())?;
+            runtime.set_session_model(&session.open_code_session_id, model)?;
+            runtime.prompt(&session.open_code_session_id, &prompt)
+        })();
+        let failure = match result {
+            Ok(()) => store
+                .update_session_status(
+                    &session.open_code_session_id,
+                    "running",
+                    now_millis(),
+                )
+                .err()
+                .map(|error| error.to_string()),
+            Err(error) => Some(error),
+        };
+        if let Some(error) = failure {
+            let message = mark_prompt_failed(&store, &session.open_code_session_id, error.clone());
+            log_initial_prompt_failure(
+                &app,
+                &session.open_code_session_id,
+                &prompt,
+                &error,
+            );
+            Err(message)
+        } else {
+            Ok(())
         }
-        Err(error) => Err(mark_prompt_failed(
-            &store,
-            &session.open_code_session_id,
-            error,
-        )),
-    }
+    })
+    .await
 }
 
 #[tauri::command]
-fn quick_request_retry_prompt(
-    runtime: State<'_, opencode::Runtime>,
-    store: State<'_, ManagementStore>,
+async fn quick_request_retry_prompt(
+    app: AppHandle,
     request: QuickRequestStartCommand,
-) -> Result<management::SessionRecord, String> {
-    let record = store
-        .get_task(&request.request_id)
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "Quick Request not found".to_owned())?;
-    if record.quick_request.is_none() {
-        return Err("Record is not a Quick Request".into());
-    }
-    let prompt = store
-        .quick_request_prompt(&record.id)
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "Quick Request original prompt is unavailable".to_owned())?;
-    let session = store
-        .list_sessions(&management::SessionOwner::Task(record.id.clone()))
-        .map_err(|e| e.to_string())?
-        .into_iter()
-        .next()
-        .ok_or_else(|| "Quick Request session not found".to_owned())?;
-    let model = request.model.clone();
-    ensure_session_model(&session, &model)?;
-    let validated = store
-        .validate_session_context(
-            &session.open_code_session_id,
-            std::path::Path::new(&session.directory),
-        )
-        .map_err(|e| e.to_string())?;
-    if !runtime.terminal_attached(&validated.open_code_session_id) {
-        return Err("The Quick Request terminal is not attached.".into());
-    }
-    runtime.wait_for_terminal_ready(&validated.open_code_session_id)?;
-    let claimed = store
-        .claim_retry_initial_prompt(&validated.open_code_session_id, now_millis())
-        .map_err(|e| e.to_string())?;
-    let result = (|| {
-        ensure_session_model(&claimed, &model)?;
-        runtime.set_session_model(&claimed.open_code_session_id, model.runtime_model())?;
-        runtime.prompt(&claimed.open_code_session_id, &prompt)
-    })();
-    match result {
-        Ok(()) => store
-            .update_session_status(&claimed.open_code_session_id, "running", now_millis())
-            .map_err(|e| e.to_string()),
-        Err(error) => Err(mark_prompt_failed(
-            &store,
-            &claimed.open_code_session_id,
-            error,
-        )),
-    }
+) -> Result<QuickRequestRetryPromptResult, String> {
+    run_terminal_work(move || {
+        let runtime = app.state::<opencode::Runtime>();
+        let store = app.state::<ManagementStore>();
+        let record = store
+            .get_task(&request.request_id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| "Quick Request not found".to_owned())?;
+        if record.quick_request.is_none() {
+            return Err("Record is not a Quick Request".into());
+        }
+        let prompt = store
+            .quick_request_prompt(&record.id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| "Quick Request original prompt is unavailable".to_owned())?;
+        let session = store
+            .list_sessions(&management::SessionOwner::Task(record.id.clone()))
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .next()
+            .ok_or_else(|| "Quick Request session not found".to_owned())?;
+        let validated = store
+            .validate_session_context(
+                &session.open_code_session_id,
+                std::path::Path::new(&session.directory),
+            )
+            .map_err(|e| e.to_string())?;
+
+        // History is authoritative for whether the original prompt reached
+        // OpenCode. Any lookup or shape uncertainty fails closed.
+        let history = match runtime.session_history(&validated.open_code_session_id, "asc", 200) {
+            Ok(history) => history,
+            Err(error) => {
+                let state = mark_retry_evidence_unknown(&store, &validated);
+                return Err(format!("{state} History lookup failed: {error}"));
+            }
+        };
+        match opencode::assess_initial_prompt_retry(&history.data) {
+            opencode::InitialPromptRetryAssessment::AlreadyAccepted => {
+                return Ok(QuickRequestRetryPromptResult { prompt_sent: false });
+            }
+            opencode::InitialPromptRetryAssessment::Ambiguous => {
+                return Err(mark_retry_evidence_unknown(&store, &validated));
+            }
+            opencode::InitialPromptRetryAssessment::SafeToSend => {}
+        }
+        match runtime.session_status(&validated.open_code_session_id) {
+            Ok(status) if status.active.is_none() => {}
+            Ok(_) => return Err(mark_retry_evidence_unknown(&store, &validated)),
+            Err(error) => {
+                let state = mark_retry_evidence_unknown(&store, &validated);
+                return Err(format!("{state} Session status lookup failed: {error}"));
+            }
+        }
+        if !runtime.terminal_attached(&validated.open_code_session_id) {
+            return Err("The Quick Request terminal is not attached.".into());
+        }
+        runtime.wait_for_terminal_ready(&validated.open_code_session_id)?;
+        let model = request.model.clone();
+        ensure_session_model(&session, &model)?;
+        let claimed = store
+            .claim_retry_initial_prompt(&validated.open_code_session_id, now_millis())
+            .map_err(|e| e.to_string())?;
+        let result = (|| {
+            ensure_session_model(&claimed, &model)?;
+            runtime.set_session_model(&claimed.open_code_session_id, model.runtime_model())?;
+            runtime.prompt(&claimed.open_code_session_id, &prompt)
+        })();
+        let failure = match result {
+            Ok(()) => store
+                .update_session_status(
+                    &claimed.open_code_session_id,
+                    "running",
+                    now_millis(),
+                )
+                .err()
+                .map(|error| error.to_string()),
+            Err(error) => Some(error),
+        };
+        if let Some(error) = failure {
+            let message = mark_prompt_failed(
+                &store,
+                &claimed.open_code_session_id,
+                error.clone(),
+            );
+            log_initial_prompt_failure(
+                &app,
+                &claimed.open_code_session_id,
+                &prompt,
+                &error,
+            );
+            Err(message)
+        } else {
+            Ok(QuickRequestRetryPromptResult { prompt_sent: true })
+        }
+    })
+    .await
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct QuickRequestRetryPromptResult {
+    prompt_sent: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

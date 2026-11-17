@@ -47,7 +47,6 @@ test("passes exact prompt/model/repository and completes callbacks in order", as
       args.onCreated({});
       calls.push(["created"]);
       args.showSession();
-      await args.refreshRequests();
     },
   });
   await controller.createQuickRequest();
@@ -63,7 +62,7 @@ test("passes exact prompt/model/repository and completes callbacks in order", as
         ),
       )
       .map(([key]) => key),
-    ["terminal", "created", "created", "show", "refresh", "closeProposal"],
+    ["terminal", "created", "created", "show", "closeProposal", "refresh"],
   );
   assert.deepEqual(calls.slice(-3), [
     ["busy", false],
@@ -107,4 +106,37 @@ test("failure reports error and always clears busy state, preserving retry avail
     ["sync"],
     ["disabled", false],
   ]);
+});
+
+test("durable startup failure keeps the modal open and retries the same request", async () => {
+  const record = {
+    task: { id: "qr-same-id", quickRequest: {} },
+    session: { openCodeSessionId: "ses-same-id" },
+  };
+  const { controller, calls } = setup({
+    submitResolvedQuickRequestFlow: async ({ onCreated }) => {
+      onCreated(record);
+      throw new Error("terminal attach failed");
+    },
+    retryResolvedQuickRequestFlow: async (args) => {
+      calls.push(["retry", args]);
+      return { promptSent: true };
+    },
+    setRecoveryRecord: (value) => calls.push(["recovery", value]),
+    finishQuickRequestStartup: async (value) =>
+      calls.push(["finish", value]),
+    refreshRequests: async () => calls.push(["refresh"]),
+  });
+
+  await controller.createQuickRequest();
+  assert.ok(calls.some(([key, value]) => key === "recovery" && value === record));
+  assert.ok(calls.some(([key]) => key === "error"));
+  assert.ok(!calls.some(([key, value]) => key === "closeModal" && value));
+
+  await controller.retryQuickRequest();
+  const retryArgs = calls.find(([key]) => key === "retry")[1];
+  assert.equal(retryArgs.record, record);
+  assert.ok(calls.some(([key, value]) => key === "finish" && value === record));
+  assert.ok(calls.some(([key]) => key === "closeModal"));
+  assert.deepEqual(calls.slice(-2), [["busy", false], ["sync"]]);
 });

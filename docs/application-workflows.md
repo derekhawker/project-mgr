@@ -530,7 +530,7 @@ inferred.
 |---:|---|---|---|
 | 1 | User | Opens **Repositories** from top navigation and uses **Add directories** to select one or more folders with the native folder picker. | The GUI sends only those explicit paths to Rust. |
 | 2 | Rust | Runs traversal and Git discovery on a bounded blocking worker; canonicalizes selected roots, but does not follow child directory symlinks. | The UI/startup thread remains available while filesystem work runs. |
-| 3 | Rust/Git | Prunes common dependency, generated-output, and build directory names during broad traversal; stops at Git markers and verifies candidates with lightweight Git root/common-directory facts. | The managed project and repository-library trees are excluded; invalid markers are not cataloged; linked worktrees and submodules are excluded, while independent separate-Git-dir checkouts are eligible. |
+| 3 | Rust/Git | Prunes common dependency, generated-output, and build directory names during broad traversal; stops at Git markers and verifies candidates with one `git rev-parse --show-toplevel --git-common-dir` process. | The managed project and repository-library trees are excluded; invalid or ambiguous/non-UTF-8 Git output is not cataloged; linked worktrees and submodules are excluded, while independent separate-Git-dir checkouts are eligible. |
 | 4 | Rust | De-duplicates by canonical repository path and retires absent active entries only after a complete scan; incomplete roots do not trigger cleanup. | A move creates a path-keyed entry at the new location; old catalog history and workspace bindings remain attached to the old entry. Repository files are never deleted. |
 | 5 | OpenCode | Generates a concise purpose description from repository content or metadata when requested by the discovery flow. | The description is proposed content, not repository identity. |
 | 6 | User | Reviews or edits the purpose description. | The catalog stores the accepted concise purpose. |
@@ -543,13 +543,17 @@ traversal prunes common names such as `node_modules`, `vendor`, `target`, `dist`
 is always eligible regardless of its name. These name-based rules apply only to
 descendants and may leave repositories inside a pruned directory undiscovered.
 Repository paths discovered under overlapping roots are shown only once under
-the most-specific root. The Repositories page groups saved roots under their shortest shared
-parent when their filesystem-level path component matches and the group
-contains at most five repositories. Larger groups retain their separate saved
-scan roots; a lone scan root keeps its own path. Within a displayed root,
-child folders containing at most five repositories collapse into the parent;
-larger child folders remain separate. Apply that rule independently per branch.
-Different filesystem-level branches remain separate. Individual
+the most-specific root. For catalogs with at most 20 entries, the Repositories
+page keeps its existing grouping: compatible saved roots may merge under their
+shortest shared parent when the group has at most five repositories, and child
+folders containing at most five repositories collapse into the parent. Larger
+groups remain separate; a lone scan root keeps its own path. For catalogs above
+20 entries, saved roots never merge and no child folders collapse. The threshold
+counts all catalog entries, including disabled repositories, and does not
+change while searching. In either mode, sibling roots, folders, and repositories
+sort by case-insensitive name. Search stays in place and matches repository
+names or full paths case-insensitively, retaining only the ancestor folders
+needed to display matches. Individual
 repository checkboxes persist enabled/disabled state. Only
 enabled repositories are included in the initial New-work proposal context and
 can be selected as a Quick Request working directory; the user's original
@@ -808,15 +812,22 @@ recreates a missing worktree automatically.
 | 3 | User | Reviews the directory, optionally types a path, chooses a folder, or resets to the default, then confirms. If no directory was explicitly chosen and no repository is identified, the default is `<configured OpenCode Projects root>/Quick Requests/`. | The original prompt remains unchanged; no workspace choice or starting-prompt rewrite is involved. |
 | 4 | Rust | Ensures the special Quick Requests workspace and resolved directory, then connects to the shared OpenCode service (starting it only if absent). | The working directory is the identified repository or shared default. |
 | 5 | Rust | Creates the Quick Request task, stores its original prompt in `quick_request_prompts`, and records the OpenCode session ID, working directory, and creation time in one transaction. | The request and its exact prompt/session association are durable; the task's generic description remains unused. |
-| 6 | Rust/GUI | Attaches the exact session in a PTY and opens its dedicated Quick Request page. | The terminal fills the available main work area; app navigation remains visible and no session tabs or workspace/task controls are shown. |
-| 7 | Rust | Sends the original prompt unchanged through the session. | Generation starts in the matching TUI. |
-| 8 | OpenCode/TUI | Streams output, handles tools, and asks for approval/input when needed. | The user can interact in the same terminal. |
-| 9 | Rust/GUI | Stores status and emits output without copying transcript content into SQLite. | The request remains associated and recoverable. |
+| 6 | Rust/GUI | Attaches the exact session in a PTY without revealing its terminal or reconciling owner evidence yet. | The saved request/session remains associated while startup is incomplete. |
+| 7 | Rust | Sends the original prompt unchanged through the session. | Prompt acceptance must succeed before the terminal is revealed. |
+| 8 | GUI | Reveals the attached session and reconciles its evidence only after prompt acceptance. | The dedicated page fills the available main work area; navigation remains visible and no session tabs or workspace/task controls are shown. |
+| 9 | OpenCode/TUI and Rust/GUI | Streams output, handles tools and input, and stores status without copying transcript content into SQLite. | The user interacts in the same session. |
 | 10 | Rust/GUI | Applies the 24-hour creation-time cutoff to recent navigation; follow-ups do not reset it. | Older requests remain in the full Quick Requests list. |
 
 The proposal is transient: cancellation or proposal failure creates no Quick
-Request. Confirmation follows the common session startup flow and must not claim
-success if creation, attachment, or initial prompt delivery fails.
+Request. If attachment or prompt delivery fails after durable creation, keep the
+confirmation modal open with a recovery action for that same request/session.
+Retry inspects the exact OpenCode history first: any user message proves the
+prompt was accepted and is never resent; ambiguous, unavailable, or incomplete
+history records the session as unknown and fails closed. Recovery never creates
+a replacement request. After retrying, attach/reuse the exact session, then
+reconcile its evidence and reveal its terminal. This recovery covers failures
+while the modal remains open only; recovery after application exit/restart is
+out of scope. Failure logs contain session/error metadata, never prompt text.
 
 ### 10.2 Follow up on a Quick Request
 

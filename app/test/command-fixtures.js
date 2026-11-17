@@ -195,9 +195,10 @@ export function resultForCommand(name) {
     case "quick_request_expire":
     case "quick_request_promote":
       return task;
-    case "quick_request_retry_prompt":
     case "opencode_session_restore":
       return session;
+    case "quick_request_retry_prompt":
+      return { promptSent: true };
     case "opencode_terminal_attach":
     case "opencode_terminal_start":
     case "opencode_terminal_replay":

@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildRepositoryDirectoryTree } from "../src/views/directories/directoryGroups.js";
+import {
+  buildRepositoryDirectoryTree,
+  filterRepositoryDirectoryTree,
+} from "../src/views/directories/directoryGroups.js";
 
 const repository = (id, name, path, enabled = true) => ({
   repository: { id, name, repositoryPath: path },
@@ -76,7 +79,7 @@ test("keeps crowded scan roots separate while continuing to process other branch
 
   assert.deepEqual(
     tree.map(({ path }) => path),
-    ["/work/apps", "/work/tools", "/tmp/opencode"],
+    ["/work/apps", "/tmp/opencode", "/work/tools"],
   );
 });
 
@@ -153,7 +156,7 @@ test("keeps programs and temporary scan-root groups at their data directories", 
 
   assert.deepEqual(
     buildRepositoryDirectoryTree(directories).map(({ path }) => path),
-    ["/home/derek/programs", "/tmp/opencode"],
+    ["/tmp/opencode", "/home/derek/programs"],
   );
 });
 
@@ -209,5 +212,61 @@ test("collapses small child groups but keeps child directories with more than fi
         : node.entry.repository.id,
     ),
     ["large:6", "small-a", "small-b"],
+  );
+});
+
+test("catalogs above 20 preserve scan roots and nested folders including disabled entries", () => {
+  const directories = Array.from({ length: 21 }, (_, index) => ({
+    path: `/roots/root-${index}`,
+    repositories: [
+      repository(
+        `repo-${index}`,
+        `Repo ${index}`,
+        `/roots/root-${index}/nested/team/repo-${index}`,
+        index % 2 === 0,
+      ),
+    ],
+  }));
+  const tree = buildRepositoryDirectoryTree(directories);
+  assert.equal(tree.length, 21);
+  assert.equal(tree[0].path, "/roots/root-0");
+  assert.equal(tree[0].children[0].name, "nested");
+  assert.equal(tree[0].children[0].children[0].name, "team");
+});
+
+test("20 entries retain existing root merging and child-folder collapsing", () => {
+  const repositories = Array.from({ length: 20 }, (_, index) =>
+    repository(`repo-${index}`, `Repo ${index}`, `/roots/team-${index}/repo-${index}`),
+  );
+  const [root] = buildRepositoryDirectoryTree([{ path: "/roots", repositories }]);
+  assert.ok(root.children.every((node) => node.kind === "repository"));
+});
+
+test("siblings sort case-insensitively and search keeps matching nested ancestors", () => {
+  const [root] = buildRepositoryDirectoryTree([
+    {
+      path: "/Root",
+      repositories: [
+        repository("z", "zeta", "/Root/group/Zeta"),
+        repository("a", "Alpha", "/Root/group/alpha"),
+        repository("b", "Beta", "/Root/group/Beta"),
+        repository("c", "Gamma", "/Root/group/Gamma"),
+        repository("d", "Delta", "/Root/group/Delta"),
+        repository("e", "Epsilon", "/Root/group/Epsilon"),
+      ],
+    },
+  ]);
+  assert.deepEqual(root.children.map((node) => node.name), ["group"]);
+  const filtered = filterRepositoryDirectoryTree([root], "ROOT/GROUP/ALPHA");
+  assert.equal(filtered[0].children.length, 1);
+  assert.equal(filtered[0].children[0].name, "group");
+  assert.equal(
+    filtered[0].children[0].children[0].entry.repository.name,
+    "Alpha",
+  );
+  assert.deepEqual(filterRepositoryDirectoryTree([root], "missing"), []);
+  assert.deepEqual(
+    root.children[0].children.map((node) => node.name),
+    ["Alpha", "Beta", "Delta", "Epsilon", "Gamma", "zeta"],
   );
 });

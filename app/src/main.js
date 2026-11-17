@@ -212,7 +212,11 @@ const setCommandResultMessage = shellView.setResult;
 const applicationStatus = () =>
   ApplicationShellStatus({ state: shellView.state });
 const [appNoticeMessage, setAppNoticeMessage] = createSignal("");
-const appNotice = () => AppNotice({ message: appNoticeMessage });
+const appNotice = () =>
+  AppNotice({
+    message: appNoticeMessage,
+    onDismiss: () => setAppNoticeMessage(""),
+  });
 const [directoriesVisible, setDirectoriesVisible] = createSignal(false);
 const [portsVisible, setPortsVisible] = createSignal(false);
 
@@ -862,7 +866,12 @@ function selectWorkspace(workspace, data = navigationData) {
   }, 0);
 }
 
-function selectQuickRequest(task, workspace, data = navigationData, { deferRestore = false } = {}) {
+function selectQuickRequest(
+  task,
+  workspace,
+  data = navigationData,
+  { deferRestore = false, deferReveal = false } = {},
+) {
   if (!task.quickRequest) return;
   setTicketViewerVisible(false);
   setDirectoriesVisible(false);
@@ -870,7 +879,7 @@ function selectQuickRequest(task, workspace, data = navigationData, { deferResto
   setFullRequestVisible(false);
   const isQuickRequest = Boolean(task.quickRequest);
   setWorkspaceShellVisible(!isQuickRequest);
-  setQuickRequestTerminalPage(isQuickRequest);
+  setQuickRequestTerminalPage(isQuickRequest && !deferReveal);
   setProposalMode(false);
   setRightContentOwnerActive(true);
   setOwnerStatus("");
@@ -880,14 +889,18 @@ function selectQuickRequest(task, workspace, data = navigationData, { deferResto
   setSelectedTicketFilename(null);
   setWorkspaceNavigation({ data, selected: null });
   selectedOwnerRepositoryCount = 0;
-  showOwnerTerminal();
-  syncChangeReviewAvailability();
+  if (!deferReveal) showOwnerTerminal();
+  if (deferReveal) {
+    setChangeReviewVisible(false);
+    setChangeReviewAvailable(false);
+    setChangeReviewSelected(false);
+  } else syncChangeReviewAvailability();
   syncRepositoryToolsAvailability();
   setNoSelectionVisible(false);
   setWorkspaceSelected(false);
   setWorkspaceShellVisible(!isQuickRequest);
-  setSelectedOwnerVisible(true);
-  newWork.hide();
+  setSelectedOwnerVisible(!deferReveal);
+  if (!deferReveal) newWork.hide();
   setOwnerTitle(task.name);
   renderNavigation(data);
   syncOwnerSessions();
@@ -963,6 +976,7 @@ const newWork = createNewWork({
   selectWorkspace,
   selectQuickRequest,
   showSession,
+  finishSession: sessions.finishSessionStartup,
   waitForTerminal: async () => {
     if (!(await terminalRuntime))
       throw new Error("Terminal runtime is unavailable.");

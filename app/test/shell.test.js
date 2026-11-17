@@ -26,6 +26,7 @@ import {
   resolveQuickRequestDirectory,
   submitQuickRequestFlow,
   submitResolvedQuickRequestFlow,
+  retryResolvedQuickRequestFlow,
   startQuickRequestPrompt,
   listAvailableModels,
   getDefaultModel,
@@ -1368,8 +1369,7 @@ test("confirmed Quick Request flow preserves the original prompt and opens the t
     repositoryId: "repo-1",
     waitForTerminal: async () => events.push(["terminal-ready"]),
     onCreated: (created) => events.push(["created", created.task.id]),
-    showSession: async (id) => events.push(["show-session", id]),
-    refreshRequests: async () => events.push(["refresh"]),
+    showSession: async (...args) => events.push(["show-session", ...args]),
   });
 
   assert.equal(result, record);
@@ -1381,7 +1381,6 @@ test("confirmed Quick Request flow preserves the original prompt and opens the t
       "created",
       "show-session",
       "quick_request_start_prompt",
-      "refresh",
     ],
   );
   assert.deepEqual(events[1], [
@@ -1397,6 +1396,15 @@ test("confirmed Quick Request flow preserves the original prompt and opens the t
     {
       requestId: "quick-confirmed",
       model,
+    },
+  ]);
+  assert.deepEqual(events[3], [
+    "show-session",
+    "ses-quick-confirmed",
+    {
+      deferEvidence: true,
+      deferReveal: true,
+      requireExactSession: true,
     },
   ]);
 });
@@ -1435,6 +1443,42 @@ test("confirmed Quick Request startup failure happens after durable creation and
     "durable-record",
     "terminal-mounted",
     "quick_request_start_prompt",
+  ]);
+});
+
+test("Quick Request recovery attaches the exact saved session before retrying", async () => {
+  const events = [];
+  const record = {
+    task: { id: "qr-recover", quickRequest: {} },
+    session: { openCodeSessionId: "ses-recover" },
+  };
+  const result = await retryResolvedQuickRequestFlow({
+    invoke: async (name, payload) => {
+      events.push([name, payload]);
+      return { promptSent: false };
+    },
+    record,
+    model: { providerId: "openai", id: "gpt-test" },
+    showSession: async (...args) => events.push(["show", ...args]),
+  });
+  assert.deepEqual(result, { promptSent: false });
+  assert.deepEqual(events, [
+    [
+      "show",
+      "ses-recover",
+      {
+        deferEvidence: true,
+        deferReveal: true,
+        requireExactSession: true,
+      },
+    ],
+    [
+      "quick_request_retry_prompt",
+      {
+        requestId: "qr-recover",
+        model: { providerId: "openai", id: "gpt-test" },
+      },
+    ],
   ]);
 });
 

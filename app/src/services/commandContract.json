@@ -1651,69 +1651,11 @@
     "result": {
       "type": "object",
       "properties": {
-        "openCodeSessionId": {
-          "type": "string"
-        },
-        "owner": {
-          "type": "object",
-          "properties": {
-            "owner_type": {
-              "type": "string"
-            },
-            "owner_id": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "owner_type",
-            "owner_id"
-          ],
-          "additionalProperties": false
-        },
-        "directory": {
-          "type": "string"
-        },
-        "lastKnownStatus": {
-          "type": "string"
-        },
-        "createdAt": {
-          "type": "number"
-        },
-        "updatedAt": {
-          "type": "number"
-        },
-        "eventCursor": {
-          "type": "string",
-          "nullable": true
-        },
-        "reconciliationStatus": {
-          "type": "string"
-        },
-        "reconciliationUncertain": {
+        "promptSent": {
           "type": "boolean"
-        },
-        "pendingInputJson": {
-          "type": "string",
-          "nullable": true
-        },
-        "selectedModel": {
-          "type": "string",
-          "nullable": true
         }
       },
-      "required": [
-        "openCodeSessionId",
-        "owner",
-        "directory",
-        "lastKnownStatus",
-        "createdAt",
-        "updatedAt",
-        "eventCursor",
-        "reconciliationStatus",
-        "reconciliationUncertain",
-        "pendingInputJson",
-        "selectedModel"
-      ],
+      "required": ["promptSent"],
       "additionalProperties": false
     }
   },

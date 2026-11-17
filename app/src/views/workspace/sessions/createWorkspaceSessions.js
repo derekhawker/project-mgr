@@ -64,6 +64,7 @@ export function createWorkspaceSessions({
   const [pendingInputMessage, setPendingInputMessage] = createSignal("");
   const openSessions = new Set();
   const sessionOwners = new Map();
+  const sessionRestoreRecords = new Map();
   const selectedSessionByOwner = new Map();
   const sessionDirectories = new Map();
   const missingSessionReplacements = new Map();
@@ -234,6 +235,7 @@ export function createWorkspaceSessions({
     removeSessionTab(sessionId);
     openSessions.delete(sessionId);
     sessionOwners.delete(sessionId);
+    sessionRestoreRecords.delete(sessionId);
     repositoryToolTerminals.delete(sessionId);
     releaseInstall(sessionId);
     if (selectedSessionByOwner.get(selectionKey(ownerKey)) === sessionId) {
@@ -264,7 +266,12 @@ export function createWorkspaceSessions({
 
   const showSession = createKeyedSingleFlight(
     async (sessionId, options = {}) => {
-      const { proposal = false } = options;
+      const {
+        proposal = false,
+        deferEvidence = false,
+        deferReveal = false,
+        requireExactSession = false,
+      } = options;
       sessionId = resolveSessionReplacement(
         missingSessionReplacements,
         sessionId,
@@ -277,12 +284,15 @@ export function createWorkspaceSessions({
       // Resolve the exact persisted owner/directory in Rust before creating xterm.
       const restored = proposal
         ? null
-        : await invokeCommand(invoke, "opencode_session_restore", {
+        : sessionRestoreRecords.get(sessionId) ||
+          (await invokeCommand(invoke, "opencode_session_restore", {
             sessionId,
-          });
+          }));
       if (appLifetime.disposed) return;
       const data = getNavigationData();
       if (!proposal && restored?.openCodeSessionId !== sessionId) {
+        if (requireExactSession)
+          throw new Error("The saved Quick Request session is unavailable.");
         const replacementId = recordSessionReplacement(
           missingSessionReplacements,
           data,
@@ -307,6 +317,7 @@ export function createWorkspaceSessions({
             (task) => task.id === owner.owner_id && task.quickRequest,
           ));
       if (ownerKey) sessionOwners.set(sessionId, ownerKey);
+      if (!proposal && restored) sessionRestoreRecords.set(sessionId, restored);
       if (restored?.directory)
         sessionDirectories.set(sessionId, restored.directory);
       if (!openSessions.has(sessionId)) {
@@ -352,13 +363,26 @@ export function createWorkspaceSessions({
         syncOwnerSessions({ focus: false });
         return;
       }
-      terminalSurfaces.show(sessionId);
+      if (!deferReveal) terminalSurfaces.show(sessionId);
       if (ownerKey) selectedSessionByOwner.set(selectionKey(ownerKey), sessionId);
       if (proposal) setSessionStatus("Proposal session · interactive");
-      else await refreshSessionEvidence(sessionId);
+      else if (!deferEvidence) await refreshSessionEvidence(sessionId);
       syncOwnerSessions();
     },
   );
+
+  async function finishSessionStartup(sessionId) {
+    const ownerKey = sessionOwners.get(sessionId);
+    if (!ownerKey || ownerKey !== selectedOwnerKey())
+      throw new Error("The attached session is not selected for this owner.");
+    const runtime = await getRuntime();
+    if (!runtime) throw new Error("Terminal runtime is unavailable.");
+    terminalSurfaces.show(sessionId);
+    selectedSessionByOwner.set(selectionKey(ownerKey), sessionId);
+    runtime.select(sessionId);
+    await refreshSessionEvidence(sessionId);
+    syncOwnerSessions();
+  }
 
   async function restoreTrackedOwnerSession(owner) {
     const ownerKey = `${owner.type}:${owner.id}`;
@@ -403,6 +427,7 @@ export function createWorkspaceSessions({
     removeSessionTab(sessionId);
     openSessions.delete(sessionId);
     sessionOwners.delete(sessionId);
+    sessionRestoreRecords.delete(sessionId);
     if (ownerKey && selectedSessionByOwner.get(selectionKey(ownerKey)) === sessionId)
       selectedSessionByOwner.delete(selectionKey(ownerKey));
     return true;
@@ -529,6 +554,7 @@ export function createWorkspaceSessions({
 
   return {
     showSession,
+    finishSessionStartup,
     restoreTrackedOwnerSession,
     syncOwnerSessions,
     openRepositoryToolTerminal,

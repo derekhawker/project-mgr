@@ -1,14 +1,21 @@
-import { createSignal, For, Show } from "solid-js";
-import { Button } from "@ui-lib";
+import { createMemo, createSignal, For, Show } from "solid-js";
+import { Button, Input } from "@ui-lib";
 import { TreeFolder } from "../../components/TreeFolder.jsx";
 import { RepositoryDirectoryBranch } from "./RepositoryDirectoryBranch.jsx";
-import { buildRepositoryDirectoryTree } from "./directoryGroups.js";
+import {
+  buildRepositoryDirectoryTree,
+  filterRepositoryDirectoryTree,
+} from "./directoryGroups.js";
 import styles from "./RepositoryDirectories.module.css";
 
 export function RepositoryDirectories(props) {
   const [deleteMode, setDeleteMode] = createSignal(false);
   const [selectedIds, setSelectedIds] = createSignal(new Set());
-  const roots = () => buildRepositoryDirectoryTree(props.directories());
+  const [search, setSearch] = createSignal("");
+  const tree = createMemo(() => buildRepositoryDirectoryTree(props.directories()));
+  const roots = createMemo(() =>
+    filterRepositoryDirectoryTree(tree(), search()),
+  );
   const startDelete = (repositoryId) => {
     setSelectedIds(new Set([repositoryId]));
     setDeleteMode(true);
@@ -27,6 +34,13 @@ export function RepositoryDirectories(props) {
 
   return (
     <section class={styles.navigator} aria-label="Repository directories">
+      <Input
+        type="search"
+        aria-label="Search repositories by name or path"
+        placeholder="Search repositories…"
+        value={search()}
+        onInput={(event) => setSearch(event.currentTarget.value)}
+      />
       <Show when={deleteMode()}>
         <div class={styles.bulkActions}>
           <Button onClick={cancelDelete}>Cancel</Button>
@@ -49,7 +63,15 @@ export function RepositoryDirectories(props) {
       >
         <Show
           when={roots().length > 0}
-          fallback={<li class={styles.empty}>No directories saved yet.</li>}
+          fallback={
+            <li class={styles.empty}>
+              {search().trim()
+                ? "No repositories match this search."
+                : props.directories().length
+                  ? "No repositories saved yet."
+                  : "No directories saved yet."}
+            </li>
+          }
         >
           <For each={roots()}>
             {(root) => (

@@ -4645,8 +4645,9 @@ impl ManagementStore {
             "UPDATE sessions SET last_known_status='prompting', reconciliation_status='unknown',
              reconciliation_uncertain=1, updated_at=?2
              WHERE open_code_session_id=?1 AND
-               last_known_status IN ('failed', 'unknown', 'reconnecting') AND
-               (last_known_status='failed' OR reconciliation_uncertain=1)",
+               (last_known_status='starting' OR
+                (last_known_status IN ('failed', 'unknown', 'reconnecting') AND
+                 (last_known_status='failed' OR reconciliation_uncertain=1)))",
             params![session_id, updated_at],
         )?;
         if changed == 0 {
@@ -8790,6 +8791,32 @@ mod tests {
         assert!(store
             .claim_retry_initial_prompt("ses-retry-claim", CREATED + 2)
             .is_err());
+
+        store
+            .create_workspace(&workspace("w-retry-starting", "retry-starting"))
+            .unwrap();
+        store
+            .create_task(&task("t-retry-starting", "w-retry-starting", "request"))
+            .unwrap();
+        store
+            .create_session_with_model(
+                &NewSession {
+                    open_code_session_id: "ses-retry-starting".into(),
+                    owner: SessionOwner::Task("t-retry-starting".into()),
+                    directory: "/fixtures/retry-starting".into(),
+                    last_known_status: "starting".into(),
+                    created_at: CREATED,
+                },
+                "openai/gpt-6-luna",
+            )
+            .unwrap();
+        assert_eq!(
+            store
+                .claim_retry_initial_prompt("ses-retry-starting", CREATED + 1)
+                .unwrap()
+                .last_known_status,
+            "prompting"
+        );
     }
 
     #[test]

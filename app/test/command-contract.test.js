@@ -395,7 +395,7 @@ test("New-work dialog class and accessible name derive from Solid view and propo
   );
   assert.match(
     newWorkModal,
-    /title=\{props\.reviewVisible\(\) \? proposal\(\)\.title : "New Workspace"\}[\s\S]*size=\{props\.reviewVisible\(\) \? "wide" : "compact"\}/,
+    /title=\{[\s\S]*?recoveringQuickRequest\(\)[\s\S]*?props\.reviewVisible\(\)[\s\S]*?proposal\(\)\.title[\s\S]*?"New Workspace"[\s\S]*?size=\{props\.reviewVisible\(\) \? "wide" : "compact"\}/,
   );
   assert.match(
     newWorkModal,
@@ -476,7 +476,7 @@ test("New-work proposal model selector disabled state is Solid-owned", () => {
   );
   assert.match(
     newWorkModal,
-    /id="proposal-model"[\s\S]*?required[\s\S]*?disabled=\{props\.proposalModelDisabled\(\)\}[\s\S]*?aria-busy=\{props\.proposalModelDisabled\(\) \? "true" : undefined\}[\s\S]*?value=\{props\.proposalSelectedModel\(\)\}/,
+    /id="proposal-model"[\s\S]*?required[\s\S]*?disabled=\{[\s\S]*?props\.proposalModelDisabled\(\)[\s\S]*?recoveringQuickRequest\(\)[\s\S]*?aria-busy=\{props\.proposalModelDisabled\(\) \? "true" : undefined\}[\s\S]*?value=\{props\.proposalSelectedModel\(\)\}/,
   );
   assert.match(
     state,
@@ -939,7 +939,10 @@ test("Quick Requests use a dedicated available-height page with a visible way ba
     rightContentShell,
     /"quick-request-terminal-page": props\.quickRequestTerminalPage\(\)/,
   );
-  assert.match(main, /setQuickRequestTerminalPage\(isQuickRequest\)/);
+  assert.match(
+    main,
+    /setQuickRequestTerminalPage\(isQuickRequest && !deferReveal\)/,
+  );
   assert.doesNotMatch(
     main,
     /classList\.(?:add|remove|toggle)\(['"](?:owner-active|quick-request-terminal-page)/,

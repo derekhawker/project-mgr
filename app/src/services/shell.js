@@ -308,7 +308,6 @@ export async function submitResolvedQuickRequestFlow({
   waitForTerminal,
   onCreated,
   showSession,
-  refreshRequests,
 }) {
   if (!originalPrompt?.trim())
     throw new Error("Enter an original prompt first.");
@@ -324,9 +323,12 @@ export async function submitResolvedQuickRequestFlow({
   const sessionId = record.session?.openCodeSessionId;
   if (!sessionId)
     throw new Error("Quick Request creation returned no session ID.");
-  await showSession(sessionId);
+  await showSession(sessionId, {
+    deferEvidence: true,
+    deferReveal: true,
+    requireExactSession: true,
+  });
   await startQuickRequestPrompt(invoke, record.task.id, model);
-  await refreshRequests();
   return record;
 }
 
@@ -335,6 +337,27 @@ export function retryQuickRequestPrompt(invoke, requestId, model) {
     requestId,
     model,
   });
+}
+
+export async function retryResolvedQuickRequestFlow({
+  invoke,
+  record,
+  model,
+  showSession,
+}) {
+  const sessionId = record?.session?.openCodeSessionId;
+  const requestId = record?.task?.id;
+  if (!sessionId || !requestId)
+    throw new Error("The saved Quick Request session is unavailable.");
+  await showSession(sessionId, {
+    deferEvidence: true,
+    deferReveal: true,
+    requireExactSession: true,
+  });
+  const result = await retryQuickRequestPrompt(invoke, requestId, model);
+  if (typeof result?.promptSent !== "boolean")
+    throw new Error("Quick Request recovery returned an invalid result.");
+  return result;
 }
 
 export function sessionTabAttributes(sessionId, selected) {

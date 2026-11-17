@@ -702,17 +702,23 @@ fn parse_worktrees(repo_root: &Path) -> SafetyResult<Vec<GitWorktreeInfo>> {
 /// full checkout details.
 pub fn inspect_repository_for_discovery(path: &Path) -> SafetyResult<GitRepositoryInfo> {
     reject_parent_components(path)?;
-    let root_text = git_text(path, &["rev-parse", "--show-toplevel"])?;
+    let canonical_candidate = fs::canonicalize(path)?;
+    // Keep the two independent path queries in one compatible rev-parse call.
+    // Parse bytes strictly: lossy UTF-8 or extra output could identify another
+    // checkout while still looking like a valid path.
+    let arguments = [
+        OsStr::new("rev-parse"),
+        OsStr::new("--show-toplevel"),
+        OsStr::new("--git-common-dir"),
+    ];
+    let output = git_output(&canonical_candidate, &arguments)?;
+    let (root_text, common_text) = parse_discovery_paths(&output.stdout)?;
     let canonical_root = fs::canonicalize(root_text)?;
-    // Query from the canonical top-level path so any relative common-dir
-    // result is resolved against a stable base. Avoid newer rev-parse flags to
-    // retain compatibility with the Git versions commonly shipped on macOS.
-    let common_text = git_text(&canonical_root, &["rev-parse", "--git-common-dir"])?;
     let common_path = PathBuf::from(common_text);
     let common_path = if common_path.is_absolute() {
         common_path
     } else {
-        canonical_root.join(common_path)
+        canonical_candidate.join(common_path)
     };
     let canonical_common_dir = fs::canonicalize(common_path)?;
     Ok(GitRepositoryInfo {
@@ -723,6 +729,27 @@ pub fn inspect_repository_for_discovery(path: &Path) -> SafetyResult<GitReposito
         default_branch: None,
         branches: Vec::new(),
     })
+}
+
+fn parse_discovery_paths(output: &[u8]) -> SafetyResult<(&str, &str)> {
+    let stdout = std::str::from_utf8(output)
+        .map_err(|_| SafetyError::Git("rev-parse returned non-UTF-8 paths".into()))?;
+    if !stdout.ends_with('\n') {
+        return Err(SafetyError::Git(
+            "rev-parse returned incomplete path output".into(),
+        ));
+    }
+    let lines = stdout.split_terminator('\n').collect::<Vec<_>>();
+    if lines.len() != 2
+        || lines
+            .iter()
+            .any(|line| line.is_empty() || line.contains('\r'))
+    {
+        return Err(SafetyError::Git(
+            "rev-parse returned ambiguous path output".into(),
+        ));
+    }
+    Ok((lines[0], lines[1]))
 }
 
 /// Linked worktrees and submodules are Git checkouts, but they are not
@@ -975,6 +1002,23 @@ pub(crate) fn remove_empty_managed_home(
 mod tests {
     use super::*;
     use tempfile::tempdir;
+
+    #[test]
+    fn discovery_output_requires_exact_utf8_two_line_paths() {
+        assert_eq!(
+            parse_discovery_paths(b"/repo\n/repo/.git\n").unwrap(),
+            ("/repo", "/repo/.git")
+        );
+        for malformed in [
+            &b"/repo\n"[..],
+            &b"/repo\n/repo/.git\nextra\n"[..],
+            &b"/repo\n\n"[..],
+            &[b'/', b'r', b'e', b'p', b'o', b'\n', 0xff, b'\n'][..],
+            &b"/repo\r\n/repo/.git\n"[..],
+        ] {
+            assert!(parse_discovery_paths(malformed).is_err());
+        }
+    }
 
     fn git(path: &Path, args: &[&str]) {
         let output = Command::new("git")

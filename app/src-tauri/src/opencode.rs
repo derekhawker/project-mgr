@@ -141,6 +141,29 @@ pub struct SessionHistory {
     pub cursor: Cursors,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InitialPromptRetryAssessment {
+    SafeToSend,
+    AlreadyAccepted,
+    Ambiguous,
+}
+
+/// Only a completely empty history proves an initial prompt has not appeared.
+/// A user message means it was accepted; any other nonempty shape is uncertain
+/// and must fail closed rather than risk sending the prompt twice.
+pub fn assess_initial_prompt_retry(messages: &[Value]) -> InitialPromptRetryAssessment {
+    if messages.is_empty() {
+        return InitialPromptRetryAssessment::SafeToSend;
+    }
+    if messages
+        .iter()
+        .any(|message| message.get("type").and_then(Value::as_str) == Some("user"))
+    {
+        return InitialPromptRetryAssessment::AlreadyAccepted;
+    }
+    InitialPromptRetryAssessment::Ambiguous
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct ActiveSession {
     #[serde(rename(serialize = "kind", deserialize = "type"))]
@@ -1852,6 +1875,26 @@ mod tests {
                 ..Default::default()
             }),
             SessionApplicationStatus::ReadyForReview
+        );
+    }
+
+    #[test]
+    fn retry_assessment_requires_empty_or_explicit_user_history() {
+        assert_eq!(
+            assess_initial_prompt_retry(&[]),
+            InitialPromptRetryAssessment::SafeToSend
+        );
+        assert_eq!(
+            assess_initial_prompt_retry(&[json!({"type":"user"})]),
+            InitialPromptRetryAssessment::AlreadyAccepted
+        );
+        assert_eq!(
+            assess_initial_prompt_retry(&[json!({"type":"assistant"})]),
+            InitialPromptRetryAssessment::Ambiguous
+        );
+        assert_eq!(
+            assess_initial_prompt_retry(&[json!({"unexpected":"shape"})]),
+            InitialPromptRetryAssessment::Ambiguous
         );
     }
 

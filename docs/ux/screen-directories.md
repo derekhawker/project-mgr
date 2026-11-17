@@ -13,14 +13,17 @@ content area, not in the masthead. Keep the masthead on the neutral gray page
 background. Give the form and directory group cards a subtly raised gray surface
 with a shallow layered shadow instead of visible outlines. Separate content
 areas with spacing. Center the content cards and cap them at 1000px; keep the
-masthead full-width. The tree remains a Docs-style directory tree. For scan roots
-sharing a filesystem-level path
-component, combine them at their shortest shared parent when they contain at
-most five repositories. Keep them separate above five; a lone scan root keeps
-its own path. Within each displayed group, collapse child folders with at most
-five repositories into their parent; retain folders with more than five. Apply
-that rule independently to each branch, and do not promote empty ancestors such
-as `/home` or `/tmp` above the data-bearing directory. Render actual folders
+masthead full-width. The tree remains a Docs-style directory tree. For catalogs
+with at most 20 entries, retain existing grouping: compatible scan roots may
+combine at their shortest shared parent when they contain at most five
+repositories, and child folders with at most five repositories may collapse
+into their parent. For catalogs above 20 entries, never combine scan roots or
+collapse child folders. Count disabled repositories toward the threshold,
+regardless of search. Sort sibling roots, folders, and repositories by
+case-insensitive name. Keep search sticky on this page; match repository names
+and full paths case-insensitively, showing matching repositories and their
+ancestor folders only. Do not promote empty ancestors such as `/home` or `/tmp`
+above the data-bearing directory. Render actual folders
 with folder icons, but repository rows without icons. Bold repo names and keep
 their paths visible, wrapping when needed. Reserve
 C64-inspired lavender/cyan for selected and focus states. Native picker
@@ -57,13 +60,13 @@ the failure in the page banner so the user can recover or navigate away.
   and persists each saved value.
   This is where the app keeps managed base checkouts, not a replacement for the
   existing source checkouts shown below.
-- Combine scan roots sharing a filesystem-level path component at their
-  shortest common parent when their combined repository count is at most five.
-  Keep the roots separate above five. A single root stays at its own path, so
-  empty ancestors such as `/home` and `/tmp` are not shown as directory groups.
-- Within a displayed group, collapse child folders containing at most five
-  repositories into the parent. Keep larger child folders as groups and apply
-  the rule independently through the tree.
+- For catalogs up to 20 entries, apply the existing scan-root and child-folder
+  grouping rules described above. Above 20, preserve all saved roots and child
+  folders without collapsing them. Disabled entries count toward the threshold;
+  filtering does not.
+- Sort each sibling level case-insensitively by displayed name. Sticky search
+  matches repository names and full paths case-insensitively and retains folder
+  ancestors required to reach each matching repository.
 - Scan every saved directory at startup. Never scan the configured OpenCode
   Projects area or the configured repository-library root, including when a
   saved scan root is one of their ancestors.
