@@ -294,6 +294,7 @@ pub fn run() {
             workspace_ticket_session_create,
             workspace_ticket_session_close,
             change_review_load,
+            change_review_file_viewed_set,
             change_review_full_diff,
             presentation_preferences_get,
             presentation_preferences_set_navigator_width,
@@ -577,11 +578,7 @@ impl workspace_tickets::TicketInvestigationRuntime for TicketWorkAdapter<'_> {
             })
             .await;
             if send_result.is_err() {
-                log_ticket_investigation_failure(
-                    &app,
-                    Some(&session_id),
-                    "prompt_submission",
-                );
+                log_ticket_investigation_failure(&app, Some(&session_id), "prompt_submission");
             }
         });
         Ok(())
@@ -1036,19 +1033,9 @@ fn resolve_workspace_tools_directory(
     match ticket_filename {
         Some(filename) => {
             let app_data = app.path().app_data_dir().map_err(|e| e.to_string())?;
-            require_ticket_context(
-                app,
-                store,
-                owner_type,
-                owner_id,
-                Some(filename),
-                None,
-            )?;
+            require_ticket_context(app, store, owner_type, owner_id, Some(filename), None)?;
             workspace_tickets::selected_ticket_working_directory(
-                store,
-                &app_data,
-                owner_id,
-                filename,
+                store, &app_data, owner_id, filename,
             )
         }
         None => workspace_tickets::workspace_repository_checkout(store, owner_id),
@@ -1115,6 +1102,9 @@ async fn change_review_load(
     app: AppHandle,
 ) -> Result<Vec<change_review::ReviewRepository>, String> {
     run_review_work(move || {
+        if request.owner_type != "workspace" {
+            return Err("Change Review requires a Workspace owner.".into());
+        }
         let store = app.state::<ManagementStore>();
         require_ticket_context(
             &app,
@@ -1129,9 +1119,77 @@ async fn change_review_load(
             &store,
             &app_data,
             &request.owner_id,
-            request.ticket_filename.as_deref().ok_or("Select a ticket before opening Change Review.")?,
+            request
+                .ticket_filename
+                .as_deref()
+                .ok_or("Select a ticket before opening Change Review.")?,
         )?;
-        change_review::load_for_repository_path(&store, &repository_id, &directory)
+        change_review::load_for_ticket_repository_path(
+            &store,
+            &request.owner_id,
+            request
+                .ticket_filename
+                .as_deref()
+                .ok_or("Select a ticket before opening Change Review.")?,
+            &repository_id,
+            &directory,
+        )
+    })
+    .await
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ChangeReviewViewedFileRequest {
+    owner_type: String,
+    owner_id: String,
+    repository_id: String,
+    path: String,
+    viewed: bool,
+    ticket_filename: Option<String>,
+}
+
+#[tauri::command]
+async fn change_review_file_viewed_set(
+    request: ChangeReviewViewedFileRequest,
+    app: AppHandle,
+) -> Result<change_review::ReviewViewState, String> {
+    run_review_work(move || {
+        if request.owner_type != "workspace" {
+            return Err("Change Review requires a Workspace owner.".into());
+        }
+        let store = app.state::<ManagementStore>();
+        require_ticket_context(
+            &app,
+            &store,
+            &request.owner_type,
+            &request.owner_id,
+            request.ticket_filename.as_deref(),
+            Some(&request.repository_id),
+        )?;
+        let ticket_filename = request
+            .ticket_filename
+            .as_deref()
+            .ok_or("Select a ticket before updating review state.")?;
+        let app_data = app.path().app_data_dir().map_err(|e| e.to_string())?;
+        let (directory, repository_id) = workspace_tickets::selected_ticket_working_directory(
+            &store,
+            &app_data,
+            &request.owner_id,
+            ticket_filename,
+        )?;
+        if repository_id != request.repository_id {
+            return Err("Repository does not belong to the selected ticket's Workspace.".into());
+        }
+        change_review::set_ticket_file_viewed(
+            &store,
+            &request.owner_id,
+            ticket_filename,
+            &repository_id,
+            &directory,
+            &request.path,
+            request.viewed,
+        )
     })
     .await
 }
@@ -1166,7 +1224,10 @@ async fn change_review_full_diff(
             &store,
             &app_data,
             &request.owner_id,
-            request.ticket_filename.as_deref().ok_or("Select a ticket before opening Change Review.")?,
+            request
+                .ticket_filename
+                .as_deref()
+                .ok_or("Select a ticket before opening Change Review.")?,
         )?;
         if repository_id != request.repository_id {
             return Err("Repository does not belong to the selected ticket's Workspace.".into());
@@ -1196,7 +1257,10 @@ async fn docs_list(
             &store,
             &app_data,
             &request.owner_id,
-            request.ticket_filename.as_deref().ok_or("Select a ticket before opening Docs.")?,
+            request
+                .ticket_filename
+                .as_deref()
+                .ok_or("Select a ticket before opening Docs.")?,
         )?;
         docs_reader::list_for_repository_path(&store, &repository_id, &directory)
     })
@@ -1233,17 +1297,15 @@ async fn docs_read(
             &store,
             &app_data,
             &request.owner_id,
-            request.ticket_filename.as_deref().ok_or("Select a ticket before opening Docs.")?,
+            request
+                .ticket_filename
+                .as_deref()
+                .ok_or("Select a ticket before opening Docs.")?,
         )?;
         if request.repository_id.as_deref() != Some(repository_id.as_str()) {
             return Err("Document source is not available in this Workspace.".into());
         }
-        docs_reader::read_for_repository_path(
-            &store,
-            &repository_id,
-            &directory,
-            &request.path,
-        )
+        docs_reader::read_for_repository_path(&store, &repository_id, &directory, &request.path)
     })
     .await
 }
@@ -1319,7 +1381,9 @@ async fn repo_tool_terminal_start(
             request.ticket_filename.as_deref(),
         )?;
         if repository_id != request.repository_id {
-            return Err("Repository is not associated with the selected Workspace or ticket.".into());
+            return Err(
+                "Repository is not associated with the selected Workspace or ticket.".into(),
+            );
         }
         let launch = repo_tools::launch_for_subdirectory(
             &directory,
@@ -2118,11 +2182,7 @@ fn start_ticket_status_worker(app: AppHandle, app_data: PathBuf) {
             if runtime.is_shutting_down() {
                 break;
             }
-            reconcile_ticket_status_snapshot(
-                &poll_root,
-                &runtime,
-                poll_log_directory.as_deref(),
-            );
+            reconcile_ticket_status_snapshot(&poll_root, &runtime, poll_log_directory.as_deref());
             drop(runtime);
             thread::sleep(TICKET_STATUS_POLL_INTERVAL);
         });
@@ -3582,23 +3642,14 @@ async fn quick_request_start_prompt(
         })();
         let failure = match result {
             Ok(()) => store
-                .update_session_status(
-                    &session.open_code_session_id,
-                    "running",
-                    now_millis(),
-                )
+                .update_session_status(&session.open_code_session_id, "running", now_millis())
                 .err()
                 .map(|error| error.to_string()),
             Err(error) => Some(error),
         };
         if let Some(error) = failure {
             let message = mark_prompt_failed(&store, &session.open_code_session_id, error.clone());
-            log_initial_prompt_failure(
-                &app,
-                &session.open_code_session_id,
-                &prompt,
-                &error,
-            );
+            log_initial_prompt_failure(&app, &session.open_code_session_id, &prompt, &error);
             Err(message)
         } else {
             Ok(())
@@ -3681,27 +3732,14 @@ async fn quick_request_retry_prompt(
         })();
         let failure = match result {
             Ok(()) => store
-                .update_session_status(
-                    &claimed.open_code_session_id,
-                    "running",
-                    now_millis(),
-                )
+                .update_session_status(&claimed.open_code_session_id, "running", now_millis())
                 .err()
                 .map(|error| error.to_string()),
             Err(error) => Some(error),
         };
         if let Some(error) = failure {
-            let message = mark_prompt_failed(
-                &store,
-                &claimed.open_code_session_id,
-                error.clone(),
-            );
-            log_initial_prompt_failure(
-                &app,
-                &claimed.open_code_session_id,
-                &prompt,
-                &error,
-            );
+            let message = mark_prompt_failed(&store, &claimed.open_code_session_id, error.clone());
+            log_initial_prompt_failure(&app, &claimed.open_code_session_id, &prompt, &error);
             Err(message)
         } else {
             Ok(QuickRequestRetryPromptResult { prompt_sent: true })

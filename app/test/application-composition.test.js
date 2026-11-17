@@ -23,6 +23,8 @@ test("application areas compose once and retain terminals across navigation and 
     "Node",
     "Element",
     "HTMLElement",
+    "customElements",
+    "CSSStyleSheet",
     "HTMLHeadElement",
     "Event",
     "MouseEvent",
@@ -52,9 +54,11 @@ test("application areas compose once and retain terminals across navigation and 
         select(id, { focus = true } = {}) {
           if (focus) document.getElementById("terminal-" + id)?.focus();
         }
+        reopen() {}
         isExited(id) { return this.exited.has(id); }
         exit(id) { this.exited.add(id); this.options.onExit({sessionId: id}); }
         async restart(id, directory, container) { this.restarted.push({id, directory, container}); }
+        async suspendResizing() {}
         forget(id) { this.forgotten.push(id); }
         dispose() {}
       }
@@ -240,10 +244,10 @@ test("application areas compose once and retain terminals across navigation and 
       () =>
         !$("#change-review-page").hidden && !$("#show-change-review").disabled,
     );
-    $('[data-review-mode="split"]').click();
+    $('[role="switch"]').click();
     assert.equal(
-      $('[data-review-mode="split"]').getAttribute("aria-pressed"),
-      "true",
+      $('[role="switch"]').checked,
+      true,
     );
     await waitFor(() => !$("#show-docs").disabled);
     $("#show-docs").click();
@@ -251,8 +255,8 @@ test("application areas compose once and retain terminals across navigation and 
     $("#show-change-review").click();
     await waitFor(() => !$("#change-review-page").hidden);
     assert.equal(
-      $('[data-review-mode="split"]').getAttribute("aria-pressed"),
-      "true",
+      $('[role="switch"]').checked,
+      true,
     );
     window.document.getElementById(`session-tab-${ticketSessionId}`).click();
     $('[aria-label="Close Example repository · Fixture test"]').click();
@@ -351,16 +355,13 @@ test("application areas compose once and retain terminals across navigation and 
 
     $('[data-new-work-type="workspace"]').click();
     assert.equal($("#new-work-modal").open, true);
-    assert.equal($("#quick-request-full-list").hidden, false);
-    input("#new-work-prompt", "Create a fixture workspace");
-    $("#new-work-capture").dispatchEvent(
+    await waitFor(() => !$("#workspace-repository-select").disabled);
+    $("#workspace-repository-select").click();
+    $('[data-value="fixture-repo"]').click();
+    input("#workspace-create-name", "Composition Workspace");
+    $("#workspace-create-form").dispatchEvent(
       new window.Event("submit", { bubbles: true, cancelable: true }),
     );
-    await waitFor(() => !$("#new-work-review").hidden);
-    assert.equal($("#proposal-repositories").textContent.trim(), "None");
-    await waitFor(() => !$("#proposal-model").disabled);
-    input("#workspace-review-name", "Composition Workspace");
-    $("#proposal-create").click();
     await waitFor(() => !$("#new-work-modal").open);
     assert.match($("#workspace-list").textContent, /Composition Workspace/);
     assert.equal($("#workspace-shell").hidden, true);

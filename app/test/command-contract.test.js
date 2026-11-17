@@ -641,7 +641,7 @@ test("Tools toolbar disabled state is presented by the repository-tools componen
   );
   assert.match(
     repositoryToolsMenu,
-    /triggerId=\{props\.triggerId \?\? "show-repo-tools"\}[\s\S]*?disabled=\{props\.disabled\(\)\}[\s\S]*?hidden=\{!props\.available\(\)\}[\s\S]*?open=\{props\.open\(\)\}/,
+    /triggerId=\{props\.triggerId \?\? "show-repo-tools"\}[\s\S]*?disabled=\{props\.disabled\(\)\}[\s\S]*?hidden=\{!props\.available\(\)\}[\s\S]*?open=\{props\.open\}/,
   );
   assert.match(
     main,

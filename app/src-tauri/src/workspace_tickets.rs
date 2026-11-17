@@ -645,6 +645,15 @@ pub fn record_ticket_session(markdown: &str, session_id: Option<&str>) -> Result
             return Err("Invalid OpenCode session ID".into());
         }
     }
+    let lines: Vec<String> = markdown.split_inclusive('\n').map(str::to_owned).collect();
+    let frontmatter_end = frontmatter_bounds(&lines)?;
+    let has_legacy_session_list = lines
+        .iter()
+        .take(frontmatter_end)
+        .any(|line| line.trim_end_matches(['\r', '\n']) == "work_session_ids:");
+    if previous_active.as_deref() == session_id && !has_legacy_session_list {
+        return Ok(markdown.to_owned());
+    }
     let fields = [
         ("work_session_id", session_id.map(str::to_owned)),
         ("work_session_ids", None),
@@ -2198,6 +2207,7 @@ mod tests {
         .unwrap();
         assert_eq!(opened.session, "ses_bound");
         assert_eq!(runtime.attached[0].1, worktree.canonicalize().unwrap());
+        assert_eq!(fs::read_to_string(&ticket_path).unwrap(), first_markdown);
         assert_eq!(
             fs::metadata(&ticket_path).unwrap().modified().unwrap(),
             old_modified

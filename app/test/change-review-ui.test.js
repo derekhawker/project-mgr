@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   loadChangeReview,
   loadFullDiff,
+  setChangeReviewFileViewed,
 } from "../src/views/workspace/change-review/changeReviewUi.js";
 
 const sample = [
@@ -11,11 +12,14 @@ const sample = [
     name: "Alpha",
     path: "/repos/alpha",
     comparisonTarget: "origin/main",
+    mergeBase: "abc123",
     comparisonError: null,
     files: [
       {
         path: "src/a.js",
         status: "M",
+        changeSource: "branch",
+        viewed: false,
         diff: "--- a/src/a.js\n+++ b/src/a.js\n-old\n+new\n",
         diffError: null,
       },
@@ -26,12 +30,15 @@ const sample = [
     name: "Beta",
     path: "/repos/beta",
     comparisonTarget: null,
+    mergeBase: null,
     comparisonError:
       "Cannot resolve origin/main, origin/master, local main, or local master",
     files: [
       {
         path: "new.txt",
         status: "untracked",
+        changeSource: "workingTree",
+        viewed: false,
         diff: "+hello\n",
         diffError: null,
       },
@@ -62,6 +69,48 @@ test("Change Review adapter sends the selected owner and validates repository re
         "w1",
       ),
     /unknown field/,
+  );
+});
+
+test("viewed-file adapter sends ticket-scoped identity and validates its state", async () => {
+  let sent;
+  const result = await setChangeReviewFileViewed(
+    async (name, payload) => {
+      sent = { name, payload };
+      return { headCommit: "head-2", viewedFiles: ["src/a.js"] };
+    },
+    "workspace",
+    "w1",
+    "r1",
+    "src/a.js",
+    true,
+    "ticket-a.md",
+  );
+  assert.deepEqual(sent, {
+    name: "change_review_file_viewed_set",
+    payload: {
+      request: {
+        ownerType: "workspace",
+        ownerId: "w1",
+        repositoryId: "r1",
+        path: "src/a.js",
+        viewed: true,
+        ticketFilename: "ticket-a.md",
+      },
+    },
+  });
+  assert.deepEqual(result, { headCommit: "head-2", viewedFiles: ["src/a.js"] });
+  await assert.rejects(
+    () =>
+      setChangeReviewFileViewed(
+        async () => ({ headCommit: "head-2", viewedFiles: [2] }),
+        "workspace",
+        "w1",
+        "r1",
+        "src/a.js",
+        true,
+      ),
+    /must be string/,
   );
 });
 

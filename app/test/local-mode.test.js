@@ -19,7 +19,7 @@ test("local entry points do not start Tauri and live is explicit without recursi
   assert.equal(pkg.scripts.live, "node scripts/live.js");
   assert.equal(tauri.build.beforeDevCommand, "npm run dev:server");
   assert.notEqual(pkg.scripts["dev:server"], pkg.scripts.dev);
-  assert.equal(pkg.scripts.test, "node scripts/test-safe.js");
+  assert.equal(pkg.scripts.test, "node scripts/test-safe.js default");
   assert.match(
     readFileSync(new URL("../scripts/test-safe.js", import.meta.url), "utf8"),
     /model-loader-integration\.test\.js/,

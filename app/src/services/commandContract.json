@@ -5357,6 +5357,10 @@
             "type": "string",
             "nullable": true
           },
+          "mergeBase": {
+            "type": "string",
+            "nullable": true
+          },
           "comparisonError": {
             "type": "string",
             "nullable": true
@@ -5372,6 +5376,10 @@
                 "status": {
                   "type": "string"
                 },
+                "changeSource": {
+                  "type": "string",
+                  "enum": ["branch", "workingTree"]
+                },
                 "diff": {
                   "type": "string",
                   "nullable": true
@@ -5379,13 +5387,18 @@
                 "diffError": {
                   "type": "string",
                   "nullable": true
+                },
+                "viewed": {
+                  "type": "boolean"
                 }
               },
               "required": [
                 "path",
                 "status",
+                "changeSource",
                 "diff",
-                "diffError"
+                "diffError",
+                "viewed"
               ],
               "additionalProperties": false
             }
@@ -5396,11 +5409,43 @@
           "name",
           "path",
           "comparisonTarget",
+          "mergeBase",
           "comparisonError",
           "files"
         ],
         "additionalProperties": false
       }
+    }
+  },
+  "change_review_file_viewed_set": {
+    "payload": {
+      "type": "object",
+      "required": ["request"],
+      "properties": {
+        "request": {
+          "type": "object",
+          "required": ["ownerType", "ownerId", "repositoryId", "path", "viewed"],
+          "properties": {
+            "ownerType": { "type": "string" },
+            "ownerId": { "type": "string" },
+            "repositoryId": { "type": "string" },
+            "path": { "type": "string" },
+            "viewed": { "type": "boolean" },
+            "ticketFilename": { "type": "string" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "object",
+      "required": ["headCommit", "viewedFiles"],
+      "properties": {
+        "headCommit": { "type": "string" },
+        "viewedFiles": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
     }
   },
   "repo_tools_list": {

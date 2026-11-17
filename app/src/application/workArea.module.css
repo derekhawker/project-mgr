@@ -16,7 +16,7 @@
 
 .docs {
   display: grid;
-  grid-template-columns: minmax(0, min(var(--navigator-width, 300px), 60%)) 6px minmax(0, 1fr);
+  grid-template-columns: minmax(0, min(var(--navigator-width, 285px), 60%)) 6px minmax(0, 1fr);
 }
 
 .docs :global(.docs-files),
@@ -51,6 +51,33 @@
   color: var(--ui-text);
   background: var(--ui-surface-pressed);
   font-weight: 650;
+}
+
+.review :global(.change-review-search) {
+  display: block;
+  margin-bottom: var(--ui-space-8);
+}
+
+.review :global(.change-review-search input) {
+  width: 100%;
+  min-width: 0;
+}
+
+.review :global(.change-review-repository details) {
+  margin: var(--ui-space-6) 0;
+}
+
+.review :global(.change-review-repository summary) {
+  padding: var(--ui-space-4) 0;
+  color: var(--ui-muted);
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.review :global(.change-review-empty-search) {
+  color: var(--ui-muted);
+  font-size: 12px;
 }
 
 .docs :global(.docs-content) {
@@ -184,7 +211,15 @@
 
 .review :global(.change-review-mode) {
   display: flex;
+  align-items: center;
   gap: var(--ui-space-4);
+  color: var(--ui-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.review :global(.change-review-mode input) {
+  accent-color: var(--ui-accent);
 }
 
 .review :global(.change-review-content) {
@@ -192,7 +227,7 @@
   min-height: 0;
   flex: 1;
   display: grid;
-  grid-template-columns: minmax(0, min(var(--navigator-width, 300px), 60%)) 6px minmax(0, 1fr);
+  grid-template-columns: minmax(0, min(var(--navigator-width, 285px), 60%)) 6px minmax(0, 1fr);
   background: var(--ui-background);
 }
 

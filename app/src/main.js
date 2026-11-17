@@ -28,7 +28,11 @@ import {
   initializeModelSelector,
   modelSelectorChoices,
 } from "./lib/modelSelector.js";
-import { loadChangeReview, loadFullDiff } from "./views/workspace/change-review/changeReviewUi.js";
+import {
+  loadChangeReview,
+  loadFullDiff,
+  setChangeReviewFileViewed,
+} from "./views/workspace/change-review/changeReviewUi.js";
 import { loadPresentationPreferences, saveFileNavigatorWidth, saveChangeReviewMode } from "./services/presentationPreferences.js";
 import { createChangeReviewController } from "./views/workspace/change-review/changeReviewController.js";
 import {
@@ -314,6 +318,7 @@ async function workWorkspaceTicket(workspaceId, filename) {
   if (selectedWorkspace?.id !== workspaceId)
     selectWorkspace(workspace, navigationData);
   setSelectedTicketFilename(filename);
+  if (!ticketArchived()) void refreshDocsAvailability();
   setTicketWorking(true);
   setTicketError("");
   try {
@@ -552,7 +557,7 @@ const [changeReviewRepositories, setChangeReviewRepositories] = createSignal(
 const [changeReviewError, setChangeReviewError] = createSignal("");
 const [changeReviewMode, setChangeReviewMode] = createSignal("unified");
 const [changeReviewSummary, setChangeReviewSummary] = createSignal("");
-const [navigatorWidth, setNavigatorWidth] = createSignal(300);
+const [navigatorWidth, setNavigatorWidth] = createSignal(285);
 let navigatorWidthChanged = false;
 let changeReviewModeChanged = false;
 let preferenceSave = Promise.resolve();
@@ -586,6 +591,38 @@ const changeReview = () =>
     navigatorWidth,
     onNavigatorResize: resizeNavigator,
     onMode: selectChangeReviewMode,
+    onFileViewed: async (repositoryId, path, viewed) => {
+      const ownerId = selectedWorkspace?.id;
+      const ticketFilename = selectedTicketFilename();
+      if (!ownerId || !ticketFilename)
+        throw new Error("Select a ticket before reviewing files.");
+      const state = await setChangeReviewFileViewed(
+        invoke,
+        "workspace",
+        ownerId,
+        repositoryId,
+        path,
+        viewed,
+        ticketFilename,
+      );
+      if (
+        selectedWorkspace?.id !== ownerId ||
+        selectedTicketFilename() !== ticketFilename
+      ) return;
+      setChangeReviewRepositories((repositories) =>
+        repositories.map((repository) =>
+          repository.repositoryId !== repositoryId
+            ? repository
+            : {
+                ...repository,
+                files: repository.files.map((file) => ({
+                  ...file,
+                  viewed: state.viewedFiles.includes(file.path),
+                })),
+              },
+        ),
+      );
+    },
     onFullDiff: async (repositoryId, path) => {
       const ownerId = selectedWorkspace?.id;
       if (!ownerId) throw new Error("No workspace selected.");

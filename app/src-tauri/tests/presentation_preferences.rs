@@ -10,7 +10,7 @@ fn navigator_width_survives_reopen_and_rejects_invalid_values() {
     std::fs::create_dir_all(&home).unwrap();
     let database = fixture.path().join("settings.sqlite");
     let store = ManagementStore::open_with_paths(&database, &home, fixture.path()).unwrap();
-    assert_eq!(load(&store).unwrap().shared.file_navigator.width, 300);
+    assert_eq!(load(&store).unwrap().shared.file_navigator.width, 285);
     store.set_setting("presentation_preferences", r#"{"shared":{"fileNavigator":{"width":300},"otherShared":true},"docs":{"theme":"example"}}"#, 1).unwrap();
     set_navigator_width(&store, 420).unwrap();
     assert_eq!(
@@ -20,6 +20,7 @@ fn navigator_width_survives_reopen_and_rejects_invalid_values() {
     set_change_review_mode(&store, ChangeReviewMode::Split).unwrap();
     assert!(serde_json::from_str::<ChangeReviewMode>("\"invalid\"").is_err());
     assert!(set_navigator_width(&store, 1).is_err());
+    assert!(set_navigator_width(&store, 601).is_err());
     drop(store);
     let reopened = ManagementStore::open_with_paths(&database, &home, fixture.path()).unwrap();
     assert_eq!(load(&reopened).unwrap().shared.file_navigator.width, 420);

@@ -1,0 +1,48 @@
+.pane {
+  display: flex;
+  flex-direction: column;
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+
+.viewport {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: auto;
+  color: var(--ui-text);
+  background: var(--ui-background);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  --diffs-bg: var(--ui-background);
+  --diffs-fg: var(--ui-text);
+}
+
+.reviewHeaderPrefix {
+  display: inline-flex;
+  align-items: center;
+}
+
+.viewedControl {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: 8px;
+  font: 12px/1.4 system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.viewedControl input {
+  accent-color: var(--ui-accent);
+}
+
+.sourceBadge {
+  display: inline-flex;
+  margin-right: 8px;
+  border: 1px solid var(--ui-border-light);
+  border-radius: 999px;
+  padding: 1px 6px;
+  color: var(--ui-muted);
+  font: 600 10px/1.5 system-ui, sans-serif;
+}

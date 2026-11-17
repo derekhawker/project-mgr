@@ -1,8 +1,9 @@
 // A browser fixture, not an implementation of the Rust backend. It never
 // invokes native APIs, network, persistent storage, filesystem, or processes.
 const timestamp = 1700000000000;
-let navigatorWidth = 300;
+let navigatorWidth = 285;
 let changeReviewMode = "unified";
+const viewedReviewFiles = new Map();
 let defaultModel = { providerId: "fixture", id: "model" };
 let createdWorkspaceTickets = [];
 let ticketSessionSequence = 0;
@@ -426,18 +427,27 @@ export async function invokeBrowserFixture(name, payload = {}) {
       fixtureListeners = fixtureListeners.filter((listener) => !(listener.pid === payload.pid && listener.identity === payload.identity));
       result = null;
       break;
-    case "change_review_load":
+    case "change_review_load": {
+      const reviewScope = JSON.stringify([
+        payload.request.ownerId,
+        payload.request.ticketFilename || "",
+        repository.id,
+      ]);
+      const viewedFiles = viewedReviewFiles.get(reviewScope) || new Set();
       result = [
         {
           repositoryId: repository.id,
           name: repository.name,
           path: "/fixture/repository",
           comparisonTarget: "origin/main",
+          mergeBase: "fixture-merge-base",
           comparisonError: null,
           files: [
             {
               path: "src/example.js",
               status: "M",
+              changeSource: "branch",
+              viewed: viewedFiles.has("src/example.js"),
               diff: "--- a/src/example.js\n+++ b/src/example.js\n@@ -3,5 +3,5 @@\n function greet(name) {\n-  return 'Hello ' + name;\n+  return `Hello, ${name}!`;\n }\n \n greet('world');\n",
               diffError: null,
             },
@@ -445,6 +455,28 @@ export async function invokeBrowserFixture(name, payload = {}) {
         },
       ];
       break;
+    }
+    case "change_review_file_viewed_set": {
+      if (
+        payload.request.repositoryId !== repository.id ||
+        payload.request.path !== "src/example.js"
+      )
+        throw new Error("Unknown fixture file.");
+      const reviewScope = JSON.stringify([
+        payload.request.ownerId,
+        payload.request.ticketFilename || "",
+        payload.request.repositoryId,
+      ]);
+      const viewedFiles = viewedReviewFiles.get(reviewScope) || new Set();
+      if (payload.request.viewed) viewedFiles.add(payload.request.path);
+      else viewedFiles.delete(payload.request.path);
+      viewedReviewFiles.set(reviewScope, viewedFiles);
+      result = {
+        headCommit: "fixture-head",
+        viewedFiles: [...viewedFiles],
+      };
+      break;
+    }
     case "change_review_full_diff":
       if (
         payload.request.repositoryId !== repository.id ||
@@ -460,19 +492,8 @@ export async function invokeBrowserFixture(name, payload = {}) {
     case "new_work_proposal_run":
       result = {
         schemaVersion: 1,
-        workType: request.workType || "workspace",
-        workspace: {
-          id: null,
-          name: "Example proposal",
-          intent: "Fixture proposal",
-        },
-        task: null,
+        workType: "quick_request",
         repositories: [],
-        startingPrompt: request.originalPrompt,
-        setupPlan: {
-          workspaceHome: "/fixture/new-workspace",
-          repositories: [],
-        },
       };
       break;
     case "new_work_proposal_close":
