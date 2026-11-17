@@ -1312,6 +1312,9 @@
             "prompt": {
               "type": "string"
             },
+            "startingPrompt": {
+              "type": "string"
+            },
             "model": {
               "type": "object",
               "properties": {

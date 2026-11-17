@@ -10,6 +10,7 @@ test("prepares Quick Request review and falls back to default directory selectio
     {
       workType: "quick_request",
       repositories: [{ repositoryId: "missing" }],
+      suggestedPrompt: "suggested prompt",
     },
     "unchanged original",
     { repositoryCatalog },
@@ -18,6 +19,7 @@ test("prepares Quick Request review and falls back to default directory selectio
   assert.equal(review.title, "New Quick Request — Confirm directory");
   assert.equal(review.createLabel, "Confirm directory and start Quick Request");
   assert.equal(review.originalPrompt, "unchanged original");
+  assert.equal(review.suggestedPrompt, "suggested prompt");
   assert.deepEqual(review.quickRequestDirectories, repositoryCatalog);
   assert.equal(review.quickRequestDirectoryId, "");
 });
@@ -31,7 +33,10 @@ test("rejects Workspace and legacy Task proposals", () => {
     /Only Quick Request proposals can be reviewed/,
   );
   assert.throws(
-    () => prepareProposalReview({ workType: "workspace" }, "prompt", { repositoryCatalog }),
+    () =>
+      prepareProposalReview({ workType: "workspace" }, "prompt", {
+        repositoryCatalog,
+      }),
     /Only Quick Request proposals can be reviewed/,
   );
 });

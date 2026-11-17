@@ -42,6 +42,7 @@ const MIGRATION_22: &str = include_str!("migrations/0022_repository_soft_delete.
 const MIGRATION_23: &str = include_str!("migrations/0023_quick_request_custom_directory.sql");
 const MIGRATION_24: &str = include_str!("migrations/0024_workspace_session_context_roles.sql");
 const MIGRATION_25: &str = include_str!("migrations/0025_repository_path_identity.sql");
+const MIGRATION_26: &str = include_str!("migrations/0026_quick_request_starting_prompts.sql");
 #[cfg(test)]
 const LEGACY_MIGRATION_18: &str =
     include_str!("migrations/test_fixtures/0018_legacy_workspace_work_contexts.sql");
@@ -985,7 +986,7 @@ impl ManagementStore {
             [],
             |row| row.get(0),
         )?;
-        if current_version > 25 {
+        if current_version > 26 {
             return Err(ManagementStoreError::UnsupportedSchemaVersion(
                 current_version,
             ));
@@ -1233,6 +1234,15 @@ impl ManagementStore {
                     "repository path migration left invalid foreign-key references".into(),
                 ));
             }
+        }
+        if current_version < 26 {
+            let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+            transaction.execute_batch(MIGRATION_26)?;
+            transaction.execute(
+                "INSERT INTO schema_migrations(version, applied_at) VALUES (26, 0)",
+                [],
+            )?;
+            transaction.commit()?;
         }
         Ok(())
     }
@@ -1868,7 +1878,7 @@ impl ManagementStore {
         let mut quick_request_task = task.clone();
         quick_request_task.description = None;
         let guard = self.insert_task(&transaction, &quick_request_task, Some(&lifecycle))?;
-        Self::insert_quick_request_prompt(&transaction, &task.id, original_prompt)?;
+        Self::insert_quick_request_prompt(&transaction, &task.id, original_prompt, original_prompt)?;
         transaction.commit()?;
         if let Some(guard) = guard {
             guard.commit();
@@ -1938,7 +1948,25 @@ impl ManagementStore {
         selected_model: &str,
         original_prompt: &str,
     ) -> StoreResult<QuickRequestRecord> {
+        self.create_quick_request_with_starting_prompt(
+            task,
+            session,
+            selected_model,
+            original_prompt,
+            original_prompt,
+        )
+    }
+
+    pub fn create_quick_request_with_starting_prompt(
+        &self,
+        task: &NewTask,
+        session: &NewSession,
+        selected_model: &str,
+        original_prompt: &str,
+        starting_prompt: &str,
+    ) -> StoreResult<QuickRequestRecord> {
         validate_quick_request_prompt(original_prompt)?;
+        validate_quick_request_prompt(starting_prompt)?;
         if session.owner != SessionOwner::Task(task.id.clone()) {
             return Err(ManagementStoreError::InvalidTransition(
                 "Quick Request session owner must be its task".into(),
@@ -1983,7 +2011,7 @@ impl ManagementStore {
         let mut quick_request_task = task.clone();
         quick_request_task.description = None;
         let guard = self.insert_task(&transaction, &quick_request_task, Some(&lifecycle))?;
-        Self::insert_quick_request_prompt(&transaction, &task.id, original_prompt)?;
+        Self::insert_quick_request_prompt(&transaction, &task.id, original_prompt, starting_prompt)?;
         Self::insert_session_with_model(&transaction, session, Some(selected_model))?;
         transaction.commit()?;
         if let Some(guard) = guard {
@@ -2042,6 +2070,18 @@ impl ManagementStore {
         Self::quick_request_prompt_from(&connection, task_id)
     }
 
+    pub fn quick_request_starting_prompt(&self, task_id: &str) -> StoreResult<Option<String>> {
+        let connection = self.lock()?;
+        connection.query_row(
+            "SELECT prompt.starting_prompt
+             FROM quick_request_prompts AS prompt
+             JOIN tasks ON tasks.id = prompt.task_id
+             WHERE prompt.task_id = ?1 AND tasks.quick_request_created_at IS NOT NULL",
+            [task_id],
+            |row| row.get(0),
+        ).optional().map_err(Into::into)
+    }
+
     fn quick_request_prompt_from(
         connection: &Connection,
         task_id: &str,
@@ -2063,11 +2103,13 @@ impl ManagementStore {
         connection: &Connection,
         task_id: &str,
         original_prompt: &str,
+        starting_prompt: &str,
     ) -> StoreResult<()> {
         validate_quick_request_prompt(original_prompt)?;
+        validate_quick_request_prompt(starting_prompt)?;
         connection.execute(
-            "INSERT INTO quick_request_prompts(task_id, original_prompt) VALUES (?1, ?2)",
-            params![task_id, original_prompt],
+            "INSERT INTO quick_request_prompts(task_id, original_prompt, starting_prompt) VALUES (?1, ?2, ?3)",
+            params![task_id, original_prompt, starting_prompt],
         )?;
         Ok(())
     }
@@ -6108,7 +6150,7 @@ mod tests {
         second.repository_identity = "same-git-id".into();
         store.create_repository(&second).unwrap();
 
-        assert_eq!(store.migration_versions().unwrap().last(), Some(&25));
+        assert_eq!(store.migration_versions().unwrap().last(), Some(&26));
         assert_eq!(
             store
                 .get_repository("repo-existing")
@@ -6205,7 +6247,7 @@ mod tests {
             })
             .unwrap();
 
-        assert_eq!(store.migration_versions().unwrap().last(), Some(&25));
+        assert_eq!(store.migration_versions().unwrap().last(), Some(&26));
         let contexts = store
             .list_workspace_session_context("w-legacy-context")
             .unwrap();
@@ -6333,7 +6375,7 @@ mod tests {
         }
         let migrated =
             ManagementStore::open_with_paths(&database, &user_home, &system_temp).unwrap();
-        assert_eq!(migrated.migration_versions().unwrap().last(), Some(&25));
+        assert_eq!(migrated.migration_versions().unwrap().last(), Some(&26));
         let connection = migrated.lock().unwrap();
         let legacy_table_count: i64 = connection
             .query_row(
@@ -6378,15 +6420,20 @@ mod tests {
             created_at: CREATED + 2,
         };
         let created = store
-            .create_quick_request_with_session_and_model(
+            .create_quick_request_with_starting_prompt(
                 &new_task,
                 &session,
                 "openai/gpt-6-luna",
                 original_prompt,
+                "selected starting prompt",
             )
             .unwrap();
 
         assert_eq!(created.prompt.as_deref(), Some(original_prompt));
+        assert_eq!(
+            store.quick_request_starting_prompt("qr-prompt").unwrap().as_deref(),
+            Some("selected starting prompt")
+        );
         assert_eq!(created.task.description, None);
         assert_eq!(
             store.quick_request_prompt("qr-prompt").unwrap().as_deref(),
@@ -6395,6 +6442,20 @@ mod tests {
         let listed = store.list_quick_requests(true).unwrap();
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].prompt.as_deref(), Some(original_prompt));
+        let connection = store.lock().unwrap();
+        assert!(connection
+            .execute(
+                "UPDATE quick_request_prompts SET original_prompt = 'changed' WHERE task_id = ?1",
+                ["qr-prompt"],
+            )
+            .is_err());
+        assert!(connection
+            .execute(
+                "UPDATE quick_request_prompts SET starting_prompt = 'changed' WHERE task_id = ?1",
+                ["qr-prompt"],
+            )
+            .is_err());
+        drop(connection);
 
         let regular_task = store
             .create_task(&task("regular-task", "w-regular", "regular-task"))
@@ -6402,8 +6463,8 @@ mod tests {
         let connection = store.lock().unwrap();
         assert!(connection
             .execute(
-                "INSERT INTO quick_request_prompts(task_id, original_prompt) VALUES (?1, ?2)",
-                params![regular_task.id, "not a Quick Request"],
+                "INSERT INTO quick_request_prompts(task_id, original_prompt, starting_prompt) VALUES (?1, ?2, ?3)",
+                params![regular_task.id, "not a Quick Request", "not a Quick Request"],
             )
             .is_err());
     }
@@ -6534,10 +6595,17 @@ mod tests {
 
         let migrated =
             ManagementStore::open_with_paths(&database, &user_home, &system_temp).unwrap();
-        assert_eq!(migrated.migration_versions().unwrap().last(), Some(&25));
+        assert_eq!(migrated.migration_versions().unwrap().last(), Some(&26));
         assert_eq!(
             migrated
                 .quick_request_prompt("qr-legacy-prompt")
+                .unwrap()
+                .as_deref(),
+            Some("legacy Quick Request prompt")
+        );
+        assert_eq!(
+            migrated
+                .quick_request_starting_prompt("qr-legacy-prompt")
                 .unwrap()
                 .as_deref(),
             Some("legacy Quick Request prompt")
@@ -6956,7 +7024,7 @@ mod tests {
                 .unwrap(),
             vec![failed]
         );
-        assert_eq!(reopened.migration_versions().unwrap().last(), Some(&25));
+        assert_eq!(reopened.migration_versions().unwrap().last(), Some(&26));
     }
 
     #[test]
@@ -7393,7 +7461,7 @@ mod tests {
                 store.migration_versions().unwrap(),
                 vec![
                     1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22,
-                    23, 24, 25
+                    23, 24, 25, 26
                 ]
             );
             assert_eq!(
@@ -7423,7 +7491,7 @@ mod tests {
             reopened.migration_versions().unwrap(),
             vec![
                 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
-                24, 25
+                24, 25, 26
             ]
         );
         assert_eq!(
@@ -7594,7 +7662,7 @@ mod tests {
         }
 
         let migrated = ManagementStore::open_with_paths(&database, &home, fixture.path()).unwrap();
-        assert_eq!(migrated.migration_versions().unwrap().last(), Some(&25));
+        assert_eq!(migrated.migration_versions().unwrap().last(), Some(&26));
         assert!(migrated
             .list_workspace_repository_worktrees("workspace-with-no-worktrees")
             .unwrap()

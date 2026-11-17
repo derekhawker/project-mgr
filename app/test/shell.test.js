@@ -1349,7 +1349,7 @@ test("Quick Request submit failure preserves entered prompt for recovery", async
   assert.ok(!events.includes("refresh"));
 });
 
-test("confirmed Quick Request flow preserves the original prompt and opens the terminal page before sending it", async () => {
+test("confirmed Quick Request flow stores the original and starts with the selected suggestion", async () => {
   const events = [];
   const model = { providerId: "openai", id: "gpt-6-luna" };
   const originalPrompt = "  Keep this exact prompt\n";
@@ -1365,6 +1365,7 @@ test("confirmed Quick Request flow preserves the original prompt and opens the t
       return null;
     },
     originalPrompt,
+    startingPrompt: "A lightly improved prompt",
     model,
     repositoryId: "repo-1",
     waitForTerminal: async () => events.push(["terminal-ready"]),
@@ -1387,6 +1388,7 @@ test("confirmed Quick Request flow preserves the original prompt and opens the t
     "quick_request_create",
     {
       prompt: originalPrompt,
+      startingPrompt: "A lightly improved prompt",
       model,
       repositoryId: "repo-1",
     },

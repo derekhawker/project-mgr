@@ -69,7 +69,9 @@ test("application areas compose once and retain terminals across navigation and 
         if (name === "quick_request_create") {
           calls++;
           globalThis.__quickRequestCreateCalls = calls;
-          globalThis.__quickRequestCreatePrompts.push(payload.request.prompt);
+          globalThis.__quickRequestCreatePrompts.push(
+            payload.request.startingPrompt || payload.request.prompt,
+          );
           if (calls === 1) return new Promise((_, reject) => { globalThis.__rejectQuickRequestCreate = reject; });
         }
         return invoke(name, payload);
@@ -341,7 +343,10 @@ test("application areas compose once and retain terminals across navigation and 
     $("#proposal-create").click();
     await waitFor(() => !$("#new-work-modal").open);
     assert.equal(globalThis.__quickRequestCreateCalls, 2);
-    assert.equal(globalThis.__quickRequestCreatePrompts[1], originalPrompt);
+    assert.equal(
+      globalThis.__quickRequestCreatePrompts[1],
+      `Clarify this Quick Request: ${originalPrompt}`,
+    );
     assert.match(
       $("#quick-request-list").textContent,
       /A quick fixture prompt/,

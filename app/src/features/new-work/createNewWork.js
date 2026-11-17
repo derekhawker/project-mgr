@@ -62,6 +62,7 @@ export function createNewWork({
     startingPrompt: "",
     createLabel: "Create",
   });
+  const [quickRequestPromptChoice, setQuickRequestPromptChoice] = createSignal("suggested");
   const [progressVisible, setProgressVisible] = createSignal(false);
   const [progressRows, setProgressRows] = createSignal(new Map());
   const [newWorkCaptureError, setNewWorkCaptureError] = createSignal("");
@@ -171,6 +172,7 @@ export function createNewWork({
       repositoryCatalog: getCatalog(),
     });
     currentProposal = proposal;
+    setQuickRequestPromptChoice("suggested");
     setProposalCreateDisabled(false);
     setProposalView(review);
     if (review.workType === "quick_request") {
@@ -231,6 +233,9 @@ export function createNewWork({
     modelsReady: isModelsReady,
     quickRequestDirectoryReady: () => quickRequestDirectoryReady,
     getOriginalPrompt: newWorkPromptValue,
+    getStartingPrompt: () => quickRequestPromptChoice() === "original"
+      ? newWorkPromptValue()
+      : currentProposal?.suggestedPrompt ?? newWorkPromptValue(),
     getSelectedModel: proposalSelectedModel,
     getRepositoryId: () => customQuickDirectory() === defaultQuickDirectory() ? null : quickRequestDirectoryId(),
     getDirectory: () => customQuickDirectory() === defaultQuickDirectory() ? null : customQuickDirectory(),
@@ -369,6 +374,8 @@ export function createNewWork({
           newWorkPrompt = element;
         },
         proposal: proposalView,
+        promptChoice: quickRequestPromptChoice,
+        onPromptChoiceChange: (value) => setQuickRequestPromptChoice(value),
         workspaceVisible: () => newWorkView() === "workspace",
         workspaceRepositoryChoice,
         workspaceRepositories,

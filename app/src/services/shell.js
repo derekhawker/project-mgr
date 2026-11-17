@@ -252,9 +252,10 @@ export function cleanupTerminal(invoke, sessionId) {
   return invokeCommand(invoke, "opencode_terminal_cleanup", { sessionId });
 }
 
-export function createQuickRequest(invoke, prompt, model, repositoryId = null, directory = null) {
+export function createQuickRequest(invoke, prompt, model, repositoryId = null, directory = null, startingPrompt = undefined) {
   return invokeCommand(invoke, "quick_request_create", {
     prompt,
+    ...(startingPrompt === undefined ? {} : { startingPrompt }),
     model,
     repositoryId,
     ...(directory ? { directory } : {}),
@@ -302,6 +303,7 @@ export async function submitQuickRequestFlow({
 export async function submitResolvedQuickRequestFlow({
   invoke,
   originalPrompt,
+  startingPrompt = originalPrompt,
   model,
   repositoryId,
   directory,
@@ -318,6 +320,7 @@ export async function submitResolvedQuickRequestFlow({
     model,
     repositoryId,
     directory,
+    startingPrompt === originalPrompt ? undefined : startingPrompt,
   );
   onCreated(record);
   const sessionId = record.session?.openCodeSessionId;

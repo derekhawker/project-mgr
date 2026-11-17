@@ -468,6 +468,7 @@ export async function invokeBrowserFixture(name, payload = {}) {
         },
         task: null,
         repositories: [],
+        suggestedPrompt: `Clarify this Quick Request: ${request.originalPrompt}`,
         startingPrompt: request.originalPrompt,
         setupPlan: {
           workspaceHome: "/fixture/new-workspace",

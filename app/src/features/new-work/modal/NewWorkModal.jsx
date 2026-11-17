@@ -259,7 +259,20 @@ export function NewWorkModal(props) {
               <blockquote id="quick-request-original">
                 {proposal().originalPrompt}
               </blockquote>
-              <p>The original prompt will be sent unchanged after confirmation.</p>
+              <h3>Suggested prompt</h3>
+              <blockquote id="quick-request-suggested">
+                {proposal().suggestedPrompt}
+              </blockquote>
+              <Select
+                id="quick-request-prompt-choice"
+                label="Prompt to send"
+                value={props.promptChoice()}
+                options={[
+                  { value: "suggested", label: "Suggested prompt" },
+                  { value: "original", label: "Original prompt" },
+                ]}
+                onChange={props.onPromptChoiceChange}
+              />
               <Show
                 when={recoveringQuickRequest()}
                 fallback={

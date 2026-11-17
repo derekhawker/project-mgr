@@ -9,6 +9,7 @@ function setup(overrides = {}) {
     modelsReady: () => true,
     quickRequestDirectoryReady: () => true,
     getOriginalPrompt: () => " original\n",
+    getStartingPrompt: () => " improved prompt",
     getSelectedModel: () => '{"providerId":"p","id":"m"}',
     getRepositoryId: () => "repo",
     proposalSessionId: () => "proposal",
@@ -52,6 +53,7 @@ test("passes exact prompt/model/repository and completes callbacks in order", as
   await controller.createQuickRequest();
   const args = calls.find(([key]) => key === "submit")[1];
   assert.equal(args.originalPrompt, " original\n");
+  assert.equal(args.startingPrompt, " improved prompt");
   assert.deepEqual(args.model, { providerId: "p", id: "m" });
   assert.equal(args.repositoryId, "repo");
   assert.deepEqual(
@@ -86,7 +88,10 @@ test("guards proposal, model readiness, and directory readiness without effects"
 test("passes the chosen working directory to creation", async () => {
   const { controller, calls } = setup({ getDirectory: () => "/chosen folder" });
   await controller.createQuickRequest();
-  assert.equal(calls.find(([key]) => key === "submit")[1].directory, "/chosen folder");
+  assert.equal(
+    calls.find(([key]) => key === "submit")[1].directory,
+    "/chosen folder",
+  );
 });
 
 test("failure reports error and always clears busy state, preserving retry availability", async () => {

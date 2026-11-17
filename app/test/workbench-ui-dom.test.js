@@ -100,6 +100,7 @@ test("Quick Request confirmation disables repeat clicks and allows retry after c
     title: "Confirm",
     createLabel: "Start Quick Request",
     originalPrompt: "Keep this prompt",
+    suggestedPrompt: "Improve the clarity of this prompt",
   };
   let rejectCreation;
   let attempts = 0;
@@ -159,6 +160,18 @@ test("Quick Request confirmation disables repeat clicks and allows retry after c
     onEnterToSubmit: noopSetter,
     workType: () => "quick_request",
     proposal: () => proposal,
+    promptChoice: () => "suggested",
+    onPromptChoiceChange: noop,
+    workspaceVisible: no,
+    workspaceError: empty,
+    workspaceCreateDisabled: no,
+    workspaceCatalogLoading: no,
+    workspaceRepositoryChoice: empty,
+    workspaceRepositories: () => [],
+    workspaceEmptySelected: no,
+    emptyWorkspaceChoice: "__empty__",
+    onWorkspaceRepositoryChange: noopSetter,
+    onWorkspaceSubmit: noopSetter,
     proposalError: error,
     proposalCreateDisabled: disabled,
     onConfirm: () => {
@@ -194,6 +207,10 @@ test("Quick Request confirmation disables repeat clicks and allows retry after c
     assert.equal(
       view.host.querySelector("#quick-request-original").textContent,
       "Keep this prompt",
+    );
+    assert.equal(
+      view.host.querySelector("#quick-request-suggested").textContent,
+      "Improve the clarity of this prompt",
     );
     assert.equal(button.disabled, false);
     button.click();
