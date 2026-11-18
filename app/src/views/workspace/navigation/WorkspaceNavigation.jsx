@@ -71,12 +71,16 @@ export function WorkspaceNavigation(props) {
     for (const key of discoveredSharedLabels()) shared.add(key);
     return shared;
   };
+  const workspaceForLabel = (key) => {
+    if (!key) return null;
+    return workspaces().find((workspace) => workspace.name.trim().toLowerCase() === key) ?? null;
+  };
   const sharedLabelGroups = () => {
     const groups = new Map();
     for (const workspace of workspaces())
       for (const ticket of displayedWorkspaceTickets(workspace.id)) {
         const key = ticket.projectLabel?.trim().toLowerCase();
-        if (!key || !sharedLabelKeys().has(key)) continue;
+        if (!key || workspaceForLabel(key) || !sharedLabelKeys().has(key)) continue;
         if (!groups.has(key)) groups.set(key, { label: ticket.projectLabel, tickets: [] });
         groups.get(key).tickets.push({ ...ticket, workspace });
       }
@@ -89,6 +93,17 @@ export function WorkspaceNavigation(props) {
       ticket.status === "in_progress" ||
       ticket.status === "blocked" ||
       (ticket.status === "draft" && ticket.hasWorkSession),
+    );
+  const ticketsForWorkspaceGroup = (destination) =>
+    workspaces().flatMap((owner) =>
+      displayedWorkspaceTickets(owner.id)
+        .filter((ticket) => {
+          const key = ticket.projectLabel?.trim().toLowerCase();
+          const labelWorkspace = workspaceForLabel(key);
+          if (labelWorkspace) return labelWorkspace.id === destination.id;
+          return owner.id === destination.id && (!key || !sharedLabelKeys().has(key));
+        })
+        .map((ticket) => ({ ticket, owner })),
     );
   const outstandingTicketCount = (workspaceId) =>
     workspaceTickets(workspaceId).filter((ticket) =>
@@ -207,9 +222,7 @@ export function WorkspaceNavigation(props) {
           </For>
           <Index each={workspaces()}>
             {(workspace) => {
-              const tickets = () => displayedWorkspaceTickets(workspace().id).filter((ticket) =>
-                !ticket.projectLabel || !sharedLabelKeys().has(ticket.projectLabel.trim().toLowerCase()),
-              );
+              const tickets = () => ticketsForWorkspaceGroup(workspace());
               const isExpanded = () => expansionFor(workspace().id)[0]();
               const setExpanded = (value) => expansionFor(workspace().id)[1](value);
               return (
@@ -248,7 +261,7 @@ export function WorkspaceNavigation(props) {
                   <Show when={isExpanded() && tickets().length > 0}>
                     <ul class={styles.ticketChildren}>
                       <Index each={tickets()}>
-                        {(ticket) => ticketRow(ticket, workspace)}
+                        {(item) => ticketRow(() => item().ticket, () => item().owner, "grouped", item().owner.id !== workspace().id)}
                       </Index>
                     </ul>
                   </Show>

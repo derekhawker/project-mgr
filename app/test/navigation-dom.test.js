@@ -353,6 +353,44 @@ test("labels shared with archived or completed tickets retain shared grouping", 
   view.dispose();
 });
 
+test("a label matching a Workspace name uses that Workspace as the group", () => {
+  const source = { id: "source", name: "Source", kind: "regular", status: "active" };
+  const target = { id: "target", name: "Target", kind: "regular", status: "active" };
+  const view = mount(WorkspaceNavigation, {
+    data: () => ({
+      workspaces: [source, target],
+      workspaceTickets: {
+        source: [{ filename: "shared.md", title: "Shared ticket", status: "in_progress", projectLabel: " target " }],
+        target: [{ filename: "native.md", title: "Target ticket", status: "blocked", projectLabel: "Target" }],
+      },
+    }),
+    busy: () => false,
+    selected: () => null,
+    viewMode: () => "grouped",
+    onSelect: () => {},
+    onWork: () => {},
+  });
+
+  const targetRow = [...view.host.querySelectorAll("button")].find((button) =>
+    button.textContent.trim().startsWith("Target"),
+  );
+  const targetGroup = targetRow?.closest("li");
+  assert.ok(targetGroup);
+  assert.match(targetGroup.textContent, /Shared ticket/);
+  assert.match(targetGroup.textContent, /Target ticket/);
+  assert.equal(
+    [...view.host.querySelectorAll("h3")].some((heading) => heading.textContent.trim() === "Target"),
+    false,
+    "a Workspace-matching label does not create a duplicate label heading",
+  );
+  assert.equal(
+    targetGroup.querySelector('[title="Source"]')?.textContent,
+    "Source",
+    "tickets retain a badge for their owning Workspace when grouped elsewhere",
+  );
+  view.dispose();
+});
+
 test("ticket context menu permits outside right-clicks and opens the app-level label editor", async () => {
   const workspaces = [
     { id: "a", name: "Alpha Repo", kind: "regular", status: "active" },

@@ -8,7 +8,7 @@ Review changes against the task's ticket, not just the implementation prompt.
 ## Required context
 
 1. Identify the relevant ticket from the prompt/session context. If absent, inspect the current workspace ticket context. If multiple tickets remain plausible, ask rather than guess.
-2. Read the ticket and the concise [architecture reference](references/architecture.md) before reviewing. Follow any linked product requirements relevant to the change.
+2. Read the ticket and the [architecture reference](references/architecture.md) before reviewing. For UI changes, also read the [UI review reference](references/ui-review.md). Follow any linked product requirements relevant to the change.
 3. Inspect surrounding components and callers before drawing conclusions.
 
 ## Review focus
@@ -18,4 +18,4 @@ Review changes against the task's ticket, not just the implementation prompt.
 - **Persistence compatibility:** For new or changed SQLite/Markdown fields, check that old records still parse and remain usable, missing values have safe defaults or migration, and backfill does not depend on an inaccessible UI action.
 - **Ticket fit:** Check expected behavior, edge cases, and explicit constraints in the ticket.
 
-Report only actionable findings, ordered by severity, with file/line references and concise reasoning. If no findings, say so and note important areas not verified. Do not modify files.
+Report all material, actionable findings, ordered by severity, with file/line references. For each finding, explain the evidence, the affected behavior, and its impact; include enough detail for someone to understand and verify it. Do not omit or compress relevant reasoning to fit a word or line limit. If no findings, say so and note important areas not verified. Do not modify files.
