@@ -846,18 +846,18 @@ async fn workspace_ticket_labels(app: AppHandle) -> Result<Vec<workspace_tickets
 struct WorkspaceTicketLabelSetCommand {
     workspace_id: String,
     filename: String,
-    label: Option<String>,
+    label: String,
 }
 
 #[tauri::command]
-async fn workspace_ticket_label_set(app: AppHandle, request: WorkspaceTicketLabelSetCommand) -> Result<Option<String>, String> {
+async fn workspace_ticket_label_set(app: AppHandle, request: WorkspaceTicketLabelSetCommand) -> Result<String, String> {
     run_ports_work(move || {
         let store = app.state::<ManagementStore>();
         let workspace = store.get_workspace(&request.workspace_id).map_err(|error| error.to_string())?
             .ok_or_else(|| "Workspace was not found".to_owned())?;
         let app_data = app.path().app_data_dir().map_err(|error| error.to_string())?;
         let directory = workspace_tickets::workspace_ticket_dir(&app_data, &workspace.slug)?;
-        workspace_tickets::set_ticket_label(&directory, &request.filename, request.label.as_deref())
+        workspace_tickets::set_ticket_label(&directory, &request.filename, &request.label)
     }).await
 }
 

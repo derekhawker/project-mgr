@@ -371,10 +371,9 @@ export async function invokeBrowserFixture(name, payload = {}) {
       if (ticket) ticket.projectLabel = request.label;
       else if (request.workspaceId === example.id && ["example-active.md", "example-blocked.md", "example-draft-session.md", "example-new-draft.md"].includes(request.filename)) {
         const key = `${request.workspaceId}:${request.filename}`;
-        if (request.label == null) ticketLabelOverrides.delete(key);
-        else ticketLabelOverrides.set(key, request.label);
+        ticketLabelOverrides.set(key, request.label);
       }
-      result = request.label ?? null;
+      result = request.label;
       break;
     }
     case "workspace_ticket_proposal": {

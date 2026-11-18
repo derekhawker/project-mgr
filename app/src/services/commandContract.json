@@ -5712,7 +5712,7 @@
           "properties": {
             "workspaceId": { "type": "string" },
             "filename": { "type": "string" },
-            "label": { "type": "string", "nullable": true }
+            "label": { "type": "string" }
           },
           "required": ["workspaceId", "filename", "label"],
           "additionalProperties": false
@@ -5721,7 +5721,7 @@
       "required": ["request"],
       "additionalProperties": false
     },
-    "result": { "type": "string", "nullable": true }
+    "result": { "type": "string" }
   },
   "workspace_ticket_proposal": {
     "payload": {

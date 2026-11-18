@@ -330,6 +330,29 @@ test("workspace tickets group, collapse, mark blocked, and flatten newest first"
   view.dispose();
 });
 
+test("labels shared with archived or completed tickets retain shared grouping", async () => {
+  const workspace = { id: "active-owner", name: "Active Owner", kind: "regular", status: "active" };
+  const view = mount(WorkspaceNavigation, {
+    data: () => ({
+      workspaces: [workspace],
+      workspaceTickets: {
+        "active-owner": [{ filename: "active.md", title: "Visible ticket", status: "in_progress", projectLabel: "Rollout" }],
+      },
+    }),
+    busy: () => false,
+    selected: () => null,
+    viewMode: () => "grouped",
+    onSelect: () => {},
+    onWork: () => {},
+    onLoadLabels: async () => [{ label: "Rollout", ticketCount: 2, workspaceCount: 2 }],
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.ok([...view.host.querySelectorAll("h3")].some((heading) => heading.textContent === "Rollout"));
+  assert.ok(view.host.querySelector('[title="Active Owner"]'));
+  assert.ok([...view.host.querySelectorAll("button")].some((button) => button.textContent.includes("Visible ticket")));
+  view.dispose();
+});
+
 test("ticket context menu permits outside right-clicks and opens the app-level label editor", async () => {
   const workspaces = [
     { id: "a", name: "Alpha Repo", kind: "regular", status: "active" },

@@ -1576,11 +1576,11 @@ pub fn list_project_labels(
     }).collect())
 }
 
-pub fn set_ticket_label(directory: &Path, filename: &str, label: Option<&str>) -> Result<Option<String>, String> {
-    let label = label.map(normalize_project_label).transpose()?;
+pub fn set_ticket_label(directory: &Path, filename: &str, label: &str) -> Result<String, String> {
+    let label = normalize_project_label(label)?;
     let path = canonical_ticket(directory, filename)?;
     let original = fs::read_to_string(&path).map_err(|error| error.to_string())?;
-    let updated = set_project_label(&original, label.as_deref())?;
+    let updated = set_project_label(&original, Some(&label))?;
     if original != updated { write_ticket_markdown_safely(&path, &original, &updated)?; }
     Ok(label)
 }
@@ -3067,10 +3067,71 @@ mod tests {
         assert_eq!(fs::read_to_string(directory.join("open.md")).unwrap(), open_source);
         assert_eq!(fs::read_to_string(archived.join("closed.md")).unwrap(), archived_source);
 
-        set_ticket_label(&directory, "open.md", Some("Initiative")).unwrap();
+        assert_eq!(set_ticket_label(&directory, "open.md", "Initiative").unwrap(), "Initiative");
+        assert!(set_ticket_label(&directory, "open.md", "  ").is_err());
         let saved = list_with_default_label(&directory, Some("Alpha Workspace")).unwrap();
         assert_eq!(saved[0].project_label.as_deref(), Some("Initiative"));
         assert!(fs::read_to_string(directory.join("open.md")).unwrap().contains("project_label: \"Initiative\""));
+    }
+
+    #[test]
+    fn project_labels_validate_preserve_ticket_content_and_discover_in_stable_order() {
+        assert_eq!(normalize_project_label("  Initiative  ").unwrap(), "Initiative");
+        assert!(normalize_project_label(" \t ").is_err());
+        assert!(normalize_project_label(&"x".repeat(81)).is_err());
+        assert!(normalize_project_label("bad\nlabel").is_err());
+        assert_eq!(normalize_project_label(&"x".repeat(80)).unwrap().len(), 80);
+
+        let markdown = "---\ntitle: Example\nstatus: in_progress\nowner: team\n---\nTicket body\n";
+        let updated = set_project_label(markdown, Some("  Initiative  ")).unwrap();
+        assert_eq!(project_label(&updated).unwrap().as_deref(), Some("Initiative"));
+        assert!(updated.contains("owner: team\n"));
+        assert!(updated.ends_with("---\nTicket body\n"));
+
+        let root = tempfile::tempdir().unwrap();
+        for slug in ["alpha", "beta"] {
+            fs::create_dir_all(root.path().join("workspace-tickets").join(slug)).unwrap();
+        }
+        fs::create_dir_all(root.path().join("workspace-tickets/alpha/archived")).unwrap();
+        fs::write(
+            root.path().join("workspace-tickets/alpha/first.md"),
+            "---\ntitle: First\nstatus: in_progress\nproject_label: \"initiative\"\n---\n",
+        )
+        .unwrap();
+        fs::write(
+            root.path().join("workspace-tickets/alpha/archived/closed.md"),
+            "---\ntitle: Closed\nstatus: done\nproject_label: Zeta\n---\n",
+        )
+        .unwrap();
+        fs::write(
+            root.path().join("workspace-tickets/beta/second.md"),
+            "---\ntitle: Second\nstatus: in_progress\nproject_label: Initiative\n---\n",
+        )
+        .unwrap();
+
+        let labels = list_project_labels(
+            root.path(),
+            &[
+                ("beta-id".into(), "Beta Workspace".into(), "beta".into()),
+                ("alpha-id".into(), "Alpha Workspace".into(), "alpha".into()),
+            ],
+        )
+        .unwrap();
+        assert_eq!(
+            labels,
+            vec![
+                ProjectLabelOption {
+                    label: "initiative".into(),
+                    ticket_count: 2,
+                    workspace_count: 2,
+                },
+                ProjectLabelOption {
+                    label: "Zeta".into(),
+                    ticket_count: 1,
+                    workspace_count: 1,
+                },
+            ]
+        );
     }
 
     #[test]

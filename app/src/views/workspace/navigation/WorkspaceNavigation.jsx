@@ -1,5 +1,5 @@
 import { createEffect, For, Index, Show, createSignal, onCleanup, onMount } from "solid-js";
-import { Icon, IconButton } from "@ui-lib";
+import { ActionMenuItem, Icon, IconButton } from "@ui-lib";
 import { NavigationItem } from "../../../components/NavigationItem.jsx";
 import { TicketSessionIndicator } from "../../../components/TicketSessionIndicator.jsx";
 import { recordUiDiagnostic } from "../../../lib/uiDiagnostics.js";
@@ -11,6 +11,7 @@ export function WorkspaceNavigation(props) {
   onCleanup(() => recordUiDiagnostic("WorkspaceNavigation", "dispose"));
   const expandedByWorkspace = new Map();
   const [contextMenu, setContextMenu] = createSignal(null);
+  const [discoveredSharedLabels, setDiscoveredSharedLabels] = createSignal(new Set());
   let contextMenuElement;
   const showContextMenu = (event, workspace, ticket) => {
     event.preventDefault();
@@ -27,6 +28,22 @@ export function WorkspaceNavigation(props) {
       document.removeEventListener("pointerdown", dismissOutside, true);
       document.removeEventListener("contextmenu", dismissOutside, true);
     });
+  });
+  createEffect(() => {
+    if (props.viewMode() !== "grouped" || !props.onLoadLabels) return;
+    let active = true;
+    void props.onLoadLabels().then(
+      (options) => {
+        if (active) {
+          setDiscoveredSharedLabels(new Set(
+            options.filter((option) => option.workspaceCount > 1)
+              .map((option) => option.label.trim().toLowerCase()),
+          ));
+        }
+      },
+      () => {},
+    );
+    onCleanup(() => { active = false; });
   });
   const expansionFor = (workspaceId) => {
     if (!expandedByWorkspace.has(workspaceId)) {
@@ -50,7 +67,9 @@ export function WorkspaceNavigation(props) {
         if (!owners.has(key)) owners.set(key, new Set());
         owners.get(key).add(workspace.id);
       }
-    return new Set([...owners].filter(([, ids]) => ids.size > 1).map(([key]) => key));
+    const shared = new Set([...owners].filter(([, ids]) => ids.size > 1).map(([key]) => key));
+    for (const key of discoveredSharedLabels()) shared.add(key);
+    return shared;
   };
   const sharedLabelGroups = () => {
     const groups = new Map();
@@ -244,10 +263,10 @@ export function WorkspaceNavigation(props) {
       {(menu) => (
         <>
           <div ref={contextMenuElement} class={styles.ticketContextMenu} role="menu" style={{ left: `${menu().x}px`, top: `${menu().y}px` }}>
-            <button type="button" role="menuitem" onClick={() => {
+            <ActionMenuItem role="menuitem" onClick={() => {
               props.onChangeLabel(menu().workspace, menu().ticket);
               setContextMenu(null);
-            }}>Change label…</button>
+            }}>Change label…</ActionMenuItem>
           </div>
         </>
       )}
