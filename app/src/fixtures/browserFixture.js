@@ -530,6 +530,19 @@ export async function invokeBrowserFixture(name, payload = {}) {
         repository.id,
       ]);
       const viewedFiles = viewedReviewFiles.get(reviewScope) || new Set();
+      const additionalReviewFiles = Array.from({ length: 23 }, (_, index) => {
+        const path = `src/review/file-${String(index + 1).padStart(2, "0")}.js`;
+        const previous = `export const value = ${index};`;
+        const next = `export const value = ${index + 1};`;
+        return {
+          path,
+          status: "M",
+          changeSource: "branch",
+          viewed: viewedFiles.has(path),
+          diff: `diff --git a/${path} b/${path}\n--- a/${path}\n+++ b/${path}\n@@ -1 +1 @@\n-${previous}\n+${next}\n`,
+          diffError: null,
+        };
+      });
       result = [
         {
           repositoryId: repository.id,
@@ -547,6 +560,7 @@ export async function invokeBrowserFixture(name, payload = {}) {
               diff: "--- a/src/example.js\n+++ b/src/example.js\n@@ -3,5 +3,5 @@\n function greet(name) {\n-  return 'Hello ' + name;\n+  return `Hello, ${name}!`;\n }\n \n greet('world');\n",
               diffError: null,
             },
+            ...additionalReviewFiles,
           ],
         },
       ];
@@ -555,7 +569,9 @@ export async function invokeBrowserFixture(name, payload = {}) {
     case "change_review_file_viewed_set": {
       if (
         payload.request.repositoryId !== repository.id ||
-        payload.request.path !== "src/example.js"
+        !/^src\/(?:example\.js|review\/file-\d{2}\.js)$/.test(
+          payload.request.path,
+        )
       )
         throw new Error("Unknown fixture file.");
       const reviewScope = JSON.stringify([
