@@ -11,7 +11,7 @@ import { presentationAliases } from "../vite.config.js";
 // Run the real entry, command contracts, feature controllers and Solid tree.
 // The browser command transport and terminal renderer are fixtures: no live
 // processes, user directories, network services or application data are used.
-test("application areas compose once and retain terminals across navigation and creation", async () => {
+test("application composes, saves new ticket labels through the Rust boundary, and retains terminals", async () => {
   const root = resolve(import.meta.dirname, "..");
   const temp = await mkdtemp("/tmp/opencode/application-composition-");
   const window = new Window();
@@ -31,6 +31,7 @@ test("application areas compose once and retain terminals across navigation and 
     "__quickRequestCreateCalls",
     "__quickRequestCreatePrompts",
     "__rejectQuickRequestCreate",
+    "__ticketLabelSetCalls",
   ];
   try {
     const terminal = join(temp, "terminal.js");
@@ -70,6 +71,9 @@ test("application areas compose once and retain terminals across navigation and 
       import { invokeBrowserFixture as invoke } from ${JSON.stringify(resolve(root, "src/fixtures/browserFixture.js"))};
       let calls = 0;
       export function invokeBrowserFixture(name, payload) {
+        if (name === "workspace_ticket_label_set") {
+          globalThis.__ticketLabelSetCalls.push(structuredClone(payload));
+        }
         if (name === "quick_request_create") {
           calls++;
           globalThis.__quickRequestCreateCalls = calls;
@@ -157,10 +161,80 @@ test("application areas compose once and retain terminals across navigation and 
     };
     globalThis.__quickRequestCreateCalls = 0;
     globalThis.__quickRequestCreatePrompts = [];
+    globalThis.__ticketLabelSetCalls = [];
 
     await waitFor(
       () => $("#workspace-list").getAttribute("aria-busy") === "false",
     );
+
+    // Exercise the complete UI-to-Rust-boundary flow: right-click a ticket,
+    // create a new label, apply it, and confirm navigation reflects the save.
+    const labelTicket = () =>
+      [...$("#workspace-list").querySelectorAll("button")].find((button) =>
+        button.textContent.includes("Example active ticket"),
+      );
+    labelTicket().dispatchEvent(
+      new window.MouseEvent("contextmenu", {
+        bubbles: true,
+        cancelable: true,
+        button: 2,
+        clientX: 240,
+        clientY: 180,
+      }),
+    );
+    await waitFor(() => window.document.querySelector("[role='menu'] [role='menuitem']"));
+    $("[role='menuitem']").click();
+    await waitFor(() => window.document.querySelector("dialog[open]"));
+    assert.equal($("dialog[open] input[aria-label='Current label']").readOnly, true);
+    assert.equal($("dialog[open] input[aria-label='Current label']").value, "Example Workspace");
+    assert.equal(window.document.querySelector("dialog[open] [role='listbox']"), null);
+    input('dialog[open] input[aria-label="Search labels"]', "Cross-workspace rollout");
+    const createLabel = () =>
+      [...$("dialog[open]").querySelectorAll('[role="option"]')].find(
+        (option) => option.textContent.includes('Create “Cross-workspace rollout”'),
+      );
+    await waitFor(createLabel);
+    createLabel().click();
+    assert.equal(window.document.querySelector("dialog[open] [role='listbox']"), null);
+    assert.equal($("dialog[open] input[aria-label='Search labels']").value, "Cross-workspace rollout");
+    const applyLabel = () =>
+      [...$("dialog[open]").querySelectorAll("button")].find(
+        (button) => button.textContent.trim() === "Apply label",
+      );
+    if (!applyLabel()) throw new Error("Missing Apply label action");
+    applyLabel().click();
+    await waitFor(() => globalThis.__ticketLabelSetCalls.length === 1);
+    await waitFor(() => !window.document.querySelector("dialog[open]"));
+    assert.deepEqual(globalThis.__ticketLabelSetCalls, [
+      {
+        request: {
+          workspaceId: "fixture-workspace",
+          filename: "example-active.md",
+          label: "Cross-workspace rollout",
+        },
+      },
+    ]);
+
+    labelTicket().dispatchEvent(
+      new window.MouseEvent("contextmenu", {
+        bubbles: true,
+        cancelable: true,
+        button: 2,
+        clientX: 240,
+        clientY: 180,
+      }),
+    );
+    await waitFor(() => window.document.querySelector("[role='menuitem']"));
+    $("[role='menuitem']").click();
+    await waitFor(() => window.document.querySelector("dialog[open] input[aria-label='Current label']"));
+    assert.equal(
+      $("dialog[open] input[aria-label='Current label']").value,
+      "Cross-workspace rollout",
+    );
+    assert.equal($("dialog[open] input[aria-label='Current label']").readOnly, true);
+    [...$("dialog[open]").querySelectorAll("button")]
+      .find((button) => button.textContent.trim() === "Cancel")
+      .click();
 
     assert.equal($("#workspace-shell").hidden, true);
     const ticketSessionId =

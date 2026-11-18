@@ -288,6 +288,8 @@ pub fn run() {
             quick_request_promote,
             workspace_navigation,
             workspace_tickets_list,
+            workspace_ticket_labels,
+            workspace_ticket_label_set,
             workspace_ticket_proposal,
             workspace_ticket_create,
             workspace_ticket_work,
@@ -788,7 +790,7 @@ fn workspace_navigation_inner(app: &AppHandle) -> Result<WorkspaceNavigation, St
         let directory = workspace_tickets::workspace_ticket_dir(&app_data, &workspace.slug)?;
         workspace_tickets.insert(
             workspace.id.clone(),
-            workspace_tickets::list_for_navigation(&directory)?,
+            workspace_tickets::list_for_navigation_with_default_label(&directory, &workspace.name)?,
         );
     }
     Ok(WorkspaceNavigation {
@@ -817,12 +819,46 @@ async fn workspace_tickets_list(
         let app_data = app.path().app_data_dir().map_err(|e| e.to_string())?;
         let directory = workspace_tickets::workspace_ticket_dir(&app_data, &workspace.slug)?;
         if archived.unwrap_or(false) {
-            workspace_tickets::list_archived(&directory)
+            workspace_tickets::list_archived_with_default_label(&directory, Some(&workspace.name))
         } else {
-            workspace_tickets::list(&directory)
+            workspace_tickets::list_with_default_label(&directory, Some(&workspace.name))
         }
     })
     .await
+}
+
+#[tauri::command]
+async fn workspace_ticket_labels(app: AppHandle) -> Result<Vec<workspace_tickets::ProjectLabelOption>, String> {
+    run_ports_work(move || {
+        let store = app.state::<ManagementStore>();
+        let workspaces = store.list_workspaces().map_err(|error| error.to_string())?;
+        let rows = workspaces.into_iter()
+            .filter(|workspace| workspace.kind == management::WorkspaceKind::Regular)
+            .map(|workspace| (workspace.id, workspace.name, workspace.slug))
+            .collect::<Vec<_>>();
+        let app_data = app.path().app_data_dir().map_err(|error| error.to_string())?;
+        workspace_tickets::list_project_labels(&app_data, &rows)
+    }).await
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct WorkspaceTicketLabelSetCommand {
+    workspace_id: String,
+    filename: String,
+    label: String,
+}
+
+#[tauri::command]
+async fn workspace_ticket_label_set(app: AppHandle, request: WorkspaceTicketLabelSetCommand) -> Result<String, String> {
+    run_ports_work(move || {
+        let store = app.state::<ManagementStore>();
+        let workspace = store.get_workspace(&request.workspace_id).map_err(|error| error.to_string())?
+            .ok_or_else(|| "Workspace was not found".to_owned())?;
+        let app_data = app.path().app_data_dir().map_err(|error| error.to_string())?;
+        let directory = workspace_tickets::workspace_ticket_dir(&app_data, &workspace.slug)?;
+        workspace_tickets::set_ticket_label(&directory, &request.filename, &request.label)
+    }).await
 }
 
 #[derive(Debug, Deserialize)]

@@ -55,7 +55,7 @@ pub fn create_draft_with_investigation<R: TicketInvestigationRuntime>(
     start_investigation: bool,
     runtime: &mut R,
 ) -> Result<TicketCreationResult, String> {
-    let mut ticket = create_draft(directory, repository, title, body)?;
+    let mut ticket = create_draft_with_label(directory, repository, title, body, Some(workspace_name))?;
     let mut result = TicketCreationResult {
         ticket: ticket.clone(),
         investigation_session_id: None,
@@ -577,6 +577,32 @@ fn frontmatter_value(markdown: &str, key: &str) -> Result<Option<String>, String
     }
 }
 
+pub fn normalize_project_label(label: &str) -> Result<String, String> {
+    let label = label.trim();
+    if label.is_empty() {
+        return Err("Label cannot be blank.".into());
+    }
+    if label.chars().count() > 80 {
+        return Err("Labels must be 80 characters or fewer.".into());
+    }
+    if label.chars().any(char::is_control) {
+        return Err("Labels cannot contain control characters.".into());
+    }
+    Ok(label.to_owned())
+}
+
+pub fn project_label(markdown: &str) -> Result<Option<String>, String> {
+    frontmatter_value(markdown, "project_label")
+}
+
+pub fn set_project_label(markdown: &str, label: Option<&str>) -> Result<String, String> {
+    let label = label.map(normalize_project_label).transpose()?;
+    replace_frontmatter_fields(
+        markdown,
+        &[("project_label", label.map(|value| yaml_string(&value)))],
+    )
+}
+
 pub fn ticket_worktree(markdown: &str) -> Result<Option<TicketWorktree>, String> {
     let path = frontmatter_value(markdown, "worktree_path")?;
     let branch = frontmatter_value(markdown, "worktree_branch")?;
@@ -965,6 +991,7 @@ pub struct Ticket {
     pub status: String,
     pub has_work_session: bool,
     pub opencode_status: Option<String>,
+    pub project_label: Option<String>,
     pub content: String,
     pub modified_at: u128,
     pub archived_at: Option<String>,
@@ -978,6 +1005,7 @@ pub struct NavigationTicket {
     pub status: String,
     pub has_work_session: bool,
     pub opencode_status: Option<String>,
+    pub project_label: Option<String>,
     pub modified_at: u128,
 }
 
@@ -1038,6 +1066,16 @@ pub fn create_draft(
     title: &str,
     body: &str,
 ) -> Result<Ticket, String> {
+    create_draft_with_label(directory, repository, title, body, None)
+}
+
+pub fn create_draft_with_label(
+    directory: &Path,
+    repository: &Path,
+    title: &str,
+    body: &str,
+    label: Option<&str>,
+) -> Result<Ticket, String> {
     let title = title.trim();
     let body = body.trim();
     let proposal = TicketIdeaProposal {
@@ -1059,7 +1097,12 @@ pub fn create_draft(
     }
     let base = ticket_slug(title);
     let yaml_title = serde_json::to_string(title).map_err(|error| error.to_string())?;
-    let content = format!("---\ntitle: {yaml_title}\nstatus: draft\n---\n\n{body}\n");
+    let label = label.map(normalize_project_label).transpose()?;
+    let label_field = label
+        .as_deref()
+        .map(|value| format!("project_label: {}\n", yaml_string(value)))
+        .unwrap_or_default();
+    let content = format!("---\ntitle: {yaml_title}\nstatus: draft\n{label_field}---\n\n{body}\n");
     for suffix in 1_u64.. {
         let stem = if suffix == 1 {
             base.clone()
@@ -1091,6 +1134,7 @@ pub fn create_draft(
                     status: "draft".into(),
                     has_work_session: false,
                     opencode_status: None,
+                    project_label: label.clone(),
                     content,
                     modified_at: ticket_modified_at(&path) as u128,
                     archived_at: None,
@@ -1259,6 +1303,13 @@ pub fn validate_workbench_context(
 }
 
 pub fn list(directory: &Path) -> Result<Vec<Ticket>, String> {
+    list_with_default_label(directory, None)
+}
+
+pub fn list_with_default_label(
+    directory: &Path,
+    default_label: Option<&str>,
+) -> Result<Vec<Ticket>, String> {
     if !directory.exists() {
         return Ok(Vec::new());
     }
@@ -1277,12 +1328,15 @@ pub fn list(directory: &Path) -> Result<Vec<Ticket>, String> {
                 .unwrap_or("Ticket"),
         );
         let archived_at = archived_at(&content);
+        let project_label = project_label(&content)?
+            .or_else(|| default_label.map(str::to_owned));
         tickets.push(Ticket {
             filename: path.file_name().unwrap().to_string_lossy().into_owned(),
             title,
             status,
             has_work_session: work_session_id(&content).ok().flatten().is_some(),
             opencode_status: opencode_status(&content),
+            project_label,
             content,
             modified_at: modified_at as u128,
             archived_at,
@@ -1295,6 +1349,13 @@ pub fn list(directory: &Path) -> Result<Vec<Ticket>, String> {
 /// Lists open tickets needed by persistent navigation: all countable tickets,
 /// including drafts, plus the in-progress and blocked rows shown there.
 pub fn list_for_navigation(directory: &Path) -> Result<Vec<NavigationTicket>, String> {
+    list_for_navigation_with_default_label(directory, "")
+}
+
+pub fn list_for_navigation_with_default_label(
+    directory: &Path,
+    default_label: &str,
+) -> Result<Vec<NavigationTicket>, String> {
     if !directory.exists() {
         return Ok(Vec::new());
     }
@@ -1310,7 +1371,7 @@ pub fn list_for_navigation(directory: &Path) -> Result<Vec<NavigationTicket>, St
             .and_then(|s| s.to_str())
             .unwrap_or("Ticket");
         let file = fs::File::open(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-        let (title, status, has_work_session, opencode_status) =
+        let (title, status, has_work_session, opencode_status, project_label) =
             navigation_metadata(file, fallback).map_err(|e| format!("{}: {e}", path.display()))?;
         if !matches!(status.as_str(), "draft" | "in_progress" | "blocked") {
             continue;
@@ -1321,6 +1382,7 @@ pub fn list_for_navigation(directory: &Path) -> Result<Vec<NavigationTicket>, St
             status,
             has_work_session,
             opencode_status,
+            project_label: project_label.or_else(|| (!default_label.is_empty()).then(|| default_label.to_owned())),
             modified_at,
         });
     }
@@ -1337,7 +1399,7 @@ pub fn list_for_navigation(directory: &Path) -> Result<Vec<NavigationTicket>, St
 fn navigation_metadata(
     reader: impl Read,
     fallback: &str,
-) -> std::io::Result<(String, String, bool, Option<String>)> {
+) -> std::io::Result<(String, String, bool, Option<String>, Option<String>)> {
     let mut lines = BufReader::new(reader).lines();
     let first = lines.next().transpose()?.unwrap_or_default();
     if first.trim() == "---" {
@@ -1345,6 +1407,7 @@ fn navigation_metadata(
         let mut status = None;
         let mut has_work_session = false;
         let mut opencode_status = None;
+        let mut project_label = None;
         let mut closed = false;
         while let Some(line) = lines.next() {
             let line = line?;
@@ -1357,6 +1420,14 @@ fn navigation_metadata(
             }
             if let Some(value) = line.strip_prefix("opencode-status:") {
                 opencode_status = Some(value.trim().trim_matches(['"', '\'']).to_owned());
+            }
+            if let Some(value) = line.strip_prefix("project_label:") {
+                let value = value.trim();
+                project_label = Some(if value.starts_with('"') {
+                    serde_json::from_str(value).unwrap_or_else(|_| value.trim_matches(['"', '\'']).to_owned())
+                } else {
+                    value.trim_matches(['"', '\'']).to_owned()
+                });
             }
             if let Some(value) = line.strip_prefix("work_session_id:") {
                 has_work_session = !value.trim().trim_matches(['"', '\'']).is_empty();
@@ -1371,6 +1442,7 @@ fn navigation_metadata(
                 status.unwrap_or_else(|| "unknown".to_owned()),
                 has_work_session,
                 opencode_status,
+                project_label,
             ));
         }
         if closed {
@@ -1381,6 +1453,7 @@ fn navigation_metadata(
                         status.unwrap_or_else(|| "unknown".to_owned()),
                         has_work_session,
                         opencode_status,
+                        project_label,
                     ));
                 }
             }
@@ -1390,18 +1463,19 @@ fn navigation_metadata(
             status.unwrap_or_else(|| "unknown".to_owned()),
             has_work_session,
             opencode_status,
+            project_label,
         ));
     }
 
     if let Some(title) = first.strip_prefix("# ") {
-        return Ok((title.to_owned(), "unknown".to_owned(), false, None));
+        return Ok((title.to_owned(), "unknown".to_owned(), false, None, None));
     }
     for line in lines {
         if let Some(title) = line?.strip_prefix("# ") {
-            return Ok((title.to_owned(), "unknown".to_owned(), false, None));
+            return Ok((title.to_owned(), "unknown".to_owned(), false, None, None));
         }
     }
-    Ok((fallback.to_owned(), "unknown".to_owned(), false, None))
+    Ok((fallback.to_owned(), "unknown".to_owned(), false, None, None))
 }
 
 /// A timestamp is only a sorting hint; unavailable metadata must not fail
@@ -1445,6 +1519,70 @@ pub fn list_archived(directory: &Path) -> Result<Vec<Ticket>, String> {
     // field remain readable, and the UI can fall back to their file mtime.
     let _ = backfill_archived_at(directory);
     list(&directory.join("archived"))
+}
+
+pub fn list_archived_with_default_label(
+    directory: &Path,
+    default_label: Option<&str>,
+) -> Result<Vec<Ticket>, String> {
+    let _ = backfill_archived_at(directory);
+    list_with_default_label(&directory.join("archived"), default_label)
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectLabelOption {
+    pub label: String,
+    pub ticket_count: usize,
+    pub workspace_count: usize,
+}
+
+/// Discovers persisted labels and derives the owning Workspace name for older
+/// unlabeled tickets. Discovery is read-only; ticket Markdown is written only
+/// by explicit label changes or ordinary ticket updates.
+pub fn list_project_labels(
+    app_data: &Path,
+    workspaces: &[(String, String, String)],
+) -> Result<Vec<ProjectLabelOption>, String> {
+    use std::collections::{BTreeMap, HashSet};
+    let mut labels: BTreeMap<String, (String, usize, HashSet<String>)> = BTreeMap::new();
+    let mut workspaces = workspaces.to_vec();
+    workspaces.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.cmp(&b.0)));
+    for (workspace_id, workspace_name, workspace_slug) in workspaces {
+        let root = workspace_ticket_dir(app_data, &workspace_slug)?;
+        for directory in [root.clone(), root.join("archived")] {
+            if !directory.is_dir() { continue; }
+            let mut paths = fs::read_dir(&directory)
+                .map_err(|error| error.to_string())?
+                .filter_map(Result::ok)
+                .map(|entry| entry.path())
+                .filter(|path| path.is_file() && path.extension().and_then(|value| value.to_str()) == Some("md"))
+                .collect::<Vec<_>>();
+            paths.sort();
+            for path in paths {
+                let markdown = fs::read_to_string(&path)
+                    .map_err(|error| format!("Could not read ticket {}: {error}", path.display()))?;
+                let label = project_label(&markdown)?.unwrap_or_else(|| workspace_name.clone());
+                let label = normalize_project_label(&label)?;
+                let key = label.to_lowercase();
+                let entry = labels.entry(key).or_insert_with(|| (label, 0, HashSet::new()));
+                entry.1 += 1;
+                entry.2.insert(workspace_id.clone());
+            }
+        }
+    }
+    Ok(labels.into_values().map(|(label, ticket_count, owners)| ProjectLabelOption {
+        label, ticket_count, workspace_count: owners.len(),
+    }).collect())
+}
+
+pub fn set_ticket_label(directory: &Path, filename: &str, label: &str) -> Result<String, String> {
+    let label = normalize_project_label(label)?;
+    let path = canonical_ticket(directory, filename)?;
+    let original = fs::read_to_string(&path).map_err(|error| error.to_string())?;
+    let updated = set_project_label(&original, Some(&label))?;
+    if original != updated { write_ticket_markdown_safely(&path, &original, &updated)?; }
+    Ok(label)
 }
 
 fn archived_at(markdown: &str) -> Option<String> {
@@ -2898,8 +3036,101 @@ mod tests {
                 "Fast navigation".into(),
                 "in_progress".into(),
                 true,
-                Some("idle".into())
+                Some("idle".into()),
+                None
             ),
+        );
+    }
+
+    #[test]
+    fn missing_ticket_labels_are_derived_without_writing_files() {
+        let root = tempfile::tempdir().unwrap();
+        let directory = root.path().join("workspace-tickets/alpha");
+        let archived = directory.join("archived");
+        fs::create_dir_all(&archived).unwrap();
+        let open_source = "---\ntitle: Open\nstatus: in_progress\n---\nBody remains unchanged\n";
+        let archived_source = "---\ntitle: Closed\nstatus: done\n---\nArchived body\n";
+        fs::write(directory.join("open.md"), open_source).unwrap();
+        fs::write(archived.join("closed.md"), archived_source).unwrap();
+
+        let navigation = list_for_navigation_with_default_label(&directory, "Alpha Workspace").unwrap();
+        assert_eq!(navigation[0].project_label.as_deref(), Some("Alpha Workspace"));
+        let tickets = list_with_default_label(&directory, Some("Alpha Workspace")).unwrap();
+        assert_eq!(tickets[0].project_label.as_deref(), Some("Alpha Workspace"));
+        let labels = list_project_labels(
+            root.path(),
+            &[("workspace-id".into(), "Alpha Workspace".into(), "alpha".into())],
+        ).unwrap();
+        assert_eq!(labels, vec![ProjectLabelOption {
+            label: "Alpha Workspace".into(), ticket_count: 2, workspace_count: 1,
+        }]);
+        assert_eq!(fs::read_to_string(directory.join("open.md")).unwrap(), open_source);
+        assert_eq!(fs::read_to_string(archived.join("closed.md")).unwrap(), archived_source);
+
+        assert_eq!(set_ticket_label(&directory, "open.md", "Initiative").unwrap(), "Initiative");
+        assert!(set_ticket_label(&directory, "open.md", "  ").is_err());
+        let saved = list_with_default_label(&directory, Some("Alpha Workspace")).unwrap();
+        assert_eq!(saved[0].project_label.as_deref(), Some("Initiative"));
+        assert!(fs::read_to_string(directory.join("open.md")).unwrap().contains("project_label: \"Initiative\""));
+    }
+
+    #[test]
+    fn project_labels_validate_preserve_ticket_content_and_discover_in_stable_order() {
+        assert_eq!(normalize_project_label("  Initiative  ").unwrap(), "Initiative");
+        assert!(normalize_project_label(" \t ").is_err());
+        assert!(normalize_project_label(&"x".repeat(81)).is_err());
+        assert!(normalize_project_label("bad\nlabel").is_err());
+        assert_eq!(normalize_project_label(&"x".repeat(80)).unwrap().len(), 80);
+
+        let markdown = "---\ntitle: Example\nstatus: in_progress\nowner: team\n---\nTicket body\n";
+        let updated = set_project_label(markdown, Some("  Initiative  ")).unwrap();
+        assert_eq!(project_label(&updated).unwrap().as_deref(), Some("Initiative"));
+        assert!(updated.contains("owner: team\n"));
+        assert!(updated.ends_with("---\nTicket body\n"));
+
+        let root = tempfile::tempdir().unwrap();
+        for slug in ["alpha", "beta"] {
+            fs::create_dir_all(root.path().join("workspace-tickets").join(slug)).unwrap();
+        }
+        fs::create_dir_all(root.path().join("workspace-tickets/alpha/archived")).unwrap();
+        fs::write(
+            root.path().join("workspace-tickets/alpha/first.md"),
+            "---\ntitle: First\nstatus: in_progress\nproject_label: \"initiative\"\n---\n",
+        )
+        .unwrap();
+        fs::write(
+            root.path().join("workspace-tickets/alpha/archived/closed.md"),
+            "---\ntitle: Closed\nstatus: done\nproject_label: Zeta\n---\n",
+        )
+        .unwrap();
+        fs::write(
+            root.path().join("workspace-tickets/beta/second.md"),
+            "---\ntitle: Second\nstatus: in_progress\nproject_label: Initiative\n---\n",
+        )
+        .unwrap();
+
+        let labels = list_project_labels(
+            root.path(),
+            &[
+                ("beta-id".into(), "Beta Workspace".into(), "beta".into()),
+                ("alpha-id".into(), "Alpha Workspace".into(), "alpha".into()),
+            ],
+        )
+        .unwrap();
+        assert_eq!(
+            labels,
+            vec![
+                ProjectLabelOption {
+                    label: "initiative".into(),
+                    ticket_count: 2,
+                    workspace_count: 2,
+                },
+                ProjectLabelOption {
+                    label: "Zeta".into(),
+                    ticket_count: 1,
+                    workspace_count: 1,
+                },
+            ]
         );
     }
 

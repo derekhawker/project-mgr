@@ -1,6 +1,6 @@
 # Project Principles
 
-- For UI component boundaries, app-specific abstractions, and component styling, follow [UI component design](.agents/skills/ui-component-design/SKILL.md). When extending the presentation library in `app/packages/ui-lib/` (imported as `@ui-lib`), also follow [UI library extension](.agents/skills/ui-library-extension/SKILL.md).
+- For UI component boundaries, app-specific abstractions, and component styling, follow [UI component design](.agents/skills/ui-component-design/SKILL.md).
 - **Give coherent UI elements clear component boundaries.** Extract an element when separating its presentation or interaction makes the surrounding screen easier to understand or change. Reuse an existing component when it fits. Put product-neutral components in `app/packages/ui-lib/` and application-specific components in `app/src/components/` or beside their screen. Keep product behavior out of the UI library.
 - Put application behavior, validation, state changes, persistence, and process ownership in Rust. Keep raw HTML/CSS/JavaScript as presentation and a Tauri-command adapter.
 - Read `docs/application-workflows.md` before changing product behavior.

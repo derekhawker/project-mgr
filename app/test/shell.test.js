@@ -33,6 +33,8 @@ import {
   setDefaultModel,
   proposeWorkspaceTicket,
   createWorkspaceTicket,
+  listWorkspaceTicketLabels,
+  setWorkspaceTicketLabel,
   followUpQuickRequest,
   restoreQuickRequest,
   listQuickRequests,
@@ -1248,6 +1250,36 @@ test("Workspace ticket proposal and confirmation adapters preserve their explici
     ["workspace_ticket_proposal", { workspaceId: "workspace-1", idea: "An idea" }],
     ["workspace_ticket_create", { workspaceId: "workspace-1", title: "Fixture proposal", body: "Edited body", startInvestigation: true }],
   ]);
+});
+
+test("ticket-label discovery invokes the no-payload Rust command", async () => {
+  const calls = [];
+  const invoke = (...args) => {
+    calls.push(args);
+    return Promise.resolve([]);
+  };
+  assert.deepEqual(await listWorkspaceTicketLabels(invoke), []);
+  assert.deepEqual(calls, [["workspace_ticket_labels"]]);
+});
+
+test("ticket-label updates send a required, non-null label to Rust", async () => {
+  const calls = [];
+  const invoke = (...args) => {
+    calls.push(args);
+    return Promise.resolve(args[1].label);
+  };
+  assert.equal(
+    await setWorkspaceTicketLabel(invoke, "workspace-1", "ticket.md", "Initiative"),
+    "Initiative",
+  );
+  assert.deepEqual(calls, [["workspace_ticket_label_set", {
+    workspaceId: "workspace-1", filename: "ticket.md", label: "Initiative",
+  }]]);
+  await assert.rejects(
+    setWorkspaceTicketLabel(invoke, "workspace-1", "ticket.md", null),
+    /must not be null/,
+  );
+  assert.equal(calls.length, 1, "null labels fail before crossing the Rust boundary");
 });
 
 test("Quick Request submit preserves surrounding UI state and clears only the prompt after full success", async () => {

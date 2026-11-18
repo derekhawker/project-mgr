@@ -23,6 +23,7 @@ await writeFile(
   export { QuickRequestList } from ${JSON.stringify(resolve(root, "src/views/quick-requests/QuickRequestList.jsx"))};
   export { DirectoriesNavigationButton } from ${JSON.stringify(resolve(root, "src/views/directories/DirectoriesNavigationButton.jsx"))};
   export { QuickRequestHistoryButton } from ${JSON.stringify(resolve(root, "src/views/quick-requests/QuickRequestHistoryButton.jsx"))};
+  export { ApplicationRoot } from ${JSON.stringify(resolve(root, "src/application/ApplicationRoot.jsx"))};
 `,
 );
 try {
@@ -68,6 +69,7 @@ const {
   QuickRequestList,
   DirectoriesNavigationButton,
   QuickRequestHistoryButton,
+  ApplicationRoot,
 } = await import(pathToFileURL(join(temp, "dist/navigation.js")));
 function mount(Component, props) {
   const host = document.createElement("div");
@@ -325,6 +327,115 @@ test("workspace tickets group, collapse, mark blocked, and flatten newest first"
     false,
     "the owning Workspace is not active while its ticket is active",
   );
+  view.dispose();
+});
+
+test("labels shared with archived or completed tickets retain shared grouping", async () => {
+  const workspace = { id: "active-owner", name: "Active Owner", kind: "regular", status: "active" };
+  const view = mount(WorkspaceNavigation, {
+    data: () => ({
+      workspaces: [workspace],
+      workspaceTickets: {
+        "active-owner": [{ filename: "active.md", title: "Visible ticket", status: "in_progress", projectLabel: "Rollout" }],
+      },
+    }),
+    busy: () => false,
+    selected: () => null,
+    viewMode: () => "grouped",
+    onSelect: () => {},
+    onWork: () => {},
+    onLoadLabels: async () => [{ label: "Rollout", ticketCount: 2, workspaceCount: 2 }],
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.ok([...view.host.querySelectorAll("h3")].some((heading) => heading.textContent === "Rollout"));
+  assert.ok(view.host.querySelector('[title="Active Owner"]'));
+  assert.ok([...view.host.querySelectorAll("button")].some((button) => button.textContent.includes("Visible ticket")));
+  view.dispose();
+});
+
+test("ticket context menu permits outside right-clicks and opens the app-level label editor", async () => {
+  const workspaces = [
+    { id: "a", name: "Alpha Repo", kind: "regular", status: "active" },
+    { id: "b", name: "Beta Repo", kind: "regular", status: "active" },
+  ];
+  let applied;
+  const workspaceNavigation = {
+    data: () => ({ workspaces, workspaceTickets: {
+      a: [{ filename: "one.md", title: "First", status: "in_progress", projectLabel: "Launch" }],
+      b: [{ filename: "two.md", title: "Second", status: "blocked", projectLabel: "launch" }],
+    } }),
+    busy: () => false,
+    selected: () => null,
+    viewMode: () => "grouped",
+    onSelect: () => {},
+    onWork: () => {},
+    onLoadLabels: async () => [{ label: "Launch", ticketCount: 2, workspaceCount: 2 }],
+    onSetTicketLabel: async (...args) => { applied = args; },
+  };
+  const view = mount(ApplicationRoot, {
+    quickRequestHistoryButton: () => null,
+    quickRequestList: () => null,
+    workspaceNavigation,
+    workspaceViewToggle: () => null,
+    directoriesNavigationButton: () => null,
+    portsNavigationButton: () => null,
+    newWorkMenu: () => null,
+    workspaceShell: () => null,
+    rightContent: () => null,
+    applicationStatus: () => null,
+    appNotice: () => null,
+    newWorkModal: () => null,
+  });
+  assert.ok([...view.host.querySelectorAll("h3")].some((heading) => heading.textContent === "Launch"));
+  assert.equal(view.host.querySelectorAll('[title="Alpha Repo"], [title="Beta Repo"]').length, 2);
+  const row = [...view.host.querySelectorAll("button")].find((button) => button.textContent.includes("First"));
+  const ticketWorkspaceBadge = row.querySelector('[title="Alpha Repo"]');
+  const ticketStatusIcon = row.querySelector('[role="img"]');
+  assert.ok(ticketStatusIcon.compareDocumentPosition(ticketWorkspaceBadge) & Node.DOCUMENT_POSITION_FOLLOWING);
+  assert.equal(
+    ticketWorkspaceBadge.parentElement.textContent
+      .slice(ticketWorkspaceBadge.textContent.length)
+      .trim(),
+    "·First",
+    "the Workspace name is plain inline text before the ticket title",
+  );
+  row.dispatchEvent(new Event("contextmenu", { bubbles: true, cancelable: true }));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(view.host.querySelector('[role="menu"] [role="menuitem"]').textContent, "Change label…");
+  const outsideContextMenu = new Event("contextmenu", { bubbles: true, cancelable: true });
+  view.host.querySelector(".quick-view").dispatchEvent(outsideContextMenu);
+  assert.equal(outsideContextMenu.defaultPrevented, false);
+  assert.equal(view.host.querySelector('[role="menu"]'), null);
+  row.dispatchEvent(new Event("contextmenu", { bubbles: true, cancelable: true }));
+  const secondRow = [...view.host.querySelectorAll("button")].find((button) => button.textContent.includes("Second"));
+  const secondContextMenu = new Event("contextmenu", { bubbles: true, cancelable: true });
+  secondRow.dispatchEvent(secondContextMenu);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(secondContextMenu.defaultPrevented, true);
+  assert.equal(view.host.querySelectorAll('[role="menu"]').length, 1);
+  view.host.querySelector('[role="menuitem"]').click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const dialog = view.host.querySelector("dialog");
+  assert.ok(dialog?.open);
+  assert.equal(dialog.closest(".navigation"), null);
+  const currentLabel = dialog.querySelector('input[aria-label="Current label"]');
+  assert.equal(currentLabel.readOnly, true);
+  assert.equal(currentLabel.value, "launch");
+  assert.equal([...dialog.querySelectorAll("button")].some((button) => button.textContent.trim() === "No label"), false);
+  assert.equal(dialog.querySelector("[role='listbox']"), null);
+  const input = dialog.querySelector('input[aria-label="Search labels"]');
+  input.value = "Launch";
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.ok(dialog.querySelector('[role="listbox"]'));
+  [...dialog.querySelectorAll('[role="option"]')].find((option) => option.textContent.includes("Launch")).click();
+  assert.equal(dialog.querySelector('[role="listbox"]'), null);
+  assert.equal(input.value, "Launch");
+  [...dialog.querySelectorAll("button")].find((button) => button.textContent.trim() === "Apply label").click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(applied[0].id, "b");
+  assert.equal(applied[1], "two.md");
+  assert.equal(applied[2], "Launch");
   view.dispose();
 });
 
