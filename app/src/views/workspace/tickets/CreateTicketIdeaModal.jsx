@@ -78,7 +78,6 @@ export function CreateTicketIdeaModal(props) {
             />
             <span>
               <strong>Start ticket</strong>
-              <span class={styles.note}>Implement only if clear, low-effort, and one obvious path.</span>
             </span>
           </label>
         </Show>
