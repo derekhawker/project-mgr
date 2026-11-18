@@ -2896,6 +2896,10 @@
                   "type": "string",
                   "nullable": true
                 },
+                "projectLabel": {
+                  "type": "string",
+                  "nullable": true
+                },
                 "modifiedAt": {
                   "type": "number"
                 }
@@ -2905,6 +2909,7 @@
                 "title",
                 "status",
                 "hasWorkSession",
+                "projectLabel",
                 "modifiedAt"
               ],
               "additionalProperties": false
@@ -5653,6 +5658,10 @@
             "type": "string",
             "nullable": true
           },
+          "projectLabel": {
+            "type": "string",
+            "nullable": true
+          },
           "content": {
             "type": "string"
           },
@@ -5669,6 +5678,7 @@
           "title",
           "status",
           "hasWorkSession",
+          "projectLabel",
           "content",
           "modifiedAt",
           "archivedAt"
@@ -5676,6 +5686,42 @@
         "additionalProperties": false
       }
     }
+  },
+  "workspace_ticket_labels": {
+    "payload": "none",
+    "result": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "label": { "type": "string" },
+          "ticketCount": { "type": "number" },
+          "workspaceCount": { "type": "number" }
+        },
+        "required": ["label", "ticketCount", "workspaceCount"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "workspace_ticket_label_set": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "request": {
+          "type": "object",
+          "properties": {
+            "workspaceId": { "type": "string" },
+            "filename": { "type": "string" },
+            "label": { "type": "string", "nullable": true }
+          },
+          "required": ["workspaceId", "filename", "label"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["request"],
+      "additionalProperties": false
+    },
+    "result": { "type": "string", "nullable": true }
   },
   "workspace_ticket_proposal": {
     "payload": {
@@ -5761,6 +5807,10 @@
               "type": "string",
               "nullable": true
             },
+            "projectLabel": {
+              "type": "string",
+              "nullable": true
+            },
             "content": {
               "type": "string"
             },
@@ -5778,6 +5828,7 @@
             "status",
             "hasWorkSession",
             "opencodeStatus",
+            "projectLabel",
             "content",
             "modifiedAt",
             "archivedAt"

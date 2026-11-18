@@ -6,6 +6,7 @@ let changeReviewMode = "unified";
 const viewedReviewFiles = new Map();
 let defaultModel = { providerId: "fixture", id: "model" };
 let createdWorkspaceTickets = [];
+const ticketLabelOverrides = new Map();
 let ticketSessionSequence = 0;
 let portSelection =
   "3000-3010,4200,4321,5000-5010,5173-5180,5432,6379,8000-8010,8080-8090,9229,27017";
@@ -245,6 +246,7 @@ export async function invokeBrowserFixture(name, payload = {}) {
               title: "Example active ticket",
               status: "in_progress",
               hasWorkSession: true,
+              projectLabel: ticketLabelOverrides.get(`${example.id}:example-active.md`) ?? example.name,
               modifiedAt: timestamp,
             },
             {
@@ -252,6 +254,7 @@ export async function invokeBrowserFixture(name, payload = {}) {
               title: "Example blocked ticket",
               status: "blocked",
               hasWorkSession: false,
+              projectLabel: ticketLabelOverrides.get(`${example.id}:example-blocked.md`) ?? example.name,
               modifiedAt: timestamp - 1,
             },
             {
@@ -259,6 +262,7 @@ export async function invokeBrowserFixture(name, payload = {}) {
               title: "Example draft in progress",
               status: "draft",
               hasWorkSession: true,
+              projectLabel: ticketLabelOverrides.get(`${example.id}:example-draft-session.md`) ?? example.name,
               modifiedAt: timestamp - 2,
             },
             {
@@ -266,6 +270,7 @@ export async function invokeBrowserFixture(name, payload = {}) {
               title: "Example new draft",
               status: "draft",
               hasWorkSession: false,
+              projectLabel: ticketLabelOverrides.get(`${example.id}:example-new-draft.md`) ?? example.name,
               modifiedAt: timestamp - 3,
             },
           ],
@@ -281,6 +286,7 @@ export async function invokeBrowserFixture(name, payload = {}) {
                 "Investigate inability to submit a large Markdown document in the create-ticket prompt",
               status: "done",
               hasWorkSession: false,
+              projectLabel: example.name,
               modifiedAt: 1_762_400_000_000,
               archivedAt: "2025-11-14T00:00:00.000Z",
               content:
@@ -293,6 +299,7 @@ export async function invokeBrowserFixture(name, payload = {}) {
               title: "Blocked example ticket",
               status: "blocked",
               hasWorkSession: false,
+              projectLabel: example.name,
               modifiedAt: 1_793_500_000_000,
               archivedAt: null,
               content:
@@ -303,6 +310,7 @@ export async function invokeBrowserFixture(name, payload = {}) {
               title: "In-progress example ticket",
               status: "in_progress",
               hasWorkSession: false,
+              projectLabel: example.name,
               modifiedAt: 1_793_600_000_000,
               archivedAt: null,
               content:
@@ -313,6 +321,7 @@ export async function invokeBrowserFixture(name, payload = {}) {
               title: "Example ticket",
               status: "draft",
               hasWorkSession: true,
+              projectLabel: example.name,
               modifiedAt: 1_793_700_000_000,
               archivedAt: null,
               content: `---\ntitle: Example ticket\nstatus: draft\nwork_session_id: fixture-session\n---\n# Example ticket\n\nA fixture ticket for the Workspace with readable **Markdown**.\n\n${"This long paragraph checks reader scrolling and keeps the full ticket body available. ".repeat(28)}\n\n## Acceptance checks\n\n- List and reader scroll independently\n- Metadata follows the body\n\n\`\`\`js\nconsole.log("safe fixture Markdown");\n\`\`\``,
@@ -322,6 +331,7 @@ export async function invokeBrowserFixture(name, payload = {}) {
               title: "Other-status example",
               status: "review",
               hasWorkSession: false,
+              projectLabel: example.name,
               modifiedAt: 1_793_650_000_000,
               archivedAt: null,
               content:
@@ -333,6 +343,40 @@ export async function invokeBrowserFixture(name, payload = {}) {
               .map(({ workspaceId, ...ticket }) => ticket),
           );
       break;
+    case "workspace_ticket_labels": {
+      const labels = new Map();
+      for (const workspace of workspaces) {
+        for (const [key, label] of ticketLabelOverrides) {
+          if (!key.startsWith(`${workspace.id}:`) || !label) continue;
+          const current = labels.get(label.toLowerCase()) || { label, ticketCount: 0, workspaceCount: new Set() };
+          current.ticketCount += 1;
+          current.workspaceCount.add(workspace.id);
+          labels.set(label.toLowerCase(), current);
+        }
+        for (const ticket of createdWorkspaceTickets.filter((item) => item.workspaceId === workspace.id)) {
+          const label = ticket.projectLabel || workspace.name;
+          const key = label.toLowerCase();
+          const current = labels.get(key) || { label, ticketCount: 0, workspaceCount: new Set() };
+          current.ticketCount += 1;
+          current.workspaceCount.add(workspace.id);
+          labels.set(key, current);
+        }
+      }
+      labels.set(example.name.toLowerCase(), { label: example.name, ticketCount: 1, workspaceCount: new Set([example.id]) });
+      result = [...labels.values()].map(({ label, ticketCount, workspaceCount }) => ({ label, ticketCount, workspaceCount: workspaceCount.size }));
+      break;
+    }
+    case "workspace_ticket_label_set": {
+      const ticket = createdWorkspaceTickets.find((item) => item.workspaceId === request.workspaceId && item.filename === request.filename);
+      if (ticket) ticket.projectLabel = request.label;
+      else if (request.workspaceId === example.id && ["example-active.md", "example-blocked.md", "example-draft-session.md", "example-new-draft.md"].includes(request.filename)) {
+        const key = `${request.workspaceId}:${request.filename}`;
+        if (request.label == null) ticketLabelOverrides.delete(key);
+        else ticketLabelOverrides.set(key, request.label);
+      }
+      result = request.label ?? null;
+      break;
+    }
     case "workspace_ticket_proposal": {
       if (!workspaces.some((item) => item.id === request.workspaceId))
         throw new Error("Workspace was not found");
@@ -364,13 +408,14 @@ export async function invokeBrowserFixture(name, payload = {}) {
       const investigationSessionId = request.startInvestigation
         ? `ses-fixture-ticket-${createdWorkspaceTickets.length + 1}`
         : null;
-      const content = `---\ntitle: ${JSON.stringify(request.title)}\nstatus: draft\n${investigationSessionId ? `work_session_id: ${investigationSessionId}\n` : ""}---\n\n${request.body}\n`;
+      const content = `---\ntitle: ${JSON.stringify(request.title)}\nstatus: draft\nproject_label: ${JSON.stringify(workspace.name)}\n${investigationSessionId ? `work_session_id: ${investigationSessionId}\n` : ""}---\n\n${request.body}\n`;
       const ticket = {
         filename,
         title: request.title,
         status: "draft",
         hasWorkSession: Boolean(investigationSessionId),
         opencodeStatus: null,
+        projectLabel: workspace.name,
         content,
         modifiedAt: Date.now(),
         archivedAt: null,

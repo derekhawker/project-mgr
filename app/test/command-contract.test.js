@@ -202,6 +202,7 @@ test("workspace navigation accepts the persisted OpenCode status on ticket rows"
       status: "in_progress",
       hasWorkSession: true,
       opencodeStatus: "idle",
+      projectLabel: null,
       modifiedAt: 1,
     },
   ];
@@ -750,8 +751,9 @@ test("Workspace navigation owns its list and busy attribute through Solid", () =
   );
   assert.match(
     applicationRoot,
-    /<WorkspaceNavigation \{\.\.\.props\.workspaceNavigation\} \/>/,
+    /<WorkspaceNavigation[\s\S]*?\{\.\.\.props\.workspaceNavigation\}/,
   );
+  assert.match(applicationRoot, /<TicketLabelEditor/);
   assert.match(main, /busy: navigationBusy/);
   assert.match(main, /setNavigationBusy,/);
   assert.match(main, /workspaceNavigation: workspaceNavigationProps/);
@@ -1150,7 +1152,7 @@ test("regular Workspace navigation does not render retained legacy Task records"
   assert.match(main, /const workspaceNavigationProps = \{/);
   assert.match(
     applicationRoot,
-    /<WorkspaceNavigation \{\.\.\.props\.workspaceNavigation\} \/>/,
+    /<WorkspaceNavigation[\s\S]*?\{\.\.\.props\.workspaceNavigation\}/,
   );
   assert.doesNotMatch(renderNavigation, /data\.tasks|renderTasks|selectTask/);
   assert.doesNotMatch(html, /id="owner-tabs"/);

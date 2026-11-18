@@ -726,6 +726,16 @@ export function listWorkspaceTickets(invoke, workspaceId, archived = false) {
   return invokeCommand(invoke, "workspace_tickets_list", { workspaceId, archived });
 }
 
+export function listWorkspaceTicketLabels(invoke) {
+  return invokeCommand(invoke, "workspace_ticket_labels");
+}
+
+export function setWorkspaceTicketLabel(invoke, workspaceId, filename, label) {
+  return invokeCommand(invoke, "workspace_ticket_label_set", {
+    workspaceId, filename, label,
+  });
+}
+
 export function workOnWorkspaceTicket(invoke, workspaceId, filename) {
   return invokeCommand(invoke, "workspace_ticket_work", { workspaceId, filename });
 }

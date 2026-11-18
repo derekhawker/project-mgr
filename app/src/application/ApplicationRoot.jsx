@@ -1,7 +1,10 @@
+import { createSignal } from "solid-js";
 import styles from "./navigation.module.css";
 import { WorkspaceNavigation } from "../views/workspace/navigation/WorkspaceNavigation.jsx";
+import { TicketLabelEditor } from "../components/TicketLabelEditor.jsx";
 
 export function ApplicationRoot(props) {
+  const [ticketLabelSelection, setTicketLabelSelection] = createSignal(null);
   return (
     <>
       <main class="shell">
@@ -21,7 +24,10 @@ export function ApplicationRoot(props) {
               {props.workspaceViewToggle?.()}
             </div>
             <div class="navigation-scroll">
-              <WorkspaceNavigation {...props.workspaceNavigation} />
+              <WorkspaceNavigation
+                {...props.workspaceNavigation}
+                onChangeLabel={(workspace, ticket) => setTicketLabelSelection({ workspace, ticket })}
+              />
             </div>
             <div class={styles.destinations}>
               {props.portsNavigationButton()}
@@ -41,6 +47,18 @@ export function ApplicationRoot(props) {
         {props.appNotice()}
       </main>
       {props.newWorkModal()}
+      <TicketLabelEditor
+        selection={ticketLabelSelection}
+        onClose={() => setTicketLabelSelection(null)}
+        onLoadLabels={props.workspaceNavigation.onLoadLabels}
+        onApply={(selection, label) =>
+          props.workspaceNavigation.onSetTicketLabel(
+            selection.workspace,
+            selection.ticket.filename,
+            label,
+          )
+        }
+      />
     </>
   );
 }

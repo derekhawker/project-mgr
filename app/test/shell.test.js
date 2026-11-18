@@ -33,6 +33,7 @@ import {
   setDefaultModel,
   proposeWorkspaceTicket,
   createWorkspaceTicket,
+  listWorkspaceTicketLabels,
   followUpQuickRequest,
   restoreQuickRequest,
   listQuickRequests,
@@ -1248,6 +1249,16 @@ test("Workspace ticket proposal and confirmation adapters preserve their explici
     ["workspace_ticket_proposal", { workspaceId: "workspace-1", idea: "An idea" }],
     ["workspace_ticket_create", { workspaceId: "workspace-1", title: "Fixture proposal", body: "Edited body", startInvestigation: true }],
   ]);
+});
+
+test("ticket-label discovery invokes the no-payload Rust command", async () => {
+  const calls = [];
+  const invoke = (...args) => {
+    calls.push(args);
+    return Promise.resolve([]);
+  };
+  assert.deepEqual(await listWorkspaceTicketLabels(invoke), []);
+  assert.deepEqual(calls, [["workspace_ticket_labels"]]);
 });
 
 test("Quick Request submit preserves surrounding UI state and clears only the prompt after full success", async () => {

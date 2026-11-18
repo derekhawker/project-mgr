@@ -370,3 +370,26 @@ requirements and proof above define tasks 1–5. The user explicitly approved
 tasks 1–5 on 2026-11-08 and confirmed their native checks. Address any
 in-scope failures and retain the recorded frontend-suite limitation. Revisit
 Task 6 only after the other tasks are done, as requested by the user.
+
+## Cross-Workspace ticket labels
+
+Approved on 2026-11-17: tickets may carry one optional `project_label` value in
+Markdown frontmatter to coordinate work across Workspaces. The label is not a
+Project record or work context; each ticket remains owned by its original
+Workspace, and **Work** continues to use that Workspace's repository. New
+tickets snapshot the Workspace name as their initial label. Existing tickets
+expose their owning Workspace name as a derived label in Rust responses and
+read-only label discovery. An explicit label save persists the chosen value.
+Available labels come from ticket frontmatter plus derived Workspace defaults,
+including archived tickets; no separate label registry is maintained.
+
+In grouped navigation, a label used by multiple Workspaces becomes a shared
+section with a Workspace badge on each ticket row. A label used by one Workspace
+keeps the existing Workspace/ticket layout. Flat navigation remains unchanged.
+Labels are trimmed, case-insensitively deduplicated, and limited to 80
+characters without control characters. The ticket context action **Change
+label…** opens a searchable picker with inline creation, **Apply label**, and
+**Cancel**; right-click opens a context menu first. Labels cannot be cleared.
+Workspace tags,
+label-wide rename/merge, multiple
+labels, and label-level work actions are out of scope.

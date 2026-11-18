@@ -9,6 +9,8 @@ import {
   proposeWorkspaceTicket,
   createWorkspaceTicket,
   listWorkspaceTickets,
+  listWorkspaceTicketLabels,
+  setWorkspaceTicketLabel,
   workOnWorkspaceTicket,
   setDefaultModel,
   createWorkspaceTicketSession,
@@ -517,6 +519,11 @@ const workspaceNavigationProps = {
   isTicketCurrent: (workspace, ticket) =>
     selectedWorkspace?.id === workspace.id &&
     selectedTicketFilename() === ticket.filename,
+  onLoadLabels: () => listWorkspaceTicketLabels(invoke),
+  onSetTicketLabel: async (workspace, filename, label) => {
+    await setWorkspaceTicketLabel(invoke, workspace.id, filename, label);
+    await refreshNavigation();
+  },
 };
 
 function clearActiveNavigationItems() {
