@@ -18,18 +18,21 @@ implementing unapproved follow-up remains outside the approved boundary.
    validation, and delivery. Resolve project paths from the project or instruction
    file, not this skill's installation directory. Local instructions supply
    project policy; this skill supplies the implementation process.
-2. Use the selected task's existing file as the work record. Keep one source of
-   truth rather than a ticket plus a competing execution plan. If the project
-   has no convention, use a user-designated file or ask where to create it before
-   implementation. Use [work-record](references/work-record.md) for the required
-   information when the project has no format. A task file is sufficient: this
+2. Follow the project's record convention. Keep each fact authoritative in one
+   place; when local policy assigns scope/status/decisions to a ticket and live
+   execution tracking to a companion, use that split rather than duplicating a
+   second plan. If the project has no convention, use a user-designated file or
+   ask where to create it before implementation. Use
+   [work-record](references/work-record.md) when no format is supplied. This
    skill does not require a ticket system, active index, or prescribed statuses.
 3. Before selecting or implementing work, inventory every distinct outcome,
-   change, question, and constraint the human raised in the current request. Add
-   each to the work record's **request coverage** list, preserving the human's
-   intent rather than merging unrelated asks. For each item, record its disposition:
-   in scope, follow-up, needs clarification/approval, or not applicable (with why).
-   Keep follow-ups visible; never silently drop an ask because another seems more
+   change, question, and constraint the human raised in the current request.
+   Preserve them in the request-coverage list of the record designated by local
+   policy. If policy does not permit writing before approval, keep the coverage in
+   the approval request until then. Preserve the human's intent rather than
+   merging unrelated asks. For each item, record its disposition: in scope,
+   follow-up, needs clarification/approval, or not applicable (with why). Keep
+   follow-ups visible; never silently drop an ask because another seems more
    central. If the request contains multiple independent outcomes, present the
    proposed coverage and ask which belong in the current approved task before
    implementation. A request may be one task or several; do not force it into one.
@@ -65,16 +68,25 @@ action is either approved work or a named question for the human.
    leave unknown. Promote only supported conclusions into production decisions;
    keep the rest provisional or propose another experiment.
 5. Record the selected outcome, scope, non-goals, acceptance checks, dependencies,
-   architecture and documentation impact, validation, and ordered slices. Include
-   an inspection or interaction path when manual verification needs one. Link each
-   in-scope request-coverage item to the slice and acceptance check that fulfills
-   it; retain out-of-scope items in the coverage list with their disposition.
+   architecture and documentation impact, validation, and a concise checklist of
+   meaningful outcomes. Include an inspection or interaction path when manual
+   verification needs one. Link each in-scope request-coverage item to the
+   checklist outcome and acceptance evidence that fulfills it; retain out-of-scope
+   items in the coverage list with their disposition. Keep the proposed checklist
+   in the approval request until the human approves it; do not replace an existing
+   live checklist during grooming. After approval, use the execution record
+   designated by local policy and follow any authority split without duplicating
+   the checklist. Do not prescribe an implementation breakdown when the work is
+   more coherent as an integrated effort.
 6. Show the human the complete request-coverage list and ask for explicit approval
    of the bounded experiment or the complete implementation plan, including its
-   outcome, boundaries, and ordered slices.
-   Record what was approved and the conversation reference or date. Approval of
-   the implementation plan authorizes every listed slice through completion;
-   approval for an experiment authorizes that experiment, not production work.
+   outcome, boundaries, and meaningful outcome checklist. Record what was
+   approved and the conversation reference or date. When approved work begins or
+   resumes, reconcile an existing checklist with the newly approved scope,
+   preserving actual work and evidence; initialize it only if absent. Do not
+   duplicate it in another record. The checklist tracks approved work and does not
+   expand its boundary.
+   Approval for an experiment authorizes that experiment, not production work.
 
 Completion criterion: the human has approved a bounded experiment or complete
 implementation plan, every request-coverage item has an agreed disposition, each
@@ -84,39 +96,35 @@ stays visible and outside the approved boundary.
 
 ## Execute Within The Boundary
 
-Act as the implementation orchestrator: drive the approved plan from its first
-ready slice through its final acceptance checks. Do not ask the human which
-approved slice to do next. Follow the recorded order; if multiple slices are
-equally ready and their order does not affect the outcome, choose one and
-continue. Ask only when a genuine dependency, blocker, or consequential decision
-prevents progress, or when the next work falls outside the approved plan.
+Act as the implementation orchestrator: drive approved work through its final
+acceptance checks. At each checkpoint, reconcile actual state against the approved
+outcome and live checklist, update the checklist, then continue with the next
+ready in-scope work. Do not hand off merely because one outcome is complete or ask
+what to do next when approved work is clear. Stop only when completion is proved,
+a genuine blocker or consequential decision prevents progress, or work reaches
+the approved boundary. A checkpoint is a durable update, not a conversation
+handoff while ready approved work remains.
 
 When the human says “continue,” “resume,” “keep going,” or explicitly says not to
 stop until the approved task is complete, treat that as a continuation command
 for this same plan. Re-read its current state, reconcile it with the checkout,
-and execute its recorded next ready action. Do not respond with a progress-only
-handoff while approved slices remain.
+and execute the next ready approved work.
 
-Treat checkpoints as durable progress updates, not conversation handoffs. After
-recording a completed slice, start the next ready approved slice in the same
-session. Do not end a response by merely promising the next action. Before
-declaring execution complete, reconcile the implementation against every
+Before declaring execution complete, reconcile the implementation against every
 in-scope request-coverage item, the approved record, linked roadmap/source-of-truth
 documents, acceptance checks, and known gaps. Verify each item has its promised
-proof; an item without proof is incomplete, not implicitly done. Record discoveries
-in the authoritative work record and classify them as
-in-scope, separate follow-up, or approval-needed; continue ready in-scope work,
-and seek approval before crossing the approved boundary. If human-only acceptance
-is the remaining gate, complete all approved implementation and automated
-validation first, then hand off that exact acceptance step. Human verification
-is not a reason to pause between approved slices.
+proof; an item without proof is incomplete, not implicitly done. Classify
+discoveries as in-scope, separate follow-up, or approval-needed; continue ready
+work and seek approval before crossing the approved boundary. If human-only
+acceptance is the remaining gate, complete all approved implementation and
+automated validation first, then hand off that exact acceptance step.
 
 Delegate only when project policy and available tools permit it. Use parallel
-workers for independent bounded slices with explicit file/API ownership, proof,
-and handoff expectations. Retain one integration owner for shared composition;
-integrate and validate delegated work before counting it as complete.
+workers only for genuinely independent work with explicit file/API ownership,
+proof, and handoff expectations. Retain one integration owner for shared
+composition; integrate and validate delegated work before counting it as complete.
 
-For each approved slice:
+For the work:
 
 1. Identify its observable proof and relevant authoritative facts. Follow local
    workspace, testing, and delegation requirements when supplied. This skill
@@ -126,33 +134,43 @@ For each approved slice:
    without suitable automated tests, record why and use an appropriate check,
    such as reviewing a document against its acceptance criteria.
 3. Implement the simplest causal path that proves the approved outcome. Keep
-   broader abstractions and adjacent improvements outside the slice unless they
-   are necessary to its approved proof.
+   broader abstractions and adjacent improvements outside scope unless they are
+   necessary to its approved proof. Keep connected changes integrated when
+   separating them would create incomplete seams or defer essential integration.
 4. Run focused checks, review the changes against acceptance checks, and record
    the evidence and limitations. Update the checklist and next action.
-5. Classify discoveries: preserve the approved scope, split out independent work,
-   defer adjacent work, or block on a dependency or decision. If evidence changes
-   the approved outcome, proof, consequential contract, or scope boundary, pause
-   affected implementation, record the options, and return to human approval.
+5. Classify discoveries: preserve the approved scope, add meaningful in-scope
+   outcomes to the checklist, defer adjacent work, or block on a dependency or
+   decision. If evidence changes the approved outcome, proof, consequential
+   contract, or scope boundary, pause affected implementation, record the
+   options, and return to human approval.
 
 Proceed autonomously within approved scope. Run the project's required
-validation baseline after the final slice when one exists; otherwise use the
-validation agreed during scoping. Record unavailable checks and their impact
-rather than inventing commands or treating missing tooling as a pass.
+validation baseline when the implementation reaches its final acceptance checks;
+otherwise use the validation agreed during scoping. Record unavailable checks
+and their impact rather than inventing commands or treating missing tooling as a
+pass.
 
-Completion criterion: every in-scope request-coverage item and every slice in the
-approved plan has its acceptance proof, every discovered in-scope gap is accounted
-for and implemented, required execution checks pass, and remaining final human
-checks are identified. Every other ask has an explicit follow-up, clarification,
-or other agreed disposition. Continue to the next ready
-slice after recording each checkpoint. Failed or unavailable required checks
-leave execution incomplete, with the gap and next action recorded.
+Completion criterion: every in-scope request-coverage item and approved outcome
+has its acceptance proof, every discovered in-scope gap is accounted for and
+implemented, required execution checks pass, and remaining final human checks are
+identified. Every other ask has an explicit follow-up, clarification, or other
+agreed disposition. Failed or unavailable required checks leave execution
+incomplete, with the gap and next action recorded.
 
 ## Checkpoint And Recover
 
-Update the record after approval, a completed slice, an important discovery, a
+Update the record after approval, meaningful progress, an important discovery, a
 failed check, a blocker, and before a handoff or stopping. Record meaningful
 changes rather than a transcript of tool calls.
+
+Reconcile the live checklist with the checkout at every checkpoint. Mark
+demonstrated outcomes complete with concise evidence;
+add newly discovered in-scope work; revise changed entries; and remove stale,
+duplicate, obsolete, or out-of-scope entries after recording material disposition
+in the authoritative scope/decision record. Keep the list focused on current work
+and recovery, not activity history. Follow local closeout rules for final evidence
+and record cleanup.
 
 Keep completed, in-progress, blocked, and unverified work distinguishable. For a
 blocker, record the last useful state, what resolves it, and the first action

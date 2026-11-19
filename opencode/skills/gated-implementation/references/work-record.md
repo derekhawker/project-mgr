@@ -8,7 +8,8 @@ as the task develops; an unapproved task need not contain a finished plan.
 
 - **Request coverage:** list each distinct ask from the request and its disposition
   (in scope, follow-up, needs clarification/approval, or not applicable with why).
-  Link in-scope asks to the slice and acceptance check that fulfill them.
+  Link in-scope asks to the meaningful outcome and acceptance evidence that fulfill
+  them.
 - **Problem and value:** what needs to change and why.
 - **Outcome and boundary:** observable result, scope, and non-goals.
 - **Acceptance and validation:** what demonstrates success, including any manual
@@ -17,15 +18,23 @@ as the task develops; an unapproved task need not contain a finished plan.
   the exact experiment or implementation scope the human approved.
 - **Impact and dependencies:** affected architecture and living documents,
   prerequisites, and relevant source-of-truth references.
-- **Slices:** ordered, outcome-oriented steps with a proof for each.
+- **Outcome checklist:** a concise list of meaningful results still needed, their
+  dependencies, and how completion will be demonstrated. Present proposed
+  outcomes for approval before changing a live checklist. After approval, keep the
+  checklist in the work record chosen by local policy, follow any authority split
+  without duplication, and reconcile changes while preserving actual work/evidence.
+  Do not turn it into an implementation task breakdown; keep connected work
+  integrated when separation would create incomplete seams or defer essential
+  integration.
 
 ## During Execution And At Handoff
 
 Keep a short current-state summary near the top. Preserve decision rationale and
 useful evidence below it; the summary should answer where the task stands now.
 
-- **Progress:** completed slices, current slice, remaining work, and checks still
-  unverified. Distinguish artifacts changed from acceptance criteria demonstrated.
+- **Progress:** current checklist state, completed outcomes with useful evidence,
+  remaining work, and checks still unverified. Distinguish artifacts changed from
+  acceptance criteria demonstrated.
 - **Evidence:** commands or scenarios, results, important failures, and
   limitations. State what manual checks observed rather than only saying “pass.”
 - **Discoveries:** their effect on scope and whether work was preserved, split,
@@ -35,8 +44,11 @@ useful evidence below it; the summary should answer where the task stands now.
 - **Execution context:** branch, checkout, or other location only when needed to
   find and resume the work.
 
+Follow the checklist maintenance and checkpoint loop in
+[`gated-implementation`](../SKILL.md#checkpoint-and-recover). Preserve material
+scope/decision changes and their rationale in the authoritative task record.
 Update the current summary rather than accumulating conflicting progress
-statements. Keep approval history and material decision changes identifiable.
+statements.
 
 ## At Completion Or Cancellation
 
