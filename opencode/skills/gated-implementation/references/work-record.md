@@ -18,14 +18,9 @@ as the task develops; an unapproved task need not contain a finished plan.
   the exact experiment or implementation scope the human approved.
 - **Impact and dependencies:** affected architecture and living documents,
   prerequisites, and relevant source-of-truth references.
-- **Outcome checklist:** a concise list of meaningful results still needed, their
-  dependencies, and how completion will be demonstrated. Present proposed
-  outcomes for approval before changing a live checklist. After approval, keep the
-  checklist in the work record chosen by local policy, follow any authority split
-  without duplication, and reconcile changes while preserving actual work/evidence.
-  Do not turn it into an implementation task breakdown; keep connected work
-  integrated when separation would create incomplete seams or defer essential
-  integration.
+- **Outcome checklist:** meaningful results and proof, not implementation steps.
+  See [Shape And Approve](../SKILL.md#shape-and-approve) and
+  [Checkpoint And Recover](../SKILL.md#checkpoint-and-recover) for its lifecycle.
 
 ## During Execution And At Handoff
 
@@ -44,11 +39,9 @@ useful evidence below it; the summary should answer where the task stands now.
 - **Execution context:** branch, checkout, or other location only when needed to
   find and resume the work.
 
-Follow the checklist maintenance and checkpoint loop in
-[`gated-implementation`](../SKILL.md#checkpoint-and-recover). Preserve material
-scope/decision changes and their rationale in the authoritative task record.
-Update the current summary rather than accumulating conflicting progress
-statements.
+Follow [Checkpoint And Recover](../SKILL.md#checkpoint-and-recover). Keep material
+scope/decision changes in the authoritative task record; update the current
+summary instead of accumulating conflicting progress statements.
 
 ## At Completion Or Cancellation
 

@@ -18,13 +18,10 @@ implementing unapproved follow-up remains outside the approved boundary.
    validation, and delivery. Resolve project paths from the project or instruction
    file, not this skill's installation directory. Local instructions supply
    project policy; this skill supplies the implementation process.
-2. Follow the project's record convention. Keep each fact authoritative in one
-   place; when local policy assigns scope/status/decisions to a ticket and live
-   execution tracking to a companion, use that split rather than duplicating a
-   second plan. If the project has no convention, use a user-designated file or
-   ask where to create it before implementation. Use
-   [work-record](references/work-record.md) when no format is supplied. This
-   skill does not require a ticket system, active index, or prescribed statuses.
+2. Follow local record ownership; keep one authoritative home per fact. If no
+   convention exists, use a user-designated record or ask where to create one.
+   See [work-record](references/work-record.md) when no format is supplied. This
+   skill requires no ticket system, index, or prescribed statuses.
 3. Before selecting or implementing work, inventory every distinct outcome,
    change, question, and constraint the human raised in the current request.
    Preserve them in the request-coverage list of the record designated by local
@@ -67,26 +64,18 @@ action is either approved work or a named question for the human.
    hypothesis with the human: record what the observations support, refute, or
    leave unknown. Promote only supported conclusions into production decisions;
    keep the rest provisional or propose another experiment.
-5. Record the selected outcome, scope, non-goals, acceptance checks, dependencies,
-   architecture and documentation impact, validation, and a concise checklist of
-   meaningful outcomes. Include an inspection or interaction path when manual
-   verification needs one. Link each in-scope request-coverage item to the
-   checklist outcome and acceptance evidence that fulfills it; retain out-of-scope
-   items in the coverage list with their disposition. Keep the proposed checklist
-   in the approval request until the human approves it; do not replace an existing
-   live checklist during grooming. After approval, use the execution record
-   designated by local policy and follow any authority split without duplicating
-   the checklist. Do not prescribe an implementation breakdown when the work is
-   more coherent as an integrated effort.
-6. Show the human the complete request-coverage list and ask for explicit approval
-   of the bounded experiment or the complete implementation plan, including its
-   outcome, boundaries, and meaningful outcome checklist. Record what was
-   approved and the conversation reference or date. When approved work begins or
-   resumes, reconcile an existing checklist with the newly approved scope,
-   preserving actual work and evidence; initialize it only if absent. Do not
-   duplicate it in another record. The checklist tracks approved work and does not
-   expand its boundary.
-   Approval for an experiment authorizes that experiment, not production work.
+5. Define the outcome, scope, non-goals, acceptance/validation, dependencies, and
+   a concise **outcome checklist** (meaningful results and proof, not an ordered
+   implementation breakdown). Include a manual inspection path when needed. Map
+   each in-scope request to its outcome and proof. Keep proposed checklist changes
+   in the approval request; do not alter a live checklist before approval. Follow
+   local record ownership without duplication.
+6. Show the full request coverage with proposed dispositions; ask the human to
+   confirm them and explicitly approve either the bounded experiment or complete
+   implementation plan. Record what was approved and when. On approved start or
+   resume, reconcile an existing checklist with the approved scope, preserving
+   work and evidence; initialize it only if absent. The checklist does not expand
+   scope. Experiment approval authorizes only that experiment, not production work.
 
 Completion criterion: the human has approved a bounded experiment or complete
 implementation plan, every request-coverage item has an agreed disposition, each
@@ -96,19 +85,12 @@ stays visible and outside the approved boundary.
 
 ## Execute Within The Boundary
 
-Act as the implementation orchestrator: drive approved work through its final
-acceptance checks. At each checkpoint, reconcile actual state against the approved
-outcome and live checklist, update the checklist, then continue with the next
-ready in-scope work. Do not hand off merely because one outcome is complete or ask
-what to do next when approved work is clear. Stop only when completion is proved,
-a genuine blocker or consequential decision prevents progress, or work reaches
-the approved boundary. A checkpoint is a durable update, not a conversation
-handoff while ready approved work remains.
+**Checkpoint loop:** reconcile actual state with the approved scope and checklist;
+update the checklist; continue with the next ready in-scope work. Don’t hand off
+while approved work remains ready. Stop only at proved completion, a blocker or
+decision that prevents progress, or the approval boundary.
 
-When the human says “continue,” “resume,” “keep going,” or explicitly says not to
-stop until the approved task is complete, treat that as a continuation command
-for this same plan. Re-read its current state, reconcile it with the checkout,
-and execute the next ready approved work.
+On “continue” or resume, re-read the record and apply this loop to the same plan.
 
 Before declaring execution complete, reconcile the implementation against every
 in-scope request-coverage item, the approved record, linked roadmap/source-of-truth
@@ -119,34 +101,21 @@ work and seek approval before crossing the approved boundary. If human-only
 acceptance is the remaining gate, complete all approved implementation and
 automated validation first, then hand off that exact acceptance step.
 
-Delegate only when project policy and available tools permit it. Use parallel
-workers only for genuinely independent work with explicit file/API ownership,
-proof, and handoff expectations. Retain one integration owner for shared
-composition; integrate and validate delegated work before counting it as complete.
+Delegate only when policy and tools permit, and only genuinely independent work.
+Set clear ownership and proof; retain one integration owner and validate the
+integrated result.
 
-For the work:
+Implement the causal path that proves the outcome. Use the smallest useful
+validation; when practical, make a test fail before implementation for the expected
+missing behavior. If automated proof doesn’t fit, explain and use an appropriate
+check. Keep connected work integrated when splitting it would create incomplete
+seams or defer essential integration. Record evidence and limitations; add
+in-scope discoveries to the checklist and defer adjacent work. If evidence changes
+the outcome, proof, consequential contract, or scope, pause affected work, record
+the options, and seek approval while continuing other ready approved work.
 
-1. Identify its observable proof and relevant authoritative facts. Follow local
-   workspace, testing, and delegation requirements when supplied. This skill
-   requires no version-control system, worktree, branch strategy, or subagents.
-2. Establish the smallest useful validation. Prefer a test that fails for the
-   expected missing behavior before production changes when practical. For work
-   without suitable automated tests, record why and use an appropriate check,
-   such as reviewing a document against its acceptance criteria.
-3. Implement the simplest causal path that proves the approved outcome. Keep
-   broader abstractions and adjacent improvements outside scope unless they are
-   necessary to its approved proof. Keep connected changes integrated when
-   separating them would create incomplete seams or defer essential integration.
-4. Run focused checks, review the changes against acceptance checks, and record
-   the evidence and limitations. Update the checklist and next action.
-5. Classify discoveries: preserve the approved scope, add meaningful in-scope
-   outcomes to the checklist, defer adjacent work, or block on a dependency or
-   decision. If evidence changes the approved outcome, proof, consequential
-   contract, or scope boundary, pause affected implementation, record the
-   options, and return to human approval.
-
-Proceed autonomously within approved scope. Run the project's required
-validation baseline when the implementation reaches its final acceptance checks;
+Run the project's required validation baseline when the implementation reaches its
+final acceptance checks;
 otherwise use the validation agreed during scoping. Record unavailable checks
 and their impact rather than inventing commands or treating missing tooling as a
 pass.
