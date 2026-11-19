@@ -36,6 +36,12 @@
 
 - When using Codesitter in this repository, keep the frontend and Rust indexes separate: index `app/` with `--lang js,ts,tsx`, and `app/src-tauri/` with `--lang rust`. These are distinct project roots, each with its own `.codesitter` index; run queries against the matching root and use file paths relative to that root. `app/` is the frontend root because it includes its source, tests, and HTML entry point; `app/src-tauri/` is the Rust root. Codesitter skips generated `target/` directories.
 
+## Review and testing
+
+- Before handing work off for manual review, run the code-review agent in a subagent.
+- For all but the simplest tasks, delegate test writing to the tester agent in a subagent.
+- Address both agents' findings before proceeding; report any finding left unresolved.
+
 ## Manual verification
 
 - Use the main worktree as the single, serialized manual-verification lane, not the ticket worktree. The existing `npm run live --prefix app` process runs from the main worktree; checking out the candidate there lets it hot-reload without restarting the dev build. Keep that runtime running and use its normal reload behavior.
