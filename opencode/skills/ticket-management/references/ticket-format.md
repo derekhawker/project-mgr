@@ -28,10 +28,11 @@ status: draft
 [The consequence or value stated only from the captured idea.]
 ```
 
-As grooming proceeds, add the relevant bounded outcome, scope, non-goals,
+As grooming proceeds, add the relevant high-level outcomes, scope, non-goals,
 acceptance checks, validation, material decisions, and approval. The main ticket
-remains authoritative for identity, status, scope, decisions, and session ID. For
-active execution, use the linked companion progress checklist described in the
-ticket workflow; keep the main ticket concise. Record the current blocker, recovery
-condition, and next action in that companion while active. For cancellation, record
-the reason and disposition of completed and remaining work in the ticket.
+remains authoritative for identity, status, outcomes, acceptance criteria, scope,
+decisions, and session ID. For active execution, use the linked `.todo` as the
+single actionable task list. Keep it to open work and a small optional
+`Explore later` scratchpad; keep task-level decomposition out of the ticket and
+historical narratives out of the TODO. For cancellation, record the reason and
+disposition of completed and remaining work in the ticket.

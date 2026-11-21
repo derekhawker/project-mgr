@@ -18,30 +18,25 @@ as the task develops; an unapproved task need not contain a finished plan.
   the exact experiment or implementation scope the human approved.
 - **Impact and dependencies:** affected architecture and living documents,
   prerequisites, and relevant source-of-truth references.
-- **Outcome checklist:** meaningful results and proof, not implementation steps.
-  See [Shape And Approve](../SKILL.md#shape-and-approve) and
-  [Checkpoint And Recover](../SKILL.md#checkpoint-and-recover) for its lifecycle.
+- **TODO:** the one ordered list of approved, open tasks, with dependencies only
+  where they affect readiness. An optional `Explore later` section has at most
+  three brief, unapproved topics. Do not duplicate outcomes or keep a turn log.
+  See [Checkpoint And Recover](../SKILL.md#checkpoint-and-recover).
 
 ## During Execution And At Handoff
 
-Keep a short current-state summary near the top. Preserve decision rationale and
-useful evidence below it; the summary should answer where the task stands now.
+Keep the TODO itself as the current state. Put material decisions in the
+authoritative ticket; keep proof in tests/artifacts and include a short reference
+only when it affects readiness or acceptance.
 
-- **Progress:** current checklist state, completed outcomes with useful evidence,
-  remaining work, and checks still unverified. Distinguish artifacts changed from
-  acceptance criteria demonstrated.
-- **Evidence:** commands or scenarios, results, important failures, and
-  limitations. State what manual checks observed rather than only saying “pass.”
-- **Discoveries:** their effect on scope and whether work was preserved, split,
-  deferred, blocked, or returned for approval.
-- **Blocker:** what prevents progress, the last useful state, and what resolves it.
-- **Next action:** the concrete step to take, who must act, and any prerequisite.
+- **Task notes:** concise proof or blocker detail beside the affected TODO item;
+  omit repeated results and chronology.
 - **Execution context:** branch, checkout, or other location only when needed to
   find and resume the work.
 
-Follow [Checkpoint And Recover](../SKILL.md#checkpoint-and-recover). Keep material
-scope/decision changes in the authoritative task record; update the current
-summary instead of accumulating conflicting progress statements.
+Follow [Checkpoint And Recover](../SKILL.md#checkpoint-and-recover). Reconcile at
+a checkpoint, but write only when the TODO's actionable state changes. Do not
+append turn summaries.
 
 ## At Completion Or Cancellation
 
