@@ -2,6 +2,11 @@
   "$schema": "https://opencode.ai/config.json",
   "plugins": [
     "-project-mgr-agent-loop",
-    ".."
+    {
+      "package": "..",
+      "options": {
+        "allowedSessionIDs": ["ses_replace-with-disposable-session-id"]
+      }
+    }
   ]
 }

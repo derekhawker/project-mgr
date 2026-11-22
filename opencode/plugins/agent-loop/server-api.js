@@ -134,10 +134,21 @@ export function createServerAPI(ctx, read = createLocalReader(ctx.location), rea
         return { reason: "recovery-log-unavailable" };
       }, signal);
     },
-    async snapshot(r, signal) {
+    async snapshot(r, signal, { allowDifferentDirectory = false } = {}) {
       const args = session(r);
-      const [s, inbox, permissions, forms, locationForms] = await Promise.all([
-        getSession(r.sessionID, signal),
+      const s = await getSession(r.sessionID, signal);
+      if (
+        s?.id !== r.sessionID ||
+        s.parentID ||
+        s.time?.archived !== undefined ||
+        (!allowDifferentDirectory && s.location?.directory !== ctx.location.directory) ||
+        (allowDifferentDirectory
+          ? (s.location?.workspaceID ?? undefined) !== (ctx.location.workspaceID ?? undefined)
+          : s.location?.workspaceID !== ctx.location.workspaceID) ||
+        s.projectID !== ctx.location.project.id
+      )
+        return { reason: "session-not-eligible" };
+      const [inbox, permissions, forms, locationForms] = await Promise.all([
         bounded(
           (signal) =>
             ctx.session.inbox?.list
@@ -156,22 +167,16 @@ export function createServerAPI(ctx, read = createLocalReader(ctx.location), rea
           signal,
         ).then(data),
         bounded(
-          (signal) =>
-            ctx.form?.list
-              ? ctx.form.list({ location: ctx.location }, { signal })
-              : read("/api/form", signal),
+          (signal) => {
+            if (ctx.form?.list)
+              return ctx.form.list({ location: s.location }, { signal });
+            if (allowDifferentDirectory && s.location?.directory !== ctx.location.directory)
+              return undefined;
+            return read("/api/form", signal);
+          },
           signal,
         ).then(data),
       ]);
-      if (
-        s?.id !== r.sessionID ||
-        s.parentID ||
-        s.time?.archived !== undefined ||
-        s.location?.directory !== ctx.location.directory ||
-        s.location?.workspaceID !== ctx.location.workspaceID ||
-        s.projectID !== ctx.location.project.id
-      )
-        return { reason: "session-not-eligible" };
       if (
         ![inbox, permissions, forms, locationForms].every(Array.isArray) ||
         !inbox.every((item) => typeof item?.id === "string")

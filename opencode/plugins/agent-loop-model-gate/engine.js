@@ -9,6 +9,17 @@ const wakeEvents = new Set([
 ]);
 const stateKey = (sessionID) => `session/${sessionID}`;
 
+export function configuredSessionAllowlist(options) {
+  const sessionIDs = options?.allowedSessionIDs;
+  if (
+    !Array.isArray(sessionIDs) ||
+    sessionIDs.length === 0 ||
+    sessionIDs.some((sessionID) => typeof sessionID !== "string" || !sessionID.trim())
+  )
+    return [];
+  return [...new Set(sessionIDs)];
+}
+
 function readyTodoItems(todoContent) {
   if (typeof todoContent !== "string") return [];
   const lines = todoContent.replace(/\r\n/g, "\n").split("\n");
@@ -49,10 +60,16 @@ const sessionIDOf = (event) =>
 export function createModelGate({
   api,
   storage,
+  allowedSessionIDs = [],
   now = Date.now,
   maxTurns = 400,
   maxAge = 3 * 60 * 60_000,
 }) {
+  const allowed = new Set(
+    Array.isArray(allowedSessionIDs)
+      ? allowedSessionIDs.filter((id) => typeof id === "string" && id.length > 0)
+      : [],
+  );
   const inFlight = new Map();
   const stateWrites = new Map();
   const stopRequested = new Set();
@@ -94,6 +111,7 @@ export function createModelGate({
   }
 
   async function consider(sessionID) {
+    if (!allowed.has(sessionID)) return { state: "ignored", reason: "session-not-allowlisted" };
     if (closed || typeof sessionID !== "string" || inFlight.has(sessionID))
       return { state: "ignored", reason: "already-checking-or-closed" };
     const operation = run(sessionID);
@@ -248,14 +266,17 @@ export function createModelGate({
       return consider(sessionIDOf(event));
     },
     async scan() {
+      if (allowed.size === 0) return [];
       const sessions = await api.sessions();
       if (!Array.isArray(sessions)) return { state: "paused", reason: "session-list-unavailable" };
       const results = [];
-      for (const sessionID of sessions) results.push(await consider(sessionID));
+      for (const sessionID of new Set(sessions.filter((id) => allowed.has(id))))
+        results.push(await consider(sessionID));
       return results;
     },
     async stop(sessionID) {
       if (typeof sessionID !== "string") return { state: "paused", reason: "session-id-required" };
+      if (!allowed.has(sessionID)) return { state: "ignored", reason: "session-not-allowlisted" };
       stopRequested.add(sessionID);
       try {
         await updateState(sessionID, (saved) => ({ ...saved, sessionID, stopped: true }), {

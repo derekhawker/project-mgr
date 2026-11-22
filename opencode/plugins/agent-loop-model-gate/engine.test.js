@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { setImmediate as tick } from "node:timers/promises";
 import test from "node:test";
-import { createModelGate } from "./engine.js";
+import { configuredSessionAllowlist, createModelGate } from "./engine.js";
 
 const sessionID = "ses_ticket";
 const ticket = "/workspace/tickets/fixture.md";
@@ -25,6 +25,26 @@ const event = (type = "session.idle", id = sessionID) => ({
 });
 const answer = (decision = "continue", reason = "A scoped task remains.", task = "Continue scoped work") =>
   JSON.stringify({ decision, task: decision === "continue" ? task : null, reason });
+
+test("configured session allowlist fails closed and deduplicates exact IDs", () => {
+  for (const options of [
+    undefined,
+    {},
+    { allowedSessionIDs: [] },
+    { allowedSessionIDs: null },
+    { allowedSessionIDs: "ses_ticket" },
+    { allowedSessionIDs: [""] },
+    { allowedSessionIDs: ["   "] },
+    { allowedSessionIDs: [sessionID, 42] },
+  ]) {
+    assert.deepEqual(configuredSessionAllowlist(options), []);
+  }
+
+  assert.deepEqual(
+    configuredSessionAllowlist({ allowedSessionIDs: [sessionID, sessionID] }),
+    [sessionID],
+  );
+});
 
 function fixture(options = {}) {
   const calls = [];
@@ -59,7 +79,12 @@ function fixture(options = {}) {
     calls,
     storage,
     values,
-    gate: createModelGate({ api, storage, ...options.gateOptions }),
+    gate: createModelGate({
+      api,
+      storage,
+      allowedSessionIDs: [sessionID],
+      ...options.gateOptions,
+    }),
     count: (name) => calls.filter(([call]) => call === name).length,
   };
 }
@@ -255,19 +280,50 @@ test("unrelated event types are ignored without touching session APIs", async ()
   assert.deepEqual(f.calls, []);
 });
 
+test("the session allowlist gates events, scans, and stop commands", async () => {
+  const f = fixture({
+    sessions: () => [sessionID, "ses_other", sessionID],
+    binding: () => ({ ok: false, reason: "test-filtered" }),
+    gateOptions: { allowedSessionIDs: [sessionID] },
+  });
+  assert.deepEqual(await f.gate.event(event("session.idle", "ses_other")), {
+    state: "ignored", reason: "session-not-allowlisted",
+  });
+  assert.deepEqual(await f.gate.stop("ses_other"), {
+    state: "ignored", reason: "session-not-allowlisted",
+  });
+  const results = await f.gate.scan();
+  assert.equal(results.length, 1);
+  assert.deepEqual(
+    [...new Set(f.calls.filter(([name]) => name === "binding").map(([, id]) => id))],
+    [sessionID],
+  );
+  assert.equal(f.count("decide"), 0);
+  assert.equal(f.count("prompt"), 0);
+});
+
+test("an empty session allowlist disables evaluation and scanning", async () => {
+  const f = fixture({ gateOptions: { allowedSessionIDs: [] } });
+  assert.deepEqual(await f.gate.event(event()), {
+    state: "ignored", reason: "session-not-allowlisted",
+  });
+  assert.deepEqual(await f.gate.scan(), []);
+  assert.deepEqual(f.calls, []);
+});
+
 test("startup scan considers each listed session", async () => {
   const considered = [];
   const f = fixture({
-    sessions: () => ["ses_one", "ses_two"],
+    sessions: () => [sessionID, "ses_two"],
+    gateOptions: { allowedSessionIDs: [sessionID] },
     binding: (id) => {
       considered.push(id);
       return { ok: false, reason: "session-not-eligible" };
     },
   });
   const results = await f.gate.scan();
-  assert.deepEqual(considered, ["ses_one", "ses_two"]);
+  assert.deepEqual(considered, [sessionID]);
   assert.deepEqual(results, [
-    { state: "ignored", reason: "session-not-eligible" },
     { state: "ignored", reason: "session-not-eligible" },
   ]);
   assert.equal(f.count("sessions"), 1);

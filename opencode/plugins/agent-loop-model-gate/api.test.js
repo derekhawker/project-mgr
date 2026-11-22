@@ -150,6 +150,13 @@ test("sessions paginates in the current directory and deduplicates valid IDs", a
   ]);
 });
 
+test("an explicit allowlist drives startup checks without listing other sessions", async () => {
+  const f = context({ list: async () => { throw new Error("must not list sessions"); } });
+  const api = createModelGateAPI(f.ctx, { allowedSessionIDs: [sessionID] });
+  assert.deepEqual(await api.sessions(), [sessionID]);
+  assert.equal(f.calls.some(([name]) => name === "list"), false);
+});
+
 test("binding rejects a session from a nonmatching location before reading ticket entries", async (t) => {
   const records = await ticketRecords(t);
   const f = context({
@@ -162,6 +169,29 @@ test("binding rejects a session from a nonmatching location before reading ticke
   assert.deepEqual(await f.api.binding(sessionID), { ok: false, reason: "session-not-eligible" });
   assert.equal(f.calls.some(([name]) => name === "entries"), false);
   assert.equal(f.calls.some(([name]) => name === "generate"), false);
+});
+
+test("allowlisted worktree sessions still require the current project and exact ticket binding", async (t) => {
+  const records = await ticketRecords(t);
+  const f = context({
+    location: { ...location, workspaceID: undefined },
+    state: {
+      session: session({ location: { directory: "/fixture/go-gui-worktree", workspaceID: null } }),
+      entries: [entry(records.ticket)],
+    },
+  });
+  const allowedAPI = createModelGateAPI(f.ctx, { allowedSessionIDs: [sessionID] });
+  const allowed = await allowedAPI.binding(sessionID);
+  assert.equal(allowed.ok, true);
+
+  const otherSession = await allowedAPI.binding("ses_other");
+  assert.deepEqual(otherSession, { ok: false, reason: "session-not-eligible" });
+
+  f.state.session = session({
+    location: { directory: "/fixture/go-gui-worktree", workspaceID: location.workspaceID },
+    projectID: "other-project",
+  });
+  assert.deepEqual(await allowedAPI.binding(sessionID), { ok: false, reason: "session-not-eligible" });
 });
 
 test("binding rejects absent exact ticket evidence and invalid records", async (t) => {
@@ -247,6 +277,38 @@ test("hardCheck accepts a successful idle followed by a completed assistant resp
     ok: true,
     idleID: "idle-current",
     lastMessage: "Verified the approved task.",
+  });
+});
+
+test("hardCheck permits only allowlisted cross-worktree sessions and checks that location's forms", async () => {
+  const f = context({
+    location: { ...location, workspaceID: undefined },
+    state: {
+      session: session({ location: { directory: "/fixture/go-gui-worktree", workspaceID: null } }),
+    },
+  });
+  const api = createModelGateAPI(f.ctx, { allowedSessionIDs: [sessionID] });
+  assert.deepEqual(await api.hardCheck(sessionID), {
+    ok: true,
+    idleID: "idle-fixture",
+    lastMessage: "The scoped task is complete.",
+  });
+  const forms = f.calls.find(([name]) => name === "locationForms")[1];
+  assert.equal(forms.location.directory, "/fixture/go-gui-worktree");
+});
+
+test("hardCheck fails closed when cross-worktree location forms cannot be checked", async () => {
+  const f = context({
+    location: { ...location, workspaceID: undefined },
+    state: {
+      session: session({ location: { directory: "/fixture/go-gui-worktree", workspaceID: null } }),
+    },
+  });
+  f.ctx.form.list = undefined;
+  const api = createModelGateAPI(f.ctx, { allowedSessionIDs: [sessionID] });
+  assert.deepEqual(await api.hardCheck(sessionID), {
+    ok: false,
+    reason: "pending-status-unavailable",
   });
 });
 

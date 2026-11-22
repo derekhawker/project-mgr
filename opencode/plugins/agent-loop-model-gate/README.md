@@ -1,6 +1,7 @@
 # Ticket agent-loop model-gate experiment
 
-This separate plugin tests automatic continuation for ticket-bound sessions. It
+This separate plugin tests automatic continuation for explicitly allowlisted,
+ticket-bound sessions. It
 listens for session idle, binding, and lifecycle events; verifies the exact
 Workspace-ticket session binding and deterministic safety gates; then asks the
 session model for a strict JSON decision: `continue`, `complete`, `blocked`, or
@@ -15,12 +16,18 @@ storage and prevents future automatic prompts for that session. Use a fresh
 disposable session for another experiment; this prototype does not yet define a
 resume action.
 
+The plugin fails closed unless configured with a non-empty `allowedSessionIDs`
+option. Session events, startup checks, stop commands, and ticket verification
+are all limited to those exact IDs. The allowlist bypasses only the usual
+current-directory equality check; the session must still belong to the current
+OpenCode project, and its active ticket must name the same session ID.
+
 ## Isolated plugin configuration
 
 `test-config/opencode.jsonc` adds this plugin and disables the existing
-`project-mgr-agent-loop` by plugin ID. OpenCode applies plugin entries in config
-precedence order, so the later disable entry suppresses the globally configured
-old plugin without editing the global file.
+`project-mgr-agent-loop` by plugin ID. Replace its placeholder with a disposable
+session ID before use. OpenCode passes `allowedSessionIDs` from the plugin
+entry's `options` object. Do not omit the allowlist.
 
 Run a separate loopback server from an empty scratch directory so the test does
 not reload or alter the live OpenCode server. This adapter needs an explicit

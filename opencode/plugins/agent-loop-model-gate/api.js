@@ -101,11 +101,13 @@ function continuationPrompt({ ticket, todo, task, reason }) {
   return `Continue the approved ticket. The continuation check selected this exact unchecked TODO task: ${JSON.stringify(task)}. It judged the task ready because: ${JSON.stringify(reason)}. Read the authoritative ticket ${JSON.stringify(ticket)} and linked TODO ${JSON.stringify(todo)}; confirm the task is still approved and ready before acting. Do not cross permissions, forms, destructive actions, cutover, or other user gates. Report concrete work briefly.`;
 }
 
-export function createModelGateAPI(ctx) {
+export function createModelGateAPI(ctx, { allowedSessionIDs = [] } = {}) {
   const server = createServerAPI(ctx);
+  const allowed = new Set(allowedSessionIDs);
 
   return {
     async sessions() {
+      if (allowed.size > 0) return [...allowed];
       if (typeof ctx.session.list !== "function") throw new Error("session list unavailable");
       const sessions = [];
       let cursor;
@@ -129,8 +131,10 @@ export function createModelGateAPI(ctx) {
         session?.id !== sessionID ||
         session.parentID ||
         session.time?.archived !== undefined ||
-        session.location?.directory !== ctx.location.directory ||
-        session.location?.workspaceID !== ctx.location.workspaceID ||
+        (allowed.has(sessionID)
+          ? (session.location?.workspaceID ?? undefined) !== (ctx.location.workspaceID ?? undefined)
+          : session.location?.workspaceID !== ctx.location.workspaceID) ||
+        (!allowed.has(sessionID) && session.location?.directory !== ctx.location.directory) ||
         session.projectID !== ctx.location.project.id
       )
         return { ok: false, reason: "session-not-eligible" };
@@ -153,7 +157,9 @@ export function createModelGateAPI(ctx) {
     },
     async hardCheck(sessionID) {
       const record = { sessionID };
-      const snapshot = await server.snapshot(record);
+      const snapshot = await server.snapshot(record, undefined, {
+        allowDifferentDirectory: allowed.has(sessionID),
+      });
       if (snapshot.reason) return { ok: false, reason: snapshot.reason };
       if (snapshot.busy) return { ok: false, reason: "session-not-idle" };
       if (snapshot.ownPending) return { ok: false, reason: "pending-input" };
