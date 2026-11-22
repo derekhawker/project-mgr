@@ -288,7 +288,10 @@ export function createModelGate({
     async event(event) {
       if (!wakeEvents.has(event?.type))
         return { state: "ignored", reason: "event-not-relevant" };
-      if (event.type === "session.status" && event.properties?.status?.type !== "idle")
+      if (
+        event.type === "session.status" &&
+        (event.properties?.status ?? event.data?.status)?.type !== "idle"
+      )
         return { state: "ignored", reason: "session-not-idle" };
       const sessionID = sessionIDOf(event);
       if (allowed.has(sessionID)) recordEvent(sessionID, event.type);

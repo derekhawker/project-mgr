@@ -521,11 +521,32 @@ test("an idle session-status transition wakes the gate", async () => {
   assert.equal(f.count("prompt"), 1);
 });
 
+test("an idle session-status event using the SDK data envelope wakes the gate", async () => {
+  const f = fixture();
+  assert.deepEqual(await f.gate.event({
+    type: "session.status",
+    data: { sessionID, status: { type: "idle" } },
+  }), { state: "prompted", turns: 1 });
+  assert.equal(f.count("decide"), 1);
+  assert.equal(f.count("prompt"), 1);
+});
+
 test("a non-idle session-status transition is ignored", async () => {
   const f = fixture();
   assert.deepEqual(await f.gate.event({
     type: "session.status",
     properties: { sessionID, status: { type: "busy" } },
+  }), { state: "ignored", reason: "session-not-idle" });
+  assert.equal(f.count("binding"), 0);
+  assert.equal(f.count("decide"), 0);
+  assert.equal(f.count("prompt"), 0);
+});
+
+test("a non-idle session-status event using the SDK data envelope is ignored", async () => {
+  const f = fixture();
+  assert.deepEqual(await f.gate.event({
+    type: "session.status",
+    data: { sessionID, status: { type: "busy" } },
   }), { state: "ignored", reason: "session-not-idle" });
   assert.equal(f.count("binding"), 0);
   assert.equal(f.count("decide"), 0);
