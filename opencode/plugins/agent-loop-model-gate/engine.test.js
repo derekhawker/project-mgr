@@ -160,6 +160,100 @@ test("complete, blocked, ask_user, malformed output, and model failure admit no 
   assert.equal(failed.count("prompt"), 0);
 });
 
+test("status exposes only the latest evaluation state and sanitized reason", async () => {
+  const f = fixture({
+    decide: () => answer("blocked", "Sensitive model explanation", null),
+  });
+  assert.deepEqual(await f.gate.status(sessionID), {
+    state: "unavailable",
+    reason: "no-evaluation-recorded",
+  });
+
+  assert.deepEqual(await f.gate.event(event()), {
+    state: "paused",
+    reason: "blocked",
+    detail: "Sensitive model explanation",
+  });
+  const status = await f.gate.status(sessionID);
+  assert.equal(status.state, "paused");
+  assert.equal(status.reason, "blocked");
+  assert.equal(typeof status.checkedAt, "number");
+  assert.deepEqual(Object.keys(f.values.get(`evaluation/${sessionID}`)).sort(), [
+    "checkedAt", "reason", "state",
+  ]);
+  assert.doesNotMatch(JSON.stringify(f.values.get(`evaluation/${sessionID}`)), /Sensitive/);
+
+  assert.deepEqual(await f.gate.status("ses_other"), {
+    state: "ignored",
+    reason: "session-not-allowlisted",
+  });
+});
+
+test("status validates persisted metadata and reports storage read failures", async () => {
+  const f = fixture({ initialStorage: [[`evaluation/${sessionID}`, {
+    checkedAt: 123,
+    state: "prompted",
+    reason: "model said continue",
+    task: "Sensitive task text",
+  }]] });
+  assert.deepEqual(await f.gate.status(sessionID), {
+    state: "unavailable",
+    reason: "no-evaluation-recorded",
+  });
+
+  f.values.set(`evaluation/${sessionID}`, {
+    checkedAt: 123,
+    state: "prompted",
+    reason: "prompt-admission-failed",
+    task: "Sensitive task text",
+  });
+  assert.deepEqual(await f.gate.status(sessionID), {
+    checkedAt: 123,
+    state: "prompted",
+    reason: "prompt-admission-failed",
+  });
+
+  f.storage.get = async () => { throw new Error("storage unavailable"); };
+  assert.deepEqual(await f.gate.status(sessionID), {
+    state: "unavailable",
+    reason: "status-unavailable",
+  });
+});
+
+test("metadata persistence failures do not change evaluation results", async () => {
+  const f = fixture();
+  f.storage.set = async (key, value) => {
+    if (key.startsWith("evaluation/")) throw new Error("storage unavailable");
+    f.values.set(key, structuredClone(value));
+  };
+
+  assert.deepEqual(await f.gate.event(event()), { state: "prompted", turns: 1 });
+  assert.deepEqual(await f.gate.status(sessionID), {
+    state: "unavailable",
+    reason: "no-evaluation-recorded",
+  });
+});
+
+test("ignored evaluations persist only a bounded safe reason", async () => {
+  const f = fixture({
+    binding: () => ({ ok: false, reason: "Sensitive explanation about ticket contents" }),
+    gateOptions: { now: () => 456 },
+  });
+
+  assert.deepEqual(await f.gate.event(event()), {
+    state: "ignored",
+    reason: "Sensitive explanation about ticket contents",
+  });
+  assert.deepEqual(await f.gate.status(sessionID), {
+    checkedAt: 456,
+    state: "ignored",
+    reason: "evaluation-unavailable",
+  });
+  assert.deepEqual(Object.keys(f.values.get(`evaluation/${sessionID}`)).sort(), [
+    "checkedAt", "reason", "state",
+  ]);
+});
+
 test("a repeated idle boundary is evaluated at most once", async () => {
   const f = fixture();
   await f.gate.event(event());

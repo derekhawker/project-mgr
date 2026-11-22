@@ -8,6 +8,12 @@ const wakeEvents = new Set([
   "session.unarchived",
 ]);
 const stateKey = (sessionID) => `session/${sessionID}`;
+const evaluationKey = (sessionID) => `evaluation/${sessionID}`;
+const evaluationStates = new Set(["ignored", "paused", "prompted"]);
+const safeReason = (value) =>
+  typeof value === "string" && /^[a-z][a-z0-9-]{0,63}$/.test(value)
+    ? value
+    : "evaluation-unavailable";
 
 export function configuredSessionAllowlist(options) {
   const sessionIDs = options?.allowedSessionIDs;
@@ -117,9 +123,20 @@ export function createModelGate({
     const operation = run(sessionID);
     inFlight.set(sessionID, operation);
     try {
-      return await operation;
+      const result = await operation;
+      await storage.set(evaluationKey(sessionID), {
+        checkedAt: now(),
+        state: evaluationStates.has(result?.state) ? result.state : "paused",
+        reason: safeReason(result?.reason),
+      }).catch(() => {});
+      return result;
     } catch {
-      return { state: "paused", reason: "evaluation-unavailable" };
+      const result = { state: "paused", reason: "evaluation-unavailable" };
+      await storage.set(evaluationKey(sessionID), {
+        checkedAt: now(),
+        ...result,
+      }).catch(() => {});
+      return result;
     } finally {
       if (inFlight.get(sessionID) === operation) inFlight.delete(sessionID);
     }
@@ -285,6 +302,24 @@ export function createModelGate({
         return { state: "paused", reason: "user-stopped" };
       } catch {
         return { state: "paused", reason: "stop-not-saved" };
+      }
+    },
+    async status(sessionID) {
+      if (typeof sessionID !== "string") return { state: "paused", reason: "session-id-required" };
+      if (!allowed.has(sessionID)) return { state: "ignored", reason: "session-not-allowlisted" };
+      try {
+        const saved = await storage.get(evaluationKey(sessionID));
+        if (
+          !saved ||
+          !Number.isFinite(saved.checkedAt) ||
+          !evaluationStates.has(saved.state) ||
+          typeof saved.reason !== "string" ||
+          !/^[a-z][a-z0-9-]{0,63}$/.test(saved.reason)
+        )
+          return { state: "unavailable", reason: "no-evaluation-recorded" };
+        return { checkedAt: saved.checkedAt, state: saved.state, reason: saved.reason };
+      } catch {
+        return { state: "unavailable", reason: "status-unavailable" };
       }
     },
     close() {

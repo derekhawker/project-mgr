@@ -11,10 +11,12 @@ otherwise it fails closed. Only `continue` queues a prompt. Invalid or
 unavailable evidence fails closed, and ticket/TODO content plus the idle
 boundary are revalidated after generation.
 
-The plugin registers `/agent-loop-model-gate-stop`. A stop is saved in plugin
-storage and prevents future automatic prompts for that session. Use a fresh
-disposable session for another experiment; this prototype does not yet define a
-resume action.
+The plugin registers `/agent-loop-model-gate-stop` and
+`/agent-loop-model-gate-status`. Status reports only the last check time, outcome,
+and a sanitized reason; it never stores the model's explanation, task text, or
+session transcript. A stop is saved in plugin storage and prevents future
+automatic prompts for that session. Use a fresh disposable session for another
+experiment; this prototype does not yet define a resume action.
 
 The plugin fails closed unless configured with a non-empty `allowedSessionIDs`
 option. Session events, startup checks, stop commands, and ticket verification

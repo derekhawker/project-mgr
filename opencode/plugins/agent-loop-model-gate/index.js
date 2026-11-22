@@ -4,6 +4,7 @@ import { createModelGateAPI } from "./api.js";
 
 export const id = "project-mgr-agent-loop-model-gate";
 const stopCommand = "agent-loop-model-gate-stop";
+const statusCommand = "agent-loop-model-gate-status";
 
 export async function setup(ctx) {
   const allowedSessionIDs = configuredSessionAllowlist(ctx.options);
@@ -16,6 +17,11 @@ export async function setup(ctx) {
     allowedSessionIDs,
   });
   const registration = await ctx.command.transform((editor) => {
+    editor.add({
+      name: statusCommand,
+      description: "Show the latest metadata-only ticket continuation check",
+      execute: async ({ sessionID }) => engine.status(sessionID),
+    });
     editor.add({
       name: stopCommand,
       description: "Stop automatic ticket continuation for this session",
