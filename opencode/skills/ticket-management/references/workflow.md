@@ -4,18 +4,11 @@
 
 Use the canonical Workspace ticket directory provided in session instructions.
 Tickets are `<slug>.md` outside the repository; closed tickets move to
-`archived/<slug>.md`. The main ticket is authoritative for identity, status,
-approved scope, decisions, and recorded work-session ID. During approved active
-work, keep a linked `<slug>.todo` beside it as the single actionable execution
-plan. The companion contains Markdown but has no `.md` extension. It is execution
-state, not a second ticket or status record. The ticket holds approved outcomes,
-acceptance criteria, scope, and decisions; the TODO decomposes approved outcomes
-into ordered tasks. Keep the TODO small: one `# TODO` task list and an optional
-`## Explore later` with at most three brief, unapproved topics. No turn history,
-repeated test logs, duplicate outcome checklist, or execution-task list in the
-ticket. The plan is a starting point, not a fixed sequence; update tasks as work
-completes, dependencies emerge, or items prove unnecessary. Do not create an
-index.
+`archived/<slug>.md`. The ticket owns status, scope, outcomes, decisions, and
+session ID. Its linked `<slug>.todo` is a short queue of approved open work,
+grouped into coherent user journeys where useful. Remove tasks when they no longer
+guide the next action. Keep evidence in tests/artifacts, not as TODO history. Use
+one `# TODO` list and, optionally, up to three brief `Explore later` topics.
 
 ## Status lifecycle
 
@@ -23,7 +16,7 @@ index.
 - `in_progress`: approved work is underway.
 - `blocked`: a recorded external blocker prevents progress; preserve the last
   useful state and next step.
-- `done`: approved work and required verification are complete; terminal before
+- `done`: approved work and required checks are complete; terminal before
   archival.
 - `cancelled`: work is abandoned; record the reason and disposition of completed
   and remaining work; terminal before archival.
@@ -31,7 +24,7 @@ index.
 Keep status in Markdown. Move `draft` to `in_progress` only when approved work
 begins. Use `blocked` when progress cannot proceed, then return to
 `in_progress` when resolved. If evidence requires renewed grooming or approval,
-return to `draft`. Move to `done` only after approved work and verification;
+return to `draft`. Move to `done` only after approved work and required checks;
 move to `cancelled` only with its disposition recorded. Archive closed tickets
 under `archived/<slug>.md` after closeout. The application displays status and
 does not change it.
@@ -58,10 +51,9 @@ the canonical companion path. If it exists, preserve and reconcile it with the
 approved scope, repairing a missing ticket link. If `.todo` is absent but a
 legacy `.progress` companion exists, compact and rename it to `.todo`, preserving
 open approved tasks and material blockers, then update the ticket link. Otherwise,
-initialize one actionable TODO from the approved outcomes, actual checkout,
-dependencies, and available evidence; on resumption rebuild it from those sources
-and leave unproved work incomplete. Add the next action and link the companion
-from the ticket before continuing. When a ticket returns to
+initialize a short actionable TODO from approved outcomes, checkout, and
+dependencies; on resumption reconcile it with current code and checks. Link the
+TODO from the ticket before continuing. When a ticket returns to
 `in_progress` after renewed approval, reconcile any preserved companion with the
 newly approved scope. When a session is created or resumed, ensure its durable
 `workspace-ticket` instruction entry identifies only
@@ -79,14 +71,12 @@ The Work action itself does not change status. Perform status transitions throug
 OpenCode and persist them in the Markdown ticket. If a recorded session is
 unavailable, start a replacement session and update the ticket's session ID.
 
-Reconcile the whole TODO with the ticket, checkout, dependencies, and evidence at
-each checkpoint, but persist only when an approved task, its order/dependency, or a
-blocker materially changes. Reconciliation alone is not a write. Mark completed
-tasks and remove them once they no longer guide open work; retain only concise
-proof needed for readiness or acceptance. Add discovered in-scope work, reorder as
-dependencies change, and record why tasks are unnecessary or out of scope. Put
-material scope and decision changes in the ticket first. The TODO never overrides
-ticket status, outcomes, acceptance, scope, decisions, or session binding. Keep it
+Reconcile the whole TODO at checkpoints. As work advances, replace completed
+actions with the next ones; never append history. Write only when the queue, its
+order, or a blocker changes. Add discovered work and reorder as needed. Put
+material scope or decision changes in the ticket first. The TODO never overrides
+ticket
+status, outcomes, acceptance, scope, decisions, or session binding. Keep it
 while the ticket remains active or delivery/cleanup is blocked.
 
 ## Closeout

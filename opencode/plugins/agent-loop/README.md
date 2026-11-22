@@ -131,17 +131,16 @@ does not install a supervisor, start OpenCode, or change configuration.
 - Pending inbox work, permission requests, and session or location forms are
   checked before scheduling. The plugin never replies to any of them. Keep
   permissions restrictive and do not use `--auto`. Destructive actions,
-  user-data cutover, closeout, and human-only acceptance are excluded by the
-  prompt and skill, not enforced by a tool sandbox.
-- Two turns without changed, previously unseen progress-record content stop the
-  loop. This catches recorded evidence updates even when checklist boxes remain
-  open. It is still a heuristic, not verified implementation progress; an
-  agent's completion or blocker report is likewise not independent proof.
+  user-data cutover, and closeout are excluded by the prompt and skill, not
+  enforced by a tool sandbox.
+- Two turns without a changed, previously unseen approved-TODO queue stop the
+  loop. This is a continuation heuristic, not proof of implementation progress;
+  a TODO edit or agent report is not independent verification.
 - V2 does not offer an atomic “only queue if idle and unchanged” operation.
   Another input, move, stop, or interruption can race final checks and
   admission. If a permission/form request is opened and resolved between polls
   or during unload and its live event is lost, the plugin may not observe it.
-  Use manual continuation for work that needs human review between every turn.
+  Stop and resume explicitly when work reaches a decision or permission gate.
 - Recovery coordinates overlapping plugin instances in one OpenCode server.
   V2 plugin storage does not provide atomic claims across separate server
   processes. Do not run concurrent servers against the same plugin database.
