@@ -31,6 +31,98 @@ test("event stream reconnects after a failed subscription and continues consumin
   assert.deepEqual(states, ["listening", "retrying", "listening", "closed"]);
 });
 
+test("event stream awaits the SDK subscription result before listening", async () => {
+  const controller = new AbortController();
+  const states = [];
+  const events = [];
+  let resolveSubscription;
+  let attempts = 0;
+  const subscription = new Promise((resolve) => { resolveSubscription = resolve; });
+  const consuming = consumeEventStream({
+    signal: controller.signal,
+    subscribe: () => {
+      attempts += 1;
+      return attempts === 1
+        ? subscription
+        : (async function* () { yield { type: "session.idle" }; })();
+    },
+    onEvent: (event) => {
+      events.push(event);
+      controller.abort();
+    },
+    onState: (state) => states.push(state),
+    wait: async () => {},
+  });
+
+  await Promise.resolve();
+  const statesBeforeResolve = [...states];
+  resolveSubscription({
+    stream: (async function* () { yield { type: "session.idle" }; })(),
+  });
+  await consuming;
+
+  assert.deepEqual(statesBeforeResolve, []);
+  assert.deepEqual(events, [{ type: "session.idle" }]);
+  assert.deepEqual(states, ["listening", "closed"]);
+});
+
+test("event stream retries a rejected async subscription and consumes the SDK stream result", async () => {
+  const controller = new AbortController();
+  const states = [];
+  const events = [];
+  const waits = [];
+  let attempts = 0;
+
+  await consumeEventStream({
+    signal: controller.signal,
+    subscribe: () => {
+      attempts += 1;
+      if (attempts === 1) return Promise.reject(new Error("private subscription error"));
+      return Promise.resolve({
+        stream: (async function* () { yield { type: "session.idle" }; })(),
+      });
+    },
+    onEvent: (event) => {
+      events.push(event);
+      controller.abort();
+    },
+    onState: (state) => states.push(state),
+    wait: async (ms) => { waits.push(ms); },
+  });
+
+  assert.equal(attempts, 2);
+  assert.deepEqual(waits, [1000]);
+  assert.deepEqual(events, [{ type: "session.idle" }]);
+  assert.deepEqual(states, ["retrying", "listening", "closed"]);
+});
+
+test("aborting a pending subscription that rejects on its signal closes without retrying", async () => {
+  const controller = new AbortController();
+  const states = [];
+  let attempts = 0;
+  let rejectSubscription;
+  const subscription = new Promise((_resolve, reject) => { rejectSubscription = reject; });
+
+  const consuming = consumeEventStream({
+    signal: controller.signal,
+    subscribe: ({ signal }) => {
+      attempts += 1;
+      signal.addEventListener("abort", () => rejectSubscription(new Error("aborted")), { once: true });
+      return subscription;
+    },
+    onEvent: () => assert.fail("an aborted subscription must not emit events"),
+    onState: (state) => states.push(state),
+    wait: async () => assert.fail("an aborted subscription must not retry"),
+  });
+
+  await Promise.resolve();
+  controller.abort();
+  await consuming;
+
+  assert.equal(attempts, 1);
+  assert.deepEqual(states, ["closed"]);
+});
+
 test("event stream retries after normal termination until aborted", async () => {
   const controller = new AbortController();
   const states = [];

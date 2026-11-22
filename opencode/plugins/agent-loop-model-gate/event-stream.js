@@ -17,7 +17,8 @@ export async function consumeEventStream({ subscribe, onEvent, onState, signal, 
   let attempt = 0;
   while (!signal.aborted) {
     try {
-      const stream = subscribe({ signal });
+      const subscription = await subscribe({ signal });
+      const stream = subscription?.stream ?? subscription;
       onState("listening");
       for await (const event of stream) {
         if (signal.aborted) break;
