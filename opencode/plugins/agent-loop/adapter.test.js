@@ -323,6 +323,21 @@ test("start requires confirmation; server waits for active-to-idle and keeps run
   assert.equal(f.prompts.length, 2);
 });
 
+test("start captures a nonzero synced log cursor instead of pausing as unavailable", async (t) => {
+  const input = await records(t);
+  const storage = durable();
+  const f = await install(t, input, {
+    storage,
+    async *readLog() {
+      yield { type: "log.synced", aggregateID: sessionID, seq: 42 };
+    },
+  });
+
+  await f.controls.start(input);
+  await eventually(() => f.prompts.length, (n) => n === 1);
+  assert.equal([...storage.records.values()][0].initialLogAfter, 42);
+});
+
 test("stop revokes startup and preserves the terminal reason after teardown", async (t) => {
   const input = await records(t);
   const storage = durable();

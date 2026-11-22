@@ -96,3 +96,15 @@ test("admission retry requires a synchronized exact-session log and detects canc
   frames = [];
   assert.deepEqual(await check(), { reason: "recovery-log-unavailable" });
 });
+
+test("initial arm captures the synchronized log cursor when the session already has history", async () => {
+  const sessionID = "ses_target";
+  const cursor = 42;
+  const api = createServerAPI({ location: {} }, undefined, (path) => {
+    assert.equal(path, `/api/experimental/session/${sessionID}/log?follow=false`);
+    const sse = `data: ${JSON.stringify({ type: "log.synced", aggregateID: sessionID, seq: cursor })}\r\n\r\n`;
+    return readSessionLog(new Response(sse, { headers: { "content-type": "text/event-stream" } }));
+  });
+
+  assert.deepEqual(await api.retryEvidence({ sessionID }), { delivered: false, cursor });
+});

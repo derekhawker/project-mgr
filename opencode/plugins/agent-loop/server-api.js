@@ -100,6 +100,12 @@ export function createServerAPI(ctx, read = createLocalReader(ctx.location), rea
         for await (const event of readLog(`/api/experimental/${sessionPath(r)}/log?${query}`, signal)) {
           if (event?.type === "log.synced" && event.aggregateID === r.sessionID) {
             const cursor = event.seq ?? null;
+            // Initial arming starts without an `after` cursor. A populated
+            // session's sync marker reports the current sequence, not null;
+            // capture it as the baseline instead of treating it as a gap.
+            if (after === undefined && last === null &&
+                (cursor === null || (Number.isSafeInteger(cursor) && cursor >= 0)))
+              return { delivered, cursor, ...(enqueued && { enqueued }) };
             if (cursor === last) return { delivered, cursor, ...(enqueued && { enqueued }), ...(shutdowns && { shutdowns, resumed, lastShutdownSeq }) };
             break;
           }
