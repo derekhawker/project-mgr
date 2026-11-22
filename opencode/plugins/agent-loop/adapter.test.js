@@ -1336,6 +1336,40 @@ test("v2.1.4 fallback uses read-only OpenAPI paths and fails closed on missing s
   await assert.rejects(api.history(run), /history unavailable/);
 });
 
+test("pending-status failures keep generic legacy reasons unless granular diagnostics are requested", async () => {
+  const values = { inbox: [], permissions: [], sessionForms: [], locationForms: [] };
+  const api = createServerAPI({
+    location,
+    session: {
+      get: async () => nativeSession,
+      inbox: { list: async () => values.inbox },
+      form: { list: async () => values.sessionForms },
+      active: async () => ({}),
+    },
+    permission: { list: async () => values.permissions },
+    form: { list: async () => values.locationForms },
+  });
+  const run = { sessionID };
+
+  for (const [source, reason] of [
+    ["inbox", "inbox-status-unavailable"],
+    ["permissions", "permission-status-unavailable"],
+    ["sessionForms", "session-form-status-unavailable"],
+    ["locationForms", "location-form-status-unavailable"],
+  ]) {
+    values[source] = undefined;
+    assert.deepEqual(await api.snapshot(run), { reason: "pending-status-unavailable" });
+    assert.deepEqual(await api.snapshot(run, undefined, { granularPendingStatus: true }), { reason });
+    values[source] = [];
+  }
+
+  values.inbox = [{ id: 42 }];
+  assert.deepEqual(await api.snapshot(run), { reason: "pending-status-unavailable" });
+  assert.deepEqual(await api.snapshot(run, undefined, { granularPendingStatus: true }), {
+    reason: "inbox-status-malformed",
+  });
+});
+
 test("activity failure pauses the actual server runner without submitting", async (t) => {
   const input = await records(t);
   const f = await install(t, input);

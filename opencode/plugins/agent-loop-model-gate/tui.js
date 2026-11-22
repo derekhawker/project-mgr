@@ -12,9 +12,13 @@ export function setup(context) {
     if (location?.directory) return { sessionID: route.sessionID, location };
   };
   const show = (status) => {
-    const message = status.checkedAt
-      ? `Model gate ${status.state}: ${status.reason} (${new Date(status.checkedAt).toLocaleTimeString()})`
-      : `Model gate ${status.state}: ${status.reason}`;
+    const checkedAt = status.checkedAt
+      ? ` at ${new Date(status.checkedAt).toLocaleTimeString()}`
+      : "";
+    const current = status.preflight
+      ? `; current check ${status.preflight.state}: ${status.preflight.reason}`
+      : "";
+    const message = `Model gate last: ${status.state}: ${status.reason}${checkedAt}${current}`;
     if (!closed) context.ui.toast.show({ message });
   };
 

@@ -134,7 +134,11 @@ export function createServerAPI(ctx, read = createLocalReader(ctx.location), rea
         return { reason: "recovery-log-unavailable" };
       }, signal);
     },
-    async snapshot(r, signal, { allowDifferentDirectory = false } = {}) {
+    async snapshot(
+      r,
+      signal,
+      { allowDifferentDirectory = false, granularPendingStatus = false } = {},
+    ) {
       const args = session(r);
       const s = await getSession(r.sessionID, signal);
       if (
@@ -177,11 +181,20 @@ export function createServerAPI(ctx, read = createLocalReader(ctx.location), rea
           signal,
         ).then(data),
       ]);
-      if (
-        ![inbox, permissions, forms, locationForms].every(Array.isArray) ||
-        !inbox.every((item) => typeof item?.id === "string")
-      )
-        return { reason: "pending-status-unavailable" };
+      const unavailable = [
+        ["inbox-status-unavailable", inbox],
+        ["permission-status-unavailable", permissions],
+        ["session-form-status-unavailable", forms],
+        ["location-form-status-unavailable", locationForms],
+      ].find(([, value]) => !Array.isArray(value));
+      if (unavailable)
+        return {
+          reason: granularPendingStatus ? unavailable[0] : "pending-status-unavailable",
+        };
+      if (!inbox.every((item) => typeof item?.id === "string"))
+        return {
+          reason: granularPendingStatus ? "inbox-status-malformed" : "pending-status-unavailable",
+        };
       if (permissions.length) return { reason: "permission-requested" };
       if (forms.length || locationForms.length)
         return { reason: "form-requested" };

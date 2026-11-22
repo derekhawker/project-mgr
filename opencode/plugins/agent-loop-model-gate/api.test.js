@@ -249,6 +249,17 @@ test("hardCheck rejects active sessions, pending inbox, permission, and forms", 
     assert.deepEqual(await f.api.hardCheck(sessionID), { ok: false, reason });
     assert.equal(f.calls.some(([name]) => name === "messages"), false);
   }
+
+  for (const [state, reason] of [
+    [{ inbox: undefined }, "inbox-status-unavailable"],
+    [{ permissions: undefined }, "permission-status-unavailable"],
+    [{ forms: undefined }, "session-form-status-unavailable"],
+    [{ locationForms: undefined }, "location-form-status-unavailable"],
+  ]) {
+    const f = context({ state });
+    assert.deepEqual(await f.api.hardCheck(sessionID), { ok: false, reason });
+    assert.equal(f.calls.some(([name]) => name === "messages"), false);
+  }
 });
 
 test("hardCheck rejects unsuccessful execution and unconfirmed or ambiguous latest history", async () => {
@@ -308,8 +319,26 @@ test("hardCheck fails closed when cross-worktree location forms cannot be checke
   const api = createModelGateAPI(f.ctx, { allowedSessionIDs: [sessionID] });
   assert.deepEqual(await api.hardCheck(sessionID), {
     ok: false,
-    reason: "pending-status-unavailable",
+    reason: "location-form-status-unavailable",
   });
+});
+
+test("diagnose identifies the unavailable pending-state surface without reading history", async () => {
+  const f = context({ state: { locationForms: undefined } });
+  const api = createModelGateAPI(f.ctx, { allowedSessionIDs: [sessionID] });
+
+  assert.deepEqual(await api.diagnose(sessionID), {
+    state: "unavailable",
+    reason: "location-form-status-unavailable",
+  });
+  assert.equal(f.calls.some(([name]) => name === "messages"), false);
+
+  f.state.locationForms = [];
+  assert.deepEqual(await api.diagnose(sessionID), {
+    state: "ready",
+    reason: "pending-status-clear",
+  });
+  assert.equal(f.calls.some(([name]) => name === "messages"), false);
 });
 
 test("decide uses session.generate and returns generated text without prompting", async () => {

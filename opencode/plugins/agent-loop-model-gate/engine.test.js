@@ -74,6 +74,12 @@ function fixture(options = {}) {
       calls.push(["sessions"]);
       return options.sessions ? options.sessions() : [sessionID];
     },
+    ...(options.diagnose && {
+      diagnose: async (id) => {
+        calls.push(["diagnose", id]);
+        return options.diagnose(id, calls);
+      },
+    }),
   };
   return {
     calls,
@@ -218,6 +224,65 @@ test("status validates persisted metadata and reports storage read failures", as
     state: "unavailable",
     reason: "status-unavailable",
   });
+});
+
+test("status includes a read-only preflight without evaluating or prompting", async () => {
+  const f = fixture({
+    diagnose: async () => ({
+      state: "unavailable",
+      reason: "location-form-status-unavailable",
+    }),
+  });
+
+  assert.deepEqual(await f.gate.status(sessionID), {
+    state: "unavailable",
+    reason: "no-evaluation-recorded",
+    preflight: {
+      state: "unavailable",
+      reason: "location-form-status-unavailable",
+    },
+  });
+  assert.equal(f.count("diagnose"), 1);
+  assert.equal(f.count("decide"), 0);
+  assert.equal(f.count("prompt"), 0);
+});
+
+test("status refreshes preflight independently from saved evaluation and sanitizes diagnostic failures", async () => {
+  const saved = {
+    checkedAt: 123,
+    state: "paused",
+    reason: "blocked",
+  };
+  let current = { state: "ready", reason: "pending-status-clear" };
+  const f = fixture({
+    initialStorage: [[`evaluation/${sessionID}`, saved]],
+    diagnose: async () => {
+      if (current instanceof Error) throw current;
+      return current;
+    },
+  });
+
+  assert.deepEqual(await f.gate.status(sessionID), {
+    ...saved,
+    preflight: { state: "ready", reason: "pending-status-clear" },
+  });
+  current = { state: "paused", reason: "permission-requested" };
+  assert.deepEqual(await f.gate.status(sessionID), {
+    ...saved,
+    preflight: { state: "paused", reason: "permission-requested" },
+  });
+  current = new Error("sensitive diagnostic detail");
+  assert.deepEqual(await f.gate.status(sessionID), {
+    ...saved,
+    preflight: { state: "unavailable", reason: "diagnostic-unavailable" },
+  });
+
+  assert.equal(f.count("diagnose"), 3);
+  assert.equal(f.count("binding"), 0);
+  assert.equal(f.count("hardCheck"), 0);
+  assert.equal(f.count("decide"), 0);
+  assert.equal(f.count("prompt"), 0);
+  assert.deepEqual(f.values.get(`evaluation/${sessionID}`), saved);
 });
 
 test("metadata persistence failures do not change evaluation results", async () => {

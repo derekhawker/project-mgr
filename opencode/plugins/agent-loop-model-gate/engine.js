@@ -307,6 +307,20 @@ export function createModelGate({
     async status(sessionID) {
       if (typeof sessionID !== "string") return { state: "paused", reason: "session-id-required" };
       if (!allowed.has(sessionID)) return { state: "ignored", reason: "session-not-allowlisted" };
+      let preflight;
+      if (typeof api.diagnose === "function") {
+        try {
+          const current = await api.diagnose(sessionID);
+          preflight = {
+            state: ["ready", "paused", "unavailable"].includes(current?.state)
+              ? current.state
+              : "unavailable",
+            reason: safeReason(current?.reason),
+          };
+        } catch {
+          preflight = { state: "unavailable", reason: "diagnostic-unavailable" };
+        }
+      }
       try {
         const saved = await storage.get(evaluationKey(sessionID));
         if (
@@ -316,10 +330,23 @@ export function createModelGate({
           typeof saved.reason !== "string" ||
           !/^[a-z][a-z0-9-]{0,63}$/.test(saved.reason)
         )
-          return { state: "unavailable", reason: "no-evaluation-recorded" };
-        return { checkedAt: saved.checkedAt, state: saved.state, reason: saved.reason };
+          return {
+            state: "unavailable",
+            reason: "no-evaluation-recorded",
+            ...(preflight && { preflight }),
+          };
+        return {
+          checkedAt: saved.checkedAt,
+          state: saved.state,
+          reason: saved.reason,
+          ...(preflight && { preflight }),
+        };
       } catch {
-        return { state: "unavailable", reason: "status-unavailable" };
+        return {
+          state: "unavailable",
+          reason: "status-unavailable",
+          ...(preflight && { preflight }),
+        };
       }
     },
     close() {

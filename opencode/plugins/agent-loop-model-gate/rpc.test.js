@@ -13,6 +13,7 @@ test("status RPC accepts only a bounded session ID and returns safe status metad
   assert.match(rpcSource, /checkedAt:\s*\{ type: "number" \}/);
   assert.match(rpcSource, /state:\s*\{ type: "string", enum: \["ignored", "paused", "prompted", "unavailable"\] \}/);
   assert.match(rpcSource, /reason:\s*\{ type: "string", maxLength: 64 \}/);
+  assert.match(rpcSource, /preflight = object\(/);
   assert.match(rpcSource, /\}, \["state", "reason"\]\)/);
   assert.match(rpcSource, /errors:\s*\{\}/);
   assert.doesNotMatch(rpcSource, /(?:transcript|explanation|taskText):/);

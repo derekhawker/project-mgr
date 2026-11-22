@@ -159,6 +159,7 @@ export function createModelGateAPI(ctx, { allowedSessionIDs = [] } = {}) {
       const record = { sessionID };
       const snapshot = await server.snapshot(record, undefined, {
         allowDifferentDirectory: allowed.has(sessionID),
+        granularPendingStatus: true,
       });
       if (snapshot.reason) return { ok: false, reason: snapshot.reason };
       if (snapshot.busy) return { ok: false, reason: "session-not-idle" };
@@ -174,6 +175,18 @@ export function createModelGateAPI(ctx, { allowedSessionIDs = [] } = {}) {
       const text = assistantText(lastAssistant);
       if (!text?.trim()) return { ok: false, reason: "last-assistant-message-unavailable" };
       return { ok: true, idleID: idle.id, lastMessage: text };
+    },
+    async diagnose(sessionID) {
+      const snapshot = await server.snapshot({ sessionID }, undefined, {
+        allowDifferentDirectory: allowed.has(sessionID),
+        granularPendingStatus: true,
+      });
+      if (snapshot.reason) return { state: "unavailable", reason: snapshot.reason };
+      if (snapshot.busy) return { state: "paused", reason: "session-not-idle" };
+      if (snapshot.ownPending) return { state: "paused", reason: "pending-input" };
+      if (snapshot.outcome !== "succeeded")
+        return { state: "paused", reason: "execution-not-successful" };
+      return { state: "ready", reason: "pending-status-clear" };
     },
     async decide(input) {
       const result = await bounded(
