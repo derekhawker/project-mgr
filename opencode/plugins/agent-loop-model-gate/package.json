@@ -3,7 +3,9 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./index.js"
+    ".": "./index.js",
+    "./tui": "./tui.js",
+    "./rpc": "./rpc.js"
   },
   "scripts": {
     "test": "node --test"

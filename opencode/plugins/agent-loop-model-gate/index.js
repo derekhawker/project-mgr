@@ -1,10 +1,10 @@
 import { Plugin } from "@opencode/plugin";
 import { configuredSessionAllowlist, createModelGate } from "./engine.js";
 import { createModelGateAPI } from "./api.js";
+import { control } from "./rpc.js";
 
 export const id = "project-mgr-agent-loop-model-gate";
 const stopCommand = "agent-loop-model-gate-stop";
-const statusCommand = "agent-loop-model-gate-status";
 
 export async function setup(ctx) {
   const allowedSessionIDs = configuredSessionAllowlist(ctx.options);
@@ -16,12 +16,12 @@ export async function setup(ctx) {
     storage: ctx.storage,
     allowedSessionIDs,
   });
+  const rpc = await ctx.rpc.register(control, {
+    async status({ sessionID }) {
+      return engine.status(sessionID);
+    },
+  });
   const registration = await ctx.command.transform((editor) => {
-    editor.add({
-      name: statusCommand,
-      description: "Show the latest metadata-only ticket continuation check",
-      execute: async ({ sessionID }) => engine.status(sessionID),
-    });
     editor.add({
       name: stopCommand,
       description: "Stop automatic ticket continuation for this session",
@@ -46,11 +46,10 @@ export async function setup(ctx) {
       // Startup reconciliation and hard reads fail closed; never log event payloads.
     }
   })();
-  void engine.scan().catch(() => {});
-
   return async () => {
     controller.abort();
     engine.close();
+    await rpc.dispose();
     await registration.dispose();
   };
 }

@@ -11,16 +11,18 @@ otherwise it fails closed. Only `continue` queues a prompt. Invalid or
 unavailable evidence fails closed, and ticket/TODO content plus the idle
 boundary are revalidated after generation.
 
-The plugin registers `/agent-loop-model-gate-stop` and
-`/agent-loop-model-gate-status`. Status reports only the last check time, outcome,
-and a sanitized reason; it never stores the model's explanation, task text, or
-session transcript. A stop is saved in plugin storage and prevents future
-automatic prompts for that session. Use a fresh disposable session for another
-experiment; this prototype does not yet define a resume action.
+The server registers `/agent-loop-model-gate-stop`. The TUI registers
+`/agent-loop-model-gate-status`, which displays only the last check time, outcome,
+and sanitized reason in a toast. It never stores or displays the model's
+explanation, task text, or session transcript. A stop is saved in plugin storage
+and prevents future automatic prompts for that session. Use a fresh disposable
+session for another experiment; this prototype does not yet define a resume
+action.
 
 The plugin fails closed unless configured with a non-empty `allowedSessionIDs`
-option. Session events, startup checks, stop commands, and ticket verification
-are all limited to those exact IDs. The allowlist bypasses only the usual
+option. Session events, status/stop commands, and ticket verification are all
+limited to those exact IDs. The plugin does not evaluate sessions at startup; it
+waits for a session event. The allowlist bypasses only the usual
 current-directory equality check; the session must still belong to the current
 OpenCode project, and its active ticket must name the same session ID.
 
