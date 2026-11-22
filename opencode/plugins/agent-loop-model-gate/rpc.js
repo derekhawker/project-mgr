@@ -21,6 +21,7 @@ const result = object({
   checkedAt: { type: "number" },
   state: { type: "string", enum: ["ignored", "paused", "prompted", "unavailable"] },
   reason: { type: "string", maxLength: 64 },
+  eventStream: { type: "string", enum: ["starting", "listening", "retrying", "closed"] },
   preflight,
   lastEvent: eventReceipt,
 }, ["state", "reason"]);

@@ -27,6 +27,9 @@ limited to those exact IDs. The plugin does not evaluate sessions at startup; it
 waits for a session event. The allowlist bypasses only the usual
 current-directory equality check; the session must still belong to the current
 OpenCode project, and its active ticket must name the same session ID.
+If OpenCode's event stream ends or errors, the plugin reconnects with a bounded
+backoff. The status toast reports whether that stream is listening, retrying, or
+closed, alongside whether a wake event has arrived since plugin load.
 
 ## Isolated plugin configuration
 

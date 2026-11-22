@@ -273,6 +273,44 @@ test("status includes a read-only preflight without evaluating or prompting", as
   assert.equal(f.count("prompt"), 0);
 });
 
+test("status reports event subscription health without evaluating or prompting", async () => {
+  const f = fixture();
+  f.gate.setEventStreamState("retrying");
+
+  assert.deepEqual(await f.gate.status(sessionID), {
+    state: "unavailable",
+    reason: "no-evaluation-recorded",
+    eventStream: "retrying",
+  });
+  assert.equal(f.count("decide"), 0);
+  assert.equal(f.count("prompt"), 0);
+});
+
+test("status health metadata accompanies a saved evaluation without changing it", async () => {
+  const f = fixture({
+    initialStorage: [[`evaluation/${sessionID}`, {
+      checkedAt: 123,
+      state: "paused",
+      reason: "pending-input",
+    }]],
+  });
+  f.gate.setEventStreamState("listening");
+
+  assert.deepEqual(await f.gate.status(sessionID), {
+    checkedAt: 123,
+    state: "paused",
+    reason: "pending-input",
+    eventStream: "listening",
+  });
+  assert.deepEqual(f.values.get(`evaluation/${sessionID}`), {
+    checkedAt: 123,
+    state: "paused",
+    reason: "pending-input",
+  });
+  assert.equal(f.count("decide"), 0);
+  assert.equal(f.count("prompt"), 0);
+});
+
 test("status refreshes preflight independently from saved evaluation and sanitizes diagnostic failures", async () => {
   const saved = {
     checkedAt: 123,

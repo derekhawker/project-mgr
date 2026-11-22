@@ -81,6 +81,7 @@ export function createModelGate({
   const observedEvents = new Map();
   const stopRequested = new Set();
   let closed = false;
+  let eventStreamState;
 
   const state = async (sessionID) => {
     const value = await storage.get(stateKey(sessionID));
@@ -347,6 +348,7 @@ export function createModelGate({
           return {
             state: "unavailable",
             reason: "no-evaluation-recorded",
+            ...(eventStreamState && { eventStream: eventStreamState }),
             ...(preflight && { preflight }),
             ...(eventReceipt && { lastEvent: eventReceipt }),
           };
@@ -354,6 +356,7 @@ export function createModelGate({
           checkedAt: saved.checkedAt,
           state: saved.state,
           reason: saved.reason,
+          ...(eventStreamState && { eventStream: eventStreamState }),
           ...(preflight && { preflight }),
           ...(eventReceipt && { lastEvent: eventReceipt }),
         };
@@ -361,12 +364,18 @@ export function createModelGate({
         return {
           state: "unavailable",
           reason: "status-unavailable",
+          ...(eventStreamState && { eventStream: eventStreamState }),
           ...(preflight && { preflight }),
         };
       }
     },
     close() {
       closed = true;
+      eventStreamState = "closed";
+    },
+    setEventStreamState(state) {
+      if (["starting", "listening", "retrying", "closed"].includes(state))
+        eventStreamState = state;
     },
   };
 }

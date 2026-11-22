@@ -21,7 +21,8 @@ export function setup(context) {
     const lastEvent = status.lastEvent
       ? `; last event since plugin load: ${status.lastEvent.type} at ${new Date(status.lastEvent.receivedAt).toLocaleTimeString()}`
       : "; no allowlisted event received since plugin load";
-    const message = `Model gate last: ${status.state}: ${status.reason}${checkedAt}${current}${lastEvent}`;
+    const eventStream = status.eventStream ? `; event stream: ${status.eventStream}` : "";
+    const message = `Model gate last: ${status.state}: ${status.reason}${checkedAt}${current}${eventStream}${lastEvent}`;
     if (!closed) context.ui.toast.show({ message });
   };
 
