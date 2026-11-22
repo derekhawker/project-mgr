@@ -531,6 +531,31 @@ test("an idle session-status event using the SDK data envelope wakes the gate", 
   assert.equal(f.count("prompt"), 1);
 });
 
+test("engine routing prefers properties, then root, then data session IDs", async () => {
+  const f = fixture();
+
+  assert.deepEqual(await f.gate.event({
+    type: "session.idle",
+    properties: { sessionID },
+    sessionID: "ses_root_decoy",
+    data: { sessionID: "ses_data_decoy" },
+  }), { state: "prompted", turns: 1 });
+  assert.equal(f.calls.find(([name]) => name === "binding")[1], sessionID);
+  assert.equal(f.count("decide"), 1);
+  assert.equal(f.count("prompt"), 1);
+});
+
+test("a successful session execution event wakes the gate", async () => {
+  const f = fixture();
+  assert.ok(wakeEventTypes.includes("session.execution.succeeded"));
+  assert.deepEqual(await f.gate.event({
+    type: "session.execution.succeeded",
+    data: { sessionID },
+  }), { state: "prompted", turns: 1 });
+  assert.equal(f.count("decide"), 1);
+  assert.equal(f.count("prompt"), 1);
+});
+
 test("a non-idle session-status transition is ignored", async () => {
   const f = fixture();
   assert.deepEqual(await f.gate.event({

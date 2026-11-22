@@ -19,7 +19,7 @@ test("status RPC accepts only a bounded session ID and returns safe status metad
   assert.match(rpcSource, /receivedAt:\s*\{ type: "number" \}/);
   assert.match(
     rpcSource,
-    /type:\s*\{ type: "string", enum: \["session\.idle", "session\.status", "session\.instructions\.updated", "session\.created", "session\.unarchived"\] \}/,
+    /type:\s*\{ type: "string", enum: \["session\.idle", "session\.status", "session\.execution\.succeeded", "session\.instructions\.updated", "session\.created", "session\.unarchived"\] \}/,
   );
   assert.match(rpcSource, /\}, \["state", "reason"\]\)/);
   assert.match(rpcSource, /errors:\s*\{\}/);

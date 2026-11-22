@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
+import { sessionIDFromEvent } from "./event-scope.js";
 
 const decisions = new Set(["continue", "complete", "blocked", "ask_user"]);
 export const wakeEventTypes = Object.freeze([
   "session.idle",
   "session.status",
+  "session.execution.succeeded",
   "session.instructions.updated",
   "session.created",
   "session.unarchived",
@@ -61,9 +63,6 @@ export function parseDecision(text, todoContent) {
     return;
   return { decision: value.decision, reason: value.reason, task: value.task };
 }
-
-const sessionIDOf = (event) =>
-  event?.properties?.sessionID ?? event?.sessionID ?? event?.data?.sessionID;
 
 export function createModelGate({
   api,
@@ -293,7 +292,7 @@ export function createModelGate({
         (event.properties?.status ?? event.data?.status)?.type !== "idle"
       )
         return { state: "ignored", reason: "session-not-idle" };
-      const sessionID = sessionIDOf(event);
+      const sessionID = sessionIDFromEvent(event);
       if (allowed.has(sessionID)) recordEvent(sessionID, event.type);
       return consider(sessionID);
     },

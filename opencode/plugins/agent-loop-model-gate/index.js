@@ -2,6 +2,7 @@ import { Plugin } from "@opencode/plugin";
 import { configuredSessionAllowlist, createModelGate, wakeEventTypes } from "./engine.js";
 import { createModelGateAPI } from "./api.js";
 import { consumeEventStream } from "./event-stream.js";
+import { eventOwnerSessionIDs, sessionIDFromEvent } from "./event-scope.js";
 import { control } from "./rpc.js";
 
 export const id = "project-mgr-agent-loop-model-gate";
@@ -37,7 +38,13 @@ export async function setup(ctx) {
         signal,
       }),
     onEvent: (event) => {
-      void engine.event(event).catch(() => {});
+      const sessionID = sessionIDFromEvent(event);
+      if (!allowedSessionIDs.includes(sessionID)) return;
+      void eventOwnerSessionIDs(ctx, [sessionID])
+        .then((owners) => {
+          if (owners.has(sessionID)) return engine.event(event);
+        })
+        .catch(() => {});
     },
     onState: (state) => engine.setEventStreamState(state),
     signal: controller.signal,
