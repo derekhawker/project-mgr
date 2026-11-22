@@ -64,18 +64,19 @@ action is either approved work or a named question for the human.
    hypothesis with the human: record what the observations support, refute, or
    leave unknown. Promote only supported conclusions into production decisions;
    keep the rest provisional or propose another experiment.
-5. Define the outcome, scope, non-goals, acceptance/validation, dependencies, and
-   a concise **outcome checklist** (meaningful results and proof, not an ordered
-   implementation breakdown). Include a manual inspection path when needed. Map
-   each in-scope request to its outcome and proof. Keep proposed checklist changes
-   in the approval request; do not alter a live checklist before approval. Follow
-   local record ownership without duplication.
+5. Define high-level outcomes, scope, non-goals, acceptance/validation, and known
+   dependencies. Include a manual inspection path when needed. Map each in-scope
+   request to its outcome and proof. Do not create a second checklist that repeats
+   these outcomes. Keep proposed outcome or scope changes in the approval request;
+   do not alter approved outcomes before approval. Follow local record ownership
+   without duplication.
 6. Show the full request coverage with proposed dispositions; ask the human to
    confirm them and explicitly approve either the bounded experiment or complete
    implementation plan. Record what was approved and when. On approved start or
-   resume, reconcile an existing checklist with the approved scope, preserving
-   work and evidence; initialize it only if absent. The checklist does not expand
-   scope. Experiment approval authorizes only that experiment, not production work.
+   resume, reconcile the existing execution plan with the approved scope,
+   preserving work and evidence; initialize it only if absent. The plan does not
+   expand scope. Experiment approval authorizes only that experiment, not
+   production work.
 
 Completion criterion: the human has approved a bounded experiment or complete
 implementation plan, every request-coverage item has an agreed disposition, each
@@ -85,12 +86,16 @@ stays visible and outside the approved boundary.
 
 ## Execute Within The Boundary
 
-**Checkpoint loop:** reconcile actual state with the approved scope and checklist;
-update the checklist; continue with the next ready in-scope work. Don’t hand off
-while approved work remains ready. Stop only at proved completion, a blocker or
-decision that prevents progress, or the approval boundary.
+**Checkpoint loop:** reconcile the whole TODO in memory with approved outcomes,
+checkout, dependencies, and evidence; update task state/order only when facts
+change; then continue with the next ready in-scope work. Reconciliation is not a
+write requirement. Persist only a material change to approved work, task order,
+dependencies, blockers, or acceptance-relevant proof. Don’t hand off while
+approved work remains ready. Stop only at proved completion, a blocker or decision
+that prevents progress, or the approval boundary.
 
-On “continue” or resume, re-read the record and apply this loop to the same plan.
+On “continue” or resume, re-read the record and apply this loop to the same plan;
+do not rely on an informal todo list from the conversation.
 
 Before declaring execution complete, reconcile the implementation against every
 in-scope request-coverage item, the approved record, linked roadmap/source-of-truth
@@ -109,10 +114,11 @@ Implement the causal path that proves the outcome. Use the smallest useful
 validation; when practical, make a test fail before implementation for the expected
 missing behavior. If automated proof doesn’t fit, explain and use an appropriate
 check. Keep connected work integrated when splitting it would create incomplete
-seams or defer essential integration. Record evidence and limitations; add
-in-scope discoveries to the checklist and defer adjacent work. If evidence changes
-the outcome, proof, consequential contract, or scope, pause affected work, record
-the options, and seek approval while continuing other ready approved work.
+seams or defer essential integration. Add in-scope discoveries to the TODO and
+defer adjacent work. Keep only concise proof that affects readiness or acceptance;
+do not record tool or turn chronology. If evidence changes the outcome, proof,
+consequential contract, or scope, pause affected work, record the options, and seek
+approval while continuing other ready approved work.
 
 Run the project's required validation baseline when the implementation reaches its
 final acceptance checks;
@@ -129,22 +135,25 @@ incomplete, with the gap and next action recorded.
 
 ## Checkpoint And Recover
 
-Update the record after approval, meaningful progress, an important discovery, a
-failed check, a blocker, and before a handoff or stopping. Record meaningful
-changes rather than a transcript of tool calls.
+Update the record after approval, a material plan change, a failed check that
+changes readiness, a blocker, or before handoff/stopping. Record net state, not
+turns, tool calls, or repeated validation results.
 
-Reconcile the live checklist with the checkout at every checkpoint. Mark
-demonstrated outcomes complete with concise evidence;
-add newly discovered in-scope work; revise changed entries; and remove stale,
-duplicate, obsolete, or out-of-scope entries after recording material disposition
-in the authoritative scope/decision record. Keep the list focused on current work
-and recovery, not activity history. Follow local closeout rules for final evidence
-and record cleanup.
+Reconcile the entire TODO with approved outcomes, checkout, dependencies, and
+evidence—not only the task just worked on. Mark verified tasks complete, add
+in-scope work, reorder as dependencies change, and remove unnecessary/obsolete
+tasks with a short reason when that reason affects scope or recovery. Remove done
+tasks once they no longer guide open work; keep durable proof in tests/artifacts
+and point to it only when needed for acceptance. An optional `Explore later`
+section holds at most three brief, unapproved topics; promote a topic only after
+approval. Keep the TODO to actionable state, never a running history. Persist only
+when that state changes. Follow local closeout rules.
 
-Keep completed, in-progress, blocked, and unverified work distinguishable. For a
-blocker, record the last useful state, what resolves it, and the first action
-after resolution. For a scope change, retain the previous approval boundary and
-identify what now needs approval. Use local lifecycle states when supplied.
+Keep open, blocked, and unverified tasks distinguishable. Record completed outcome
+evidence in the authoritative ticket before removing tasks that no longer guide
+open work. For a blocker, record what resolves it and the first action after
+resolution. For a scope change, retain the previous approval boundary and identify
+what now needs approval. Use local lifecycle states when supplied.
 
 Completion criterion: another session can find the current scope, progress,
 decisions, evidence, blocker or uncertainty, and next action without rebuilding
