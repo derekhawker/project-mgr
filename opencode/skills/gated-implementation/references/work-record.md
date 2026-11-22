@@ -19,7 +19,8 @@ as the task develops; an unapproved task need not contain a finished plan.
   prerequisites, and relevant source-of-truth references.
 - **TODO:** a short queue of approved work, ordered by readiness. Group connected
   steps into useful user journeys; replace finished actions with the next ones.
-  Keep evidence in tests/artifacts. `Explore later` may hold three brief topics.
+  Rebuild an empty queue from any open acceptance gaps. Keep evidence in
+  tests/artifacts. `Explore later` may hold three brief topics.
   See [Checkpoint And Recover](../SKILL.md#checkpoint-and-recover).
 
 ## During Execution And At Handoff

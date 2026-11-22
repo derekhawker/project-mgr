@@ -71,13 +71,13 @@ The Work action itself does not change status. Perform status transitions throug
 OpenCode and persist them in the Markdown ticket. If a recorded session is
 unavailable, start a replacement session and update the ticket's session ID.
 
-Reconcile the whole TODO at checkpoints. As work advances, replace completed
-actions with the next ones; never append history. Write only when the queue, its
-order, or a blocker changes. Add discovered work and reorder as needed. Put
-material scope or decision changes in the ticket first. The TODO never overrides
-ticket
-status, outcomes, acceptance, scope, decisions, or session binding. Keep it
-while the ticket remains active or delivery/cleanup is blocked.
+Reconcile the TODO at checkpoints. After completing an action, continue with the
+next ready one. If the queue is empty but approved outcomes remain open, rebuild
+the queue from those gaps. An empty queue means completion only when acceptance
+checks pass. Replace completed actions; never append history. Put material scope
+or decision changes in the ticket first. The TODO never overrides ticket status,
+outcomes, acceptance, scope, decisions, or session binding. Keep it while the
+ticket remains active or delivery/cleanup is blocked.
 
 ## Closeout
 

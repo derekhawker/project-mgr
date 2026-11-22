@@ -78,13 +78,12 @@ Work in coherent user journeys: connect the steps needed to deliver and exercise
 one useful outcome, even when they cross components. Avoid isolated pieces that
 leave the journey disconnected and batches that combine unrelated outcomes.
 
-At each checkpoint, reconcile the whole TODO against approved outcomes, checkout,
-dependencies, and current state. Continue with the next ready approved journey.
-The TODO is a short queue of open actions, not a progress or evidence log: remove
-finished items and replace them with the next action as work advances. Add tasks
-only when they change what should happen next. Keep acceptance criteria in the
-ticket and proof in tests or artifacts; add only a concise reference when it
-changes readiness. Stop at verified completion, a blocker, a consequential
+At each checkpoint, reconcile the TODO against approved outcomes and current
+state. After finishing an item, continue with the next ready approved item. If the
+queue is empty but acceptance criteria remain open, rebuild it from those gaps and
+continue. An empty TODO means completion only when all approved outcomes pass.
+Keep it a short queue: replace finished actions with next actions; keep evidence
+in tests or artifacts. Stop at verified completion, a blocker, a consequential
 decision, or the approval boundary.
 
 On “continue” or resume, re-read the record and apply this loop to the same plan;

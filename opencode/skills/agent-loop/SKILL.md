@@ -11,10 +11,10 @@ session using `/agent-loop-start`.
    continuation prompt, including after compaction. If either is missing or
    ambiguous, stop and ask the human. Do not guess from the repository.
 2. The ticket defines outcomes and acceptance; the TODO is a short queue of open
-   work, grouped into coherent user journeys where useful. Reconcile it each turn;
-   replace finished actions with the next ones as work advances. Keep evidence in
-   tests/artifacts, not TODO history. Continue with the next ready
-   approved task.
+   work, grouped into coherent user journeys where useful. After an item, take the
+   next ready one. If the queue is empty while ticket outcomes remain open, rebuild
+   it from those gaps and continue. Keep evidence in tests/artifacts, not TODO
+   history.
 3. Leave permission grants, form responses, destructive actions, user-data
    cutover, or closeout to the user. Arming is not approval for those actions.
 4. End your response with the checkpoint line from the continuation prompt.
