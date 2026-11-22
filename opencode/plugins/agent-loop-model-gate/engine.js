@@ -78,6 +78,7 @@ export function createModelGate({
   );
   const inFlight = new Map();
   const stateWrites = new Map();
+  const observedEvents = new Map();
   const stopRequested = new Set();
   let closed = false;
 
@@ -114,6 +115,10 @@ export function createModelGate({
     } finally {
       if (stateWrites.get(sessionID) === write) stateWrites.delete(sessionID);
     }
+  }
+
+  function recordEvent(sessionID, type) {
+    observedEvents.set(sessionID, { receivedAt: now(), type });
   }
 
   async function consider(sessionID) {
@@ -280,7 +285,9 @@ export function createModelGate({
     async event(event) {
       if (!wakeEvents.has(event?.type))
         return { state: "ignored", reason: "event-not-relevant" };
-      return consider(sessionIDOf(event));
+      const sessionID = sessionIDOf(event);
+      if (allowed.has(sessionID)) recordEvent(sessionID, event.type);
+      return consider(sessionID);
     },
     async scan() {
       if (allowed.size === 0) return [];
@@ -323,6 +330,13 @@ export function createModelGate({
       }
       try {
         const saved = await storage.get(evaluationKey(sessionID));
+        let eventReceipt = observedEvents.get(sessionID);
+        if (
+          !eventReceipt ||
+          !Number.isFinite(eventReceipt.receivedAt) ||
+          !wakeEvents.has(eventReceipt.type)
+        )
+          eventReceipt = undefined;
         if (
           !saved ||
           !Number.isFinite(saved.checkedAt) ||
@@ -334,12 +348,14 @@ export function createModelGate({
             state: "unavailable",
             reason: "no-evaluation-recorded",
             ...(preflight && { preflight }),
+            ...(eventReceipt && { lastEvent: eventReceipt }),
           };
         return {
           checkedAt: saved.checkedAt,
           state: saved.state,
           reason: saved.reason,
           ...(preflight && { preflight }),
+          ...(eventReceipt && { lastEvent: eventReceipt }),
         };
       } catch {
         return {

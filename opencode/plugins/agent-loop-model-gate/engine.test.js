@@ -116,6 +116,32 @@ test("deterministic hard checks run before the model and veto it on failure", as
   assert.equal(f.count("prompt"), 0);
 });
 
+test("allowlisted wake-event receipt is tracked in memory before a hard-check veto", async () => {
+  const f = fixture({
+    hardCheck: () => ({ ok: false, reason: "pending-input" }),
+    gateOptions: { now: () => 789 },
+  });
+  const observed = {
+    ...event(),
+    id: "event-private-payload-is-not-saved",
+    data: { sessionID, text: "private event payload" },
+  };
+
+  assert.deepEqual(await f.gate.event(observed), {
+    state: "paused",
+    reason: "pending-input",
+  });
+  assert.equal(f.values.has(`event/${sessionID}`), false);
+  assert.deepEqual(await f.gate.status(sessionID), {
+    checkedAt: 789,
+    state: "paused",
+    reason: "pending-input",
+    lastEvent: { receivedAt: 789, type: "session.idle" },
+  });
+  assert.equal(f.count("decide"), 0);
+  assert.equal(f.count("prompt"), 0);
+});
+
 test("only a valid strict-JSON continue decision queues exactly one prompt", async () => {
   const f = fixture();
   const result = await f.gate.event(event());
@@ -286,7 +312,7 @@ test("status refreshes preflight independently from saved evaluation and sanitiz
 });
 
 test("metadata persistence failures do not change evaluation results", async () => {
-  const f = fixture();
+  const f = fixture({ gateOptions: { now: () => 789 } });
   f.storage.set = async (key, value) => {
     if (key.startsWith("evaluation/")) throw new Error("storage unavailable");
     f.values.set(key, structuredClone(value));
@@ -296,6 +322,7 @@ test("metadata persistence failures do not change evaluation results", async () 
   assert.deepEqual(await f.gate.status(sessionID), {
     state: "unavailable",
     reason: "no-evaluation-recorded",
+    lastEvent: { receivedAt: 789, type: "session.idle" },
   });
 });
 
@@ -313,6 +340,7 @@ test("ignored evaluations persist only a bounded safe reason", async () => {
     checkedAt: 456,
     state: "ignored",
     reason: "evaluation-unavailable",
+    lastEvent: { receivedAt: 456, type: "session.idle" },
   });
   assert.deepEqual(Object.keys(f.values.get(`evaluation/${sessionID}`)).sort(), [
     "checkedAt", "reason", "state",
@@ -448,6 +476,7 @@ test("the session allowlist gates events, scans, and stop commands", async () =>
   assert.deepEqual(await f.gate.event(event("session.idle", "ses_other")), {
     state: "ignored", reason: "session-not-allowlisted",
   });
+  assert.equal(f.values.has("event/ses_other"), false);
   assert.deepEqual(await f.gate.stop("ses_other"), {
     state: "ignored", reason: "session-not-allowlisted",
   });

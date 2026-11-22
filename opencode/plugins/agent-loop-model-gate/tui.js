@@ -18,7 +18,10 @@ export function setup(context) {
     const current = status.preflight
       ? `; current check ${status.preflight.state}: ${status.preflight.reason}`
       : "";
-    const message = `Model gate last: ${status.state}: ${status.reason}${checkedAt}${current}`;
+    const lastEvent = status.lastEvent
+      ? `; last event since plugin load: ${status.lastEvent.type} at ${new Date(status.lastEvent.receivedAt).toLocaleTimeString()}`
+      : "; no allowlisted event received since plugin load";
+    const message = `Model gate last: ${status.state}: ${status.reason}${checkedAt}${current}${lastEvent}`;
     if (!closed) context.ui.toast.show({ message });
   };
 

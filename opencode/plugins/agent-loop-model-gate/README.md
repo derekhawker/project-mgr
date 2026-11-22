@@ -13,8 +13,10 @@ boundary are revalidated after generation.
 
 The server registers `/agent-loop-model-gate-stop`. The TUI registers
 `/agent-loop-model-gate-status`, which displays the last check time, outcome,
-sanitized reason, and a read-only current preflight in a toast. It never stores
-or displays the model's explanation, task text, or session transcript. A stop is saved in plugin storage
+sanitized reason, a read-only current preflight, and the last allowlisted wake
+event received since plugin load in a toast. Event receipts stay in memory and
+store only the event type and receipt time. The plugin never stores or displays
+the model's explanation, task text, event payload, or session transcript. A stop is saved in plugin storage
 and prevents future automatic prompts for that session. Use a fresh disposable
 session for another experiment; this prototype does not yet define a resume
 action.
