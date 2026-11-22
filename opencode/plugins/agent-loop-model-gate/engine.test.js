@@ -1,0 +1,274 @@
+import assert from "node:assert/strict";
+import { setImmediate as tick } from "node:timers/promises";
+import test from "node:test";
+import { createModelGate } from "./engine.js";
+
+const sessionID = "ses_ticket";
+const ticket = "/workspace/tickets/fixture.md";
+const todo = "/workspace/tickets/fixture.todo";
+const binding = {
+  ok: true,
+  ticket,
+  todo,
+  signature: "binding-v1",
+  ticketContent: "# Fixture ticket",
+  todoContent: "# TODO\n- [ ] Continue scoped work",
+};
+const boundary = (idleID = "idle-1") => ({
+  ok: true,
+  idleID,
+  lastMessage: "The current approved task is complete.",
+});
+const event = (type = "session.idle", id = sessionID) => ({
+  type,
+  properties: { sessionID: id },
+});
+const answer = (decision = "continue", reason = "A scoped task remains.", task = "Continue scoped work") =>
+  JSON.stringify({ decision, task: decision === "continue" ? task : null, reason });
+
+function fixture(options = {}) {
+  const calls = [];
+  const values = new Map(options.initialStorage ?? []);
+  const storage = {
+    get: async (key) => structuredClone(values.get(key)),
+    set: async (key, value) => values.set(key, structuredClone(value)),
+  };
+  const api = {
+    binding: async (id) => {
+      calls.push(["binding", id]);
+      return options.binding ? options.binding(id, calls) : binding;
+    },
+    hardCheck: async (id, found) => {
+      calls.push(["hardCheck", id, found]);
+      return options.hardCheck ? options.hardCheck(id, found, calls) : boundary();
+    },
+    decide: async (input) => {
+      calls.push(["decide", input]);
+      return options.decide ? options.decide(input, calls) : answer();
+    },
+    prompt: async (input) => {
+      calls.push(["prompt", input]);
+      return options.prompt?.(input, calls);
+    },
+    sessions: async () => {
+      calls.push(["sessions"]);
+      return options.sessions ? options.sessions() : [sessionID];
+    },
+  };
+  return {
+    calls,
+    storage,
+    values,
+    gate: createModelGate({ api, storage, ...options.gateOptions }),
+    count: (name) => calls.filter(([call]) => call === name).length,
+  };
+}
+
+test("invalid or unbound sessions are ignored before hard checks and model decisions", async () => {
+  for (const unavailable of [undefined, { ok: false, reason: "session-not-eligible" }]) {
+    const f = fixture({ binding: () => unavailable });
+    const result = await f.gate.event(event());
+    assert.equal(result.state, "ignored");
+    assert.equal(f.count("hardCheck"), 0);
+    assert.equal(f.count("decide"), 0);
+    assert.equal(f.count("prompt"), 0);
+  }
+
+});
+
+test("deterministic hard checks run before the model and veto it on failure", async () => {
+  const f = fixture({ hardCheck: () => ({ ok: false, reason: "pending-input" }) });
+  const result = await f.gate.event(event());
+  assert.deepEqual(result, { state: "paused", reason: "pending-input" });
+  assert.deepEqual(f.calls.map(([name]) => name), ["binding", "hardCheck"]);
+  assert.equal(f.count("decide"), 0);
+  assert.equal(f.count("prompt"), 0);
+});
+
+test("only a valid strict-JSON continue decision queues exactly one prompt", async () => {
+  const f = fixture();
+  const result = await f.gate.event(event());
+  assert.deepEqual(result, { state: "prompted", turns: 1 });
+  assert.deepEqual(f.calls.map(([name]) => name), [
+    "binding", "hardCheck", "decide", "binding", "hardCheck", "binding", "hardCheck", "binding", "prompt",
+  ]);
+  assert.equal(f.count("prompt"), 1);
+  const decisionInput = f.calls.find(([name]) => name === "decide")[1];
+  assert.deepEqual(decisionInput, {
+    sessionID,
+    ticket,
+    todo,
+    ticketContent: binding.ticketContent,
+    todoContent: binding.todoContent,
+    lastMessage: boundary().lastMessage,
+  });
+  const promptInput = f.calls.find(([name]) => name === "prompt")[1];
+  assert.equal(promptInput.sessionID, sessionID);
+  assert.equal(promptInput.ticket, ticket);
+  assert.equal(promptInput.todo, todo);
+  assert.equal(promptInput.task, "Continue scoped work");
+  assert.match(promptInput.id, /^msg_/);
+});
+
+test("complete, blocked, ask_user, malformed output, and model failure admit no prompt", async () => {
+  for (const output of [
+    answer("complete"),
+    answer("blocked"),
+    answer("ask_user"),
+    '{"decision":"continue","reason":"Scoped task remains.","extra":true}',
+    '{"decision":"Continue","reason":"Scoped task remains."}',
+    JSON.stringify({ decision: "continue", task: "Unapproved task", reason: "Ready." }),
+    "not JSON",
+    null,
+  ]) {
+    const f = fixture({ decide: () => output });
+    const result = await f.gate.event(event());
+    assert.equal(result.state, "paused");
+    assert.equal(f.count("decide"), 1);
+    assert.equal(f.count("prompt"), 0);
+  }
+
+  const failed = fixture({ decide: () => { throw new Error("model unavailable"); } });
+  assert.deepEqual(await failed.gate.event(event()), {
+    state: "paused", reason: "decision-unavailable",
+  });
+  assert.equal(failed.count("prompt"), 0);
+});
+
+test("a repeated idle boundary is evaluated at most once", async () => {
+  const f = fixture();
+  await f.gate.event(event());
+  const repeated = await f.gate.event(event());
+  assert.deepEqual(repeated, { state: "ignored", reason: "idle-already-evaluated" });
+  assert.equal(f.count("decide"), 1);
+  assert.equal(f.count("prompt"), 1);
+});
+
+test("a saved stop prevents later model decisions and prompts", async () => {
+  const f = fixture();
+  assert.deepEqual(await f.gate.stop(sessionID), { state: "paused", reason: "user-stopped" });
+  const afterStop = f.count("decide");
+  assert.deepEqual(await f.gate.event(event()), { state: "paused", reason: "user-stopped" });
+  assert.equal(f.count("decide"), afterStop);
+  assert.equal(f.count("prompt"), 0);
+});
+
+test("a stop racing model generation wins before prompt admission", async () => {
+  let releaseDecision;
+  const decisionPending = new Promise((resolve) => { releaseDecision = resolve; });
+  const f = fixture({ decide: async () => decisionPending });
+  const pending = f.gate.event(event());
+  while (f.count("decide") === 0) await tick();
+  await f.gate.stop(sessionID);
+  releaseDecision(answer());
+  assert.deepEqual(await pending, { state: "paused", reason: "user-stopped" });
+  assert.equal(f.count("prompt"), 0);
+});
+
+test("changed ticket content or idle boundary during generation prevents prompt admission", async () => {
+  const changedTicket = fixture({
+    binding: (() => {
+      let calls = 0;
+      return async () => (++calls === 1 ? binding : { ...binding, signature: "binding-v2" });
+    })(),
+  });
+  assert.deepEqual(await changedTicket.gate.event(event()), {
+    state: "paused", reason: "ticket-changed",
+  });
+  assert.equal(changedTicket.count("prompt"), 0);
+
+  const changedIdle = fixture({
+    hardCheck: (() => {
+      let calls = 0;
+      return async () => (++calls === 1 ? boundary("idle-1") : boundary("idle-2"));
+    })(),
+  });
+  assert.deepEqual(await changedIdle.gate.event(event()), {
+    state: "paused", reason: "session-changed-during-decision",
+  });
+  assert.equal(changedIdle.count("prompt"), 0);
+});
+
+test("ticket changes during the final state write prevent prompt admission", async () => {
+  let bindingReads = 0;
+  const f = fixture({
+    binding: async () => (++bindingReads < 3 ? binding : { ...binding, signature: "binding-v2" }),
+  });
+  assert.deepEqual(await f.gate.event(event()), { state: "paused", reason: "ticket-changed" });
+  assert.equal(f.count("decide"), 1);
+  assert.equal(f.count("prompt"), 0);
+});
+
+test("ticket changes during the final hard check prevent prompt admission", async () => {
+  let bindingReads = 0;
+  const f = fixture({
+    binding: async () => (++bindingReads < 4 ? binding : { ...binding, signature: "binding-v2" }),
+  });
+  assert.deepEqual(await f.gate.event(event()), { state: "paused", reason: "ticket-changed" });
+  assert.equal(f.count("decide"), 1);
+  assert.equal(f.count("prompt"), 0);
+});
+
+test("turn and age limits fail closed before hard checks or model decisions", async () => {
+  const oldTurnState = [[`session/${sessionID}`, {
+    sessionID, turns: 2, startedAt: 100, stopped: false,
+  }]];
+  const turns = fixture({
+    initialStorage: oldTurnState,
+    gateOptions: { maxTurns: 2, now: () => 101 },
+  });
+  assert.deepEqual(await turns.gate.event(event()), { state: "paused", reason: "limit-reached" });
+  assert.equal(turns.count("hardCheck"), 0);
+  assert.equal(turns.count("decide"), 0);
+
+  const age = fixture({
+    initialStorage: [[`session/${sessionID}`, {
+      sessionID, turns: 0, startedAt: 100, stopped: false,
+    }]],
+    gateOptions: { maxAge: 10, now: () => 110 },
+  });
+  assert.deepEqual(await age.gate.event(event()), { state: "paused", reason: "limit-reached" });
+  assert.equal(age.count("hardCheck"), 0);
+  assert.equal(age.count("decide"), 0);
+});
+
+test("duplicate concurrent events for one session share a single evaluation and admission", async () => {
+  let releaseDecision;
+  const decisionPending = new Promise((resolve) => { releaseDecision = resolve; });
+  const f = fixture({ decide: async () => decisionPending });
+  const first = f.gate.event(event());
+  while (f.count("decide") === 0) await tick();
+  const second = await f.gate.event(event("session.instructions.updated"));
+  releaseDecision(answer());
+  const firstResult = await first;
+  assert.equal(firstResult.state, "prompted");
+  assert.deepEqual(second, { state: "ignored", reason: "already-checking-or-closed" });
+  assert.equal(f.count("decide"), 1);
+  assert.equal(f.count("prompt"), 1);
+});
+
+test("unrelated event types are ignored without touching session APIs", async () => {
+  const f = fixture();
+  assert.deepEqual(await f.gate.event(event("message.updated")), {
+    state: "ignored", reason: "event-not-relevant",
+  });
+  assert.deepEqual(f.calls, []);
+});
+
+test("startup scan considers each listed session", async () => {
+  const considered = [];
+  const f = fixture({
+    sessions: () => ["ses_one", "ses_two"],
+    binding: (id) => {
+      considered.push(id);
+      return { ok: false, reason: "session-not-eligible" };
+    },
+  });
+  const results = await f.gate.scan();
+  assert.deepEqual(considered, ["ses_one", "ses_two"]);
+  assert.deepEqual(results, [
+    { state: "ignored", reason: "session-not-eligible" },
+    { state: "ignored", reason: "session-not-eligible" },
+  ]);
+  assert.equal(f.count("sessions"), 1);
+});

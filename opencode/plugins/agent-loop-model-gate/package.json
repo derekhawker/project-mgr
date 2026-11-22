@@ -1,0 +1,11 @@
+{
+  "name": "project-mgr-agent-loop-model-gate",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./index.js"
+  },
+  "scripts": {
+    "test": "node --test"
+  }
+}
