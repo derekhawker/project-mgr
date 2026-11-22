@@ -15,7 +15,7 @@ const preflight = object({
 });
 const eventReceipt = object({
   receivedAt: { type: "number" },
-  type: { type: "string", enum: ["session.idle", "session.instructions.updated", "session.created", "session.unarchived"] },
+  type: { type: "string", enum: ["session.idle", "session.status", "session.instructions.updated", "session.created", "session.unarchived"] },
 });
 const result = object({
   checkedAt: { type: "number" },

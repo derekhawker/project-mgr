@@ -1,5 +1,5 @@
 import { Plugin } from "@opencode/plugin";
-import { configuredSessionAllowlist, createModelGate } from "./engine.js";
+import { configuredSessionAllowlist, createModelGate, wakeEventTypes } from "./engine.js";
 import { createModelGateAPI } from "./api.js";
 import { consumeEventStream } from "./event-stream.js";
 import { control } from "./rpc.js";
@@ -33,12 +33,7 @@ export async function setup(ctx) {
   void consumeEventStream({
     subscribe: ({ signal }) =>
       ctx.event.subscribe({
-        types: [
-          "session.idle",
-          "session.instructions.updated",
-          "session.created",
-          "session.unarchived",
-        ],
+        types: wakeEventTypes,
         signal,
       }),
     onEvent: (event) => {

@@ -24,7 +24,8 @@ action.
 The plugin fails closed unless configured with a non-empty `allowedSessionIDs`
 option. Session events, status/stop commands, and ticket verification are all
 limited to those exact IDs. The plugin does not evaluate sessions at startup; it
-waits for a session event. The allowlist bypasses only the usual
+wakes on `session.idle` or the idle transition in `session.status`, plus ticket
+and session lifecycle events. The allowlist bypasses only the usual
 current-directory equality check; the session must still belong to the current
 OpenCode project, and its active ticket must name the same session ID.
 If OpenCode's event stream ends or errors, the plugin reconnects with a bounded

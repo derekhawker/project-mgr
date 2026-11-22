@@ -1,12 +1,14 @@
 import { randomUUID } from "node:crypto";
 
 const decisions = new Set(["continue", "complete", "blocked", "ask_user"]);
-const wakeEvents = new Set([
+export const wakeEventTypes = Object.freeze([
   "session.idle",
+  "session.status",
   "session.instructions.updated",
   "session.created",
   "session.unarchived",
 ]);
+const wakeEvents = new Set(wakeEventTypes);
 const stateKey = (sessionID) => `session/${sessionID}`;
 const evaluationKey = (sessionID) => `evaluation/${sessionID}`;
 const evaluationStates = new Set(["ignored", "paused", "prompted"]);
@@ -286,6 +288,8 @@ export function createModelGate({
     async event(event) {
       if (!wakeEvents.has(event?.type))
         return { state: "ignored", reason: "event-not-relevant" };
+      if (event.type === "session.status" && event.properties?.status?.type !== "idle")
+        return { state: "ignored", reason: "session-not-idle" };
       const sessionID = sessionIDOf(event);
       if (allowed.has(sessionID)) recordEvent(sessionID, event.type);
       return consider(sessionID);

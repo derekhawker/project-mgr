@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { setImmediate as tick } from "node:timers/promises";
 import test from "node:test";
-import { configuredSessionAllowlist, createModelGate } from "./engine.js";
+import { configuredSessionAllowlist, createModelGate, wakeEventTypes } from "./engine.js";
 
 const sessionID = "ses_ticket";
 const ticket = "/workspace/tickets/fixture.md";
@@ -503,6 +503,46 @@ test("unrelated event types are ignored without touching session APIs", async ()
     state: "ignored", reason: "event-not-relevant",
   });
   assert.deepEqual(f.calls, []);
+});
+
+test("an idle session-status transition wakes the gate", async () => {
+  const f = fixture({ gateOptions: { now: () => 789 } });
+  assert.ok(wakeEventTypes.includes("session.status"));
+  assert.deepEqual(await f.gate.event({
+    type: "session.status",
+    properties: { sessionID, status: { type: "idle" } },
+  }), { state: "prompted", turns: 1 });
+  const status = await f.gate.status(sessionID);
+  assert.deepEqual(status.lastEvent, {
+    receivedAt: status.checkedAt,
+    type: "session.status",
+  });
+  assert.equal(f.count("decide"), 1);
+  assert.equal(f.count("prompt"), 1);
+});
+
+test("a non-idle session-status transition is ignored", async () => {
+  const f = fixture();
+  assert.deepEqual(await f.gate.event({
+    type: "session.status",
+    properties: { sessionID, status: { type: "busy" } },
+  }), { state: "ignored", reason: "session-not-idle" });
+  assert.equal(f.count("binding"), 0);
+  assert.equal(f.count("decide"), 0);
+  assert.equal(f.count("prompt"), 0);
+});
+
+test("idle session-status events remain restricted to exact allowlisted sessions", async () => {
+  const f = fixture();
+  assert.deepEqual(await f.gate.event({
+    type: "session.status",
+    properties: { sessionID: "ses_ticket-extra", status: { type: "idle" } },
+  }), { state: "ignored", reason: "session-not-allowlisted" });
+  assert.equal(f.count("binding"), 0);
+  assert.equal(f.count("hardCheck"), 0);
+  assert.equal(f.count("decide"), 0);
+  assert.equal(f.count("prompt"), 0);
+  assert.equal(f.values.has("event/ses_ticket-extra"), false);
 });
 
 test("the session allowlist gates events, scans, and stop commands", async () => {
