@@ -4748,6 +4748,26 @@ impl ManagementStore {
                         .collect::<StoreResult<Vec<_>>>()?,
                 );
                 allowed.contains(&actual)
+                    || self.database_path.as_ref().is_some_and(|database_path| {
+                        crate::workspace_tickets::workspace_ticket_dir(
+                            database_path.parent().unwrap_or_else(|| Path::new(".")),
+                            &workspace.slug,
+                        )
+                        .is_ok_and(|ticket_directory| {
+                            self.list_workspace_repository_bindings(id)
+                                .is_ok_and(|bindings| {
+                                    bindings.iter().any(|binding| {
+                                        binding.verification_status == VerificationStatus::Verified
+                                            && crate::workspace_tickets::session_owns_worktree(
+                                                &ticket_directory,
+                                                session_id,
+                                                &actual,
+                                                Path::new(&binding.checkout_path),
+                                            )
+                                    })
+                                })
+                        })
+                    })
             }
             SessionOwner::Task(id) => {
                 let task = self
@@ -9116,6 +9136,126 @@ mod tests {
                 .unwrap(),
             session,
         );
+    }
+
+    #[test]
+    fn ticket_session_is_valid_in_its_recorded_ticket_worktree() {
+        let root = tempfile::tempdir().unwrap();
+        let app_data = root.path().join("app-data");
+        fs::create_dir_all(root.path().join("home")).unwrap();
+        let store = ManagementStore::open_with_paths(
+            app_data.join("management.sqlite3"),
+            root.path().join("home"),
+            root.path().join("tmp"),
+        )
+        .unwrap();
+        let checkout = root.path().join("checkout");
+        let worktree = root.path().join("ticket-worktree");
+        fs::create_dir_all(&checkout).unwrap();
+        let git = |directory: &Path, args: &[&str]| {
+            let output = std::process::Command::new("git")
+                .args(args)
+                .current_dir(directory)
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "git {:?} failed", args);
+        };
+        git(&checkout, &["init"]);
+        git(&checkout, &["config", "user.email", "test@example.com"]);
+        git(&checkout, &["config", "user.name", "Test"]);
+        fs::write(checkout.join("README.md"), "test\n").unwrap();
+        git(&checkout, &["add", "README.md"]);
+        git(&checkout, &["commit", "-m", "initial"]);
+        git(
+            &checkout,
+            &[
+                "worktree",
+                "add",
+                "-b",
+                "ticket/live-build",
+                worktree.to_str().unwrap(),
+            ],
+        );
+        store
+            .create_workspace(&workspace("w-ticket-restore", "ticket-restore"))
+            .unwrap();
+        store
+            .create_repository(&repository("ticket-restore"))
+            .unwrap();
+        store
+            .save_workspace_repository_binding(&WorkspaceRepositoryBinding {
+                workspace_id: "w-ticket-restore".into(),
+                repository_id: "ticket-restore".into(),
+                checkout_path: checkout.to_string_lossy().into_owned(),
+                checkout_mode: CheckoutMode::Clone,
+                branch: "main".into(),
+                verification_status: VerificationStatus::Verified,
+                created_at: CREATED,
+            })
+            .unwrap();
+        let session = store
+            .create_session(&NewSession {
+                open_code_session_id: "ses_ticket_worktree".into(),
+                owner: SessionOwner::Workspace("w-ticket-restore".into()),
+                directory: worktree.to_string_lossy().into_owned(),
+                last_known_status: "starting".into(),
+                created_at: CREATED,
+            })
+            .unwrap();
+        let ticket_directory =
+            crate::workspace_tickets::workspace_ticket_dir(&app_data, "ticket-restore").unwrap();
+        fs::create_dir_all(&ticket_directory).unwrap();
+        fs::write(
+            ticket_directory.join("investigate-live-build-crash.md"),
+            format!(
+                "---\ntitle: Investigate live-build crash\nstatus: in_progress\nwork_session_id: ses_ticket_worktree\nworktree_path: \"{}\"\n---\n",
+                worktree.display()
+            ),
+        )
+        .unwrap();
+
+        let markdown =
+            fs::read_to_string(ticket_directory.join("investigate-live-build-crash.md")).unwrap();
+        assert_eq!(
+            crate::workspace_tickets::ticket_session_id(&markdown)
+                .unwrap()
+                .as_deref(),
+            Some("ses_ticket_worktree")
+        );
+        assert_eq!(
+            crate::workspace_tickets::ticket_worktree(&markdown)
+                .unwrap()
+                .unwrap()
+                .path,
+            worktree.to_string_lossy()
+        );
+        assert!(crate::workspace_tickets::session_owns_worktree(
+            &ticket_directory,
+            "ses_ticket_worktree",
+            &worktree,
+            &checkout,
+        ));
+        assert_eq!(
+            store
+                .validate_session_context("ses_ticket_worktree", Path::new(&session.directory))
+                .unwrap(),
+            session,
+        );
+        assert!(store
+            .validate_session_context("ses_ticket_worktree", &root.path().join("unrelated"))
+            .is_err());
+        store
+            .create_session(&NewSession {
+                open_code_session_id: "ses_unbound_ticket_worktree".into(),
+                owner: SessionOwner::Workspace("w-ticket-restore".into()),
+                directory: worktree.to_string_lossy().into_owned(),
+                last_known_status: "starting".into(),
+                created_at: CREATED,
+            })
+            .unwrap();
+        assert!(store
+            .validate_session_context("ses_unbound_ticket_worktree", &worktree)
+            .is_err());
     }
 
     #[test]

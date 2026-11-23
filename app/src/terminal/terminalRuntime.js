@@ -20,8 +20,12 @@ export function resolveTerminalConstructor(moduleNamespace) {
 
 const Terminal = resolveTerminalConstructor(xtermModule);
 
-const decode = (value) =>
-  Uint8Array.from(atob(value), (character) => character.charCodeAt(0));
+const decode = (value) => {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+};
 
 // These small state objects are deliberately independent of xterm and Tauri.
 // PTY output may arrive before a terminal is mounted or while its view is

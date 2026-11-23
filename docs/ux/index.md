@@ -50,6 +50,11 @@ experience; the glossary is the vocabulary reference.
 | Docs | Browse found Markdown and text files by source-relative path beside the selected file. | [screen-docs.md](screen-docs.md) |
 | No selection | A rare, simple prompt to select work or start something new. | [screen-no-selection.md](screen-no-selection.md) |
 
+For a source-grounded description of current frontend features, navigation,
+interactions, and implementation imports, see the
+[Frontend feature and UX inventory](frontend-ui-inventory.md). Its screenshots
+use browser-fixture data and are not native-app acceptance evidence.
+
 ## Overarching goals
 
 - **Visual language:** Keep the workspace screen neutral gray. Show the selected

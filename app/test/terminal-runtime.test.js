@@ -195,6 +195,60 @@ test("buffers output before mount and replays it per session", () => {
   assert.deepEqual(buffer.take("a"), []);
 });
 
+test("live and replay output preserve binary bytes and split UTF-8 chunks", async () => {
+  const allBytes = Uint8Array.from({ length: 256 }, (_, i) => i);
+  const utf8Parts = [Uint8Array.of(0xf0, 0x9f), Uint8Array.of(0x98, 0x80)];
+  const base64 = (bytes) => Buffer.from(bytes).toString("base64");
+
+  for (const attachPath of ["attach", "attachExisting"]) {
+    const writes = [];
+    const listeners = new Map();
+    const terminal = {
+      cols: 80,
+      rows: 24,
+      loadAddon() {},
+      parser: { registerDcsHandler: () => ({ dispose() {} }) },
+      open() {},
+      onData() {},
+      write(bytes) { writes.push(bytes); },
+      focus() {},
+      dispose() {},
+    };
+    const runtime = new TerminalRuntime({
+      listenEvent: async (name, callback) => {
+        listeners.set(name, callback);
+        return () => listeners.delete(name);
+      },
+      invoke: async (command) =>
+        /_(?:attach|replay)$/.test(command)
+          ? { replay: [allBytes, ...utf8Parts].map((bytes) => ({
+              kind: "output", sessionId: "session-a", dataBase64: base64(bytes),
+              operation: null, message: null,
+            })) }
+          : null,
+      terminalFactory: () => terminal,
+      fitAddonFactory: () => ({ fit() {} }),
+      webglAddonFactory: () => ({ onContextLoss: () => ({ dispose() {} }) }),
+    });
+    await runtime.start();
+    const output = (bytes) => listeners.get("terminal-output")({
+      payload: { sessionId: "session-a", dataBase64: base64(bytes) },
+    });
+    for (const bytes of utf8Parts) output(bytes);
+    if (attachPath === "attach") await runtime.attach("session-a", "/repo", {});
+    else await runtime.attachExisting("session-a", {});
+    for (const bytes of [allBytes, ...utf8Parts]) output(bytes);
+
+    const expected = [...utf8Parts, allBytes, ...utf8Parts, allBytes, ...utf8Parts];
+    assert.equal(writes.length, expected.length, attachPath);
+    for (let i = 0; i < expected.length; i++) {
+      assert.ok(writes[i] instanceof Uint8Array, `${attachPath} chunk ${i} is binary`);
+      assert.deepEqual(writes[i], expected[i], `${attachPath} chunk ${i}`);
+    }
+    runtime.dispose();
+  }
+});
+
 test("bounds pre-mount output and reports dropped events", () => {
   const buffer = new TerminalEventBuffer({ maxEvents: 2, maxBytes: 10 });
   assert.equal(buffer.push("a", Uint8Array.from([1, 2, 3, 4, 5, 6])), 0);

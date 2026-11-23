@@ -617,6 +617,47 @@ pub fn ticket_worktree(markdown: &str) -> Result<Option<TicketWorktree>, String>
     }
 }
 
+/// Returns true only when the ticket's current session binding records this
+/// exact worktree as its workspace context.
+pub fn session_owns_worktree(
+    directory: &Path,
+    session_id: &str,
+    worktree: &Path,
+    repository: &Path,
+) -> bool {
+    let Ok(directory) = directory.canonicalize() else {
+        return false;
+    };
+    let Ok(worktree) = crate::safety::canonicalize_or_resolve_missing(worktree) else {
+        return false;
+    };
+    let Ok(entries) = fs::read_dir(&directory) else {
+        return false;
+    };
+    entries.flatten().any(|entry| {
+        let path = entry.path();
+        if path.extension().and_then(|extension| extension.to_str()) != Some("md")
+            || !entry.file_type().is_ok_and(|kind| kind.is_file())
+        {
+            return false;
+        }
+        let Ok(canonical) = path.canonicalize() else {
+            return false;
+        };
+        if !canonical.starts_with(&directory) {
+            return false;
+        }
+        let Ok(markdown) = fs::read_to_string(canonical) else {
+            return false;
+        };
+        ticket_session_id(&markdown).ok().flatten().as_deref() == Some(session_id)
+            && ticket_worktree(&markdown).ok().flatten().is_some_and(|ticket_worktree| {
+                resolve_ticket_directory(repository, Some(&ticket_worktree))
+                    .is_ok_and(|path| path == worktree)
+            })
+    })
+}
+
 fn replace_frontmatter_fields(
     markdown: &str,
     fields: &[(&str, Option<String>)],
