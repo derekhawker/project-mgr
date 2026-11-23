@@ -246,8 +246,8 @@ test("waits for the initial durable idle boundary before submitting", async (t) 
   assert.equal(f.status().turns, 1);
 });
 
-test("maximum loop age is three hours", () => {
-  assert.equal(MAX_AGE, 3 * 60 * 60_000);
+test("maximum loop age is 48 hours", () => {
+  assert.equal(MAX_AGE, 48 * 60 * 60_000);
 });
 
 test("ignores all live success/delivery variants and reconciles without events", async (t) => {

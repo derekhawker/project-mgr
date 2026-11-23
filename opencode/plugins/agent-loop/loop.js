@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
 
 export const TURN_LIMIT = 400;
-export const MAX_AGE = 3 * 60 * 60_000;
+export const MAX_AGE = 48 * 60 * 60_000;
 const RECOVERY_NOTICE =
   "The previous response was interrupted. Continue from where you left off without repeating completed content.";
 const SAFETY_EVENTS = new Map([

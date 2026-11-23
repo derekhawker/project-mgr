@@ -44,7 +44,7 @@ export function setup(context) {
         const { ticket, todo } = binding;
         const confirmed = await context.ui.dialog.confirm({
           title: "Arm ticket agent loop?",
-          message: `Session: ${original.sessionID}\nLocation: ${original.location.directory}\nTicket: ${ticket}\nTodo: ${todo}\nUp to 400 prompts or three hours. The server can continue after this terminal closes. This does not approve any human gate.`,
+          message: `Session: ${original.sessionID}\nLocation: ${original.location.directory}\nTicket: ${ticket}\nTodo: ${todo}\nUp to 400 prompts or 48 hours. The server can continue after this terminal closes. This does not approve any human gate.`,
           label: { confirm: "Arm loop", cancel: "Cancel" },
         });
         if (!confirmed || closed) return;

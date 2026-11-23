@@ -46,7 +46,7 @@ both links.
    session, inbox, and stop reason before explicitly arming a new run.
 
 The loop always allows up to 400 submitted prompts, including the first; this
-limit is not configurable. The scheduling window is at most three hours; expiry
+limit is not configurable. The scheduling window is at most 48 hours; expiry
 does not interrupt running work. Each server location can hold one loop and one
 lease.
 On first arm, an already-running session or delayed idle boundary gets up to five
