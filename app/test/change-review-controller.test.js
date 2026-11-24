@@ -7,10 +7,13 @@ function fixture({
   count = 1,
   quick = null,
   ticketViewerVisible = false,
+  toolsOwner = null,
   load = async () => [],
 } = {}) {
   const state = {};
   const calls = [];
+  let repositoryToolsOwner = toolsOwner;
+  let ticketViewer = ticketViewerVisible;
   const setters = [
     "Available",
     "Selected",
@@ -21,7 +24,6 @@ function fixture({
     "Repositories",
     "Loading",
     "Mode",
-    "DocsButtonSelected",
     "SelectedOwnerVisible",
   ];
   const deps = Object.fromEntries(
@@ -32,17 +34,14 @@ function fixture({
       },
     ]),
   );
-  deps.setDocsButtonSelected = (value) => {
-    state.docsSelected = value;
-  };
   deps.setSelectedOwnerVisible = (value) => {
     state.ownerVisible = value;
   };
   deps.getSelectedWorkspace = () => workspace;
   deps.getSelectedOwnerRepositoryCount = () => count;
   deps.getSelectedQuickRequest = () => quick;
-  deps.isTicketViewerVisible = () => ticketViewerVisible;
-  deps.getRepositoryToolsOwner = () => null;
+  deps.isTicketViewerVisible = () => ticketViewer;
+  deps.getRepositoryToolsOwner = () => repositoryToolsOwner;
   deps.syncRepositoryToolsAvailability = () => calls.push("sync-tools");
   deps.invoke = () => {};
   deps.loadChangeReview = load;
@@ -58,6 +57,12 @@ function fixture({
     setWorkspace: (value) => {
       workspace = value;
     },
+    setToolsOwner: (value) => {
+      repositoryToolsOwner = value;
+    },
+    setTicketViewerVisible: (value) => {
+      ticketViewer = value;
+    },
   };
 }
 
@@ -65,12 +70,41 @@ test("availability and Docs refresh preserve unavailable guards and terminal tra
   const f = fixture({ workspace: null });
   f.controller.syncChangeReviewAvailability();
   assert.equal(f.state.Available, false);
-  assert.equal(f.state.docsSelected, false);
+  assert.equal(f.calls.includes("terminal"), true);
   assert.equal(f.state.Visible, false);
   assert.deepEqual(f.calls, ["terminal", "sync-tools"]);
   await f.controller.refreshDocsAvailability();
   assert.equal(await f.controller.handleChangeReviewClick(), undefined);
   assert.deepEqual(f.calls, ["terminal", "sync-tools"]);
+});
+
+test("Docs availability refresh uses the selected ticket workbench owner", async () => {
+  const ticketOwner = {
+    type: "workspace",
+    id: "w1",
+    ticketFilename: "ticket.md",
+  };
+  const f = fixture({ toolsOwner: ticketOwner });
+
+  await f.controller.refreshDocsAvailability();
+
+  assert.deepEqual(f.calls, [ticketOwner]);
+});
+
+test("Docs remains selected as availability refresh moves from Workspace to ticket workbench", async () => {
+  const workspaceOwner = { type: "workspace", id: "w1" };
+  const ticketOwner = {
+    type: "workspace",
+    id: "w1",
+    ticketFilename: "ticket.md",
+  };
+  const f = fixture({ toolsOwner: workspaceOwner });
+  await f.controller.refreshDocsAvailability();
+  f.setToolsOwner(ticketOwner);
+  await f.controller.refreshDocsAvailability();
+
+  assert.deepEqual(f.calls, [workspaceOwner, ticketOwner]);
+  assert.equal(f.calls.includes("terminal"), false);
 });
 
 test("unavailable workspace tools do not replace the ticket viewer with the owner terminal", () => {
@@ -81,6 +115,17 @@ test("unavailable workspace tools do not replace the ticket viewer with the owne
   assert.equal(f.state.Visible, false);
   assert.equal(f.state.ownerVisible, undefined);
   assert.deepEqual(f.calls, ["terminal", "sync-tools"]);
+});
+
+test("availability refresh does not close Docs when the workspace remains available", () => {
+  const f = fixture();
+  f.state.docsVisible = true;
+
+  f.controller.syncChangeReviewAvailability();
+
+  assert.equal(f.state.docsVisible, true);
+  assert.equal(f.state.Visible, undefined);
+  assert.ok(!f.calls.includes("terminal"));
 });
 
 test("successful load updates exact summary and repository signals", async () => {

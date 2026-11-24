@@ -16,7 +16,6 @@ export function createChangeReviewController({
   setChangeReviewError,
   setChangeReviewRepositories,
   setChangeReviewLoading,
-  setDocsButtonSelected,
   setSelectedOwnerVisible,
 }) {
   let generation = 0;
@@ -40,7 +39,6 @@ export function createChangeReviewController({
       !getSelectedQuickRequest()?.quickRequest,
     );
     setChangeReviewAvailable(available);
-    setDocsButtonSelected(false);
     if (!available) {
       if (isTicketViewerVisible()) {
         cancelPendingReview();
@@ -57,7 +55,11 @@ export function createChangeReviewController({
   async function refreshDocsAvailability() {
     const workspace = getSelectedWorkspace();
     if (!workspace || getSelectedQuickRequest()?.quickRequest) return;
-    await docsController.refresh({ type: "workspace", id: workspace.id });
+    const owner = getRepositoryToolsOwner() ?? {
+      type: "workspace",
+      id: workspace.id,
+    };
+    await docsController.refresh(owner);
   }
 
   async function handleChangeReviewClick(event) {

@@ -27,8 +27,16 @@
   background: var(--ui-surface);
 }
 
-.docs :global(.docs-source h2) {
-  margin: var(--ui-space-6) 0 var(--ui-space-2);
+.docs :global(.docs-ticket-label) {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ui-space-6);
+}
+
+.ticketDivider {
+  margin: var(--ui-space-8) 0;
+  border: 0;
+  border-top: 1px solid var(--ui-border);
 }
 
 .review :global(.change-review-files button) {

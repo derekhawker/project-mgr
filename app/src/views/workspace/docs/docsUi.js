@@ -14,6 +14,7 @@ export function readDoc(invoke, ownerType, ownerId, path, ticketFilename) {
       ...(ticketFilename ? { ticketFilename } : {}),
       path: path.path,
       repositoryId: path.repositoryId ?? null,
+      ...(path.isTicket ? { isTicket: true } : {}),
     },
   });
 }

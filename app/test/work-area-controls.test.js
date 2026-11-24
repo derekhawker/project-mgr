@@ -19,6 +19,7 @@ await writeFile(
   export { createComponent, createSignal } from ${JSON.stringify(resolve(root, "node_modules/solid-js/dist/solid.js"))};
   export { QuickRequestHistoryPage } from ${JSON.stringify(resolve(root, "src/views/quick-requests/QuickRequestHistoryPage.jsx"))};
   export { DocsPane } from ${JSON.stringify(resolve(root, "src/views/workspace/docs/DocsPane.jsx"))};
+  export { WorkspaceTicketContent } from ${JSON.stringify(resolve(root, "src/views/workspace/tickets/WorkspaceTicketContent.jsx"))};
   export { ChangeReviewPanel } from ${JSON.stringify(resolve(root, "src/views/workspace/change-review/ChangeReviewPanel.jsx"))};
   export { WorkspaceOwnerPanel } from ${JSON.stringify(resolve(root, "src/views/workspace/sessions/WorkspaceOwnerPanel.jsx"))};
 `,
@@ -62,6 +63,7 @@ const {
   createSignal,
   QuickRequestHistoryPage,
   DocsPane,
+  WorkspaceTicketContent,
   ChangeReviewPanel,
   WorkspaceOwnerPanel,
 } = await import(pathToFileURL(join(temp, "out/test.js")));
@@ -480,6 +482,84 @@ test("Docs source selection stays scoped to its repository and follows clicks", 
   assert.deepEqual(calls, [second]);
   assert.equal(buttons[0].getAttribute("aria-current"), null);
   assert.equal(buttons[1].getAttribute("aria-current"), "true");
+  view.dispose();
+});
+
+test("Docs puts the special ticket first with its icon and omits the repository heading", () => {
+  const ticket = {
+    path: "Ticket",
+    repositoryId: null,
+    repositoryName: null,
+    isTicket: true,
+  };
+  const readme = {
+    repositoryId: "one",
+    repositoryName: "One",
+    path: "README.md",
+  };
+  const view = mount(DocsPane, {
+    visible: () => true,
+    files: () => [ticket, readme],
+    selected: () => ticket,
+    content: () => ({
+      path: "Ticket.md",
+      contents:
+        "---\ntitle: Sample ticket\nstatus: in_progress\nopencode-status: running\nowner: Alice\n---\n# Ticket body",
+    }),
+    pageMessage: () => "",
+    contentMessage: () => "",
+    onSelect: () => {},
+  });
+  const rows = [...view.host.querySelectorAll("[data-doc-files] button")];
+  assert.equal(rows[0].textContent.trim(), "Ticket");
+  assert.ok(rows[0].querySelector("svg"), "the Ticket row has an SVG icon");
+  assert.equal(rows[0].getAttribute("aria-current"), "true");
+  assert.equal(view.host.querySelector("[data-doc-files] h2"), null);
+  assert.equal(rows[1].textContent.trim(), "README.md");
+  const divider = view.host.querySelector("[data-doc-files] hr");
+  assert.ok(divider, "a visual divider separates the ticket from repository files");
+  assert.equal(rows[0].closest("ul").nextElementSibling, divider);
+  assert.ok(divider.nextElementSibling.contains(rows[1]));
+  assert.equal(view.host.querySelector(".docs-content h2"), null);
+  const ticketContent = view.host.querySelector(
+    '[aria-label="Selected ticket: Sample ticket"]',
+  );
+  assert.ok(ticketContent, "Docs uses the shared Workspace ticket content component");
+  const workspaceView = mount(WorkspaceTicketContent, {
+    content: () =>
+      "---\ntitle: Sample ticket\nstatus: in_progress\nopencode-status: running\nowner: Alice\n---\n# Ticket body",
+    title: () => "Sample ticket",
+  });
+  const workspaceTicketContent = workspaceView.host.querySelector(
+    '[aria-label="Selected ticket: Sample ticket"]',
+  );
+  const markdown = ticketContent.firstElementChild;
+  assert.equal(ticketContent.className, workspaceTicketContent.className);
+  assert.equal(
+    markdown.className,
+    workspaceTicketContent.firstElementChild.className,
+  );
+  assert.match(markdown.textContent, /Ticket body/);
+  assert.ok(
+    ticketContent.className && ticketContent.className !== "docs-content",
+    "the shared ticket detail surface owns its styling, not the Docs pane",
+  );
+  const metadata = ticketContent.querySelector(
+    ":scope > section[aria-label='Ticket metadata']",
+  );
+  assert.equal(ticketContent.querySelector(".docs-markdown"), null);
+  assert.equal(
+    metadata.previousElementSibling,
+    markdown,
+    "ticket metadata follows Markdown within the shared ticket detail surface",
+  );
+  assert.deepEqual(
+    [...ticketContent.querySelectorAll('[aria-label="Ticket metadata"] dt')].map(
+      (field) => field.textContent,
+    ),
+    ["title", "status", "owner"],
+  );
+  workspaceView.dispose();
   view.dispose();
 });
 

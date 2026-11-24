@@ -353,6 +353,7 @@ async function workWorkspaceTicket(workspaceId, filename) {
     rememberWorkspaceSession(result.session);
     setTicketSessionScope(filename);
     setTicketWorkbenchActive(true);
+    void refreshDocsAvailability();
     setTicketViewerVisible(false);
     setWorkspaceShellVisible(true);
     setSelectedOwnerVisible(true);
@@ -446,6 +447,7 @@ const workspaceTicketViewerProps = {
   },
   toolsMenu: () => repositoryTools("ticket-view-show-repo-tools"),
   onSelect: (filename) => {
+    docsController.showTerminal();
     setSelectedTicketFilename(filename);
     setTicketSessionScope(filename);
     setTicketWorkbenchActive(false);
@@ -579,7 +581,6 @@ const docsView = createDocsView();
 const {
   buttonDisabled: docsDisabled,
   buttonSelected: docsButtonSelected,
-  setButtonSelected: setDocsButtonSelected,
 } = docsView;
 const workspaceShell = () =>
   WorkspaceShell({
@@ -590,6 +591,7 @@ const workspaceShell = () =>
         (ticket) => ticket.filename === selectedTicketFilename(),
       )?.title,
     onWorkspaceClick: () => {
+      docsController.showTerminal();
       setWorkspaceShellVisible(false);
       setTicketViewerVisible(true);
       setSelectedOwnerVisible(false);
@@ -723,16 +725,20 @@ const changeReview = () =>
 const docsPane = () =>
   DocsPane({
     ...docsView,
-    navigatorWidth,
-    onNavigatorResize: resizeNavigator,
-    onSelect: (file) =>
-      void docsController.select(file.path, file.repositoryId),
-  });
+  navigatorWidth,
+  onNavigatorResize: resizeNavigator,
+  onSelect: (file) =>
+    void docsController.select(file),
+});
 const docsController = createDocsController({
   invoke,
-  getOwner: () =>
+    getOwner: () =>
     selectedWorkspace && selectedTicketFilename() && !ticketArchived()
-      ? { type: "workspace", id: selectedWorkspace.id }
+      ? {
+          type: "workspace",
+          id: selectedWorkspace.id,
+          ticketFilename: selectedTicketFilename(),
+        }
       : null,
   view: docsView,
   onOpen: () => {
@@ -822,10 +828,9 @@ const changeReviewController = createChangeReviewController({
   setChangeReviewVisible,
   setChangeReviewSummary,
   setChangeReviewError,
-  setChangeReviewRepositories,
-  setChangeReviewLoading,
-  setDocsButtonSelected,
-  setSelectedOwnerVisible,
+    setChangeReviewRepositories,
+    setChangeReviewLoading,
+    setSelectedOwnerVisible,
 });
 const {
   showOwnerTerminal,
@@ -957,6 +962,7 @@ function selectWorkspace(workspace, data = navigationData) {
   // this click handler returns, so keep the pre-paint path to selection and pane
   // visibility; terminal/repository setup can follow on the next task.
   changeReviewController.cancelPendingReview();
+  docsController.showTerminal();
   setDirectoriesVisible(false);
   setPortsVisible(false);
   setFullRequestVisible(false);
@@ -1006,6 +1012,7 @@ function selectQuickRequest(
   { deferRestore = false, deferReveal = false } = {},
 ) {
   if (!task.quickRequest) return;
+  docsController.showTerminal();
   setTicketViewerVisible(false);
   setDirectoriesVisible(false);
   setPortsVisible(false);
@@ -1163,6 +1170,7 @@ const quickRequests = createQuickRequests({
     visible: fullRequestVisible,
     isQuickRequestVisible: quickRequestTerminalPage,
     clearSelectedRequest: () => {
+      docsController.showTerminal();
       setSelectedQuickRequest(null);
       selectedWorkspace = null;
       setQuickRequestTerminalPage(false);

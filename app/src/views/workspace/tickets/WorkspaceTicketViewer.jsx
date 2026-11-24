@@ -1,11 +1,11 @@
-import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { ActionMenu, ActionMenuItem, Button, ErrorMessage, Icon, IconButton, Switch, Tooltip } from "@ui-lib";
 import { AppPageLayout } from "../../../components/page/AppPageLayout.jsx";
 import { TicketSessionIndicator } from "../../../components/TicketSessionIndicator.jsx";
 import { TicketStatusBadge } from "./TicketStatusBadge.jsx";
 import { CreateTicketIdeaModal } from "./CreateTicketIdeaModal.jsx";
 import { recordUiDiagnostic } from "../../../lib/uiDiagnostics.js";
-import { renderTicketMarkdown, splitTicketFrontmatter } from "./ticketContent.js";
+import { WorkspaceTicketContent } from "./WorkspaceTicketContent.jsx";
 import styles from "./WorkspaceTicketViewer.module.css";
 import repositoryToolsStyles from "../repository-tools/RepositoryToolsMenu.module.css";
 
@@ -66,11 +66,6 @@ export function WorkspaceTicketViewer(props) {
   const selected = createMemo(() =>
     props.tickets().find((ticket) => ticket.filename === props.selectedFilename()),
   );
-  const markdown = createMemo(() => {
-    const ticket = selected();
-    if (!ticket) return null;
-    return renderTicketMarkdown(ticket.content, window);
-  });
   return (
     <AppPageLayout
       type="Workspace"
@@ -232,16 +227,12 @@ export function WorkspaceTicketViewer(props) {
             </ul>
           </section>
           <Show when={selected()} fallback={<div class={styles.emptyDetail}>Select a ticket to read it.</div>}>{(ticket) => {
-              const fields = createMemo(() => splitTicketFrontmatter(ticket().content).fields.filter(([key]) => key !== "opencode-status"));
-              return <article class={styles.detail} aria-label={`Selected ticket: ${ticket().title}`}>
-                <div class={styles.markdown} ref={(element) => createEffect(() => { element.innerHTML = markdown() ?? ""; })} />
-                <Show when={fields().length}>
-                  <section class={styles.frontmatter} aria-label="Ticket metadata">
-                    <h4>Ticket metadata</h4>
-                    <dl><For each={fields()}>{([key, value]) => <><dt>{key}</dt><dd>{value || "—"}</dd></>}</For></dl>
-                  </section>
-                </Show>
-              </article>;
+              return (
+                <WorkspaceTicketContent
+                  content={() => ticket().content}
+                  title={() => ticket().title}
+                />
+              );
           }}</Show>
         </div>
         </Show>

@@ -1258,6 +1258,24 @@ pub fn selected_ticket_repository(
     Ok((repository, binding.repository_id.clone()))
 }
 
+/// Read the selected ticket's canonical Markdown after validating its Workspace
+/// and verified repository context.
+pub fn read_selected_ticket(
+    store: &crate::management::ManagementStore,
+    app_data: &Path,
+    workspace_id: &str,
+    filename: &str,
+) -> Result<String, String> {
+    selected_ticket_repository(store, app_data, workspace_id, filename)?;
+    let workspace = store
+        .get_workspace(workspace_id)
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "Workspace was not found.".to_owned())?;
+    let directory = workspace_ticket_dir(app_data, &workspace.slug)?;
+    let ticket = canonical_ticket(&directory, filename)?;
+    fs::read_to_string(ticket).map_err(|error| format!("Could not read ticket: {error}"))
+}
+
 /// Resolve the selected ticket's verified repository checkout or its recorded
 /// worktree. A missing worktree deliberately falls back to the checkout.
 pub fn selected_ticket_working_directory(
@@ -2103,6 +2121,11 @@ mod tests {
         let dir = workspace_ticket_dir(&app_data, &workspace.slug).unwrap();
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join("one.md"), "---\ntitle: One\nstatus: draft\n---\n").unwrap();
+        assert_eq!(
+            read_selected_ticket(&store, &app_data, &workspace.id, "one.md").unwrap(),
+            "---\ntitle: One\nstatus: draft\n---\n"
+        );
+        assert!(read_selected_ticket(&store, &app_data, &workspace.id, "../outside.md").is_err());
         let (actual_path, actual_id) =
             selected_ticket_repository(&store, &app_data, &workspace.id, "one.md").unwrap();
         assert_eq!(actual_path, PathBuf::from(&repository.repository_path));

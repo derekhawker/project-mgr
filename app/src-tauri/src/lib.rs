@@ -1311,6 +1311,8 @@ struct DocsReadRequest {
     path: String,
     repository_id: Option<String>,
     ticket_filename: Option<String>,
+    #[serde(default)]
+    is_ticket: bool,
 }
 
 #[tauri::command]
@@ -1329,6 +1331,28 @@ async fn docs_read(
             request.repository_id.as_deref(),
         )?;
         let app_data = app.path().app_data_dir().map_err(|e| e.to_string())?;
+        if request.is_ticket {
+            if request.path != "Ticket" {
+                return Err("Invalid ticket document selection.".into());
+            }
+            if request.repository_id.is_some() {
+                return Err("The ticket is not a repository document.".into());
+            }
+            let filename = request
+                .ticket_filename
+                .as_deref()
+                .ok_or("Select a ticket before opening Docs.")?;
+            let contents = workspace_tickets::read_selected_ticket(
+                &store,
+                &app_data,
+                &request.owner_id,
+                filename,
+            )?;
+            return Ok(docs_reader::DocumentContent {
+                path: "Ticket.md".into(),
+                contents,
+            });
+        }
         let (directory, repository_id) = workspace_tickets::selected_ticket_working_directory(
             &store,
             &app_data,
@@ -6177,6 +6201,11 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(docs_read.path, "guide.md");
+        let ticket_docs_read: DocsReadRequest = serde_json::from_value(json!({
+            "ownerType":"workspace", "ownerId":"w1", "path":"Ticket", "repositoryId":null, "isTicket":true
+        }))
+        .unwrap();
+        assert!(ticket_docs_read.is_ticket);
         let invalid_docs_read = serde_json::from_value::<DocsReadRequest>(json!({
             "ownerType":"workspace", "ownerId":"w1", "path":"../secret.md", "repositoryId":null, "extra":true
         }));
