@@ -1,5 +1,12 @@
 import { createSignal, Show } from "solid-js";
-import { Button, Checkbox, ErrorMessage, Input, Modal, TextArea } from "@ui-lib";
+import {
+  Button,
+  Checkbox,
+  ErrorMessage,
+  Input,
+  Modal,
+  TextArea,
+} from "@ui-lib";
 import styles from "./CreateTicketIdeaModal.module.css";
 
 /** Captures an idea, reviews generated content, then asks the owner to save it. */
@@ -39,6 +46,8 @@ export function CreateTicketIdeaModal(props) {
           const [idea, setIdea] = createSignal("");
           const [title, setTitle] = createSignal("");
           const [body, setBody] = createSignal("");
+          const [startInvestigation, setStartInvestigation] =
+            createSignal(false);
           const [busy, setBusy] = createSignal(false);
           const [error, setError] = createSignal("");
 
@@ -68,7 +77,11 @@ export function CreateTicketIdeaModal(props) {
             setBusy(true);
             setError("");
             try {
-              const ticket = await props.onCreate(title(), body());
+              const ticket = await props.onCreate(
+                title(),
+                body(),
+                startInvestigation(),
+              );
               if (!isCurrent()) return;
               await props.onTicketCreated?.(ticket);
               if (!isCurrent()) return;
@@ -85,6 +98,20 @@ export function CreateTicketIdeaModal(props) {
 
           const footer = (
             <div class={styles.actions}>
+              <Show when={step() === 2}>
+                <label class={styles.investigationOption}>
+                  <Checkbox
+                    checked={startInvestigation()}
+                    disabled={busy()}
+                    onChange={(event) =>
+                      setStartInvestigation(event.currentTarget.checked)
+                    }
+                  />
+                  <span>
+                    <strong>Start ticket</strong>
+                  </span>
+                </label>
+              </Show>
               <Show when={step() === 2}>
                 <Button
                   type="button"

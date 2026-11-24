@@ -62,7 +62,8 @@ export function createNewWork({
     startingPrompt: "",
     createLabel: "Create",
   });
-  const [quickRequestPromptChoice, setQuickRequestPromptChoice] = createSignal("suggested");
+  const [quickRequestPromptChoice, setQuickRequestPromptChoice] =
+    createSignal("suggested");
   const [quickRequestSuggestedPrompt, setQuickRequestSuggestedPrompt] =
     createSignal("");
   const [progressVisible, setProgressVisible] = createSignal(false);
@@ -136,6 +137,8 @@ export function createNewWork({
       createLabel: "Create",
     });
     setProposalCreateDisabled(true);
+    setQuickRequestPromptChoice("suggested");
+    setQuickRequestSuggestedPrompt("");
     setNewWorkCaptureDisabled(false);
     setProgressVisible(false);
     setProgressRows(new Map());
@@ -219,6 +222,8 @@ export function createNewWork({
     });
     currentProposal = proposal;
     setQuickRequestPromptChoice("suggested");
+    setQuickRequestSuggestedPrompt(proposal.suggestedPrompt || "");
+    setQuickRequestPromptChoice("suggested");
     setQuickRequestSuggestedPrompt(proposal.suggestedPrompt);
     setProposalCreateDisabled(false);
     setProposalView(review);
@@ -287,9 +292,10 @@ export function createNewWork({
     modelsReady: isModelsReady,
     quickRequestDirectoryReady: () => quickRequestDirectoryReady,
     getOriginalPrompt: newWorkPromptValue,
-    getStartingPrompt: () => quickRequestPromptChoice() === "original"
-      ? newWorkPromptValue()
-      : quickRequestSuggestedPrompt() || newWorkPromptValue(),
+    getStartingPrompt: () =>
+      quickRequestPromptChoice() === "original"
+        ? newWorkPromptValue()
+        : quickRequestSuggestedPrompt() || newWorkPromptValue(),
     getSelectedModel: proposalSelectedModel,
     getRepositoryId: () =>
       customQuickDirectory() === defaultQuickDirectory()
@@ -371,6 +377,13 @@ export function createNewWork({
 
   function openNewWork(type) {
     if (type !== "workspace" && type !== "quick_request") return;
+    if (quickRequestRecoveryRecord()) {
+      modalGeneration++;
+      setNewWorkType("quick_request");
+      setProposalError("");
+      setNewWorkView("review");
+      return;
+    }
     modalGeneration++;
     const generation = modalGeneration;
     const isCurrentOpen = () =>
@@ -419,6 +432,11 @@ export function createNewWork({
         newWorkPrompt = element;
       },
       proposal: proposalView,
+      promptChoice: quickRequestPromptChoice,
+      onPromptChoiceChange: setQuickRequestPromptChoice,
+      originalPrompt: newWorkPromptValue,
+      suggestedPrompt: quickRequestSuggestedPrompt,
+      onSuggestedPromptChange: setQuickRequestSuggestedPrompt,
       workspaceVisible: () => newWorkView() === "workspace",
       workspaceRepositoryChoice,
       workspaceRepositories,
@@ -454,6 +472,8 @@ export function createNewWork({
       progressRows,
       captureError: newWorkCaptureError,
       proposalError,
+      quickRequestRecoveryRecord,
+      quickRequestRecoveryBusy,
       proposalCreateDisabled,
       proposalModelDisabled,
       proposalModels,
@@ -467,6 +487,7 @@ export function createNewWork({
       onBack: modalController.backToCapture,
       onCancel: cancelNewWork,
       onConfirm: createProposedWork,
+      onRetryQuickRequest: quickRequestCreation.retryQuickRequest,
       onDirectoryChange: (event) => {
         setCustomQuickDirectory(null);
         setQuickRequestDirectoryId(event.currentTarget.value);
@@ -516,7 +537,7 @@ export function createNewWork({
   return {
     open: openNewWork,
     hide: () => {
-      void cancelNewWork();
+      if (newWorkView() !== "closed") void cancelNewWork();
     },
     proposalSessionId: () => proposalSessionId,
     setModels(options, selected) {

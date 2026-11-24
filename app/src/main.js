@@ -219,7 +219,11 @@ const setCommandResultMessage = shellView.setResult;
 const applicationStatus = () =>
   ApplicationShellStatus({ state: shellView.state });
 const [appNoticeMessage, setAppNoticeMessage] = createSignal("");
-const appNotice = () => AppNotice({ message: appNoticeMessage });
+const appNotice = () =>
+  AppNotice({
+    message: appNoticeMessage,
+    onDismiss: () => setAppNoticeMessage(""),
+  });
 const [directoriesVisible, setDirectoriesVisibleState] = createSignal(false);
 const [portsVisible, setPortsVisibleState] = createSignal(false);
 function setDirectoriesVisible(value) {
@@ -374,22 +378,15 @@ async function workWorkspaceTicket(workspaceId, filename) {
     const result = await workOnWorkspaceTicket(invoke, workspaceId, filename);
     recordUiDiagnostic("WorkspaceTicketWork", "command-success");
     if (!isCurrent()) return;
-    for (const session of result.sessions) {
-      if (!isCurrent()) return;
-      rememberWorkspaceSession(session);
-    }
+    if (!isCurrent()) return;
+    rememberWorkspaceSession(result.session);
     setTicketSessionScope(filename);
     setTicketWorkbenchActive(true);
     setTicketViewerVisible(false);
     setWorkspaceShellVisible(true);
     setSelectedOwnerVisible(true);
     void refreshDocsAvailability();
-    for (const session of result.sessions) {
-      if (!isCurrent()) return;
-      await showSession(session.openCodeSessionId);
-    }
-    if (!isCurrent()) return;
-    await showSession(result.activeSessionId);
+    await showSession(result.session.openCodeSessionId);
   } catch (error) {
     recordUiDiagnostic("WorkspaceTicketWork", "command-error");
     if (!isCurrent()) return;
@@ -433,19 +430,30 @@ async function startNewWorkspaceTicketSession() {
       workspaceId,
       filename,
     );
-    if (
-      selectedWorkspace?.id !== workspaceId ||
-      selectedTicketFilename() !== filename
-    )
-      return;
-    rememberWorkspaceSession(session);
-    setTicketSessionScope(filename);
-    setTicketViewerVisible(false);
-    setWorkspaceShellVisible(true);
-    setSelectedOwnerVisible(true);
-    rightPaneRouter.navigate("workspace-owner", { workspaceId, filename });
-    void refreshDocsAvailability();
-    await sessions.showSession(session.openCodeSessionId);
+    await attachReplacementBeforeClosingPrevious(
+      replacedSessionId,
+      session.openCodeSessionId,
+      async () => {
+        if (
+          selectedWorkspace?.id === workspaceId &&
+          selectedTicketFilename() === filename
+        ) {
+          rememberWorkspaceSession(session);
+          setTicketSessionScope(filename);
+          setTicketWorkbenchActive(true);
+          setTicketViewerVisible(false);
+          setWorkspaceShellVisible(true);
+          setSelectedOwnerVisible(true);
+          rightPaneRouter.navigate("workspace-owner", {
+            workspaceId,
+            filename,
+          });
+          void refreshDocsAvailability();
+          await sessions.showSession(session.openCodeSessionId);
+        }
+      },
+      (oldSessionId) => sessions.closeReplacedTicketSession(oldSessionId),
+    );
   } catch (error) {
     setOwnerStatus(formatWorkspaceError("Create ticket session", error));
   } finally {
@@ -467,6 +475,7 @@ const workspaceTicketViewerProps = {
   onModelChange: (value) => {
     void saveTicketDefaultModel(value);
   },
+  toolsMenu: () => repositoryTools("ticket-view-show-repo-tools"),
   onSelect: (filename) => {
     setSelectedTicketFilename(filename);
     rightPaneRouter.navigate("workspace-tickets", {
@@ -502,22 +511,28 @@ const workspaceTicketViewerProps = {
   onCreateTicket: async (title, body, startInvestigation) => {
     const workspaceId = selectedWorkspace?.id;
     if (!workspaceId) throw new Error("Select a Workspace first.");
-    const ticket = await createWorkspaceTicket(
+    const result = await createWorkspaceTicket(
       invoke,
       workspaceId,
       title,
       body,
+      startInvestigation,
     );
-    return { ticket, workspaceId };
+    workspaceTicketCache.invalidate();
+    return { ...result, workspaceId };
   },
-  onTicketCreated: async ({ ticket, workspaceId }) => {
+  onTicketCreated: async ({
+    ticket,
+    workspaceId,
+    investigationFailureStage,
+  }) => {
     if (selectedWorkspace?.id !== workspaceId) return;
     setTicketArchived(false);
     workspaceTicketCache.invalidate();
     await refreshTicketList(false);
-    setSelectedTicketFilename(result.ticket.filename);
+    setSelectedTicketFilename(ticket.filename);
     setTicketError(
-      result.investigationFailureStage
+      investigationFailureStage
         ? "Ticket created, but its investigation could not be started. You can open the ticket with Work and continue manually."
         : "",
     );
@@ -892,14 +907,15 @@ const {
 } = changeReviewController;
 
 function repositoryToolsOwner() {
-  if (
-    !selectedWorkspace ||
-    !selectedTicketFilename() ||
-    ticketArchived() ||
-    selectedQuickRequest()?.quickRequest
-  )
-    return null;
-  return { type: "workspace", id: selectedWorkspace.id };
+  if (!selectedWorkspace || selectedQuickRequest()?.quickRequest) return null;
+  const filename = selectedTicketFilename();
+  const ticketWorkbench =
+    ticketWorkbenchActive() && filename && !ticketArchived();
+  return {
+    type: "workspace",
+    id: selectedWorkspace.id,
+    ...(ticketWorkbench ? { ticketFilename: filename } : {}),
+  };
 }
 
 function syncRepositoryToolsAvailability() {
@@ -1057,7 +1073,7 @@ function selectQuickRequest(
   task,
   workspace,
   data = navigationData,
-  { deferRestore = false } = {},
+  { deferRestore = false, deferReveal = false } = {},
 ) {
   if (!task.quickRequest) return;
   setTicketViewerVisible(false);

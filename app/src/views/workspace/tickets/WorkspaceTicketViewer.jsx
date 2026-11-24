@@ -154,9 +154,7 @@ export function WorkspaceTicketViewer(props) {
               </For>
             </ActionMenu>
           </div>
-          <div class={repositoryToolsStyles.control}>
-            {props.toolsMenu?.()}
-          </div>
+          <div class={repositoryToolsStyles.control}>{props.toolsMenu?.()}</div>
           <CreateTicketIdeaModal
             disabled={() =>
               Boolean(props.modelBusy?.() || !props.selectedModel?.())

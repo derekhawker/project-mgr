@@ -1,9 +1,11 @@
-import { createComponent } from "solid-js";
+import { createComponent, createSignal } from "solid-js";
 import styles from "./navigation.module.css";
 import { WorkspaceNavigation } from "../views/workspace/navigation/WorkspaceNavigation.jsx";
 import { RightContentShell } from "./RightContentShell.jsx";
+import { TicketLabelEditor } from "../components/TicketLabelEditor.jsx";
 
 export function ApplicationRoot(props) {
+  const [ticketLabelSelection, setTicketLabelSelection] = createSignal(null);
   const newWorkModal = props.newWorkModal();
   return (
     <>
@@ -26,7 +28,9 @@ export function ApplicationRoot(props) {
             <div class="navigation-scroll">
               <WorkspaceNavigation
                 {...props.workspaceNavigation}
-                onChangeLabel={(workspace, ticket) => setTicketLabelSelection({ workspace, ticket })}
+                onChangeLabel={(workspace, ticket) =>
+                  setTicketLabelSelection({ workspace, ticket })
+                }
               />
             </div>
             <div class={styles.destinations}>
@@ -37,7 +41,9 @@ export function ApplicationRoot(props) {
           </aside>
           <section class="quick-view" aria-label="Selected work">
             {props.workspaceShell()}
-            {createComponent(RightContentShell, props.rightContentProps)}
+            {props.rightContentProps
+              ? createComponent(RightContentShell, props.rightContentProps)
+              : props.rightContent?.()}
           </section>
         </div>
 
@@ -47,6 +53,18 @@ export function ApplicationRoot(props) {
         {props.appNotice()}
       </main>
       {newWorkModal}
+      <TicketLabelEditor
+        selection={ticketLabelSelection}
+        onClose={() => setTicketLabelSelection(null)}
+        onLoadLabels={props.workspaceNavigation.onLoadLabels}
+        onApply={(selection, label) =>
+          props.workspaceNavigation.onSetTicketLabel(
+            selection.workspace,
+            selection.ticket.filename,
+            label,
+          )
+        }
+      />
     </>
   );
 }

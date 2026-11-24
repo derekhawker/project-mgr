@@ -6,6 +6,8 @@ let changeReviewMode = "unified";
 const viewedReviewFiles = new Map();
 let defaultModel = { providerId: "fixture", id: "model" };
 let createdWorkspaceTickets = [];
+const ticketLabelOverrides = new Map();
+let ticketSessionSequence = 0;
 let portSelection =
   "3000-3010,4200,4321,5000-5010,5173-5180,5432,6379,8000-8010,8080-8090,9229,27017";
 let fixtureListeners = [
@@ -244,7 +246,9 @@ export async function invokeBrowserFixture(name, payload = {}) {
               title: "Example active ticket",
               status: "in_progress",
               hasWorkSession: true,
-              projectLabel: ticketLabelOverrides.get(`${example.id}:example-active.md`) ?? example.name,
+              projectLabel:
+                ticketLabelOverrides.get(`${example.id}:example-active.md`) ??
+                example.name,
               modifiedAt: timestamp,
             },
             {
@@ -252,7 +256,9 @@ export async function invokeBrowserFixture(name, payload = {}) {
               title: "Example blocked ticket",
               status: "blocked",
               hasWorkSession: false,
-              projectLabel: ticketLabelOverrides.get(`${example.id}:example-blocked.md`) ?? example.name,
+              projectLabel:
+                ticketLabelOverrides.get(`${example.id}:example-blocked.md`) ??
+                example.name,
               modifiedAt: timestamp - 1,
             },
             {
@@ -260,7 +266,10 @@ export async function invokeBrowserFixture(name, payload = {}) {
               title: "Example draft in progress",
               status: "draft",
               hasWorkSession: true,
-              projectLabel: ticketLabelOverrides.get(`${example.id}:example-draft-session.md`) ?? example.name,
+              projectLabel:
+                ticketLabelOverrides.get(
+                  `${example.id}:example-draft-session.md`,
+                ) ?? example.name,
               modifiedAt: timestamp - 2,
             },
             {
@@ -268,7 +277,10 @@ export async function invokeBrowserFixture(name, payload = {}) {
               title: "Example new draft",
               status: "draft",
               hasWorkSession: false,
-              projectLabel: ticketLabelOverrides.get(`${example.id}:example-new-draft.md`) ?? example.name,
+              projectLabel:
+                ticketLabelOverrides.get(
+                  `${example.id}:example-new-draft.md`,
+                ) ?? example.name,
               modifiedAt: timestamp - 3,
             },
           ],
@@ -284,6 +296,7 @@ export async function invokeBrowserFixture(name, payload = {}) {
                 "Investigate inability to submit a large Markdown document in the create-ticket prompt",
               status: "done",
               hasWorkSession: false,
+              projectLabel: example.name,
               modifiedAt: 1_762_400_000_000,
               archivedAt: "2025-11-14T00:00:00.000Z",
               content:
@@ -345,28 +358,60 @@ export async function invokeBrowserFixture(name, payload = {}) {
       for (const workspace of workspaces) {
         for (const [key, label] of ticketLabelOverrides) {
           if (!key.startsWith(`${workspace.id}:`) || !label) continue;
-          const current = labels.get(label.toLowerCase()) || { label, ticketCount: 0, workspaceCount: new Set() };
+          const current = labels.get(label.toLowerCase()) || {
+            label,
+            ticketCount: 0,
+            workspaceCount: new Set(),
+          };
           current.ticketCount += 1;
           current.workspaceCount.add(workspace.id);
           labels.set(label.toLowerCase(), current);
         }
-        for (const ticket of createdWorkspaceTickets.filter((item) => item.workspaceId === workspace.id)) {
+        for (const ticket of createdWorkspaceTickets.filter(
+          (item) => item.workspaceId === workspace.id,
+        )) {
           const label = ticket.projectLabel || workspace.name;
           const key = label.toLowerCase();
-          const current = labels.get(key) || { label, ticketCount: 0, workspaceCount: new Set() };
+          const current = labels.get(key) || {
+            label,
+            ticketCount: 0,
+            workspaceCount: new Set(),
+          };
           current.ticketCount += 1;
           current.workspaceCount.add(workspace.id);
           labels.set(key, current);
         }
       }
-      labels.set(example.name.toLowerCase(), { label: example.name, ticketCount: 1, workspaceCount: new Set([example.id]) });
-      result = [...labels.values()].map(({ label, ticketCount, workspaceCount }) => ({ label, ticketCount, workspaceCount: workspaceCount.size }));
+      labels.set(example.name.toLowerCase(), {
+        label: example.name,
+        ticketCount: 1,
+        workspaceCount: new Set([example.id]),
+      });
+      result = [...labels.values()].map(
+        ({ label, ticketCount, workspaceCount }) => ({
+          label,
+          ticketCount,
+          workspaceCount: workspaceCount.size,
+        }),
+      );
       break;
     }
     case "workspace_ticket_label_set": {
-      const ticket = createdWorkspaceTickets.find((item) => item.workspaceId === request.workspaceId && item.filename === request.filename);
+      const ticket = createdWorkspaceTickets.find(
+        (item) =>
+          item.workspaceId === request.workspaceId &&
+          item.filename === request.filename,
+      );
       if (ticket) ticket.projectLabel = request.label;
-      else if (request.workspaceId === example.id && ["example-active.md", "example-blocked.md", "example-draft-session.md", "example-new-draft.md"].includes(request.filename)) {
+      else if (
+        request.workspaceId === example.id &&
+        [
+          "example-active.md",
+          "example-blocked.md",
+          "example-draft-session.md",
+          "example-new-draft.md",
+        ].includes(request.filename)
+      ) {
         const key = `${request.workspaceId}:${request.filename}`;
         ticketLabelOverrides.set(key, request.label);
       }
@@ -406,7 +451,11 @@ export async function invokeBrowserFixture(name, payload = {}) {
         )
       )
         filename = `${base}-${suffix++}.md`;
-      result = {
+      const investigationSessionId = request.startInvestigation
+        ? `ses-fixture-ticket-${++ticketSessionSequence}`
+        : null;
+      const content = `---\ntitle: ${JSON.stringify(request.title)}\nstatus: draft\nproject_label: ${JSON.stringify(workspace.name)}\n${investigationSessionId ? `work_session_id: ${investigationSessionId}\n` : ""}---\n\n${request.body}\n`;
+      const ticket = {
         filename,
         title: request.title,
         status: "draft",
@@ -646,8 +695,9 @@ export async function invokeBrowserFixture(name, payload = {}) {
     case "new_work_proposal_run":
       result = {
         schemaVersion: 1,
-        workType: request.workType || "workspace",
+        workType: request.workType || "quick_request",
         repositories: [],
+        suggestedPrompt: `Clarify this Quick Request: ${request.originalPrompt}`,
       };
       break;
     case "new_work_proposal_close":

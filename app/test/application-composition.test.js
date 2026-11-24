@@ -34,6 +34,8 @@ test("application composes, saves new ticket labels through the Rust boundary, a
     "__deferWorkspaceTicketWork",
     "__resolveWorkspaceTicketWork",
     "__workspaceTicketWorkSettled",
+    "__ticketLabelSetCalls",
+    "__workspaceCreateCalls",
   ];
   try {
     const terminal = join(temp, "terminal.js");
@@ -73,6 +75,12 @@ test("application composes, saves new ticket labels through the Rust boundary, a
       import { invokeBrowserFixture as invoke } from ${JSON.stringify(resolve(root, "src/fixtures/browserFixture.js"))};
       let calls = 0;
       export function invokeBrowserFixture(name, payload) {
+        if (name === "workspace_create") {
+          globalThis.__workspaceCreateCalls.push(structuredClone(payload));
+        }
+        if (name === "workspace_ticket_label_set") {
+          globalThis.__ticketLabelSetCalls.push(structuredClone(payload));
+        }
         if (name === "workspace_ticket_work" && globalThis.__deferWorkspaceTicketWork) {
           return new Promise((resolve, reject) => {
             globalThis.__resolveWorkspaceTicketWork = () => {
@@ -172,6 +180,8 @@ test("application composes, saves new ticket labels through the Rust boundary, a
     globalThis.__quickRequestCreatePrompts = [];
     globalThis.__deferWorkspaceTicketWork = false;
     globalThis.__workspaceTicketWorkSettled = false;
+    globalThis.__ticketLabelSetCalls = [];
+    globalThis.__workspaceCreateCalls = [];
 
     await waitFor(
       () => $("#workspace-list").getAttribute("aria-busy") === "false",
@@ -192,21 +202,42 @@ test("application composes, saves new ticket labels through the Rust boundary, a
         clientY: 180,
       }),
     );
-    await waitFor(() => window.document.querySelector("[role='menu'] [role='menuitem']"));
+    await waitFor(() =>
+      window.document.querySelector("[role='menu'] [role='menuitem']"),
+    );
     $("[role='menuitem']").click();
     await waitFor(() => window.document.querySelector("dialog[open]"));
-    assert.equal($("dialog[open] input[aria-label='Current label']").readOnly, true);
-    assert.equal($("dialog[open] input[aria-label='Current label']").value, "Example Workspace");
-    assert.equal(window.document.querySelector("dialog[open] [role='listbox']"), null);
-    input('dialog[open] input[aria-label="Search labels"]', "Cross-workspace rollout");
+    assert.equal(
+      $("dialog[open] input[aria-label='Current label']").readOnly,
+      true,
+    );
+    assert.equal(
+      $("dialog[open] input[aria-label='Current label']").value,
+      "Example Workspace",
+    );
+    assert.equal(
+      window.document.querySelector("dialog[open] [role='listbox']"),
+      null,
+    );
+    input(
+      'dialog[open] input[aria-label="Search labels"]',
+      "Cross-workspace rollout",
+    );
     const createLabel = () =>
       [...$("dialog[open]").querySelectorAll('[role="option"]')].find(
-        (option) => option.textContent.includes('Create “Cross-workspace rollout”'),
+        (option) =>
+          option.textContent.includes("Create “Cross-workspace rollout”"),
       );
     await waitFor(createLabel);
     createLabel().click();
-    assert.equal(window.document.querySelector("dialog[open] [role='listbox']"), null);
-    assert.equal($("dialog[open] input[aria-label='Search labels']").value, "Cross-workspace rollout");
+    assert.equal(
+      window.document.querySelector("dialog[open] [role='listbox']"),
+      null,
+    );
+    assert.equal(
+      $("dialog[open] input[aria-label='Search labels']").value,
+      "Cross-workspace rollout",
+    );
     const applyLabel = () =>
       [...$("dialog[open]").querySelectorAll("button")].find(
         (button) => button.textContent.trim() === "Apply label",
@@ -236,12 +267,19 @@ test("application composes, saves new ticket labels through the Rust boundary, a
     );
     await waitFor(() => window.document.querySelector("[role='menuitem']"));
     $("[role='menuitem']").click();
-    await waitFor(() => window.document.querySelector("dialog[open] input[aria-label='Current label']"));
+    await waitFor(() =>
+      window.document.querySelector(
+        "dialog[open] input[aria-label='Current label']",
+      ),
+    );
     assert.equal(
       $("dialog[open] input[aria-label='Current label']").value,
       "Cross-workspace rollout",
     );
-    assert.equal($("dialog[open] input[aria-label='Current label']").readOnly, true);
+    assert.equal(
+      $("dialog[open] input[aria-label='Current label']").readOnly,
+      true,
+    );
     [...$("dialog[open]").querySelectorAll("button")]
       .find((button) => button.textContent.trim() === "Cancel")
       .click();
@@ -472,11 +510,30 @@ test("application composes, saves new ticket labels through the Rust boundary, a
 
     $('[data-new-work-type="workspace"]').click();
     assert.equal($("#new-work-modal").open, true);
-    assert.equal($("#quick-request-full-list").hidden, false);
-    assert.equal($("#new-work-workspace").hidden, false);
-    $("#workspace-cancel").click();
-    assert.equal($("#new-work-modal").open, false);
-    assert.equal($("#quick-request-full-list").hidden, false);
+    await waitFor(() => !$("#workspace-repository-select").disabled);
+    $("#workspace-repository-select").click();
+    $('[data-value="fixture-repo"]').click();
+    input("#workspace-create-name", "Composition Workspace");
+    $("#workspace-create-form").dispatchEvent(
+      new window.Event("submit", { bubbles: true, cancelable: true }),
+    );
+    await waitFor(() => !$("#new-work-modal").open);
+    assert.deepEqual(globalThis.__workspaceCreateCalls, [
+      {
+        request: {
+          name: "Composition Workspace",
+          description: null,
+          repositoryId: "fixture-repo",
+        },
+      },
+    ]);
+    assert.match($("#workspace-list").textContent, /Composition Workspace/);
+    assert.equal($("#workspace-shell").hidden, true);
+    assert.equal($("#workspace-shell h1"), workspaceHeading);
+    assert.equal(
+      workspaceHeading.children[2].textContent,
+      "Composition Workspace",
+    );
     assert.equal($("#terminal-views"), host);
     assert.equal(workspaceTerminal.isConnected, true);
     assert.equal(quickTerminal.isConnected, true);

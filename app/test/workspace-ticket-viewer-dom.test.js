@@ -217,8 +217,14 @@ test("ticket viewer keeps workspace tools available with no selected ticket", ()
   });
   try {
     assert.match(view.host.textContent, /No active tickets/);
-    assert.ok([...view.host.querySelectorAll("button")].some((button) => button.textContent === "Tools"));
-  } finally { view.dispose(); }
+    assert.ok(
+      [...view.host.querySelectorAll("button")].some(
+        (button) => button.textContent === "Tools",
+      ),
+    );
+  } finally {
+    view.dispose();
+  }
 });
 
 test("ticket idea modal marks both current steps, keeps failed edits open, and closes after success", async () => {
@@ -311,8 +317,8 @@ test("ticket idea modal marks both current steps, keeps failed edits open, and c
     await flush();
     assert.equal(view.host.querySelector("dialog").open, false);
     assert.deepEqual(creations, [
-      ["Edited title", "Edited Markdown"],
-      ["Edited title", "Edited Markdown"],
+      ["Edited title", "Edited Markdown", false],
+      ["Edited title", "Edited Markdown", false],
     ]);
     view.host.querySelector("button").click();
     view.host
@@ -342,16 +348,29 @@ test("ticket creation investigation checkbox is opt-in and resets for each new t
     idea.dispatchEvent(new Event("input", { bubbles: true }));
     view.host.querySelector('button[type="submit"]').click();
     await flush();
-    const option = [...view.host.querySelectorAll('input[type="checkbox"]')]
-      .find((input) => input.closest("label")?.textContent.includes("Start ticket"));
+    const option = [
+      ...view.host.querySelectorAll('input[type="checkbox"]'),
+    ].find((input) =>
+      input.closest("label")?.textContent.includes("Start ticket"),
+    );
     assert.ok(option);
     assert.equal(option.checked, false);
     const optionLabel = option.closest("label");
-    assert.equal(optionLabel.parentElement, view.host.querySelector("dialog footer > div"));
-    assert.doesNotMatch(optionLabel.textContent, /clear, low-effort, and one obvious path/);
+    assert.equal(
+      optionLabel.parentElement,
+      view.host.querySelector("dialog footer > div"),
+    );
+    assert.doesNotMatch(
+      optionLabel.textContent,
+      /clear, low-effort, and one obvious path/,
+    );
     const footerItems = [...optionLabel.parentElement.children];
-    const createButton = footerItems.find((item) => item.textContent.includes("Create ticket"));
-    assert.ok(footerItems.indexOf(optionLabel) < footerItems.indexOf(createButton));
+    const createButton = footerItems.find((item) =>
+      item.textContent.includes("Create ticket"),
+    );
+    assert.ok(
+      footerItems.indexOf(optionLabel) < footerItems.indexOf(createButton),
+    );
     option.checked = true;
     option.dispatchEvent(new Event("change", { bubbles: true }));
     view.host.querySelector("dialog footer button:last-child").click();
@@ -364,10 +383,15 @@ test("ticket creation investigation checkbox is opt-in and resets for each new t
     reopenedIdea.dispatchEvent(new Event("input", { bubbles: true }));
     view.host.querySelector('button[type="submit"]').click();
     await flush();
-    const reopenedOption = [...view.host.querySelectorAll('input[type="checkbox"]')]
-      .find((input) => input.closest("label")?.textContent.includes("Start ticket"));
+    const reopenedOption = [
+      ...view.host.querySelectorAll('input[type="checkbox"]'),
+    ].find((input) =>
+      input.closest("label")?.textContent.includes("Start ticket"),
+    );
     assert.equal(reopenedOption.checked, false);
-  } finally { view.dispose(); }
+  } finally {
+    view.dispose();
+  }
 });
 
 test("ticket browser keeps selection separate from Work, renders the complete safe Markdown reader, and formats frontmatter after it", () => {

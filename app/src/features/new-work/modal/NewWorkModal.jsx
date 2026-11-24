@@ -115,7 +115,11 @@ export function NewWorkModal(props) {
                   >
                     Cancel
                   </Button>
-                  <Button type="button" id="proposal-back" onClick={props.onBack}>
+                  <Button
+                    type="button"
+                    id="proposal-back"
+                    onClick={props.onBack}
+                  >
                     Back
                   </Button>
                   <Button
@@ -130,6 +134,14 @@ export function NewWorkModal(props) {
                 </>
               }
             >
+              <Button
+                type="button"
+                id="proposal-cancel"
+                class={styles.cancel}
+                onClick={props.onCancel}
+              >
+                Cancel
+              </Button>
               <Button
                 variant="primary"
                 type="button"
@@ -284,32 +296,86 @@ export function NewWorkModal(props) {
               hidden={proposal().workType !== "quick_request"}
             >
               <h3>Confirm working directory</h3>
-              <h3>Original prompt</h3>
-              <blockquote id="quick-request-original">
-                {proposal().originalPrompt}
-              </blockquote>
-              <p>
-                The original prompt will be sent unchanged after confirmation.
-              </p>
-              <label for="quick-request-directory">
-                OpenCode working directory
-              </label>
-              <div class={styles.directoryRow}>
-                <Input
-                  id="quick-request-directory"
-                  type="text"
-                  value={props.directoryPath()}
-                  onInput={(event) =>
-                    props.onCustomDirectoryInput(event.currentTarget.value)
-                  }
-                />
-                <Button type="button" onClick={props.onChooseDirectory}>
-                  Choose folder
-                </Button>
-                <Button type="button" onClick={props.onResetDirectory}>
-                  Reset to default
-                </Button>
-              </div>
+              <Tabs
+                label="Quick Request prompt"
+                value={props.promptChoice()}
+                onChange={props.onPromptChoiceChange}
+                tabs={[
+                  {
+                    id: "original",
+                    label: "Original",
+                    panel: (
+                      <div class={styles.promptEditor}>
+                        <label for="quick-request-prompt-original">
+                          Original prompt
+                        </label>
+                        <TextArea
+                          id="quick-request-prompt-original"
+                          rows="9"
+                          class={styles.promptTextArea}
+                          value={props.originalPrompt()}
+                          readOnly
+                        />
+                      </div>
+                    ),
+                  },
+                  {
+                    id: "suggested",
+                    label: "Suggested",
+                    panel: (
+                      <div class={styles.promptEditor}>
+                        <label for="quick-request-prompt-suggested">
+                          Suggested prompt to send
+                        </label>
+                        <TextArea
+                          id="quick-request-prompt-suggested"
+                          rows="9"
+                          class={styles.promptTextArea}
+                          value={props.suggestedPrompt()}
+                          onInput={(event) =>
+                            props.onSuggestedPromptChange(
+                              event.currentTarget.value,
+                            )
+                          }
+                        />
+                      </div>
+                    ),
+                  },
+                ]}
+              />
+              <Show
+                when={recoveringQuickRequest()}
+                fallback={
+                  <>
+                    <label for="quick-request-directory">
+                      OpenCode working directory
+                    </label>
+                    <div class={styles.directoryRow}>
+                      <Input
+                        id="quick-request-directory"
+                        type="text"
+                        value={props.directoryPath()}
+                        onInput={(event) =>
+                          props.onCustomDirectoryInput(
+                            event.currentTarget.value,
+                          )
+                        }
+                      />
+                      <Button type="button" onClick={props.onChooseDirectory}>
+                        Choose folder
+                      </Button>
+                      <Button type="button" onClick={props.onResetDirectory}>
+                        Reset to default
+                      </Button>
+                    </div>
+                  </>
+                }
+              >
+                <label>Saved OpenCode working directory</label>
+                <div class={styles.directory}>
+                  {props.quickRequestRecoveryRecord()?.session?.directory}
+                </div>
+              </Show>
             </div>
             <Show when={progressDestination() === "quick_request"}>
               <SetupProgressPanel

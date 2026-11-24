@@ -57,9 +57,9 @@ export function createWorkspaceCreationController(deps) {
         await refreshNavigation().catch(() => {});
         return;
       }
-      selectWorkspace(workspace, navigationData());
       setView("closed");
       closeModal();
+      selectWorkspace(workspace, navigationData());
       try {
         const data = await refreshNavigation();
         if (isCurrent())

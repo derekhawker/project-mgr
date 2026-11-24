@@ -44,13 +44,15 @@ export function createQuickRequestCreationController(deps) {
     onCreated(record);
   }
 
-  async function completeStartup(record) {
+  async function completeStartup(record, isCurrent = () => true) {
     await finishQuickRequestStartup(record);
     recoveryRecord = null;
     setRecoveryRecord(null);
-    setNewWorkView("closed");
-    clearProposal();
-    closeModal();
+    if (isCurrent()) {
+      setNewWorkView("closed");
+      clearProposal();
+      closeModal();
+    }
     clearPendingPromptAction();
     if (proposalSessionId()) {
       try {
@@ -104,40 +106,15 @@ export function createQuickRequestCreationController(deps) {
         waitForTerminal,
         onCreated: (record) => {
           ownerCreated = true;
-          if (isCurrent()) onCreated(record);
+          rememberCreatedRequest(record);
         },
         showSession,
       });
-      if (isCurrent()) {
-        setNewWorkView("closed");
-        clearProposal();
-        closeModal();
-      }
-      if (proposalSessionId()) {
-        try {
-          await closeProposalSession();
-        } catch (error) {
-          setOwnerStatus(
-            formatWorkspaceError("Close proposal terminal", error),
-          );
-        }
-      }
+      await completeStartup(recoveryRecord, isCurrent);
     } catch (error) {
       if (ownerCreated) {
-        if (isCurrent()) {
-          setNewWorkView("closed");
-          clearProposal();
-          closeModal();
-        }
-        const message = formatWorkspaceError("Finish owner setup", error);
-        setOwnerStatus(message);
-        setAppNotice(message);
-        void refreshRequests().catch((refreshError) => {
-          setAppNotice(
-            `${message} · Quick Request list refresh failed: ${String(refreshError)}`,
-          );
-        });
-        clearPendingPromptAction();
+        if (isCurrent())
+          setProposalError(formatWorkspaceError("Start Quick Request", error));
       } else if (isCurrent())
         setProposalError(formatWorkspaceError("Create work", error));
     } finally {
@@ -151,6 +128,9 @@ export function createQuickRequestCreationController(deps) {
   async function retryQuickRequest() {
     const record = recoveryRecord;
     if (!record || busy) return;
+    const generation = getGeneration?.();
+    const isCurrent = () =>
+      getGeneration?.() === undefined || getGeneration() === generation;
     setRecoveryBusy(true);
     setOwnerSetupBusy(true);
     busy = true;
@@ -162,9 +142,10 @@ export function createQuickRequestCreationController(deps) {
         model: JSON.parse(getSelectedModel()),
         showSession,
       });
-      await completeStartup(record);
+      await completeStartup(record, isCurrent);
     } catch (error) {
-      setProposalError(formatWorkspaceError("Recover Quick Request", error));
+      if (isCurrent())
+        setProposalError(formatWorkspaceError("Recover Quick Request", error));
     } finally {
       busy = false;
       setRecoveryBusy(false);
@@ -173,5 +154,9 @@ export function createQuickRequestCreationController(deps) {
     }
   }
 
-  return { createQuickRequest, retryQuickRequest, hasRecovery: () => Boolean(recoveryRecord) };
+  return {
+    createQuickRequest,
+    retryQuickRequest,
+    hasRecovery: () => Boolean(recoveryRecord),
+  };
 }

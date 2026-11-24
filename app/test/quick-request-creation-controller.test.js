@@ -113,6 +113,40 @@ test("failure reports error and always clears busy state, preserving retry avail
   ]);
 });
 
+test("durable startup failure retains the saved request and retries its session", async () => {
+  const record = {
+    task: { id: "qr-same-id", quickRequest: {} },
+    session: { openCodeSessionId: "ses-same-id" },
+  };
+  const { controller, calls } = setup({
+    submitResolvedQuickRequestFlow: async ({ onCreated }) => {
+      onCreated(record);
+      throw new Error("terminal attach failed");
+    },
+    retryResolvedQuickRequestFlow: async (args) => {
+      calls.push(["retry", args]);
+      return { promptSent: true };
+    },
+    setRecoveryRecord: (value) => calls.push(["recovery", value]),
+    finishQuickRequestStartup: async (value) => calls.push(["finish", value]),
+    refreshRequests: async () => calls.push(["refresh"]),
+  });
+
+  await controller.createQuickRequest();
+  assert.ok(
+    calls.some(([key, value]) => key === "recovery" && value === record),
+  );
+  assert.ok(calls.some(([key]) => key === "error"));
+  assert.ok(!calls.some(([key, value]) => key === "closeModal" && value));
+
+  await controller.retryQuickRequest();
+  const retryArgs = calls.find(([key]) => key === "retry")[1];
+  assert.equal(retryArgs.record, record);
+  assert.ok(calls.some(([key, value]) => key === "finish" && value === record));
+  assert.ok(calls.some(([key]) => key === "closeModal"));
+  assert.deepEqual(calls.slice(-2), [["busy", false], ["sync"]]);
+});
+
 test("completion after close does not mutate or close a later modal instance", async () => {
   let generation = 1;
   let finish;
