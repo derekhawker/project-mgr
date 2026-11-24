@@ -17,23 +17,20 @@ as the task develops; an unapproved task need not contain a finished plan.
   the exact experiment or implementation scope the human approved.
 - **Impact and dependencies:** affected architecture and living documents,
   prerequisites, and relevant source-of-truth references.
-- **TODO:** a short queue of approved work, ordered by readiness. Group connected
-  steps into useful user journeys; replace finished actions with the next ones.
-  Rebuild an empty queue from any open acceptance gaps. Keep evidence in
-  tests/artifacts. `Explore later` may hold three brief topics.
+- **Tasks:** a concise checklist of approved work, ordered by readiness. Add
+  tasks for open acceptance gaps and keep evidence in tests/artifacts.
   See [Checkpoint And Recover](../SKILL.md#checkpoint-and-recover).
 
 ## During Execution And At Handoff
 
-Keep the ticket authoritative for outcomes and decisions. Keep the TODO actionable;
+Keep the record authoritative for outcomes, decisions, and actionable tasks;
 put evidence in tests/artifacts and record only a short reference when it changes
 readiness or acceptance.
 - **Execution context:** branch, checkout, or other location only when needed to
   find and resume the work.
 
 Follow [Checkpoint And Recover](../SKILL.md#checkpoint-and-recover). Reconcile at
-a checkpoint, but write only when the TODO's actionable state changes. Do not
-append turn summaries.
+a checkpoint, updating task status and brief current context as needed.
 
 ## At Completion Or Cancellation
 

@@ -1,18 +1,15 @@
 import assert from "node:assert/strict";
 import { setImmediate as tick } from "node:timers/promises";
 import test from "node:test";
-import { configuredSessionAllowlist, createModelGate, wakeEventTypes } from "./engine.js";
+import { createModelGate, wakeEventTypes } from "./engine.js";
 
 const sessionID = "ses_ticket";
 const ticket = "/workspace/tickets/fixture.md";
-const todo = "/workspace/tickets/fixture.todo";
 const binding = {
   ok: true,
   ticket,
-  todo,
   signature: "binding-v1",
-  ticketContent: "# Fixture ticket",
-  todoContent: "# TODO\n- [ ] Continue scoped work",
+  ticketContent: "# Fixture ticket\n## Tasks\n- [ ] Continue scoped work",
 };
 const boundary = (idleID = "idle-1") => ({
   ok: true,
@@ -25,26 +22,6 @@ const event = (type = "session.idle", id = sessionID) => ({
 });
 const answer = (decision = "continue", reason = "A scoped task remains.", task = "Continue scoped work") =>
   JSON.stringify({ decision, task: decision === "continue" ? task : null, reason });
-
-test("configured session allowlist fails closed and deduplicates exact IDs", () => {
-  for (const options of [
-    undefined,
-    {},
-    { allowedSessionIDs: [] },
-    { allowedSessionIDs: null },
-    { allowedSessionIDs: "ses_ticket" },
-    { allowedSessionIDs: [""] },
-    { allowedSessionIDs: ["   "] },
-    { allowedSessionIDs: [sessionID, 42] },
-  ]) {
-    assert.deepEqual(configuredSessionAllowlist(options), []);
-  }
-
-  assert.deepEqual(
-    configuredSessionAllowlist({ allowedSessionIDs: [sessionID, sessionID] }),
-    [sessionID],
-  );
-});
 
 function fixture(options = {}) {
   const calls = [];
@@ -88,7 +65,6 @@ function fixture(options = {}) {
     gate: createModelGate({
       api,
       storage,
-      allowedSessionIDs: [sessionID],
       ...options.gateOptions,
     }),
     count: (name) => calls.filter(([call]) => call === name).length,
@@ -116,7 +92,7 @@ test("deterministic hard checks run before the model and veto it on failure", as
   assert.equal(f.count("prompt"), 0);
 });
 
-test("allowlisted wake-event receipt is tracked in memory before a hard-check veto", async () => {
+test("wake-event receipt is tracked in memory before a hard-check veto", async () => {
   const f = fixture({
     hardCheck: () => ({ ok: false, reason: "pending-input" }),
     gateOptions: { now: () => 789 },
@@ -154,15 +130,12 @@ test("only a valid strict-JSON continue decision queues exactly one prompt", asy
   assert.deepEqual(decisionInput, {
     sessionID,
     ticket,
-    todo,
-    ticketContent: binding.ticketContent,
-    todoContent: binding.todoContent,
+      ticketContent: binding.ticketContent,
     lastMessage: boundary().lastMessage,
   });
   const promptInput = f.calls.find(([name]) => name === "prompt")[1];
   assert.equal(promptInput.sessionID, sessionID);
   assert.equal(promptInput.ticket, ticket);
-  assert.equal(promptInput.todo, todo);
   assert.equal(promptInput.task, "Continue scoped work");
   assert.match(promptInput.id, /^msg_/);
 });
@@ -216,8 +189,8 @@ test("status exposes only the latest evaluation state and sanitized reason", asy
   assert.doesNotMatch(JSON.stringify(f.values.get(`evaluation/${sessionID}`)), /Sensitive/);
 
   assert.deepEqual(await f.gate.status("ses_other"), {
-    state: "ignored",
-    reason: "session-not-allowlisted",
+    state: "unavailable",
+    reason: "no-evaluation-recorded",
   });
 });
 
@@ -578,65 +551,15 @@ test("a non-idle session-status event using the SDK data envelope is ignored", a
   assert.equal(f.count("prompt"), 0);
 });
 
-test("idle session-status events remain restricted to exact allowlisted sessions", async () => {
-  const f = fixture();
-  assert.deepEqual(await f.gate.event({
-    type: "session.status",
-    properties: { sessionID: "ses_ticket-extra", status: { type: "idle" } },
-  }), { state: "ignored", reason: "session-not-allowlisted" });
-  assert.equal(f.count("binding"), 0);
-  assert.equal(f.count("hardCheck"), 0);
-  assert.equal(f.count("decide"), 0);
-  assert.equal(f.count("prompt"), 0);
-  assert.equal(f.values.has("event/ses_ticket-extra"), false);
-});
-
-test("the session allowlist gates events, scans, and stop commands", async () => {
-  const f = fixture({
-    sessions: () => [sessionID, "ses_other", sessionID],
-    binding: () => ({ ok: false, reason: "test-filtered" }),
-    gateOptions: { allowedSessionIDs: [sessionID] },
-  });
-  assert.deepEqual(await f.gate.event(event("session.idle", "ses_other")), {
-    state: "ignored", reason: "session-not-allowlisted",
-  });
-  assert.equal(f.values.has("event/ses_other"), false);
-  assert.deepEqual(await f.gate.stop("ses_other"), {
-    state: "ignored", reason: "session-not-allowlisted",
-  });
-  const results = await f.gate.scan();
-  assert.equal(results.length, 1);
-  assert.deepEqual(
-    [...new Set(f.calls.filter(([name]) => name === "binding").map(([, id]) => id))],
-    [sessionID],
-  );
-  assert.equal(f.count("decide"), 0);
+test("other sessions reach binding checks without an allowlist", async () => {
+  const f = fixture({ binding: () => ({ ok: false, reason: "ticket-unavailable" }) });
+  assert.deepEqual(await f.gate.event(event("session.idle", "ses_other")), { state: "ignored", reason: "ticket-unavailable" });
+  assert.deepEqual(f.calls[0], ["binding", "ses_other"]);
   assert.equal(f.count("prompt"), 0);
 });
 
-test("an empty session allowlist disables evaluation and scanning", async () => {
-  const f = fixture({ gateOptions: { allowedSessionIDs: [] } });
-  assert.deepEqual(await f.gate.event(event()), {
-    state: "ignored", reason: "session-not-allowlisted",
-  });
-  assert.deepEqual(await f.gate.scan(), []);
-  assert.deepEqual(f.calls, []);
-});
-
-test("startup scan considers each listed session", async () => {
-  const considered = [];
-  const f = fixture({
-    sessions: () => [sessionID, "ses_two"],
-    gateOptions: { allowedSessionIDs: [sessionID] },
-    binding: (id) => {
-      considered.push(id);
-      return { ok: false, reason: "session-not-eligible" };
-    },
-  });
-  const results = await f.gate.scan();
-  assert.deepEqual(considered, [sessionID]);
-  assert.deepEqual(results, [
-    { state: "ignored", reason: "session-not-eligible" },
-  ]);
-  assert.equal(f.count("sessions"), 1);
+test("startup scan considers every listed session once", async () => {
+  const f = fixture({ sessions: () => [sessionID, "ses_two", sessionID], binding: () => ({ ok: false, reason: "ticket-unavailable" }) });
+  assert.equal((await f.gate.scan()).length, 2);
+  assert.deepEqual(f.calls.filter(([name]) => name === "binding").map(([, id]) => id), [sessionID, "ses_two"]);
 });

@@ -5,10 +5,9 @@
 Use the canonical Workspace ticket directory provided in session instructions.
 Tickets are `<slug>.md` outside the repository; closed tickets move to
 `archived/<slug>.md`. The ticket owns status, scope, outcomes, decisions, and
-session ID. Its linked `<slug>.todo` is a short queue of approved open work,
-grouped into coherent user journeys where useful. Remove tasks when they no longer
-guide the next action. Keep evidence in tests/artifacts, not as TODO history. Use
-one `# TODO` list and, optionally, up to three brief `Explore later` topics.
+session ID, and actionable tasks. Keep a concise `## Tasks` checklist in the
+ticket; update statuses and add, change, or remove tasks as the plan evolves.
+Keep notes to the current state, material decisions, blockers, and verification.
 
 ## Status lifecycle
 
@@ -44,40 +43,29 @@ is already in use.
 
 Before work, read the canonical Markdown ticket, confirm its identity and status,
 and follow its approved scope. Present the proposed high-level outcomes and
-acceptance criteria for user approval; do not require a TODO companion before
-approval. For a `draft` ticket, preserve any existing companion but do not resume
-execution or rebuild a missing file. When approved work begins or resumes, check
-the canonical companion path. If it exists, preserve and reconcile it with the
-approved scope, repairing a missing ticket link. If `.todo` is absent but a
-legacy `.progress` companion exists, compact and rename it to `.todo`, preserving
-open approved tasks and material blockers, then update the ticket link. Otherwise,
-initialize a short actionable TODO from approved outcomes, checkout, and
-dependencies; on resumption reconcile it with current code and checks. Link the
-TODO from the ticket before continuing. When a ticket returns to
-`in_progress` after renewed approval, reconcile any preserved companion with the
-newly approved scope. When a session is created or resumed, ensure its durable
+acceptance criteria for user approval. When approved work begins or resumes,
+reconcile the ticket's tasks with approved scope, checkout, and checks. If it
+links a legacy companion, incorporate relevant open tasks and blockers in the
+ticket; preserve the companion and do not continue updating it. When a session
+is created or resumed, ensure its durable
 `workspace-ticket` instruction entry identifies only
 the ticket title/slug, filename and canonical path, current status, ticket
 directory, repository root, and this global skill.
 Do not duplicate ticket body in the entry. Direct OpenCode to read the canonical
-file for content and latest status, and the linked TODO for actionable work.
+file for content, latest status, and actionable work.
 Refresh the entry after session creation and before opening the
 terminal, and refresh status when selecting/resuming. A replacement session
 receives a new entry keyed to its new exact session ID and replaces the ID in the
 ticket front matter. Ensure the OpenCode process can read and write the ticket
-path and companion.
+path.
 
 The Work action itself does not change status. Perform status transitions through
 OpenCode and persist them in the Markdown ticket. If a recorded session is
 unavailable, start a replacement session and update the ticket's session ID.
 
-Reconcile the TODO at checkpoints. After completing an action, continue with the
-next ready one. If the queue is empty but approved outcomes remain open, rebuild
-the queue from those gaps. An empty queue means completion only when acceptance
-checks pass. Replace completed actions; never append history. Put material scope
-or decision changes in the ticket first. The TODO never overrides ticket status,
-outcomes, acceptance, scope, decisions, or session binding. Keep it while the
-ticket remains active or delivery/cleanup is blocked.
+Reconcile tasks at checkpoints. Continue with the next ready approved task; add
+tasks for remaining acceptance gaps. An empty list means completion only when
+acceptance checks pass. Keep status and any explanation concise and current.
 
 ## Closeout
 
@@ -89,15 +77,15 @@ For completion, finish required checks, delivery, and cleanup before closing the
 ticket. Follow project-specific delivery instructions; where none override them,
 apply shared ticket-workflow defaults. Do not assume a shared merge strategy when
 project policy specifies one. If delivery or cleanup is unsafe or blocked,
-preserve the worktree, companion, and ticket; leave the ticket open or blocked
+preserve the worktree and ticket; leave the ticket open or blocked
 with the reason and next step recorded. Remote branch deletion is not implied.
-After completion prerequisites pass, transfer relevant final progress, evidence,
-and remaining-work disposition into the ticket; record verification and persist
+After completion prerequisites pass, record verification and any remaining-work
+disposition in the ticket and persist
 `done`.
 
 For cancellation, record why work stopped, relevant progress and evidence, and the
 disposition of completed and remaining work in the ticket; then persist
-`cancelled`. After either terminal status is recorded, remove the companion link,
-delete the companion, and archive the ticket under `archived/<slug>.md`. Never
+`cancelled`. After either terminal status is recorded, archive the ticket under
+`archived/<slug>.md`. Never
 archive an active ticket. Before moving a terminal ticket into `archived/`, add
 `archived_at` to its YAML front matter as a quoted ISO 8601 date-time string.

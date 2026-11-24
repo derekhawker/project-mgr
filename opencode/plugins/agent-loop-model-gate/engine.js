@@ -19,28 +19,36 @@ const safeReason = (value) =>
     ? value
     : "evaluation-unavailable";
 
-export function configuredSessionAllowlist(options) {
-  const sessionIDs = options?.allowedSessionIDs;
-  if (
-    !Array.isArray(sessionIDs) ||
-    sessionIDs.length === 0 ||
-    sessionIDs.some((sessionID) => typeof sessionID !== "string" || !sessionID.trim())
-  )
-    return [];
-  return [...new Set(sessionIDs)];
-}
-
-function readyTodoItems(todoContent) {
-  if (typeof todoContent !== "string") return [];
-  const lines = todoContent.replace(/\r\n/g, "\n").split("\n");
-  const heading = lines.findIndex((line) => /^# TODO\s*$/i.test(line));
+function readyTasks(ticketContent) {
+  if (typeof ticketContent !== "string") return [];
+  const lines = ticketContent.replace(/\r\n/g, "\n").split("\n");
+  const heading = lines.findIndex((line) => /^##\s+Tasks\s*#*\s*$/i.test(line));
   if (heading < 0) return [];
-  const explore = lines.findIndex((line, index) => index > heading && /^##\s+Explore later\s*$/i.test(line));
-  const tasks = lines.slice(heading + 1, explore < 0 ? undefined : explore);
-  return tasks.map((line) => /^\s*(?:[-+*]|\d+\.)\s+\[ \]\s+([^\r\n]+)$/.exec(line)?.[1]?.trim()).filter(Boolean);
+  const end = lines.findIndex((line, index) => index > heading && /^#{1,2}\s/.test(line));
+  let fence;
+  let deferred = false;
+  const tasks = [];
+  for (const line of lines.slice(heading + 1, end < 0 ? undefined : end)) {
+    const marker = /^\s{0,3}(`{3,}|~{3,})/.exec(line)?.[1];
+    if (marker) {
+      if (!fence) fence = marker;
+      else if (marker[0] === fence[0] && marker.length >= fence.length) fence = undefined;
+      continue;
+    }
+    if (fence) continue;
+    const subheading = /^###\s+(.+?)\s*#*\s*$/.exec(line);
+    if (subheading) {
+      deferred = /^(explore later|follow[ -]?ups?|deferred)\s*$/i.test(subheading[1]);
+      continue;
+    }
+    if (deferred) continue;
+    const task = /^\s*(?:[-+*]|\d+\.)\s+\[ \]\s+([^\r\n]+)$/.exec(line)?.[1]?.trim();
+    if (task) tasks.push(task);
+  }
+  return tasks;
 }
 
-export function parseDecision(text, todoContent) {
+export function parseDecision(text, ticketContent) {
   if (typeof text !== "string") return;
   let value;
   try {
@@ -57,7 +65,7 @@ export function parseDecision(text, todoContent) {
     !value.reason.trim() ||
     value.reason.length > 280 ||
     (value.decision === "continue"
-      ? typeof value.task !== "string" || !readyTodoItems(todoContent).includes(value.task)
+      ? typeof value.task !== "string" || !readyTasks(ticketContent).includes(value.task)
       : value.task !== null)
   )
     return;
@@ -67,16 +75,10 @@ export function parseDecision(text, todoContent) {
 export function createModelGate({
   api,
   storage,
-  allowedSessionIDs = [],
   now = Date.now,
   maxTurns = 400,
   maxAge = 3 * 60 * 60_000,
 }) {
-  const allowed = new Set(
-    Array.isArray(allowedSessionIDs)
-      ? allowedSessionIDs.filter((id) => typeof id === "string" && id.length > 0)
-      : [],
-  );
   const inFlight = new Map();
   const stateWrites = new Map();
   const observedEvents = new Map();
@@ -124,7 +126,6 @@ export function createModelGate({
   }
 
   async function consider(sessionID) {
-    if (!allowed.has(sessionID)) return { state: "ignored", reason: "session-not-allowlisted" };
     if (closed || typeof sessionID !== "string" || inFlight.has(sessionID))
       return { state: "ignored", reason: "already-checking-or-closed" };
     const operation = run(sessionID);
@@ -189,15 +190,13 @@ export function createModelGate({
       raw = await api.decide({
         sessionID,
         ticket: binding.ticket,
-        todo: binding.todo,
         ticketContent: binding.ticketContent,
-        todoContent: binding.todoContent,
         lastMessage: boundary.lastMessage,
       });
     } catch {
       return { state: "paused", reason: "decision-unavailable" };
     }
-    const decision = parseDecision(raw, binding.todoContent);
+    const decision = parseDecision(raw, binding.ticketContent);
     if (!decision) return { state: "paused", reason: "decision-invalid" };
 
     // Recheck every hard condition after the model call. A stop, new user input,
@@ -213,7 +212,6 @@ export function createModelGate({
     if (
       !currentBinding?.ok ||
       currentBinding.ticket !== binding.ticket ||
-      currentBinding.todo !== binding.todo ||
       currentBinding.signature !== binding.signature
     )
       return { state: "paused", reason: "ticket-changed" };
@@ -246,7 +244,6 @@ export function createModelGate({
     if (
       !admissionBinding?.ok ||
       admissionBinding.ticket !== binding.ticket ||
-      admissionBinding.todo !== binding.todo ||
       admissionBinding.signature !== binding.signature
     )
       return { state: "paused", reason: "ticket-changed" };
@@ -262,7 +259,6 @@ export function createModelGate({
     if (
       !finalBinding?.ok ||
       finalBinding.ticket !== binding.ticket ||
-      finalBinding.todo !== binding.todo ||
       finalBinding.signature !== binding.signature
     )
       return { state: "paused", reason: "ticket-changed" };
@@ -273,7 +269,6 @@ export function createModelGate({
         sessionID,
         id: `msg_${randomUUID()}`,
         ticket: binding.ticket,
-        todo: binding.todo,
         task: decision.task,
         reason: decision.reason,
       });
@@ -293,21 +288,19 @@ export function createModelGate({
       )
         return { state: "ignored", reason: "session-not-idle" };
       const sessionID = sessionIDFromEvent(event);
-      if (allowed.has(sessionID)) recordEvent(sessionID, event.type);
+      if (typeof sessionID === "string") recordEvent(sessionID, event.type);
       return consider(sessionID);
     },
     async scan() {
-      if (allowed.size === 0) return [];
       const sessions = await api.sessions();
       if (!Array.isArray(sessions)) return { state: "paused", reason: "session-list-unavailable" };
       const results = [];
-      for (const sessionID of new Set(sessions.filter((id) => allowed.has(id))))
+      for (const sessionID of new Set(sessions.filter((id) => typeof id === "string")))
         results.push(await consider(sessionID));
       return results;
     },
     async stop(sessionID) {
       if (typeof sessionID !== "string") return { state: "paused", reason: "session-id-required" };
-      if (!allowed.has(sessionID)) return { state: "ignored", reason: "session-not-allowlisted" };
       stopRequested.add(sessionID);
       try {
         await updateState(sessionID, (saved) => ({ ...saved, sessionID, stopped: true }), {
@@ -320,7 +313,6 @@ export function createModelGate({
     },
     async status(sessionID) {
       if (typeof sessionID !== "string") return { state: "paused", reason: "session-id-required" };
-      if (!allowed.has(sessionID)) return { state: "ignored", reason: "session-not-allowlisted" };
       let preflight;
       if (typeof api.diagnose === "function") {
         try {

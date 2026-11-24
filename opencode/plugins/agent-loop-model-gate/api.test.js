@@ -40,13 +40,11 @@ async function ticketRecords(t, { status = "in_progress", bindSession = sessionI
   const directory = await realpath(await mkdtemp(join(tmpdir(), "model-gate-api-test-")));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const ticket = join(directory, "fixture-ticket.md");
-  const todo = join(directory, "fixture-ticket.todo");
   await writeFile(
     ticket,
-    `---\ntitle: Fixture ticket\nstatus: ${status}\nwork_session_id: ${bindSession}\n---\n[TODO](fixture-ticket.todo)\n`,
+    `---\ntitle: Fixture ticket\nstatus: ${status}\nwork_session_id: ${bindSession}\n---\n## Tasks\n- [ ] Continue scoped work\n`,
   );
-  await writeFile(todo, "# TODO\n- [ ] Continue scoped work\n");
-  return { ticket, todo };
+  return { ticket };
 }
 
 function context(overrides = {}) {
@@ -150,28 +148,13 @@ test("sessions paginates in the current directory and deduplicates valid IDs", a
   ]);
 });
 
-test("an explicit allowlist drives startup checks without listing other sessions", async () => {
-  const f = context({ list: async () => { throw new Error("must not list sessions"); } });
-  const api = createModelGateAPI(f.ctx, { allowedSessionIDs: [sessionID] });
-  assert.deepEqual(await api.sessions(), [sessionID]);
-  assert.equal(f.calls.some(([name]) => name === "list"), false);
-});
-
-test("binding rejects a session from a nonmatching location before reading ticket entries", async (t) => {
+test("binding permits a session in another worktree of the same project", async (t) => {
   const records = await ticketRecords(t);
-  const f = context({
-    state: {
-      session: session({ location: { directory: "/elsewhere", workspaceID: location.workspaceID } }),
-      entries: [entry(records.ticket)],
-    },
-  });
-
-  assert.deepEqual(await f.api.binding(sessionID), { ok: false, reason: "session-not-eligible" });
-  assert.equal(f.calls.some(([name]) => name === "entries"), false);
-  assert.equal(f.calls.some(([name]) => name === "generate"), false);
+  const f = context({ state: { session: session({ location: { directory: "/elsewhere", workspaceID: location.workspaceID } }), entries: [entry(records.ticket)] } });
+  assert.equal((await f.api.binding(sessionID)).ok, true);
 });
 
-test("allowlisted worktree sessions still require the current project and exact ticket binding", async (t) => {
+test("worktree sessions still require the current project and exact ticket binding", async (t) => {
   const records = await ticketRecords(t);
   const f = context({
     location: { ...location, workspaceID: undefined },
@@ -180,7 +163,7 @@ test("allowlisted worktree sessions still require the current project and exact 
       entries: [entry(records.ticket)],
     },
   });
-  const allowedAPI = createModelGateAPI(f.ctx, { allowedSessionIDs: [sessionID] });
+  const allowedAPI = createModelGateAPI(f.ctx);
   const allowed = await allowedAPI.binding(sessionID);
   assert.equal(allowed.ok, true);
 
@@ -214,23 +197,22 @@ test("binding rejects absent exact ticket evidence and invalid records", async (
 
   const invalidRecords = context();
   invalidRecords.state.entries = [entry(records.ticket)];
-  await writeFile(records.ticket, "---\ntitle: Fixture ticket\nstatus: complete\nwork_session_id: ses_other\n---\n[TODO](fixture-ticket.todo)\n");
+  await writeFile(records.ticket, "---\ntitle: Fixture ticket\nstatus: complete\nwork_session_id: ses_other\n---\n## Tasks\n- [ ] Continue scoped work\n");
   const invalid = await invalidRecords.api.binding(sessionID);
   assert.equal(invalid.ok, false);
   assert.equal(invalidRecords.calls.some(([name]) => name === "generate"), false);
 });
 
-test("binding supplies the current ticket and TODO content with a content fingerprint", async (t) => {
+test("binding supplies the current ticket content with a content fingerprint", async (t) => {
   const records = await ticketRecords(t);
   const f = context({ state: { entries: [entry(records.ticket)] } });
 
   const first = await f.api.binding(sessionID);
   assert.equal(first.ok, true);
   assert.match(first.ticketContent, /Fixture ticket/);
-  assert.match(first.todoContent, /Continue scoped work/);
   assert.match(first.signature, /^[a-f0-9]{64}$/);
 
-  await writeFile(records.ticket, `---\ntitle: Changed ticket\nstatus: in_progress\nwork_session_id: ${sessionID}\n---\n[TODO](fixture-ticket.todo)\n`);
+  await writeFile(records.ticket, `---\ntitle: Changed ticket\nstatus: in_progress\nwork_session_id: ${sessionID}\n---\n## Tasks\n- [ ] Continue scoped work\n`);
   const changed = await f.api.binding(sessionID);
   assert.equal(changed.ok, true);
   assert.notEqual(changed.signature, first.signature);
@@ -291,14 +273,14 @@ test("hardCheck accepts a successful idle followed by a completed assistant resp
   });
 });
 
-test("hardCheck permits only allowlisted cross-worktree sessions and checks that location's forms", async () => {
+test("hardCheck permits cross-worktree sessions and checks that location's forms", async () => {
   const f = context({
     location: { ...location, workspaceID: undefined },
     state: {
       session: session({ location: { directory: "/fixture/go-gui-worktree", workspaceID: null } }),
     },
   });
-  const api = createModelGateAPI(f.ctx, { allowedSessionIDs: [sessionID] });
+  const api = createModelGateAPI(f.ctx);
   assert.deepEqual(await api.hardCheck(sessionID), {
     ok: true,
     idleID: "idle-fixture",
@@ -316,7 +298,7 @@ test("hardCheck fails closed when cross-worktree location forms cannot be checke
     },
   });
   f.ctx.form.list = undefined;
-  const api = createModelGateAPI(f.ctx, { allowedSessionIDs: [sessionID] });
+  const api = createModelGateAPI(f.ctx);
   assert.deepEqual(await api.hardCheck(sessionID), {
     ok: false,
     reason: "location-form-status-unavailable",
@@ -325,7 +307,7 @@ test("hardCheck fails closed when cross-worktree location forms cannot be checke
 
 test("diagnose identifies the unavailable pending-state surface without reading history", async () => {
   const f = context({ state: { locationForms: undefined } });
-  const api = createModelGateAPI(f.ctx, { allowedSessionIDs: [sessionID] });
+  const api = createModelGateAPI(f.ctx);
 
   assert.deepEqual(await api.diagnose(sessionID), {
     state: "unavailable",
@@ -348,9 +330,7 @@ test("decide uses session.generate and returns generated text without prompting"
   const result = await f.api.decide({
     sessionID,
     ticket: "/tickets/fixture.md",
-    todo: "/tickets/fixture.todo",
-    ticketContent: "# Current ticket\nStatus: in_progress",
-    todoContent: "# TODO\n- [ ] Continue",
+    ticketContent: "# Current ticket\nStatus: in_progress\n## Tasks\n- [ ] Continue",
     lastMessage: "Current response.",
   });
 
@@ -362,7 +342,7 @@ test("decide uses session.generate and returns generated text without prompting"
   assert.match(request.prompt, /exactly copy one unchecked task/);
   assert.match(request.prompt, /Current response\./);
   assert.match(request.prompt, /Current ticket Markdown/);
-  assert.match(request.prompt, /Current linked TODO/);
+  assert.doesNotMatch(request.prompt, /Current linked TODO/);
   assert.match(request.prompt, /Current ticket/);
   assert.match(request.prompt, /Continue/);
 });
@@ -373,9 +353,8 @@ test("prompt queues a continuation message through session.prompt", async () => 
     sessionID,
     id: "msg_continuation",
     ticket: "/tickets/fixture.md",
-    todo: "/tickets/fixture.todo",
     task: "Continue scoped work",
-    reason: "TODO item is ready.",
+    reason: "Ticket task is ready.",
   };
 
   const result = await f.api.prompt(request);
@@ -386,7 +365,7 @@ test("prompt queues a continuation message through session.prompt", async () => 
   assert.equal(f.calls[0][1].delivery, "queue");
   assert.match(f.calls[0][1].text, /Continue the approved ticket/);
   assert.match(f.calls[0][1].text, /fixture\.md/);
-  assert.match(f.calls[0][1].text, /fixture\.todo/);
-  assert.match(f.calls[0][1].text, /TODO item is ready/);
-  assert.match(f.calls[0][1].text, /exact unchecked TODO task: "Continue scoped work"/);
+  assert.doesNotMatch(f.calls[0][1].text, /fixture\.todo/);
+  assert.match(f.calls[0][1].text, /Ticket task is ready/);
+  assert.match(f.calls[0][1].text, /exact unchecked task: "Continue scoped work"/);
 });

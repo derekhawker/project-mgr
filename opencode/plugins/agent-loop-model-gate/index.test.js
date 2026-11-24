@@ -9,6 +9,6 @@ test("event subscription uses the engine's shared wake-event list", () => {
   assert.match(indexSource, /ctx\.event\.subscribe\(\s*\{\s*types:\s*wakeEventTypes\s*,/s);
   assert.match(indexSource, /eventOwnerSessionIDs\(ctx,\s*\[sessionID\]\)/);
   assert.match(indexSource, /sessionIDFromEvent\(event\)/);
-  assert.match(indexSource, /if\s*\(!allowedSessionIDs\.includes\(sessionID\)\)\s*return/);
+  assert.doesNotMatch(indexSource, /allowedSessionIDs/);
   assert.doesNotMatch(indexSource, /ctx\.event\.subscribe\(\s*\{\s*types:\s*\[/s);
 });

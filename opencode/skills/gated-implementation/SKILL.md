@@ -78,21 +78,21 @@ Work in coherent user journeys: connect the steps needed to deliver and exercise
 one useful outcome, even when they cross components. Avoid isolated pieces that
 leave the journey disconnected and batches that combine unrelated outcomes.
 
-At each checkpoint, reconcile the TODO against approved outcomes and current
+At each checkpoint, reconcile the record's tasks against approved outcomes and current
 state. After finishing an item, continue with the next ready approved item. If the
-queue is empty but acceptance criteria remain open, rebuild it from those gaps and
-continue. An empty TODO means completion only when all approved outcomes pass.
-Keep it a short queue: replace finished actions with next actions; keep evidence
+task list is empty but acceptance criteria remain open, add tasks for those gaps and
+continue. An empty list means completion only when all approved outcomes pass.
+Keep tasks concise and evidence
 in tests or artifacts. Stop at verified completion, a blocker, a consequential
 decision, or the approval boundary.
 
 On “continue” or resume, re-read the record and apply this loop to the same plan;
-do not rely on an informal todo list from the conversation.
+do not rely on an informal list from the conversation.
 
 Before declaring execution complete, reconcile the implementation against every
 in-scope outcome and acceptance check. Use available tools to exercise the
 integrated result; report checks run, observed results, and checks the environment
-could not perform. A claim or TODO edit is not proof. Classify discoveries as
+could not perform. A claim or task edit is not proof. Classify discoveries as
 in-scope, follow-up, or approval-needed; continue ready work and seek approval
 before changing the approved boundary.
 
@@ -116,15 +116,14 @@ Update the record after approval, a material plan change, a failed check that
 changes readiness, a blocker, or before handoff/stopping. Record net state, not
 turns, tool calls, or repeated validation results.
 
-Reconcile the entire TODO with approved outcomes, checkout, dependencies, and
+Reconcile the tasks with approved outcomes, checkout, dependencies, and
 evidence—not only the task just worked on. Mark verified tasks complete, add
 in-scope work, reorder as dependencies change, and remove unnecessary/obsolete
 tasks with a short reason when that reason affects scope or recovery. Remove done
-tasks once they no longer guide open work; keep durable proof in tests/artifacts
+tasks when they no longer help track the work; keep durable proof in tests/artifacts
 and point to it only when needed for acceptance. An optional `Explore later`
-section holds at most three brief, unapproved topics; promote a topic only after
-approval. Keep the TODO to actionable state, never a running history. Persist only
-when that state changes. Follow local closeout rules.
+section may hold brief, unapproved topics; promote a topic only after
+approval. Keep the record's status concise and current. Follow local closeout rules.
 
 Keep open, blocked, and unverified tasks distinguishable. Record completed outcome
 evidence in the authoritative ticket before removing tasks that no longer guide

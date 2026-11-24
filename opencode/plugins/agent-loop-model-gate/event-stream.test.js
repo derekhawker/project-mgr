@@ -167,11 +167,10 @@ test("aborting during retry wait closes without opening another subscription", a
   assert.deepEqual(states, ["retrying", "closed"]);
 });
 
-test("received stream events pass through the session allowlist gate without prompting", async () => {
+test("received stream events reach ticket binding without prompting unbound sessions", async () => {
   const controller = new AbortController();
   const calls = [];
   const gate = createModelGate({
-    allowedSessionIDs: ["ses_allowed"],
     storage: { get: async () => undefined, set: async () => {} },
     api: {
       binding: async (...args) => { calls.push(["binding", ...args]); },
@@ -195,6 +194,6 @@ test("received stream events pass through the session allowlist gate without pro
     wait: async () => assert.fail("aborting after the event must not retry"),
   });
 
-  assert.deepEqual(await result, { state: "ignored", reason: "session-not-allowlisted" });
-  assert.deepEqual(calls, []);
+  assert.deepEqual(await result, { state: "ignored", reason: "ticket-unavailable" });
+  assert.deepEqual(calls, [["binding", "ses_other"]]);
 });

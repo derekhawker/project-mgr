@@ -16,7 +16,7 @@ test("session event routing uses one consistent SDK envelope precedence", () => 
   assert.equal(sessionIDFromEvent({}), undefined);
 });
 
-test("event ownership is restricted to exact allowlisted sessions in the current directory", async () => {
+test("event ownership is restricted to requested sessions in the current directory", async () => {
   const calls = [];
   const ctx = {
     location: { directory: "/work/go-gui" },

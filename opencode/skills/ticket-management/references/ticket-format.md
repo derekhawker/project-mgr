@@ -31,8 +31,8 @@ status: draft
 As grooming proceeds, add the relevant high-level outcomes, scope, non-goals,
 acceptance checks, validation, material decisions, and approval. The main ticket
 remains authoritative for identity, status, outcomes, acceptance criteria, scope,
-decisions, and session ID. For active execution, use the linked `.todo` as the
-single actionable task list. Keep it to open work and a small optional
-`Explore later` scratchpad; keep task-level decomposition out of the ticket and
-historical narratives out of the TODO. For cancellation, record the reason and
+decisions, session ID, and tasks. For active execution, use a `## Tasks` checklist
+in the ticket as the actionable plan. Update task statuses, add or change tasks,
+and remove obsolete tasks as needed. Keep status notes concise and current rather
+than a history of activity. For cancellation, record the reason and
 disposition of completed and remaining work in the ticket.
