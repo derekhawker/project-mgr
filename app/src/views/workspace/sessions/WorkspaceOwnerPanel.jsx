@@ -1,14 +1,9 @@
 import { Button, Select, TextArea } from "@ui-lib";
-import { Show } from "solid-js";
 import styles from "./WorkspaceOwnerPanel.module.css";
 
 export function WorkspaceOwnerPanel(props) {
   return (
-    <section
-      id="selected-owner"
-      hidden={!props.visible()}
-      classList={{ "proposal-mode": props.proposalMode() }}
-    >
+    <section id="selected-owner">
       <p
         id="workspace-status"
         class="workspace-status"
@@ -40,28 +35,6 @@ export function WorkspaceOwnerPanel(props) {
           {props.pendingPromptLabel()}
         </Button>
       </section>
-      <p
-        id="session-status"
-        class="visually-hidden"
-        role="status"
-        aria-live="polite"
-      >
-        {props.sessionStatus()}
-      </p>
-      <ul
-        id="pending-inputs"
-        class="visually-hidden"
-        aria-label="Pending input"
-      >
-        {props.pendingInputs?.()}
-      </ul>
-      <section class="terminal-card" aria-label="OpenCode terminal">
-        <div
-          id="terminal-views"
-          class="terminal-views"
-          ref={props.setTerminalViews}
-        />
-      </section>
       <form
         id="quick-request-form"
         class={styles.requestForm}
@@ -92,9 +65,7 @@ export function WorkspaceOwnerPanel(props) {
             disabled={props.modelDisabled()}
             value={props.selectedModel()}
             placeholder={
-              props.modelError()
-                ? "Models unavailable"
-                : "Loading models…"
+              props.modelError() ? "Models unavailable" : "Loading models…"
             }
             options={props.modelOptions()}
             onChange={props.onModelChange}

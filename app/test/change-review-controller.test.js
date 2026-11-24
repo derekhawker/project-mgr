@@ -22,7 +22,6 @@ function fixture({
     "Loading",
     "Mode",
     "DocsButtonSelected",
-    "SelectedOwnerVisible",
   ];
   const deps = Object.fromEntries(
     setters.map((name) => [
@@ -34,9 +33,6 @@ function fixture({
   );
   deps.setDocsButtonSelected = (value) => {
     state.docsSelected = value;
-  };
-  deps.setSelectedOwnerVisible = (value) => {
-    state.ownerVisible = value;
   };
   deps.getSelectedWorkspace = () => workspace;
   deps.getSelectedOwnerRepositoryCount = () => count;
@@ -74,12 +70,15 @@ test("availability and Docs refresh preserve unavailable guards and terminal tra
 });
 
 test("unavailable workspace tools do not replace the ticket viewer with the owner terminal", () => {
-  const f = fixture({ workspace: { id: "w1" }, count: 0, ticketViewerVisible: true });
+  const f = fixture({
+    workspace: { id: "w1" },
+    count: 0,
+    ticketViewerVisible: true,
+  });
   f.controller.syncChangeReviewAvailability();
 
   assert.equal(f.state.Available, false);
   assert.equal(f.state.Visible, false);
-  assert.equal(f.state.ownerVisible, undefined);
   assert.deepEqual(f.calls, ["terminal", "sync-tools"]);
 });
 
@@ -103,7 +102,6 @@ test("successful load updates exact summary and repository signals", async () =>
     "opening review must not reset the saved layout",
   );
   assert.equal(f.state.Visible, true);
-  assert.equal(f.state.ownerVisible, false);
 });
 
 test("stale owner response does not replace displayed results", async () => {

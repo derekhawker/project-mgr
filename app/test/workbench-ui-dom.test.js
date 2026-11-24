@@ -22,6 +22,7 @@ export { TabList } from "@ui-lib";
 export { RepositoryToolsMenu } from ${JSON.stringify(resolve(root, "src/views/workspace/repository-tools/RepositoryToolsMenu.jsx"))};
 export { isRepositoryToolsMenuOpen } from ${JSON.stringify(resolve(root, "src/views/workspace/repository-tools/repositoryToolsController.js"))};
 export { WorkspaceOwnerPanel } from ${JSON.stringify(resolve(root, "src/views/workspace/sessions/WorkspaceOwnerPanel.jsx"))};
+export { TerminalSurface } from ${JSON.stringify(resolve(root, "src/views/workspace/sessions/TerminalSurface.jsx"))};
 export { NewWorkModal } from ${JSON.stringify(resolve(root, "src/features/new-work/modal/NewWorkModal.jsx"))};
 export { createQuickRequestCreationController } from ${JSON.stringify(resolve(root, "src/features/new-work/modal/quickRequestCreationController.js"))};
 `,
@@ -71,6 +72,7 @@ const {
   RepositoryToolsMenu,
   isRepositoryToolsMenuOpen,
   WorkspaceOwnerPanel,
+  TerminalSurface,
   NewWorkModal,
   createQuickRequestCreationController,
 } = await import(pathToFileURL(join(temp, "out/test.js")));
@@ -586,10 +588,13 @@ test("hidden workbench Tools menu cannot dismiss ticket-reader Tools before its 
     },
     onRun: () => {},
   });
-  const dispose = render(() => [
-    createComponent(RepositoryToolsMenu, propsFor("ticket-reader", true)),
-    createComponent(RepositoryToolsMenu, propsFor("ticket-workbench", false)),
-  ], host);
+  const dispose = render(
+    () => [
+      createComponent(RepositoryToolsMenu, propsFor("ticket-reader", true)),
+      createComponent(RepositoryToolsMenu, propsFor("ticket-workbench", false)),
+    ],
+    host,
+  );
   try {
     const button = host.querySelector("#ticket-reader-menu button");
     button.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
@@ -617,8 +622,9 @@ test("ticket-workbench Tools closes when a menu action is selected", async () =>
     onRun: () => {},
   });
   try {
-    const action = [...view.host.querySelectorAll("button")]
-      .find((button) => button.textContent === "Open terminal")
+    const action = [...view.host.querySelectorAll("button")].find(
+      (button) => button.textContent === "Open terminal",
+    );
     action.click();
     await Promise.resolve();
     assert.equal(open(), false);
@@ -628,7 +634,7 @@ test("ticket-workbench Tools closes when a menu action is selected", async () =>
   }
 });
 
-test("owner visibility preserves the terminal while removed workspace controls stay absent", () => {
+test("owner route content is separate from the persistent terminal surface", () => {
   const [visible, setVisible] = createSignal(true);
   const [quickRequest, setQuickRequest] = createSignal(false);
   let quickSubmissions = 0,
@@ -637,8 +643,6 @@ test("owner visibility preserves the terminal while removed workspace controls s
     empty = () => "",
     list = () => [];
   const props = {
-    visible,
-    proposalMode: falseValue,
     title: empty,
     description: empty,
     status: empty,
@@ -646,7 +650,6 @@ test("owner visibility preserves the terminal while removed workspace controls s
     pendingPromptText: empty,
     pendingPromptDisabled: falseValue,
     pendingPromptLabel: empty,
-    sessionStatus: empty,
     quickRequestTerminalActions: falseValue,
     selectedAttachRepository: empty,
     attachRepositoryOptions: list,
@@ -681,15 +684,25 @@ test("owner visibility preserves the terminal while removed workspace controls s
       keydowns++;
     },
   };
-  const view = mount(WorkspaceOwnerPanel, props);
-  const terminal = view.host.querySelector("#terminal-views");
-  const quickForm = view.host.querySelector("#quick-request-form");
-  assert.equal(view.host.querySelector("#workspace-session-form"), null);
-  assert.equal(view.host.querySelector("#workspace-prompt"), null);
+  const ownerView = mount(WorkspaceOwnerPanel, props);
+  const terminalView = mount(TerminalSurface, {
+    visible,
+    sessionStatus: empty,
+    pendingInputs: list,
+  });
+  const terminal = terminalView.host.querySelector("#terminal-views");
+  const quickForm = ownerView.host.querySelector("#quick-request-form");
+  assert.ok(ownerView.host.querySelector("#selected-owner"));
+  assert.equal(ownerView.host.querySelector("#terminal-views"), null);
+  assert.equal(ownerView.host.querySelector("#workspace-session-form"), null);
+  assert.equal(ownerView.host.querySelector("#workspace-prompt"), null);
   assert.equal(quickForm.hidden, true);
-  assert.equal(view.host.querySelector("#quick-prompt").required, true);
-  assert.equal(view.host.querySelector("#quick-model-value").required, true);
-  assert.equal(view.host.querySelector("#quick-submit").type, "submit");
+  assert.equal(ownerView.host.querySelector("#quick-prompt").required, true);
+  assert.equal(
+    ownerView.host.querySelector("#quick-model-value").required,
+    true,
+  );
+  assert.equal(ownerView.host.querySelector("#quick-submit").type, "submit");
   const child = document.createElement("div");
   terminal.append(child);
   quickForm.dispatchEvent(new Event("keydown", { bubbles: true }));
@@ -699,10 +712,12 @@ test("owner visibility preserves the terminal while removed workspace controls s
   setQuickRequest(true);
   setQuickRequest(false);
   setVisible(false);
+  assert.equal(terminalView.host.querySelector(".terminal-card").hidden, true);
   setVisible(true);
-  assert.equal(view.host.querySelector("#terminal-views"), terminal);
+  assert.equal(terminalView.host.querySelector("#terminal-views"), terminal);
   assert.equal(terminal.firstChild, child);
   assert.equal(quickSubmissions, 1);
   assert.equal(keydowns, 1);
-  view.dispose();
+  ownerView.dispose();
+  terminalView.dispose();
 });

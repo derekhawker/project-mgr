@@ -17,7 +17,6 @@ export function createChangeReviewController({
   setChangeReviewRepositories,
   setChangeReviewLoading,
   setDocsButtonSelected,
-  setSelectedOwnerVisible,
 }) {
   let generation = 0;
   function cancelPendingReview() {
@@ -29,7 +28,6 @@ export function createChangeReviewController({
     cancelPendingReview();
     setChangeReviewVisible(false);
     docsController.showTerminal();
-    setSelectedOwnerVisible(true);
     setChangeReviewSelected(false);
   }
 
@@ -69,7 +67,6 @@ export function createChangeReviewController({
     docsController.showTerminal();
     setChangeReviewDisabled(true);
     setChangeReviewSelected(true);
-    setSelectedOwnerVisible(false);
     setChangeReviewVisible(true);
     setChangeReviewSummary("Loading changes…");
     setChangeReviewError("");

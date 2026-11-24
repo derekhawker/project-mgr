@@ -21,6 +21,7 @@ await writeFile(
   export { DocsPane } from ${JSON.stringify(resolve(root, "src/views/workspace/docs/DocsPane.jsx"))};
   export { ChangeReviewPanel } from ${JSON.stringify(resolve(root, "src/views/workspace/change-review/ChangeReviewPanel.jsx"))};
   export { WorkspaceOwnerPanel } from ${JSON.stringify(resolve(root, "src/views/workspace/sessions/WorkspaceOwnerPanel.jsx"))};
+  export { TerminalSurface } from ${JSON.stringify(resolve(root, "src/views/workspace/sessions/TerminalSurface.jsx"))};
 `,
 );
 try {
@@ -64,6 +65,7 @@ const {
   DocsPane,
   ChangeReviewPanel,
   WorkspaceOwnerPanel,
+  TerminalSurface,
 } = await import(pathToFileURL(join(temp, "out/test.js")));
 test.after(async () => {
   await window.happyDOM.abort();
@@ -483,15 +485,9 @@ test("Docs source selection stays scoped to its repository and follows clicks", 
   view.dispose();
 });
 
-test("workspace terminal panel omits removed Workspace options", () => {
+test("workspace owner route omits removed options while terminal surface stays separate", () => {
   const values = {
-    visible: true,
-    proposalMode: false,
-    quickRequest: false,
-    attachRepositoryOptions: [],
-    repositories: [],
     pendingPromptVisible: false,
-    quickRequestTerminalActions: false,
     quickRequestBusy: false,
     modelBusy: false,
     modelDisabled: false,
@@ -503,7 +499,11 @@ test("workspace terminal panel omits removed Workspace options", () => {
     { get: (_target, key) => () => values[key] ?? "" },
   );
   const view = mount(WorkspaceOwnerPanel, props);
-  const terminal = view.host.querySelector(".terminal-card");
+  const terminalView = mount(TerminalSurface, {
+    visible: () => true,
+    sessionStatus: () => "",
+    pendingInputs: () => null,
+  });
   assert.equal(view.host.querySelector(".owner-management"), null);
   assert.equal(
     view.host.querySelector("summary").closest("#quick-request-form").hidden,
@@ -513,6 +513,11 @@ test("workspace terminal panel omits removed Workspace options", () => {
   assert.equal(view.host.querySelector("#attach-repository"), null);
   assert.equal(view.host.querySelector("#complete-workspace"), null);
   assert.equal(view.host.querySelector(".terminal-context"), null);
-  assert.equal(terminal.querySelector("#terminal-views") !== null, true);
+  assert.equal(view.host.querySelector("#terminal-views"), null);
+  assert.equal(
+    terminalView.host.querySelector(".terminal-card #terminal-views") !== null,
+    true,
+  );
   view.dispose();
+  terminalView.dispose();
 });

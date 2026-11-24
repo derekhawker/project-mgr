@@ -197,6 +197,7 @@ body {
 }
 .right-content.owner-active {
   display: flex;
+  flex-direction: column;
   overflow: hidden;
 }
 .right-content.quick-request-terminal-page {
@@ -204,18 +205,6 @@ body {
   flex: 1 1 0;
   flex-direction: column;
   overflow: hidden;
-}
-.right-content.quick-request-terminal-page #workspace-shell {
-  display: none !important;
-}
-.right-content.quick-request-terminal-page
-  #selected-owner
-  > :not(.terminal-card):not(.workspace-status) {
-  display: none !important;
-}
-.right-content.quick-request-terminal-page #selected-owner {
-  min-height: 0;
-  flex: 1 1 0;
 }
 .right-content.quick-request-terminal-page .terminal-card {
   min-height: 0;
@@ -234,8 +223,11 @@ body {
   width: 100%;
   display: flex;
   flex-direction: column;
-  flex: 1 1 0;
+  flex: 0 0 auto;
   overflow: hidden;
+}
+.right-content.proposal-mode #selected-owner {
+  display: none !important;
 }
 #selected-owner .pending-starting-prompt {
   display: grid;
@@ -265,9 +257,6 @@ body {
   grid-column: 2;
   grid-row: 1 / span 2;
   white-space: nowrap;
-}
-.proposal-mode > :not(.terminal-card) {
-  display: none !important;
 }
 .success-message {
   min-height: 1.2em;

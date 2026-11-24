@@ -32,9 +32,7 @@ export function createDirectoriesController({
     setDirectoriesVisible,
     setPortsVisible,
     setNoSelectionVisible,
-    setSelectedOwnerVisible,
     setWorkspaceShellVisible,
-    setRightContentOwnerActive,
     setQuickRequestTerminalPage,
     setWorkspaceSelected,
   } = setters;
@@ -173,9 +171,7 @@ export function createDirectoriesController({
     setPortsVisible?.(false);
     setDirectoriesVisible(true);
     setNoSelectionVisible(false);
-    setSelectedOwnerVisible(false);
     setWorkspaceShellVisible(false);
-    setRightContentOwnerActive(false);
     setQuickRequestTerminalPage(false);
     setRepositoryError("");
     setRepositoryStatus("Loading directories…");

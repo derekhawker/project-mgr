@@ -37,6 +37,10 @@ const ownerPanel = readFileSync(
   join(process.cwd(), "src/views/workspace/sessions/WorkspaceOwnerPanel.jsx"),
   "utf8",
 );
+const terminalSurface = readFileSync(
+  join(process.cwd(), "src/views/workspace/sessions/TerminalSurface.jsx"),
+  "utf8",
+);
 const appNotice = readFileSync(
   join(process.cwd(), "src/application/AppNotice.jsx"),
   "utf8",
@@ -95,7 +99,7 @@ const directoriesNavigationButton = readFileSync(
   join(process.cwd(), "src/views/directories/DirectoriesNavigationButton.jsx"),
   "utf8",
 );
-const uiMarkup = `${html}\n${workspaceShell}\n${rightContentShell}\n${newWorkMenu}\n${newWorkModal}\n${ownerPanel}\n${appNotice}\n${quickRequestHistoryPage}\n${repositoryToolsMenu}\n${directoriesPageMarkup}\n${directoriesNavigationButton}\n${commandResult}\n${applicationShellStatus}`;
+const uiMarkup = `${html}\n${workspaceShell}\n${rightContentShell}\n${newWorkMenu}\n${newWorkModal}\n${ownerPanel}\n${terminalSurface}\n${appNotice}\n${quickRequestHistoryPage}\n${repositoryToolsMenu}\n${directoriesPageMarkup}\n${directoriesNavigationButton}\n${commandResult}\n${applicationShellStatus}`;
 
 test("startup and command result feedback share the production Solid shell view", () => {
   assert.match(html, /<div id="app-root"><\/div>/);
@@ -310,10 +314,7 @@ test("proposal owner mode is presented and identified through the Solid signal",
     ),
     "utf8",
   );
-  assert.match(
-    ownerPanel,
-    /classList=\{\{\s*["']proposal-mode["']:\s*props\.proposalMode\(\)\s*\}\}/,
-  );
+  assert.match(rightContentShell, /"proposal-mode": props\.proposalMode\(\)/);
   assert.match(
     main,
     /const \[proposalMode, setProposalMode\] = createSignal\(false\)/,
@@ -954,11 +955,15 @@ test("Quick Requests use a dedicated available-height page with a visible way ba
     /classList\.(?:add|remove|toggle)\(['"](?:owner-active|quick-request-terminal-page)/,
   );
   assert.match(main, /setWorkspaceShellVisible\(!isQuickRequest\)/);
+  assert.match(ownerPanel, /id="selected-owner"/);
+  assert.doesNotMatch(ownerPanel, /hidden=\{!props\.visible\(\)\}/);
   assert.match(
-    ownerPanel,
-    /id="selected-owner"[\s\S]*hidden=\{!props\.visible\(\)\}/,
+    rightContentShell,
+    /const ownerSurfaceActive = \(\) =>[\s\S]*props\.location\(\)\.destination/,
   );
-  assert.match(main, /visible: selectedOwnerVisible/);
+  assert.match(rightContentShell, /workspaceOwnerView\?\.\(\)/);
+  assert.match(rightContentShell, /terminalSurface\?\.\(ownerSurfaceActive\)/);
+  assert.doesNotMatch(main, /selectedOwnerVisible|rightContentOwnerActive/);
   assert.doesNotMatch(
     main,
     /selectedOwner\.hidden\s*=|querySelector\('#selected-owner'\)\.hidden\s*=/,
@@ -1258,8 +1263,8 @@ test("terminal card contains only the terminal viewport and has no surrounding i
     "utf8",
   );
   const terminalCard =
-    ownerPanel.match(
-      /<section class="terminal-card"[^>]*>([\s\S]*?)<\/section>/,
+    terminalSurface.match(
+      /<section\s+class="terminal-card"[^>]*>([\s\S]*?)<\/section>/,
     )?.[1] || "";
   assert.match(
     terminalCard,
@@ -1270,7 +1275,7 @@ test("terminal card contains only the terminal viewport and has no surrounding i
     /const \[sessionStatusMessage, setSessionStatusMessage\] = createSignal\(""\)/,
   );
   assert.match(
-    ownerPanel,
+    terminalSurface,
     /id="session-status"[\s\S]*?role="status"[\s\S]*?\{props\.sessionStatus\(\)\}/,
   );
   assert.match(

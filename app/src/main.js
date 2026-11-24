@@ -63,6 +63,7 @@ import { ChangeReviewPanel } from "./views/workspace/change-review/ChangeReviewP
 import { DocsPane } from "./views/workspace/docs/DocsPane.jsx";
 import { RepositoryToolsMenu } from "./views/workspace/repository-tools/RepositoryToolsMenu.jsx";
 import { WorkspaceOwnerPanel } from "./views/workspace/sessions/WorkspaceOwnerPanel.jsx";
+import { TerminalSurface } from "./views/workspace/sessions/TerminalSurface.jsx";
 import { ApplicationShellStatus } from "./application/ApplicationShellStatus.jsx";
 import { createApplicationShellView } from "./application/applicationShellView.js";
 import { AppNotice } from "./application/AppNotice.jsx";
@@ -105,8 +106,6 @@ const appLifetime = createApplicationLifetime({
 });
 if (import.meta.hot) import.meta.hot.dispose(() => appLifetime.dispose());
 const rightPaneRouter = createApplicationRouter("no-selection");
-const [rightContentOwnerActive, setRightContentOwnerActive] =
-  createSignal(false);
 const [quickRequestTerminalPage, setQuickRequestTerminalPageState] =
   createSignal(false);
 function setQuickRequestTerminalPage(value) {
@@ -179,16 +178,10 @@ const [quickRequestError, setQuickRequestError] = createSignal("");
 const quickRequestFormView = createQuickRequestFormView();
 const [terminalRuntimeStartupFailed, setTerminalRuntimeStartupFailed] =
   createSignal(false);
-const [selectedOwnerVisible, setSelectedOwnerVisibleState] =
-  createSignal(false);
-function setSelectedOwnerVisible(value) {
-  setSelectedOwnerVisibleState(value);
-}
 const [proposalMode, setProposalMode] = createSignal(false);
-const workspaceOwnerPanel = () =>
+const workspaceOwnerView = () =>
   WorkspaceOwnerPanel({
     status: ownerStatus,
-    sessionStatus: sessionStatusMessage,
     pendingPromptVisible,
     pendingPromptDisabled,
     pendingPromptText,
@@ -205,13 +198,17 @@ const workspaceOwnerPanel = () =>
     quickRequestBusy: quickRequestFormView.isBusy,
     onModelChange: (value) => setQuickSelectedModel(value),
     onEnterToSubmit: handleEnterToSubmit,
-    visible: selectedOwnerVisible,
     proposalMode,
     onSubmitStartingPrompt: () => submitPendingStartingPrompt(),
     onPendingPromptTextInput: setPendingPromptText,
     onQuickRequestSubmit: handleQuickRequestSubmit,
+  });
+const terminalSurface = (visible) =>
+  TerminalSurface({
+    sessionStatus: sessionStatusMessage,
     pendingInputs: sessions.pendingInputs,
     setTerminalViews: sessions.setTerminalViews,
+    visible,
   });
 
 const shellView = createApplicationShellView();
@@ -361,8 +358,6 @@ async function workWorkspaceTicket(workspaceId, filename) {
   setFullRequestVisible(false);
   setQuickRequestTerminalPage(false);
   setWorkspaceShellVisible(true);
-  setSelectedOwnerVisible(true);
-  setRightContentOwnerActive(true);
   const route = rightPaneRouter.navigate("workspace-owner", {
     workspaceId,
     filename,
@@ -378,13 +373,11 @@ async function workWorkspaceTicket(workspaceId, filename) {
     const result = await workOnWorkspaceTicket(invoke, workspaceId, filename);
     recordUiDiagnostic("WorkspaceTicketWork", "command-success");
     if (!isCurrent()) return;
-    if (!isCurrent()) return;
     rememberWorkspaceSession(result.session);
     setTicketSessionScope(filename);
     setTicketWorkbenchActive(true);
     setTicketViewerVisible(false);
     setWorkspaceShellVisible(true);
-    setSelectedOwnerVisible(true);
     void refreshDocsAvailability();
     await showSession(result.session.openCodeSessionId);
   } catch (error) {
@@ -392,7 +385,6 @@ async function workWorkspaceTicket(workspaceId, filename) {
     if (!isCurrent()) return;
     setTicketViewerVisible(true);
     setWorkspaceShellVisible(false);
-    setSelectedOwnerVisible(false);
     setTicketError(formatWorkspaceError("Work on ticket", error));
   } finally {
     setTicketWorking(false);
@@ -443,7 +435,6 @@ async function startNewWorkspaceTicketSession() {
           setTicketWorkbenchActive(true);
           setTicketViewerVisible(false);
           setWorkspaceShellVisible(true);
-          setSelectedOwnerVisible(true);
           rightPaneRouter.navigate("workspace-owner", {
             workspaceId,
             filename,
@@ -486,12 +477,10 @@ const workspaceTicketViewerProps = {
     setTicketWorkbenchActive(false);
     sessions.hide();
     setWorkspaceShellVisible(false);
-    setSelectedOwnerVisible(false);
     syncOwnerSessions({ focus: false });
     syncChangeReviewAvailability();
     syncRepositoryToolsAvailability();
     if (filename && !ticketArchived()) void refreshDocsAvailability();
-    else setSelectedOwnerVisible(false);
   },
   onArchiveChange: (archived) => {
     setTicketArchived(archived);
@@ -594,6 +583,10 @@ const sessions = createWorkspaceSessions({
   getSessionScope: ticketSessionScope,
   showOwnerTerminal: () => {
     setTicketViewerVisible(false);
+    rightPaneRouter.navigate("workspace-owner", {
+      workspaceId: selectedWorkspace?.id ?? null,
+      filename: selectedTicketFilename(),
+    });
     showOwnerTerminal();
   },
   setOwnerStatus,
@@ -660,7 +653,6 @@ const workspaceShell = () =>
     onWorkspaceClick: () => {
       setWorkspaceShellVisible(false);
       setTicketViewerVisible(true);
-      setSelectedOwnerVisible(false);
       sessions.hide();
     },
     workspaceRepositoryCount: () =>
@@ -812,7 +804,6 @@ const docsController = createDocsController({
     changeReviewController.cancelPendingReview();
     setChangeReviewVisible(false);
     setChangeReviewSelected(false);
-    setSelectedOwnerVisible(false);
   },
 });
 const [repositoryToolGroups, setRepositoryToolGroups] = createSignal([]);
@@ -897,7 +888,6 @@ const changeReviewController = createChangeReviewController({
   setChangeReviewRepositories,
   setChangeReviewLoading,
   setDocsButtonSelected,
-  setSelectedOwnerVisible,
 });
 const {
   showOwnerTerminal,
@@ -993,9 +983,7 @@ const directories = createDirectories({
       setDirectoriesVisible,
       setPortsVisible,
       setNoSelectionVisible,
-      setSelectedOwnerVisible,
       setWorkspaceShellVisible,
-      setRightContentOwnerActive,
       setQuickRequestTerminalPage,
       setWorkspaceSelected,
     },
@@ -1015,9 +1003,7 @@ const ports = createPortsController({
     setDirectoriesVisible(false);
     setFullRequestVisible(false);
     setNoSelectionVisible(false);
-    setSelectedOwnerVisible(false);
     setWorkspaceShellVisible(false);
-    setRightContentOwnerActive(false);
     setQuickRequestTerminalPage(false);
   },
 });
@@ -1035,7 +1021,6 @@ function selectWorkspace(workspace, data = navigationData) {
   setChangeReviewSelected(false);
   setQuickRequestTerminalPage(false);
   setProposalMode(false);
-  setRightContentOwnerActive(true);
   selectedWorkspace = workspace;
   recordUiDiagnostic("WorkspaceNavigation", "workspace-selected");
   setSelectedQuickRequest(null);
@@ -1044,7 +1029,6 @@ function selectWorkspace(workspace, data = navigationData) {
   setNoSelectionVisible(false);
   setWorkspaceSelected(true);
   setWorkspaceShellVisible(false);
-  setSelectedOwnerVisible(false);
   setTicketArchived(false);
   setSelectedTicketFilename(null);
   setTicketSessionScope(null);
@@ -1084,7 +1068,6 @@ function selectQuickRequest(
   setWorkspaceShellVisible(!isQuickRequest);
   setQuickRequestTerminalPage(isQuickRequest && !deferReveal);
   setProposalMode(false);
-  setRightContentOwnerActive(true);
   setOwnerStatus("");
   selectedWorkspace = workspace;
   recordUiDiagnostic("WorkspaceNavigation", "quick-request-selected");
@@ -1102,7 +1085,6 @@ function selectQuickRequest(
   setNoSelectionVisible(false);
   setWorkspaceSelected(false);
   setWorkspaceShellVisible(!isQuickRequest);
-  setSelectedOwnerVisible(!deferReveal);
   if (!deferReveal) newWork.hide();
   setOwnerTitle(task.name);
   rightPaneRouter.navigate(
@@ -1244,7 +1226,6 @@ const quickRequests = createQuickRequests({
       setSelectedQuickRequest(null);
       selectedWorkspace = null;
       setQuickRequestTerminalPage(false);
-      setSelectedOwnerVisible(false);
       setNoSelectionVisible(!fullRequestVisible());
       setWorkspaceSelected(false);
       setWorkspaceShellVisible(false);
@@ -1259,9 +1240,7 @@ const quickRequests = createQuickRequests({
       setPortsVisible(false);
       setFullRequestVisible(true);
       setNoSelectionVisible(false);
-      setSelectedOwnerVisible(false);
       setWorkspaceShellVisible(false);
-      setRightContentOwnerActive(false);
       setQuickRequestTerminalPage(false);
       rightPaneRouter.navigate("quick-request-history");
     },
@@ -1289,7 +1268,6 @@ quickRequestSubmitHandler = createQuickRequestSubmitHandler({
 // Terminal listener readiness remains independent of model loading; session
 // display and explicit creation readiness guards await this promise.
 const rightContentProps = {
-  ownerActive: rightContentOwnerActive,
   location: rightPaneRouter.location,
   subscribe: rightPaneRouter.subscribe,
   quickRequestName: ownerTitle,
@@ -1300,7 +1278,9 @@ const rightContentProps = {
   noSelection,
   ticketViewerProps: workspaceTicketViewerProps,
   docsPane,
-  workspaceOwnerPanel,
+  workspaceOwnerView,
+  terminalSurface,
+  proposalMode,
 };
 appLifetime.mount(
   () =>

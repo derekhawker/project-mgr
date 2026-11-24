@@ -167,7 +167,10 @@ test("application composes, saves new ticket labels through the Rust boundary, a
     const waitFor = async (predicate) => {
       const deadline = Date.now() + 3000;
       while (!predicate()) {
-        assert.ok(Date.now() < deadline, "Application update timed out");
+        assert.ok(
+          Date.now() < deadline,
+          `Application update timed out: ${[...(window.document.querySelector("#right-content")?.children || [])].map((node) => `${node.id || node.tagName}:${node.hidden}`).join(",")}`,
+        );
         await new Promise((resolve) => setTimeout(resolve, 5));
       }
     };
@@ -322,12 +325,18 @@ test("application composes, saves new ticket labels through the Rust boundary, a
       },
     ]);
 
-    $('[aria-label="Open ports"]').click();
-    await waitFor(() => window.document.querySelector('[aria-label="Ports"]'));
+    $("#show-directories").click();
+    await waitFor(() => window.document.querySelector("#directories-page"));
+    assert.equal($("#right-content").querySelector("#selected-owner"), null);
+    assert.equal(
+      $("#right-content").querySelector("#directories-page").hidden,
+      false,
+    );
     assert.equal(workspaceTerminal.isConnected, true);
     activeTicket().click();
-    await waitFor(() => !$("#selected-owner").hidden);
+    await waitFor(() => $("#selected-owner"));
     assert.equal(window.document.querySelector('[aria-label="Ports"]'), null);
+    assert.equal($("#right-content").querySelector("#directories-page"), null);
     assert.equal(
       window.document.getElementById(ticketTerminalId),
       workspaceTerminal,
@@ -368,7 +377,7 @@ test("application composes, saves new ticket labels through the Rust boundary, a
     $("#show-docs").dispatchEvent(
       new window.KeyboardEvent("keydown", { key: "Home", bubbles: true }),
     );
-    await waitFor(() => !$("#selected-owner").hidden);
+    await waitFor(() => $("#selected-owner"));
     assert.equal(
       window.document.activeElement?.id,
       `session-tab-${ticketSessionId}`,
@@ -409,7 +418,7 @@ test("application composes, saves new ticket labels through the Rust boundary, a
     await waitFor(activeTicket);
     activeTicket().click();
     await waitFor(
-      () => !workspaceTerminal.hidden && !$("#selected-owner").hidden,
+      () => !workspaceTerminal.hidden && Boolean($("#selected-owner")),
     );
     assert.equal(
       window.document.getElementById(ticketTerminalId),
@@ -436,7 +445,7 @@ test("application composes, saves new ticket labels through the Rust boundary, a
       ["Quick Request", "/", "Fixture Quick Request"],
     );
     activeTicket().click();
-    await waitFor(() => !$("#selected-owner").hidden);
+    await waitFor(() => $("#selected-owner"));
     assert.equal(window.document.querySelector("#quick-request-title"), null);
     assert.equal(quickTerminal.isConnected, true);
     $("#show-history").click();

@@ -65,12 +65,52 @@ test("Ports and Quick Request routes yield to ticket work without replacing term
   browser("wait", "#workspace-ticket-title");
   browser("click", '[aria-label="Open ports"]');
   browser("wait", '[aria-label="Ports"]');
+  assert.deepEqual(
+    evaluate(`(() => {
+      const root = document.querySelector('#right-content');
+      const selectedOwner = root.querySelector('#selected-owner');
+      return {
+        selectedOwnerPresent: Boolean(selectedOwner),
+        terminalHidden: root.querySelector('.terminal-card').hidden,
+        portsVisible: Boolean(root.querySelector('[aria-label="Ports"]')),
+      };
+    })()`),
+    { selectedOwnerPresent: false, terminalHidden: true, portsVisible: true },
+    "Ports replaces the persistent owner surface",
+  );
+  browser("click", "#show-directories");
+  browser("wait", "#directories-page");
+  assert.equal(
+    evaluate("document.querySelector('#selected-owner') === null"),
+    true,
+    "Repositories replaces the persistent owner surface",
+  );
   evaluate(
     "(() => { window.__terminalHost = document.querySelector('#terminal-views'); return true; })()",
   );
   browser("find", "text", "Example active ticket", "click");
-  browser("wait", "--fn", `!document.querySelector('#selected-owner')?.hidden`);
+  browser("wait", "--fn", `!!document.querySelector('#selected-owner')`);
   browser("wait", "--fn", `!document.querySelector('[aria-label="Ports"]')`);
+  assert.deepEqual(
+    evaluate(`(() => {
+      const root = document.querySelector('#right-content');
+      return {
+        ownerView: Boolean(root.querySelector('#selected-owner')),
+        directoriesView: Boolean(root.querySelector('#directories-page')),
+        portsView: Boolean(root.querySelector('[aria-label="Ports"]')),
+        quickRequestHeading: Boolean(root.querySelector('#quick-request-title')),
+        terminalVisible: !root.querySelector('.terminal-card').hidden,
+      };
+    })()`),
+    {
+      ownerView: true,
+      directoriesView: false,
+      portsView: false,
+      quickRequestHeading: false,
+      terminalVisible: true,
+    },
+    "ticket work replaces the Repositories route instead of stacking below it",
+  );
   const terminalState = evaluate(`(() => {
     window.__terminalState = {
       nodes: [...document.querySelector('#terminal-views').children],
@@ -91,7 +131,7 @@ test("Ports and Quick Request routes yield to ticket work without replacing term
   browser("click", "#quick-request-list button");
   browser("wait", "#quick-request-title");
   browser("find", "text", "Example active ticket", "click");
-  browser("wait", "--fn", `!document.querySelector('#selected-owner')?.hidden`);
+  browser("wait", "--fn", `!!document.querySelector('#selected-owner')`);
   browser("wait", "--fn", `!document.querySelector('#quick-request-title')`);
   const continuity = evaluate(`({
       currentIds: [...document.querySelector('#terminal-views').children].map((node) => node.id),
