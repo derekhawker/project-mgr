@@ -192,12 +192,12 @@ body {
   min-height: 0;
   height: 0;
   flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
 .right-content.owner-active {
-  display: flex;
-  flex-direction: column;
   overflow: hidden;
 }
 .right-content.quick-request-terminal-page {
