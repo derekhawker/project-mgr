@@ -330,7 +330,7 @@ test("proposal owner mode is presented and identified through the Solid signal",
   );
   assert.match(
     controller,
-    /setProposalSessionId\(started\.sessionId\);\s*setProposalMode\(true\)/,
+    /setProposalSessionId\(started\.sessionId\);[\s\S]*?setProposalMode\(true\)/,
   );
   assert.doesNotMatch(
     main,
@@ -402,8 +402,12 @@ test("New-work dialog class and accessible name derive from Solid view and propo
     /titleId=\{props\.reviewVisible\(\) \? "proposal-title" : "new-work-title"\}/,
   );
   assert.doesNotMatch(main, /newWorkModal\.(?:classList|setAttribute)/);
-  assert.match(controller, /modal\.showModal\(\)/);
-  assert.match(controller, /modal\.close\(\)/);
+  assert.match(
+    newWorkModal,
+    /open=\{\(\) =>[\s\S]*props\.workspaceVisible\(\)/,
+  );
+  assert.match(controller, /setView\("closed"\)/);
+  assert.doesNotMatch(controller, /modal\.(?:showModal|close)\(\)/);
 });
 
 test("New-work capture alert is rendered from its Solid signal and controller setters", () => {
@@ -524,7 +528,7 @@ test("New-work capture Continue busy state is Solid-owned by controller setters"
   assert.match(state, /captureDisabled: newWorkCaptureDisabled/);
   assert.match(
     controller,
-    /const originalPrompt = getOriginalPrompt\(\);[\s\S]*if \(!originalPrompt\.trim\(\)\) return;[\s\S]*setBusy\(true\)[\s\S]*finally \{[\s\S]*setBusy\(false\)/,
+    /const originalPrompt = getOriginalPrompt\(\);[\s\S]*if \(!isCurrent\(\) \|\| !originalPrompt\.trim\(\)\) return;[\s\S]*setBusy\(true\)[\s\S]*finally \{[\s\S]*if \(isCurrent\(\)\) setBusy\(false\)/,
   );
   assert.doesNotMatch(
     state,
@@ -575,7 +579,7 @@ test("New-work original prompt is Solid-owned and passed unchanged through captu
   assert.match(dialogController, /setPrompt\(""\)/);
   assert.match(
     controller,
-    /runNewWorkProposal\([\s\S]*originalPrompt[\s\S]*renderProposal\(proposal, originalPrompt\)/,
+    /runNewWorkProposal\([\s\S]*originalPrompt[\s\S]*renderProposal\(proposal, originalPrompt, isCurrent\)/,
   );
   assert.match(quickRequestController, /originalPrompt: getOriginalPrompt\(\)/);
   assert.doesNotMatch(state, /newWorkPrompt\.value/);
@@ -594,7 +598,7 @@ test("Change Review toolbar availability and selection are WorkspaceShell state"
   assert.match(workspaceShell, /props\.changeReviewSelected\(\)/);
   assert.match(
     main,
-    /onOpenChangeReview: \(event\) => \{ setTicketViewerVisible\(false\); void handleChangeReviewClick\(event\); \}/,
+    /onOpenChangeReview: \(event\) => \{\s*setTicketViewerVisible\(false\);\s*void handleChangeReviewClick\(event\);\s*\}/,
   );
   assert.match(
     controller,
@@ -815,7 +819,7 @@ test("repository directory management is a page opened from top navigation", () 
   );
   assert.match(
     main,
-    /const \[directoriesVisible, setDirectoriesVisible\] = createSignal\(false\)/,
+    /const \[directoriesVisible, setDirectoriesVisibleState\] = createSignal\(false\)[\s\S]*function setDirectoriesVisible\(value\)[\s\S]*rightPaneRouter\.navigate\("directories"/,
   );
   assert.match(directoriesState, /controller\.showPage\(\)/);
   assert.match(
@@ -937,7 +941,7 @@ test("Quick Requests use a dedicated available-height page with a visible way ba
   assert.match(management, /request\.created_at >= recent_cutoff/);
   assert.match(
     rightContentShell,
-    /"quick-request-terminal-page": props\.quickRequestTerminalPage\(\)/,
+    /"quick-request-terminal-page":[\s\S]*props\.location\(\)\.destination === "quick-request"/,
   );
   assert.match(main, /setQuickRequestTerminalPage\(isQuickRequest\)/);
   assert.doesNotMatch(
@@ -1072,7 +1076,7 @@ test("New-work offers direct Workspace creation and a separate Quick Request pro
     /proposal-prompt-preview|proposal-starting-prompt/,
   );
   assert.match(newWorkModal, /form="workspace-create-form"/);
-  assert.match(controller, /modal\.showModal\(\)/);
+  assert.match(controller, /setView\("workspace"\)/);
   assert.match(
     newWorkMenu,
     /id="new-work-menu"[\s\S]*data-new-work-type="workspace"[\s\S]*data-new-work-type="quick_request"/,
@@ -1171,7 +1175,7 @@ test("Workspace ticket viewer is mounted as a Solid component", () => {
   assert.doesNotMatch(main, /WorkspaceTicketViewer\(/);
   assert.match(
     shell,
-    /<Show when=\{props\.ticketViewerVisible\(\)\}>\s*<WorkspaceTicketViewer \{\.\.\.props\.ticketViewerProps\} \/>/,
+    /case "workspace-tickets":[\s\S]*<WorkspaceTicketViewer \{\.\.\.props\.ticketViewerProps\} \/>/,
   );
 });
 

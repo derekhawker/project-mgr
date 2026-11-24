@@ -5,11 +5,42 @@ let navigatorWidth = 300;
 let changeReviewMode = "unified";
 let defaultModel = { providerId: "fixture", id: "model" };
 let createdWorkspaceTickets = [];
-let portSelection = "3000-3010,4200,4321,5000-5010,5173-5180,5432,6379,8000-8010,8080-8090,9229,27017";
+let portSelection =
+  "3000-3010,4200,4321,5000-5010,5173-5180,5432,6379,8000-8010,8080-8090,9229,27017";
 let fixtureListeners = [
-  { pid: 18432, identity: "fixture-node-18432", name: "node", owner: "derekhawker", addresses: ["127.0.0.1:3000"], ports: [3000], cwd: "/fixture/repository", command: "node ./node_modules/.bin/vite --host 127.0.0.1", startTime: "2026-10-30 09:14:22" },
-  { pid: 18607, identity: "fixture-node-18607", name: "node", owner: "derekhawker", addresses: ["127.0.0.1:5173", "[::1]:5173"], ports: [5173], cwd: "/fixture/repository", command: "node ./node_modules/vite/bin/vite.js", startTime: "2026-10-30 09:18:05" },
-  { pid: 912, identity: "fixture-postgres-912", name: "postgres", owner: "postgres", addresses: ["127.0.0.1:5432"], ports: [5432], cwd: "/var/lib/postgresql", command: "postgres -D /var/lib/postgresql/data", startTime: "2026-10-29 16:42:11" },
+  {
+    pid: 18432,
+    identity: "fixture-node-18432",
+    name: "node",
+    owner: "derekhawker",
+    addresses: ["127.0.0.1:3000"],
+    ports: [3000],
+    cwd: "/fixture/repository",
+    command: "node ./node_modules/.bin/vite --host 127.0.0.1",
+    startTime: "2026-10-30 09:14:22",
+  },
+  {
+    pid: 18607,
+    identity: "fixture-node-18607",
+    name: "node",
+    owner: "derekhawker",
+    addresses: ["127.0.0.1:5173", "[::1]:5173"],
+    ports: [5173],
+    cwd: "/fixture/repository",
+    command: "node ./node_modules/vite/bin/vite.js",
+    startTime: "2026-10-30 09:18:05",
+  },
+  {
+    pid: 912,
+    identity: "fixture-postgres-912",
+    name: "postgres",
+    owner: "postgres",
+    addresses: ["127.0.0.1:5432"],
+    ports: [5432],
+    cwd: "/var/lib/postgresql",
+    command: "postgres -D /var/lib/postgresql/data",
+    startTime: "2026-10-29 16:42:11",
+  },
 ];
 const makeWorkspace = (id, name) => ({
   id,
@@ -91,9 +122,14 @@ const quickRequests = [
 ];
 sessions.push(seededQuickRequestSession);
 // Opt-in stress data for browser layout checks; normal fixture flows stay small.
-if (typeof window !== "undefined" && new URLSearchParams(window.location.search).has("navigationOverflow")) {
+if (
+  typeof window !== "undefined" &&
+  new URLSearchParams(window.location.search).has("navigationOverflow")
+) {
   for (let index = 1; index <= 30; index++) {
-    workspaces.push(makeWorkspace(`overflow-workspace-${index}`, `Workspace ${index}`));
+    workspaces.push(
+      makeWorkspace(`overflow-workspace-${index}`, `Workspace ${index}`),
+    );
     const id = `overflow-request-${index}`;
     quickRequests.push({
       ...quickRequests[0],
@@ -103,7 +139,10 @@ if (typeof window !== "undefined" && new URLSearchParams(window.location.search)
         slug: id,
         name: `Quick Request ${index}`,
         createdAt: Date.now(),
-        quickRequest: { ...quickRequests[0].task.quickRequest, createdAt: Date.now() },
+        quickRequest: {
+          ...quickRequests[0].task.quickRequest,
+          createdAt: Date.now(),
+        },
       },
       prompt: `Quick Request ${index}`,
     });
@@ -233,15 +272,19 @@ export async function invokeBrowserFixture(name, payload = {}) {
       break;
     case "workspace_tickets_list":
       result = request.archived
-        ? [{
-            filename: "archived-example.md",
-            title: "Investigate inability to submit a large Markdown document in the create-ticket prompt",
-            status: "done",
-            hasWorkSession: false,
-            modifiedAt: 1_762_400_000_000,
-            archivedAt: "2025-11-14T00:00:00.000Z",
-            content: "---\ntitle: Investigate inability to submit a large Markdown document in the create-ticket prompt\nstatus: done\narchived_at: \"2025-11-14T00:00:00.000Z\"\n---\n# Investigate inability to submit a large Markdown document in the create-ticket prompt\n\nThis archived ticket remains readable.",
-          }]
+        ? [
+            {
+              filename: "archived-example.md",
+              title:
+                "Investigate inability to submit a large Markdown document in the create-ticket prompt",
+              status: "done",
+              hasWorkSession: false,
+              modifiedAt: 1_762_400_000_000,
+              archivedAt: "2025-11-14T00:00:00.000Z",
+              content:
+                '---\ntitle: Investigate inability to submit a large Markdown document in the create-ticket prompt\nstatus: done\narchived_at: "2025-11-14T00:00:00.000Z"\n---\n# Investigate inability to submit a large Markdown document in the create-ticket prompt\n\nThis archived ticket remains readable.',
+            },
+          ]
         : [
             {
               filename: "blocked-example.md",
@@ -250,7 +293,8 @@ export async function invokeBrowserFixture(name, payload = {}) {
               hasWorkSession: false,
               modifiedAt: 1_793_500_000_000,
               archivedAt: null,
-              content: "---\ntitle: Blocked example ticket\nstatus: blocked\nowner: Browser fixture\n---\n# Blocked ticket\n\nThis entry verifies blocked-status priority and formatted frontmatter.\n\n- First check\n- Second check",
+              content:
+                "---\ntitle: Blocked example ticket\nstatus: blocked\nowner: Browser fixture\n---\n# Blocked ticket\n\nThis entry verifies blocked-status priority and formatted frontmatter.\n\n- First check\n- Second check",
             },
             {
               filename: "in-progress-example.md",
@@ -259,7 +303,8 @@ export async function invokeBrowserFixture(name, payload = {}) {
               hasWorkSession: false,
               modifiedAt: 1_793_600_000_000,
               archivedAt: null,
-              content: "---\ntitle: In-progress example ticket\nstatus: in_progress\n---\n# In progress\n\nThis entry verifies the in-progress status position.",
+              content:
+                "---\ntitle: In-progress example ticket\nstatus: in_progress\n---\n# In progress\n\nThis entry verifies the in-progress status position.",
             },
             {
               filename: "example.md",
@@ -277,7 +322,8 @@ export async function invokeBrowserFixture(name, payload = {}) {
               hasWorkSession: false,
               modifiedAt: 1_793_650_000_000,
               archivedAt: null,
-              content: "---\ntitle: Other-status example\nstatus: review\n---\nAn unknown status follows draft.",
+              content:
+                "---\ntitle: Other-status example\nstatus: review\n---\nAn unknown status follows draft.",
             },
           ].concat(
             createdWorkspaceTickets
@@ -286,20 +332,38 @@ export async function invokeBrowserFixture(name, payload = {}) {
           );
       break;
     case "workspace_ticket_proposal": {
-      if (!workspaces.some((item) => item.id === request.workspaceId)) throw new Error("Workspace was not found");
-      result = {
+      if (!workspaces.some((item) => item.id === request.workspaceId))
+        throw new Error("Workspace was not found");
+      const proposal = {
         title: "Improve workspace onboarding",
         body: "# Improve workspace onboarding\n\n## Idea\n\nMake the first-run setup clearer.",
       };
+      if (globalThis.__deferWorkspaceTicketProposal) {
+        result = await new Promise((resolve) => {
+          globalThis.__resolveWorkspaceTicketProposal = () => resolve(proposal);
+        });
+      } else result = proposal;
       break;
     }
     case "workspace_ticket_create": {
-      const workspace = workspaces.find((item) => item.id === request.workspaceId);
+      const workspace = workspaces.find(
+        (item) => item.id === request.workspaceId,
+      );
       if (!workspace) throw new Error("Workspace was not found");
-      const base = request.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "ticket";
+      const base =
+        request.title
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-|-$/g, "") || "ticket";
       let filename = `${base}.md`;
       let suffix = 2;
-      while (createdWorkspaceTickets.some((ticket) => ticket.workspaceId === workspace.id && ticket.filename === filename)) filename = `${base}-${suffix++}.md`;
+      while (
+        createdWorkspaceTickets.some(
+          (ticket) =>
+            ticket.workspaceId === workspace.id && ticket.filename === filename,
+        )
+      )
+        filename = `${base}-${suffix++}.md`;
       result = {
         filename,
         title: request.title,
@@ -314,24 +378,34 @@ export async function invokeBrowserFixture(name, payload = {}) {
       break;
     }
     case "workspace_ticket_work": {
-      const workspace = workspaces.find((item) => item.id === payload.workspaceId);
+      const workspace = workspaces.find(
+        (item) => item.id === payload.workspaceId,
+      );
       if (!workspace) throw new Error("Workspace was not found");
       const key = `${workspace.id}:${payload.filename}`;
-      const id = workspace.id === example.id && payload.filename === "example.md"
-        ? `session-${workspace.id}`
-        : `fixture-ticket-work-${workspace.id}-${payload.filename}`;
+      const id =
+        workspace.id === example.id && payload.filename === "example.md"
+          ? `session-${workspace.id}`
+          : `fixture-ticket-work-${workspace.id}-${payload.filename}`;
       const ids = ticketSessions.get(key) || [id];
       ticketSessions.set(key, ids);
       const entries = ids.map((sessionId) => {
-        let session = sessions.find((item) => item.openCodeSessionId === sessionId);
-        if (!session) { session = { ...makeSession(workspace), openCodeSessionId: sessionId }; sessions.push(session); }
+        let session = sessions.find(
+          (item) => item.openCodeSessionId === sessionId,
+        );
+        if (!session) {
+          session = { ...makeSession(workspace), openCodeSessionId: sessionId };
+          sessions.push(session);
+        }
         return session;
       });
       result = { sessions: entries, activeSessionId: ids.at(-1) };
       break;
     }
     case "workspace_ticket_session_create": {
-      const workspace = workspaces.find((item) => item.id === payload.workspaceId);
+      const workspace = workspaces.find(
+        (item) => item.id === payload.workspaceId,
+      );
       if (!workspace) throw new Error("Workspace was not found");
       const key = `${workspace.id}:${payload.filename}`;
       const ids = [...(ticketSessions.get(key) || [])];
@@ -344,7 +418,9 @@ export async function invokeBrowserFixture(name, payload = {}) {
     }
     case "workspace_ticket_session_close": {
       const key = `${payload.workspaceId}:${payload.filename}`;
-      const ids = (ticketSessions.get(key) || []).filter((id) => id !== payload.sessionId);
+      const ids = (ticketSessions.get(key) || []).filter(
+        (id) => id !== payload.sessionId,
+      );
       ticketSessions.set(key, ids);
       result = ids.at(-1) || null;
       break;
@@ -354,12 +430,14 @@ export async function invokeBrowserFixture(name, payload = {}) {
       break;
     case "repository_directory_page":
       result = {
-        directories: [{
-          path: "/fixture",
-          repositories: softDeletedRepositoryIds.has(repository.id)
-            ? []
-            : [{ repository, enabled: true }],
-        }],
+        directories: [
+          {
+            path: "/fixture",
+            repositories: softDeletedRepositoryIds.has(repository.id)
+              ? []
+              : [{ repository, enabled: true }],
+          },
+        ],
       };
       break;
     case "repository_soft_delete_many":
@@ -394,27 +472,50 @@ export async function invokeBrowserFixture(name, payload = {}) {
       };
       break;
     case "presentation_preferences_get":
-      result = { shared: { fileNavigator: { width: navigatorWidth } }, changeReview: { mode: changeReviewMode }, ports: { selection: portSelection } };
+      result = {
+        shared: { fileNavigator: { width: navigatorWidth } },
+        changeReview: { mode: changeReviewMode },
+        ports: { selection: portSelection },
+      };
       break;
     case "presentation_preferences_set_navigator_width":
       navigatorWidth = payload.request.width;
-      result = { shared: { fileNavigator: { width: navigatorWidth } }, changeReview: { mode: changeReviewMode }, ports: { selection: portSelection } };
+      result = {
+        shared: { fileNavigator: { width: navigatorWidth } },
+        changeReview: { mode: changeReviewMode },
+        ports: { selection: portSelection },
+      };
       break;
     case "presentation_preferences_set_change_review_mode":
-      if (!["unified", "split"].includes(payload.request.mode)) throw new Error("Invalid diff mode.");
+      if (!["unified", "split"].includes(payload.request.mode))
+        throw new Error("Invalid diff mode.");
       changeReviewMode = payload.request.mode;
-      result = { shared: { fileNavigator: { width: navigatorWidth } }, changeReview: { mode: changeReviewMode }, ports: { selection: portSelection } };
+      result = {
+        shared: { fileNavigator: { width: navigatorWidth } },
+        changeReview: { mode: changeReviewMode },
+        ports: { selection: portSelection },
+      };
       break;
     case "presentation_preferences_set_port_selection":
       portSelection = request.selection;
-      result = { shared: { fileNavigator: { width: navigatorWidth } }, changeReview: { mode: changeReviewMode }, ports: { selection: portSelection } };
+      result = {
+        shared: { fileNavigator: { width: navigatorWidth } },
+        changeReview: { mode: changeReviewMode },
+        ports: { selection: portSelection },
+      };
       break;
     case "ports_list":
       result = fixtureListeners;
       break;
     case "ports_stop":
       // Simulate a successful stop in fixture state only; never signal a process.
-      fixtureListeners = fixtureListeners.filter((listener) => !(listener.pid === payload.pid && listener.identity === payload.identity));
+      fixtureListeners = fixtureListeners.filter(
+        (listener) =>
+          !(
+            listener.pid === payload.pid &&
+            listener.identity === payload.identity
+          ),
+      );
       result = null;
       break;
     case "change_review_load":
@@ -452,18 +553,7 @@ export async function invokeBrowserFixture(name, payload = {}) {
       result = {
         schemaVersion: 1,
         workType: request.workType || "workspace",
-        workspace: {
-          id: null,
-          name: "Example proposal",
-          intent: "Fixture proposal",
-        },
-        task: null,
         repositories: [],
-        startingPrompt: request.originalPrompt,
-        setupPlan: {
-          workspaceHome: "/fixture/new-workspace",
-          repositories: [],
-        },
       };
       break;
     case "new_work_proposal_close":
@@ -482,7 +572,8 @@ export async function invokeBrowserFixture(name, payload = {}) {
     case "quick_request_create": {
       if (!request.prompt?.trim())
         throw new Error("Enter an original prompt first.");
-      const directory = request.directory || quickDirectory(request.repositoryId);
+      const directory =
+        request.directory || quickDirectory(request.repositoryId);
       const id = `fixture-quick-${nextQuickRequest++}`;
       const task = {
         id,

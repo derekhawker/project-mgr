@@ -3,25 +3,25 @@ const acceptedTypes = new Set(["workspace", "quick_request"]);
 export function createNewWorkModalController({
   getProposalSessionId,
   setWorkType,
-    setView,
-    setPrompt,
-    setCaptureError,
-    resetWorkspaceFields,
-    modal,
-    focusPrompt,
-    focusWorkspace,
-    closeProposalSession,
+  setView,
+  setPrompt,
+  setCaptureError,
+  resetWorkspaceFields,
+  focusPrompt,
+  focusWorkspace,
+  closeProposalSession,
 }) {
   async function cancel() {
-    if (getProposalSessionId()) {
+    const hasProposalSession = Boolean(getProposalSessionId());
+    setView("closed");
+    if (hasProposalSession) {
       try {
         await closeProposalSession();
       } catch {
-        return;
+        // The dialog is already closed. Cleanup failures are reported by the
+        // stable proposal-session owner and must not resurrect modal content.
       }
     }
-    setView("closed");
-    modal.close();
   }
   return {
     open(workType = "workspace") {
@@ -35,7 +35,6 @@ export function createNewWorkModalController({
         setPrompt("");
         setCaptureError("");
       }
-      if (!modal.isOpen()) modal.showModal();
       if (workType === "workspace") focusWorkspace?.();
       else focusPrompt();
     },

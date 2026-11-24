@@ -1,5 +1,6 @@
 export function createQuickRequestCreationController(deps) {
   const {
+    getGeneration,
     getProposal,
     modelsReady,
     quickRequestDirectoryReady,
@@ -33,6 +34,9 @@ export function createQuickRequestCreationController(deps) {
   async function createQuickRequest() {
     if (!getProposal() || !modelsReady() || !quickRequestDirectoryReady())
       return;
+    const generation = getGeneration?.();
+    const isCurrent = () =>
+      getGeneration?.() === undefined || getGeneration() === generation;
     setCreateDisabled(true);
     setOwnerSetupBusy(true);
     setProposalError("");
@@ -50,14 +54,16 @@ export function createQuickRequestCreationController(deps) {
         waitForTerminal,
         onCreated: (record) => {
           ownerCreated = true;
-          onCreated(record);
+          if (isCurrent()) onCreated(record);
         },
         showSession,
         refreshRequests,
       });
-      setNewWorkView("closed");
-      clearProposal();
-      closeModal();
+      if (isCurrent()) {
+        setNewWorkView("closed");
+        clearProposal();
+        closeModal();
+      }
       if (proposalSessionId()) {
         try {
           await closeProposalSession();
@@ -69,9 +75,11 @@ export function createQuickRequestCreationController(deps) {
       }
     } catch (error) {
       if (ownerCreated) {
-        setNewWorkView("closed");
-        clearProposal();
-        closeModal();
+        if (isCurrent()) {
+          setNewWorkView("closed");
+          clearProposal();
+          closeModal();
+        }
         const message = formatWorkspaceError("Finish owner setup", error);
         setOwnerStatus(message);
         setAppNotice(message);
@@ -81,11 +89,13 @@ export function createQuickRequestCreationController(deps) {
           );
         });
         clearPendingPromptAction();
-      } else setProposalError(formatWorkspaceError("Create work", error));
+      } else if (isCurrent())
+        setProposalError(formatWorkspaceError("Create work", error));
     } finally {
       setOwnerSetupBusy(false);
       syncPendingPrompt();
-      setCreateDisabled(ownerCreated || !quickRequestDirectoryReady());
+      if (isCurrent())
+        setCreateDisabled(ownerCreated || !quickRequestDirectoryReady());
     }
   }
   return { createQuickRequest };

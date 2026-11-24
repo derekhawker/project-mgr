@@ -138,6 +138,18 @@ test("Quick Request confirmation disables repeat clicks and allows retry after c
     setModal: noop,
     setPromptElement: noop,
     reviewVisible: review,
+    workspaceVisible: no,
+    workspaceRepositories: () => [],
+    workspaceCatalogLoading: no,
+    workspaceRepositoryChoice: empty,
+    emptyWorkspaceChoice: "__empty__",
+    workspaceEmptySelected: no,
+    onWorkspaceRepositoryChange: noopSetter,
+    workspaceDescription: empty,
+    setWorkspaceDescription: noopSetter,
+    workspaceError: empty,
+    workspaceCreateDisabled: no,
+    onWorkspaceSubmit: noop,
     captureVisible: no,
     workType: () => "quick_request",
     proposal: () => proposal,
@@ -345,13 +357,16 @@ test("workspace views share one tablist and switching views never closes a sessi
 });
 
 test("ticket Workbench heading keeps workspace, Tickets, and shortened ticket context", () => {
-  const title = "A rather long ticket title that needs shortening in the breadcrumb";
+  const title =
+    "A rather long ticket title that needs shortening in the breadcrumb";
   let returnedToTickets = false;
   const view = mount(WorkspaceShell, {
     visible: () => true,
     workspaceName: () => "Project Workspace",
     ticketTitle: () => title,
-    onWorkspaceClick: () => { returnedToTickets = true; },
+    onWorkspaceClick: () => {
+      returnedToTickets = true;
+    },
     sessionTabs: () => [],
     selectedSessionId: () => "",
     docsButtonSelected: () => false,
@@ -363,16 +378,22 @@ test("ticket Workbench heading keeps workspace, Tickets, and shortened ticket co
   });
   try {
     const heading = view.host.querySelector("#workspace-title");
-    const segments = heading.textContent.split("/").map((segment) => segment.trim());
+    const segments = heading.textContent
+      .split("/")
+      .map((segment) => segment.trim());
     assert.equal(segments[0], "Workspace");
     assert.equal(segments[1], "Project Workspace");
     assert.equal(segments[2], "Tickets");
     assert.equal(segments[3].startsWith("A rather long ticket title"), true);
     assert.equal(segments[3].endsWith("…"), true);
-    const shortened = [...heading.querySelectorAll("span")].find((span) => span.title === title);
+    const shortened = [...heading.querySelectorAll("span")].find(
+      (span) => span.title === title,
+    );
     assert.ok(shortened);
     assert.equal(shortened.textContent.endsWith("…"), true);
-    const backButton = heading.querySelector('button[aria-label="Back to tickets for Project Workspace"]');
+    const backButton = heading.querySelector(
+      'button[aria-label="Back to tickets for Project Workspace"]',
+    );
     assert.ok(backButton);
     assert.equal(backButton.textContent, "Project Workspace");
     backButton.click();

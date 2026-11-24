@@ -10,7 +10,7 @@ import { IconButton } from "./IconButton.jsx";
 import { Icon } from "./Icon.jsx";
 import styles from "./Modal.module.css";
 
-/** Native modal frame. Controlled open or an imperative ref; caller-owned closure. */
+/** Stable native dialog shell with caller-owned open and close-request state. */
 export function Modal(props) {
   const [local, rest] = splitProps(props, [
     "open",
@@ -19,6 +19,7 @@ export function Modal(props) {
     "titleId",
     "closeLabel",
     "onCloseRequest",
+    "renderContent",
     "children",
     "footer",
     "size",
@@ -30,58 +31,67 @@ export function Modal(props) {
   let returnFocus;
   let awaitingClose = false;
   const titleId = `ui-modal-title-${createUniqueId()}`;
+  const isOpen = () =>
+    local.open === undefined
+      ? true
+      : typeof local.open === "function"
+        ? local.open()
+        : local.open;
+
+  if (
+    import.meta.env.DEV &&
+    !props.title &&
+    !props["aria-label"] &&
+    !props["aria-labelledby"]
+  ) {
+    console.warn("Modal requires a title, aria-label, or aria-labelledby.");
+  }
+  const rememberFocus = () => {
+    const active = document.activeElement;
+    // A disclosure action is hidden once its menu closes; return to its trigger.
+    returnFocus =
+      active?.closest("details")?.querySelector("summary") || active;
+  };
+  const restoreFocus = () => {
+    if (!dialog.open && returnFocus?.isConnected)
+      returnFocus.focus({ preventScroll: true });
+    if (!dialog.open) awaitingClose = false;
+  };
+  const beforeToggle = (event) => {
+    if (event.newState === "open") {
+      rememberFocus();
+      awaitingClose = true;
+    }
+  };
+  const outsideFocus = () => {
+    // Native close restores focus before its asynchronous close event. Do not
+    // let that intermediate focus overwrite the remembered disclosure trigger.
+    if (dialog.open) awaitingClose = true;
+    else if (!awaitingClose && !dialog.contains(document.activeElement))
+      rememberFocus();
+  };
+  const sync = () => {
+    const open = isOpen();
+    if (local.open === undefined || !dialog) return;
+    if (open && !dialog.open) {
+      rememberFocus();
+      dialog.showModal();
+    } else if (!open && dialog.open) dialog.close();
+  };
 
   onMount(() => {
-    if (
-      import.meta.env.DEV &&
-      !props.title &&
-      !props["aria-label"] &&
-      !props["aria-labelledby"]
-    ) {
-      console.warn("Modal requires a title, aria-label, or aria-labelledby.");
-    }
-    const rememberFocus = () => {
-      const active = document.activeElement;
-      // A disclosure action is hidden once its menu closes; return to its trigger.
-      returnFocus =
-        active?.closest("details")?.querySelector("summary") || active;
-    };
-    const restoreFocus = () => {
-      if (!dialog.open && returnFocus?.isConnected)
-        returnFocus.focus({ preventScroll: true });
-      if (!dialog.open) awaitingClose = false;
-    };
-    const beforeToggle = (event) => {
-      if (event.newState === "open") {
-        rememberFocus();
-        awaitingClose = true;
-      }
-    };
-    const outsideFocus = () => {
-      // Native close restores focus before its asynchronous close event. Do not
-      // let that intermediate focus overwrite the remembered disclosure trigger.
-      if (dialog.open) awaitingClose = true;
-      else if (!awaitingClose && !dialog.contains(document.activeElement))
-        rememberFocus();
-    };
     rememberFocus();
     dialog.addEventListener("beforetoggle", beforeToggle);
     document.addEventListener("focusin", outsideFocus);
     dialog.addEventListener("close", restoreFocus);
-    const sync = () => {
-      if (local.open === undefined) return;
-      if (local.open && !dialog.open) {
-        rememberFocus();
-        dialog.showModal();
-      } else if (!local.open && dialog.open) dialog.close();
-    };
-    createEffect(sync);
-    onCleanup(() => {
-      if (dialog.open) dialog.close();
-      dialog.removeEventListener("close", restoreFocus);
-      dialog.removeEventListener("beforetoggle", beforeToggle);
-      document.removeEventListener("focusin", outsideFocus);
-    });
+    sync();
+  });
+  createEffect(sync);
+  onCleanup(() => {
+    if (dialog?.open) dialog.close();
+    dialog?.removeEventListener("close", restoreFocus);
+    dialog?.removeEventListener("beforetoggle", beforeToggle);
+    document.removeEventListener("focusin", outsideFocus);
   });
 
   const requestClose = (event) => {
@@ -151,11 +161,26 @@ export function Modal(props) {
           <Icon name="close" />
         </IconButton>
       </header>
-      <div class={styles.body} data-modal-body>
-        {local.children}
-      </div>
-      <Show when={local.footer}>
-        {(footer) => <footer class={styles.footer}>{footer()}</footer>}
+      <Show when={isOpen()}>
+        {() => {
+          const content = local.renderContent?.();
+          const body = content?.body ?? local.children;
+          const footer = content
+            ? content.footer
+            : typeof local.footer === "function"
+              ? local.footer()
+              : local.footer;
+          return (
+            <>
+              <div class={styles.body} data-modal-body>
+                {body}
+              </div>
+              <Show when={footer}>
+                <footer class={styles.footer}>{footer}</footer>
+              </Show>
+            </>
+          );
+        }}
       </Show>
     </dialog>
   );

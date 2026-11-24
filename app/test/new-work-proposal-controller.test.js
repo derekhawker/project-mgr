@@ -69,10 +69,22 @@ test("guards blank original prompt before state changes and preserves success or
     ["mode", true],
     ["run", "invoke", "new", "  exact\nprompt  "],
     ["progress", "interpret", "Interpret request", "success"],
-    ["render", { proposal: true }, "  exact\nprompt  "],
+    [
+      "render",
+      { proposal: true },
+      "  exact\nprompt  ",
+      calls.find(([name]) => name === "render")?.[3],
+    ],
     ["review"],
     ["busy", false],
   ]);
+  const renderCall = calls.find(([name]) => name === "render");
+  assert.deepEqual(renderCall.slice(0, 3), [
+    "render",
+    { proposal: true },
+    "  exact\nprompt  ",
+  ]);
+  assert.equal(typeof renderCall[3], "function");
 });
 
 test("captures failures and restores busy state for prior-session, model, start, run, and render failures", async () => {
@@ -135,5 +147,42 @@ test("passes the explicitly chosen Quick Request directory to proposal generatio
     getExplicitDirectory: () => "/chosen/directory",
   });
   await controller.handleNewWorkCapture({ preventDefault() {} });
-  assert.equal(calls.find(([name]) => name === "run").at(-1), "/chosen/directory");
+  assert.equal(
+    calls.find(([name]) => name === "run").at(-1),
+    "/chosen/directory",
+  );
+});
+
+test("a proposal started before close is cleaned up and cannot reopen review", async () => {
+  let generation = 1;
+  let finishStart;
+  const { controller, calls } = setup({
+    getGeneration: () => generation,
+    isOpen: () => true,
+    getProposalSessionId: () => null,
+    startNewWorkProposal: () =>
+      new Promise((resolve) => {
+        finishStart = resolve;
+      }),
+  });
+  const pending = controller.handleNewWorkCapture({ preventDefault() {} });
+  await new Promise((resolve) => setImmediate(resolve));
+  generation++;
+  finishStart({ sessionId: "late-proposal" });
+  await pending;
+
+  assert.deepEqual(
+    calls.filter(([name]) =>
+      ["session", "close", "run", "review", "error"].includes(name),
+    ),
+    [["session", "late-proposal"], ["close"]],
+  );
+  assert.equal(
+    calls.some(([name, value]) => name === "mode" && value),
+    false,
+  );
+  assert.equal(
+    calls.some(([name, value]) => name === "busy" && value === false),
+    false,
+  );
 });

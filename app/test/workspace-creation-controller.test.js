@@ -40,7 +40,10 @@ test("registered repository creation directly links and selects without OpenCode
     ["create", "invoke", "Name", null, "repo-1"],
   );
   assert.deepEqual(calls.filter(([key]) => key === "select").length, 2);
-  assert.equal(calls.some(([key]) => ["session", "prompt"].includes(key)), false);
+  assert.equal(
+    calls.some(([key]) => ["session", "prompt"].includes(key)),
+    false,
+  );
   assert.ok(calls.some(([key, value]) => key === "view" && value === "closed"));
   assert.ok(calls.some(([key]) => key === "close"));
   assert.equal(calls.at(-1)[0], "busy");
@@ -76,8 +79,16 @@ test("command errors keep the form open and restore the busy state", async () =>
     },
   });
   await controller.create();
-  assert.ok(calls.some(([key, value]) => key === "error" && value === "Create workspace:git failed"));
-  assert.equal(calls.some(([key]) => key === "close"), false);
+  assert.ok(
+    calls.some(
+      ([key, value]) =>
+        key === "error" && value === "Create workspace:git failed",
+    ),
+  );
+  assert.equal(
+    calls.some(([key]) => key === "close"),
+    false,
+  );
   assert.deepEqual(calls.slice(-1), [["busy", false]]);
 });
 
@@ -89,6 +100,40 @@ test("a navigation refresh failure does not retry or duplicate successful creati
   });
   await controller.create();
   assert.equal(calls.filter(([key]) => key === "create").length, 1);
-  assert.ok(calls.some(([key, value]) => key === "notice" && value === "Workspace created; refresh navigation:refresh failed"));
+  assert.ok(
+    calls.some(
+      ([key, value]) =>
+        key === "notice" &&
+        value === "Workspace created; refresh navigation:refresh failed",
+    ),
+  );
   assert.ok(calls.some(([key]) => key === "close"));
+});
+
+test("a Workspace completed after modal close refreshes data without selecting it", async () => {
+  let generation = 1;
+  let finishCreate;
+  const { controller, calls } = setup({
+    getGeneration: () => generation,
+    createWorkspace: () =>
+      new Promise((resolve) => {
+        finishCreate = resolve;
+      }),
+  });
+  const pending = controller.create();
+  await new Promise((resolve) => setImmediate(resolve));
+  generation++;
+  finishCreate({ id: "created-late", name: "Late Workspace" });
+  await pending;
+
+  assert.equal(calls.filter(([name]) => name === "select").length, 0);
+  assert.equal(calls.filter(([name]) => name === "create").length, 0);
+  assert.equal(
+    calls.some(([name, value]) => name === "view" && value === "closed"),
+    false,
+  );
+  assert.equal(
+    calls.some(([name, value]) => name === "busy" && value === false),
+    false,
+  );
 });

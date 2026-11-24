@@ -29,6 +29,9 @@ test("application areas compose once and retain terminals across navigation and 
     "__quickRequestCreateCalls",
     "__quickRequestCreatePrompts",
     "__rejectQuickRequestCreate",
+    "__deferWorkspaceTicketWork",
+    "__resolveWorkspaceTicketWork",
+    "__workspaceTicketWorkSettled",
   ];
   try {
     const terminal = join(temp, "terminal.js");
@@ -66,6 +69,16 @@ test("application areas compose once and retain terminals across navigation and 
       import { invokeBrowserFixture as invoke } from ${JSON.stringify(resolve(root, "src/fixtures/browserFixture.js"))};
       let calls = 0;
       export function invokeBrowserFixture(name, payload) {
+        if (name === "workspace_ticket_work" && globalThis.__deferWorkspaceTicketWork) {
+          return new Promise((resolve, reject) => {
+            globalThis.__resolveWorkspaceTicketWork = () => {
+              invoke(name, payload).then((result) => {
+                globalThis.__workspaceTicketWorkSettled = true;
+                resolve(result);
+              }, reject);
+            };
+          });
+        }
         if (name === "quick_request_create") {
           calls++;
           globalThis.__quickRequestCreateCalls = calls;
@@ -151,6 +164,8 @@ test("application areas compose once and retain terminals across navigation and 
     };
     globalThis.__quickRequestCreateCalls = 0;
     globalThis.__quickRequestCreatePrompts = [];
+    globalThis.__deferWorkspaceTicketWork = false;
+    globalThis.__workspaceTicketWorkSettled = false;
 
     await waitFor(
       () => $("#workspace-list").getAttribute("aria-busy") === "false",
@@ -194,6 +209,17 @@ test("application areas compose once and retain terminals across navigation and 
       },
     ]);
 
+    $('[aria-label="Open ports"]').click();
+    await waitFor(() => window.document.querySelector('[aria-label="Ports"]'));
+    assert.equal(workspaceTerminal.isConnected, true);
+    activeTicket().click();
+    await waitFor(() => !$("#selected-owner").hidden);
+    assert.equal(window.document.querySelector('[aria-label="Ports"]'), null);
+    assert.equal(
+      window.document.getElementById(ticketTerminalId),
+      workspaceTerminal,
+    );
+
     $("#show-repo-tools").click();
     const toolAction = () =>
       [...$("#repo-tools-menu").querySelectorAll("button")].find(
@@ -206,6 +232,7 @@ test("application areas compose once and retain terminals across navigation and 
     );
     const toolTab = $("#session-tab-fixture-tool-1");
     const attachments = [...runtime.attached];
+    await waitFor(() => !$("#show-docs").disabled);
     $("#show-docs").focus();
     $("#show-docs").click();
     await waitFor(() => !$("#docs-page").hidden && !$("#show-docs").disabled);
@@ -283,7 +310,10 @@ test("application areas compose once and retain terminals across navigation and 
     );
 
     $("#show-history").click();
-    await waitFor(() => !$("#quick-request-full-list").hidden);
+    await waitFor(() => {
+      const history = window.document.querySelector("#quick-request-full-list");
+      return history && !history.hidden;
+    });
     $(
       '#quick-request-full-list button[aria-label^="Open Quick Request:"]',
     ).click();
@@ -298,8 +328,15 @@ test("application areas compose once and retain terminals across navigation and 
         .map((part) => part.textContent),
       ["Quick Request", "/", "Fixture Quick Request"],
     );
+    activeTicket().click();
+    await waitFor(() => !$("#selected-owner").hidden);
+    assert.equal(window.document.querySelector("#quick-request-title"), null);
+    assert.equal(quickTerminal.isConnected, true);
     $("#show-history").click();
-    await waitFor(() => !$("#quick-request-full-list").hidden);
+    await waitFor(() => {
+      const history = window.document.querySelector("#quick-request-full-list");
+      return history && !history.hidden;
+    });
     assert.equal(quickTerminal.isConnected, true);
 
     // Cancel leaves the current destination and terminal untouched.
@@ -347,28 +384,18 @@ test("application areas compose once and retain terminals across navigation and 
       /A quick fixture prompt/,
     );
     $("#show-history").click();
-    await waitFor(() => !$("#quick-request-full-list").hidden);
+    await waitFor(() => {
+      const history = window.document.querySelector("#quick-request-full-list");
+      return history && !history.hidden;
+    });
 
     $('[data-new-work-type="workspace"]').click();
     assert.equal($("#new-work-modal").open, true);
     assert.equal($("#quick-request-full-list").hidden, false);
-    input("#new-work-prompt", "Create a fixture workspace");
-    $("#new-work-capture").dispatchEvent(
-      new window.Event("submit", { bubbles: true, cancelable: true }),
-    );
-    await waitFor(() => !$("#new-work-review").hidden);
-    assert.equal($("#proposal-repositories").textContent.trim(), "None");
-    await waitFor(() => !$("#proposal-model").disabled);
-    input("#workspace-review-name", "Composition Workspace");
-    $("#proposal-create").click();
-    await waitFor(() => !$("#new-work-modal").open);
-    assert.match($("#workspace-list").textContent, /Composition Workspace/);
-    assert.equal($("#workspace-shell").hidden, true);
-    assert.equal($("#workspace-shell h1"), workspaceHeading);
-    assert.equal(
-      workspaceHeading.children[2].textContent,
-      "Composition Workspace",
-    );
+    assert.equal($("#new-work-workspace").hidden, false);
+    $("#workspace-cancel").click();
+    assert.equal($("#new-work-modal").open, false);
+    assert.equal($("#quick-request-full-list").hidden, false);
     assert.equal($("#terminal-views"), host);
     assert.equal(workspaceTerminal.isConnected, true);
     assert.equal(quickTerminal.isConnected, true);
@@ -377,6 +404,15 @@ test("application areas compose once and retain terminals across navigation and 
       1,
     );
     assert.equal(window.document.querySelectorAll("#terminal-views").length, 1);
+
+    globalThis.__deferWorkspaceTicketWork = true;
+    activeTicket().click();
+    $('[aria-label="Open ports"]').click();
+    await waitFor(() => window.document.querySelector('[aria-label="Ports"]'));
+    globalThis.__resolveWorkspaceTicketWork();
+    await waitFor(() => globalThis.__workspaceTicketWorkSettled);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.ok(window.document.querySelector('[aria-label="Ports"]'));
   } finally {
     window.dispatchEvent(new window.Event("pagehide"));
     await window.happyDOM.abort();

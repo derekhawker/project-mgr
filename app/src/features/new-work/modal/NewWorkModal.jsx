@@ -30,6 +30,11 @@ export function NewWorkModal(props) {
   return (
     <Modal
       id="new-work-modal"
+      open={() =>
+        props.workspaceVisible() ||
+        props.captureVisible() ||
+        props.reviewVisible()
+      }
       ref={(element) => {
         modal = element;
         props.setModal(element);
@@ -46,7 +51,11 @@ export function NewWorkModal(props) {
                 {props.workspaceError()}
               </p>
             </Show>
-            <Button type="button" id="workspace-cancel" onClick={props.onCancel}>
+            <Button
+              type="button"
+              id="workspace-cancel"
+              onClick={props.onCancel}
+            >
               Cancel
             </Button>
             <Button
@@ -154,7 +163,9 @@ export function NewWorkModal(props) {
                 />
               </Show>
               <Show when={props.workspaceEmptySelected()}>
-                <label for="workspace-create-description">Short description</label>
+                <label for="workspace-create-description">
+                  Short description
+                </label>
                 <TextArea
                   id="workspace-create-description"
                   required
@@ -186,10 +197,26 @@ export function NewWorkModal(props) {
               </p>
               <Show when={props.workType() === "quick_request"}>
                 <div class={styles.directoryField}>
-                  <label for="quick-request-custom-directory">Working directory</label>
+                  <label for="quick-request-custom-directory">
+                    Working directory
+                  </label>
                   <div class={styles.directoryRow}>
-                    <Input id="quick-request-custom-directory" type="text" required value={props.customDirectory?.() ?? props.defaultDirectory?.() ?? ""} onInput={(event) => props.onCustomDirectoryInput(event.currentTarget.value)} />
-                    <Button type="button" onClick={props.onChooseDirectory}>Choose folder</Button>
+                    <Input
+                      id="quick-request-custom-directory"
+                      type="text"
+                      required
+                      value={
+                        props.customDirectory?.() ??
+                        props.defaultDirectory?.() ??
+                        ""
+                      }
+                      onInput={(event) =>
+                        props.onCustomDirectoryInput(event.currentTarget.value)
+                      }
+                    />
+                    <Button type="button" onClick={props.onChooseDirectory}>
+                      Choose folder
+                    </Button>
                   </div>
                 </div>
               </Show>
@@ -230,12 +257,27 @@ export function NewWorkModal(props) {
               <blockquote id="quick-request-original">
                 {proposal().originalPrompt}
               </blockquote>
-              <p>The original prompt will be sent unchanged after confirmation.</p>
-              <label for="quick-request-directory">OpenCode working directory</label>
+              <p>
+                The original prompt will be sent unchanged after confirmation.
+              </p>
+              <label for="quick-request-directory">
+                OpenCode working directory
+              </label>
               <div class={styles.directoryRow}>
-                <Input id="quick-request-directory" type="text" value={props.directoryPath()} onInput={(event) => props.onCustomDirectoryInput(event.currentTarget.value)} />
-                <Button type="button" onClick={props.onChooseDirectory}>Choose folder</Button>
-                <Button type="button" onClick={props.onResetDirectory}>Reset to default</Button>
+                <Input
+                  id="quick-request-directory"
+                  type="text"
+                  value={props.directoryPath()}
+                  onInput={(event) =>
+                    props.onCustomDirectoryInput(event.currentTarget.value)
+                  }
+                />
+                <Button type="button" onClick={props.onChooseDirectory}>
+                  Choose folder
+                </Button>
+                <Button type="button" onClick={props.onResetDirectory}>
+                  Reset to default
+                </Button>
               </div>
             </div>
             <Show when={progressDestination() === "quick_request"}>
@@ -252,7 +294,11 @@ export function NewWorkModal(props) {
                 disabled={props.proposalModelDisabled()}
                 aria-busy={props.proposalModelDisabled() ? "true" : undefined}
                 value={props.proposalSelectedModel()}
-                placeholder={props.proposalModelDisabled() ? "Loading models…" : "Choose a model"}
+                placeholder={
+                  props.proposalModelDisabled()
+                    ? "Loading models…"
+                    : "Choose a model"
+                }
                 options={props.proposalModels()}
                 onChange={props.setProposalSelectedModel}
               />

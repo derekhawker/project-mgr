@@ -60,6 +60,15 @@ test("readers keep gutters aligned and wide tables readable", async (t) => {
     "--name",
     "Example Workspace",
   );
+  browser(
+    session,
+    "find",
+    "role",
+    "button",
+    "click",
+    "--name",
+    "Work ticket: In-progress example ticket",
+  );
   browser(session, "find", "role", "tab", "click", "--name", "Change Review");
   browser(
     session,

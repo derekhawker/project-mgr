@@ -1,7 +1,10 @@
+import { createComponent } from "solid-js";
 import styles from "./navigation.module.css";
 import { WorkspaceNavigation } from "../views/workspace/navigation/WorkspaceNavigation.jsx";
+import { RightContentShell } from "./RightContentShell.jsx";
 
 export function ApplicationRoot(props) {
+  const newWorkModal = props.newWorkModal();
   return (
     <>
       <main class="shell">
@@ -31,7 +34,7 @@ export function ApplicationRoot(props) {
           </aside>
           <section class="quick-view" aria-label="Selected work">
             {props.workspaceShell()}
-            {props.rightContent()}
+            {createComponent(RightContentShell, props.rightContentProps)}
           </section>
         </div>
 
@@ -40,7 +43,7 @@ export function ApplicationRoot(props) {
         </section>
         {props.appNotice()}
       </main>
-      {props.newWorkModal()}
+      {newWorkModal}
     </>
   );
 }

@@ -1,4 +1,4 @@
-import { createSignal } from "solid-js";
+import { createComponent, createSignal } from "solid-js";
 import { NewWorkModal } from "./modal/NewWorkModal.jsx";
 import { NewWorkMenu } from "./NewWorkMenu.jsx";
 import { createNewWorkModalController } from "./modal/newWorkModalController.js";
@@ -65,10 +65,12 @@ export function createNewWork({
   const [newWorkCaptureError, setNewWorkCaptureError] = createSignal("");
   const [proposalError, setProposalError] = createSignal("");
   const [workspaceError, setWorkspaceError] = createSignal("");
-  const [workspaceRepositoryChoice, setWorkspaceRepositoryChoice] = createSignal("");
+  const [workspaceRepositoryChoice, setWorkspaceRepositoryChoice] =
+    createSignal("");
   const [workspaceName, setWorkspaceName] = createSignal("");
   const [workspaceDescription, setWorkspaceDescription] = createSignal("");
-  const [workspaceCatalogLoading, setWorkspaceCatalogLoading] = createSignal(false);
+  const [workspaceCatalogLoading, setWorkspaceCatalogLoading] =
+    createSignal(false);
   const [workspaceRepositories, setWorkspaceRepositories] = createSignal([]);
   const [proposalCreateDisabled, setProposalCreateDisabled] =
     createSignal(true);
@@ -83,7 +85,9 @@ export function createNewWork({
   let currentProposal = null;
   let quickRequestDirectoryReady = false;
   let proposalSessionId = null;
+  let proposalClosePromise = null;
   let progressProposalSessionId = null;
+  let modalGeneration = 0;
 
   function resetProgress(sessionId = null) {
     progressProposalSessionId = sessionId;
@@ -97,22 +101,62 @@ export function createNewWork({
     );
   }
 
-  async function closeProposalSession() {
+  function closeNewWorkModal() {
+    setNewWorkView("closed");
+  }
+
+  function resetOpenScopedState() {
+    currentProposal = null;
+    quickRequestDirectoryReady = false;
+    setNewWorkCaptureError("");
+    setProposalError("");
+    setWorkspaceError("");
+    setNewWorkPromptValue("");
+    setQuickRequestDirectories([]);
+    setQuickRequestDirectoryId("");
+    setQuickRequestDirectoryPath("");
+    setCustomQuickDirectory(null);
+    setDefaultQuickDirectory("");
+    setProposalView({
+      workType: "workspace",
+      title: "Check the proposed context",
+      workspaceName: "",
+      workspaceDirectory: "",
+      originalPrompt: "",
+      startingPrompt: "",
+      createLabel: "Create",
+    });
+    setProposalCreateDisabled(true);
+    setNewWorkCaptureDisabled(false);
+    setProgressVisible(false);
+    setProgressRows(new Map());
+    progressProposalSessionId = null;
+  }
+
+  function closeProposalSession() {
+    if (proposalClosePromise) return proposalClosePromise;
     const sessionId = proposalSessionId;
-    if (!sessionId) return;
-    try {
-      await closeNewWorkProposal(invoke, sessionId);
-    } catch (error) {
-      const message = formatWorkspaceError("Close proposal terminal", error);
-      owner.setStatus(message);
-      setCommandResultMessage(message);
-      throw error;
-    }
-    if (!(await forgetProposalSession(sessionId))) return;
-    proposalSessionId = null;
-    owner.setProposalMode(false);
-    owner.syncSessions();
-    owner.syncPendingPrompt();
+    if (!sessionId) return Promise.resolve();
+    const request = (async () => {
+      try {
+        await closeNewWorkProposal(invoke, sessionId);
+      } catch (error) {
+        const message = formatWorkspaceError("Close proposal terminal", error);
+        owner.setStatus(message);
+        setCommandResultMessage(message);
+        throw error;
+      }
+      if (!(await forgetProposalSession(sessionId))) return;
+      if (proposalSessionId === sessionId) proposalSessionId = null;
+      owner.setProposalMode(false);
+      owner.syncSessions();
+      owner.syncPendingPrompt();
+    })();
+    proposalClosePromise = request.finally(() => {
+      if (proposalClosePromise === wrapped) proposalClosePromise = null;
+    });
+    const wrapped = proposalClosePromise;
+    return wrapped;
   }
 
   const modalController = createNewWorkModalController({
@@ -127,14 +171,9 @@ export function createNewWork({
       setWorkspaceDescription("");
       setWorkspaceError("");
     },
-    modal: {
-      isOpen: () => newWorkModal.open,
-      showModal: () => newWorkModal.showModal(),
-      close: () => newWorkModal.close(),
-    },
-    focusPrompt: () => newWorkPrompt.focus(),
+    focusPrompt: () => newWorkPrompt?.focus(),
     focusWorkspace: () =>
-      newWorkModal.querySelector("#workspace-repository-select")?.focus(),
+      newWorkModal?.querySelector("#workspace-repository-select")?.focus(),
     closeProposalSession,
   });
 
@@ -160,7 +199,12 @@ export function createNewWork({
     }
   }
 
-  async function renderProposal(proposal, originalPrompt) {
+  async function renderProposal(
+    proposal,
+    originalPrompt,
+    isCurrent = () => true,
+  ) {
+    if (!isCurrent()) return;
     const review = prepareProposalReview(proposal, originalPrompt, {
       repositoryCatalog: getCatalog(),
     });
@@ -173,11 +217,16 @@ export function createNewWork({
       if (customQuickDirectory()) {
         setQuickRequestDirectoryPath(customQuickDirectory());
         quickRequestDirectoryReady = true;
-      } else await refreshQuickRequestDirectoryPath();
+      } else {
+        await refreshQuickRequestDirectoryPath();
+        if (!isCurrent()) return;
+      }
     }
   }
 
   const proposalController = createNewWorkProposalController({
+    getGeneration: () => modalGeneration,
+    isOpen: () => newWorkView() !== "closed",
     getOriginalPrompt: newWorkPromptValue,
     getExplicitDirectory: () =>
       customQuickDirectory() !== null ? customQuickDirectory() : undefined,
@@ -203,6 +252,7 @@ export function createNewWork({
   });
 
   const workspaceCreation = createWorkspaceCreationController({
+    getGeneration: () => modalGeneration,
     getRepositoryChoice: workspaceRepositoryChoice,
     getWorkspaceName: workspaceName,
     getWorkspaceDescription: workspaceDescription,
@@ -216,18 +266,25 @@ export function createNewWork({
     setError: setWorkspaceError,
     setNotice: setAppNotice,
     setView: setNewWorkView,
-    closeModal: () => newWorkModal.close(),
+    closeModal: closeNewWorkModal,
     formatWorkspaceError,
   });
 
   const quickRequestCreation = createQuickRequestCreationController({
+    getGeneration: () => modalGeneration,
     getProposal: () => currentProposal,
     modelsReady: isModelsReady,
     quickRequestDirectoryReady: () => quickRequestDirectoryReady,
     getOriginalPrompt: newWorkPromptValue,
     getSelectedModel: proposalSelectedModel,
-    getRepositoryId: () => customQuickDirectory() === defaultQuickDirectory() ? null : quickRequestDirectoryId(),
-    getDirectory: () => customQuickDirectory() === defaultQuickDirectory() ? null : customQuickDirectory(),
+    getRepositoryId: () =>
+      customQuickDirectory() === defaultQuickDirectory()
+        ? null
+        : quickRequestDirectoryId(),
+    getDirectory: () =>
+      customQuickDirectory() === defaultQuickDirectory()
+        ? null
+        : customQuickDirectory(),
     proposalSessionId: () => proposalSessionId,
     invoke,
     submitResolvedQuickRequestFlow,
@@ -257,7 +314,7 @@ export function createNewWork({
     clearProposal: () => {
       currentProposal = null;
     },
-    closeModal: () => newWorkModal.close(),
+    closeModal: closeNewWorkModal,
     closeProposalSession,
     setOwnerStatus: owner.setStatus,
     formatWorkspaceError,
@@ -272,39 +329,160 @@ export function createNewWork({
       currentProposal.workType !== "quick_request" ||
       !isModelsReady() ||
       !quickRequestDirectoryReady
-    ) return;
+    )
+      return;
     await quickRequestCreation.createQuickRequest();
   }
 
   function openNewWork(type) {
-    setCustomQuickDirectory(null);
-    setDefaultQuickDirectory("");
+    if (type !== "workspace" && type !== "quick_request") return;
+    modalGeneration++;
+    const generation = modalGeneration;
+    const isCurrentOpen = () =>
+      modalGeneration === generation && newWorkView() !== "closed";
+    resetOpenScopedState();
     if (type === "quick_request") {
       void resolveQuickRequestDirectory(invoke)
-        .then(setDefaultQuickDirectory)
-        .catch((error) =>
-          setDefaultQuickDirectory(
-            formatWorkspaceError("Resolve Quick Request directory", error),
-          ),
+        .then((directory) => {
+          if (isCurrentOpen()) setDefaultQuickDirectory(directory);
+        })
+        .catch(
+          (error) =>
+            isCurrentOpen() &&
+            setDefaultQuickDirectory(
+              formatWorkspaceError("Resolve Quick Request directory", error),
+            ),
         );
     } else if (type === "workspace") {
       setWorkspaceRepositories(getCatalog() || []);
       setWorkspaceCatalogLoading(true);
       void refreshCatalog()
-        .then((repositories) => setWorkspaceRepositories(repositories))
-        .catch((error) => {
-          setWorkspaceError(formatWorkspaceError("Load repositories", error));
+        .then((repositories) => {
+          if (isCurrentOpen()) setWorkspaceRepositories(repositories);
         })
-        .finally(() => setWorkspaceCatalogLoading(false));
+        .catch((error) => {
+          if (isCurrentOpen())
+            setWorkspaceError(formatWorkspaceError("Load repositories", error));
+        })
+        .finally(() => {
+          if (isCurrentOpen()) setWorkspaceCatalogLoading(false);
+        });
     }
-    return modalController.open(type);
+    const result = modalController.open(type);
+    return result;
   }
   async function cancelNewWork() {
+    modalGeneration++;
     await modalController.cancel();
+  }
+  function createNewWorkModalElement() {
+    return createComponent(NewWorkModal, {
+      setModal: (modal) => {
+        newWorkModal = modal;
+      },
+      setPromptElement: (element) => {
+        newWorkPrompt = element;
+      },
+      proposal: proposalView,
+      workspaceVisible: () => newWorkView() === "workspace",
+      workspaceRepositoryChoice,
+      workspaceRepositories,
+      workspaceCatalogLoading,
+      workspaceEmptySelected: () =>
+        workspaceRepositoryChoice() === EMPTY_WORKSPACE_REPOSITORY,
+      emptyWorkspaceChoice: EMPTY_WORKSPACE_REPOSITORY,
+      onWorkspaceRepositoryChange: (repositoryId) => {
+        setWorkspaceRepositoryChoice(repositoryId);
+        const repository = workspaceRepositories().find(
+          (item) => item.id === repositoryId,
+        );
+        if (repository)
+          setWorkspaceName(workspaceTitleFromRepositoryName(repository.name));
+        else if (repositoryId === EMPTY_WORKSPACE_REPOSITORY)
+          setWorkspaceName("");
+        setWorkspaceError("");
+      },
+      workspaceName,
+      setWorkspaceName,
+      workspaceDescription,
+      setWorkspaceDescription,
+      workspaceError,
+      workspaceCreateDisabled: () =>
+        newWorkCaptureDisabled() ||
+        workspaceCatalogLoading() ||
+        !workspaceRepositoryChoice(),
+      onWorkspaceSubmit: workspaceCreation.create,
+      workType: newWorkType,
+      captureVisible: () => newWorkView() === "capture",
+      reviewVisible: () => newWorkView() === "review",
+      progressVisible,
+      progressRows,
+      captureError: newWorkCaptureError,
+      proposalError,
+      proposalCreateDisabled,
+      proposalModelDisabled,
+      proposalModels,
+      proposalSelectedModel,
+      setProposalSelectedModel,
+      captureDisabled: newWorkCaptureDisabled,
+      prompt: newWorkPromptValue,
+      setPrompt: setNewWorkPromptValue,
+      onCapture: proposalController.handleNewWorkCapture,
+      onEnterToSubmit: handleEnterToSubmit,
+      onBack: modalController.backToCapture,
+      onCancel: cancelNewWork,
+      onConfirm: createProposedWork,
+      onDirectoryChange: (event) => {
+        setCustomQuickDirectory(null);
+        setQuickRequestDirectoryId(event.currentTarget.value);
+        void refreshQuickRequestDirectoryPath();
+      },
+      directories: quickRequestDirectories,
+      directoryId: quickRequestDirectoryId,
+      directoryPath: quickRequestDirectoryPath,
+      defaultDirectory: defaultQuickDirectory,
+      customDirectory: customQuickDirectory,
+      onCustomDirectoryInput: (value) => {
+        setCustomQuickDirectory(value);
+        if (newWorkView() === "review") {
+          setQuickRequestDirectoryPath(value);
+          quickRequestDirectoryReady = Boolean(value.trim());
+          setProposalCreateDisabled(!quickRequestDirectoryReady);
+        }
+      },
+      onChooseDirectory: async () => {
+        try {
+          const selected = await openDirectoryPicker({
+            directory: true,
+            multiple: false,
+            title: "Choose working directory",
+          });
+          if (selected) {
+            setCustomQuickDirectory(selected);
+            setQuickRequestDirectoryPath(selected);
+            quickRequestDirectoryReady = true;
+            setProposalCreateDisabled(false);
+          }
+        } catch (error) {
+          setNewWorkCaptureError(
+            formatWorkspaceError("Choose working directory", error),
+          );
+        }
+      },
+      onResetDirectory: () => {
+        setCustomQuickDirectory(defaultQuickDirectory());
+        setQuickRequestDirectoryId("");
+        setQuickRequestDirectoryPath(defaultQuickDirectory());
+        quickRequestDirectoryReady = Boolean(defaultQuickDirectory());
+        setProposalCreateDisabled(!quickRequestDirectoryReady);
+      },
+    });
   }
   return {
     open: openNewWork,
-    hide: () => setNewWorkView("closed"),
+    hide: () => {
+      void cancelNewWork();
+    },
     proposalSessionId: () => proposalSessionId,
     setModels(options, selected) {
       setProposalModels(options);
@@ -314,10 +492,10 @@ export function createNewWork({
     onSetupProgress(payload) {
       if (!payload || payload.proposalSessionId !== progressProposalSessionId)
         return;
-        const presentation = workspaceProgressPresentation(
-          payload,
-          [],
-          getCatalog(),
+      const presentation = workspaceProgressPresentation(
+        payload,
+        [],
+        getCatalog(),
       );
       setProgress(
         payload.key,
@@ -327,99 +505,6 @@ export function createNewWork({
       );
     },
     menu: () => NewWorkMenu({ onChoose: openNewWork }),
-    modal: () =>
-      NewWorkModal({
-        setModal: (element) => {
-          newWorkModal = element;
-        },
-        setPromptElement: (element) => {
-          newWorkPrompt = element;
-        },
-        proposal: proposalView,
-        workspaceVisible: () => newWorkView() === "workspace",
-        workspaceRepositoryChoice,
-        workspaceRepositories,
-        workspaceCatalogLoading,
-        workspaceEmptySelected: () =>
-          workspaceRepositoryChoice() === EMPTY_WORKSPACE_REPOSITORY,
-        emptyWorkspaceChoice: EMPTY_WORKSPACE_REPOSITORY,
-        onWorkspaceRepositoryChange: (repositoryId) => {
-          setWorkspaceRepositoryChoice(repositoryId);
-          const repository = workspaceRepositories().find(
-            (item) => item.id === repositoryId,
-          );
-          if (repository)
-            setWorkspaceName(workspaceTitleFromRepositoryName(repository.name));
-          else if (repositoryId === EMPTY_WORKSPACE_REPOSITORY)
-            setWorkspaceName("");
-          setWorkspaceError("");
-        },
-        workspaceName,
-        setWorkspaceName,
-        workspaceDescription,
-        setWorkspaceDescription,
-        workspaceError,
-        workspaceCreateDisabled: () =>
-          newWorkCaptureDisabled() ||
-          workspaceCatalogLoading() ||
-          !workspaceRepositoryChoice(),
-        onWorkspaceSubmit: workspaceCreation.create,
-        workType: newWorkType,
-        captureVisible: () => newWorkView() === "capture",
-        reviewVisible: () => newWorkView() === "review",
-        progressVisible,
-        progressRows,
-        captureError: newWorkCaptureError,
-        proposalError,
-        proposalCreateDisabled,
-        proposalModelDisabled,
-        proposalModels,
-        proposalSelectedModel,
-        setProposalSelectedModel,
-        captureDisabled: newWorkCaptureDisabled,
-        prompt: newWorkPromptValue,
-        setPrompt: setNewWorkPromptValue,
-        onCapture: proposalController.handleNewWorkCapture,
-        onEnterToSubmit: handleEnterToSubmit,
-        onBack: modalController.backToCapture,
-        onCancel: cancelNewWork,
-        onConfirm: createProposedWork,
-        onDirectoryChange: (event) => {
-          setCustomQuickDirectory(null);
-          setQuickRequestDirectoryId(event.currentTarget.value);
-          void refreshQuickRequestDirectoryPath();
-        },
-        directories: quickRequestDirectories,
-        directoryId: quickRequestDirectoryId,
-        directoryPath: quickRequestDirectoryPath,
-        defaultDirectory: defaultQuickDirectory,
-        customDirectory: customQuickDirectory,
-        onCustomDirectoryInput: (value) => {
-          setCustomQuickDirectory(value);
-          if (newWorkView() === "review") {
-            setQuickRequestDirectoryPath(value);
-            quickRequestDirectoryReady = Boolean(value.trim());
-            setProposalCreateDisabled(!quickRequestDirectoryReady);
-          }
-        },
-        onChooseDirectory: async () => {
-          try {
-            const selected = await openDirectoryPicker({ directory: true, multiple: false, title: "Choose working directory" });
-            if (selected) {
-              setCustomQuickDirectory(selected);
-              setQuickRequestDirectoryPath(selected);
-              quickRequestDirectoryReady = true;
-              setProposalCreateDisabled(false);
-            }
-          } catch (error) { setNewWorkCaptureError(formatWorkspaceError("Choose working directory", error)); }
-        },
-        onResetDirectory: () => {
-          setCustomQuickDirectory(defaultQuickDirectory());
-          setQuickRequestDirectoryId("");
-          setQuickRequestDirectoryPath(defaultQuickDirectory());
-          quickRequestDirectoryReady = Boolean(defaultQuickDirectory());
-          setProposalCreateDisabled(!quickRequestDirectoryReady);
-        },
-      }),
+    modal: createNewWorkModalElement,
   };
 }

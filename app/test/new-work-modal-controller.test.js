@@ -10,11 +10,6 @@ function setup(session = null, failClose = false) {
     setView: (v) => calls.push(["view", v]),
     setPrompt: (v) => calls.push(["prompt", v]),
     setCaptureError: (v) => calls.push(["error", v]),
-    modal: {
-      isOpen: () => false,
-      showModal: () => calls.push(["show"]),
-      close: () => calls.push(["close"]),
-    },
     focusPrompt: () => calls.push(["focus"]),
     closeProposalSession: async () => {
       calls.push(["cleanup"]);
@@ -34,18 +29,17 @@ test("open accepts work types and ignores invalid types", () => {
     ["view", "capture"],
     ["prompt", ""],
     ["error", ""],
-    ["show"],
     ["focus"],
   ]);
 });
 
-test("cancel closes after cleanup, but remains open when cleanup fails", async () => {
+test("cancel closes immediately and performs proposal cleanup independently", async () => {
   const ok = setup("proposal");
   await ok.controller.cancel();
-  assert.deepEqual(ok.calls, [["cleanup"], ["view", "closed"], ["close"]]);
+  assert.deepEqual(ok.calls, [["view", "closed"], ["cleanup"]]);
   const failed = setup("proposal", true);
   await failed.controller.cancel();
-  assert.deepEqual(failed.calls, [["cleanup"]]);
+  assert.deepEqual(failed.calls, [["view", "closed"], ["cleanup"]]);
 });
 
 test("back returns to capture and focuses prompt", () => {

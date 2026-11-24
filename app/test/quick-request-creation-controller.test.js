@@ -87,7 +87,10 @@ test("guards proposal, model readiness, and directory readiness without effects"
 test("passes the chosen working directory to creation", async () => {
   const { controller, calls } = setup({ getDirectory: () => "/chosen folder" });
   await controller.createQuickRequest();
-  assert.equal(calls.find(([key]) => key === "submit")[1].directory, "/chosen folder");
+  assert.equal(
+    calls.find(([key]) => key === "submit")[1].directory,
+    "/chosen folder",
+  );
 });
 
 test("failure reports error and always clears busy state, preserving retry availability", async () => {
@@ -107,4 +110,33 @@ test("failure reports error and always clears busy state, preserving retry avail
     ["sync"],
     ["disabled", false],
   ]);
+});
+
+test("completion after close does not mutate or close a later modal instance", async () => {
+  let generation = 1;
+  let finish;
+  const { controller, calls } = setup({
+    getGeneration: () => generation,
+    submitResolvedQuickRequestFlow: () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  });
+  const pending = controller.createQuickRequest();
+  await new Promise((resolve) => setImmediate(resolve));
+  generation++;
+  finish();
+  await pending;
+
+  assert.equal(
+    calls.some(([name]) =>
+      ["view", "closeModal", "clearProposal"].includes(name),
+    ),
+    false,
+  );
+  assert.deepEqual(
+    calls.filter(([name]) => name === "disabled"),
+    [["disabled", true]],
+  );
+  assert.equal(calls.at(-2)[0], "busy");
 });

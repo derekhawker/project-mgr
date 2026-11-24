@@ -2,6 +2,7 @@ export const EMPTY_WORKSPACE_REPOSITORY = "__create_empty_repository__";
 
 export function createWorkspaceCreationController(deps) {
   const {
+    getGeneration,
     getRepositoryChoice,
     getWorkspaceName,
     getWorkspaceDescription,
@@ -21,6 +22,9 @@ export function createWorkspaceCreationController(deps) {
 
   async function create(event) {
     event?.preventDefault?.();
+    const generation = getGeneration?.();
+    const isCurrent = () =>
+      getGeneration?.() === undefined || getGeneration() === generation;
     const choice = getRepositoryChoice();
     const name = getWorkspaceName().trim();
     const isEmptyWorkspace = choice === EMPTY_WORKSPACE_REPOSITORY;
@@ -49,21 +53,27 @@ export function createWorkspaceCreationController(deps) {
         description,
         isEmptyWorkspace ? null : choice,
       );
+      if (!isCurrent()) {
+        await refreshNavigation().catch(() => {});
+        return;
+      }
       selectWorkspace(workspace, navigationData());
       setView("closed");
       closeModal();
       try {
         const data = await refreshNavigation();
-        selectWorkspace(selectCreatedWorkspace(data, workspace), data);
+        if (isCurrent())
+          selectWorkspace(selectCreatedWorkspace(data, workspace), data);
       } catch (error) {
         setNotice?.(
           formatWorkspaceError("Workspace created; refresh navigation", error),
         );
       }
     } catch (error) {
-      setError(formatWorkspaceError("Create workspace", error));
+      if (isCurrent())
+        setError(formatWorkspaceError("Create workspace", error));
     } finally {
-      setBusy(false);
+      if (isCurrent()) setBusy(false);
     }
   }
 
