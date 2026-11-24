@@ -725,11 +725,14 @@ const changeReview = () =>
 const docsPane = () =>
   DocsPane({
     ...docsView,
-  navigatorWidth,
-  onNavigatorResize: resizeNavigator,
-  onSelect: (file) =>
-    void docsController.select(file),
-});
+    ticketMetadata: () =>
+      ticketItems().find(
+        (ticket) => ticket.filename === selectedTicketFilename(),
+      ),
+    navigatorWidth,
+    onNavigatorResize: resizeNavigator,
+    onSelect: (file) => void docsController.select(file),
+  });
 const docsController = createDocsController({
   invoke,
     getOwner: () =>

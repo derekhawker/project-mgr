@@ -171,6 +171,20 @@
   background: var(--ui-surface);
 }
 
+.ticketHeader {
+  margin-bottom: var(--ui-space-12);
+  padding-bottom: var(--ui-space-8);
+  border-bottom: 1px solid var(--ui-border);
+}
+
+.ticketHeading {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-weight: 400;
+}
+
+.ticketHeading strong { font-weight: 700; }
+
 .emptyDetail { color: var(--ui-muted); }
 .markdown { overflow-wrap: anywhere; line-height: 1.6; }
 .markdown :first-child { margin-top: 0; }

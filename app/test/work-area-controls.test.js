@@ -504,7 +504,12 @@ test("Docs puts the special ticket first with its icon and omits the repository 
     content: () => ({
       path: "Ticket.md",
       contents:
-        "---\ntitle: Sample ticket\nstatus: in_progress\nopencode-status: running\nowner: Alice\n---\n# Ticket body",
+        "---\ntitle: Sample ticket\nstatus: in_progress\nproject_label: Initiative\nopencode-status: running\nowner: Alice\n---\n# Sample ticket\n\n# Ticket body",
+    }),
+    ticketMetadata: () => ({
+      title: "Sample ticket",
+      status: "in_progress",
+      projectLabel: "Initiative",
     }),
     pageMessage: () => "",
     contentMessage: () => "",
@@ -525,19 +530,34 @@ test("Docs puts the special ticket first with its icon and omits the repository 
     '[aria-label="Selected ticket: Sample ticket"]',
   );
   assert.ok(ticketContent, "Docs uses the shared Workspace ticket content component");
+  const ticketHeading = ticketContent.querySelector(":scope > header > h2");
+  assert.equal(ticketHeading.querySelector('[aria-label="Status: In progress"]')?.textContent, "In progress");
+  assert.equal(ticketHeading.querySelector("strong")?.textContent, "Sample ticket");
+  assert.match(ticketHeading.textContent, /Initiative\s*-\s*Sample ticket/);
+  assert.equal(
+    ticketContent.querySelector(".markdown h1")?.textContent,
+    "Ticket body",
+    "the body does not repeat its title heading",
+  );
   const workspaceView = mount(WorkspaceTicketContent, {
     content: () =>
-      "---\ntitle: Sample ticket\nstatus: in_progress\nopencode-status: running\nowner: Alice\n---\n# Ticket body",
+      "---\ntitle: Sample ticket\nstatus: in_progress\nproject_label: Initiative\nopencode-status: running\nowner: Alice\n---\n# Sample ticket\n\n# Ticket body",
     title: () => "Sample ticket",
+    status: () => "in_progress",
+    label: () => "Initiative",
   });
   const workspaceTicketContent = workspaceView.host.querySelector(
     '[aria-label="Selected ticket: Sample ticket"]',
   );
-  const markdown = ticketContent.firstElementChild;
+  assert.equal(
+    ticketHeading.className,
+    workspaceTicketContent.querySelector(":scope > header > h2").className,
+  );
+  const markdown = ticketContent.querySelector(":scope > .markdown");
   assert.equal(ticketContent.className, workspaceTicketContent.className);
   assert.equal(
     markdown.className,
-    workspaceTicketContent.firstElementChild.className,
+    workspaceTicketContent.querySelector(":scope > .markdown").className,
   );
   assert.match(markdown.textContent, /Ticket body/);
   assert.ok(

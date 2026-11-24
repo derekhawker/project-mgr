@@ -12,7 +12,15 @@ export function splitTicketFrontmatter(content) {
   return { body: normalized.slice(match[0].length), fields };
 }
 
-export function renderTicketMarkdown(content, window) {
+export function renderTicketMarkdown(content, window, title) {
   const { body } = splitTicketFrontmatter(content);
-  return createDOMPurify(window).sanitize(marked.parse(body, { async: false }));
+  const lines = body.split("\n");
+  const firstContentLine = lines.findIndex((line) => line.trim());
+  const heading = lines[firstContentLine]?.match(/^#\s+(.+?)\s*#*$/);
+  if (title && heading?.[1]?.trim() === title.trim()) {
+    lines.splice(firstContentLine, 1);
+  }
+  return createDOMPurify(window).sanitize(
+    marked.parse(lines.join("\n"), { async: false }),
+  );
 }

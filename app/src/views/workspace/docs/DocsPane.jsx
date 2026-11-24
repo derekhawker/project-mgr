@@ -9,6 +9,7 @@ import styles from "../../../application/workArea.module.css";
 export function DocsPane(props) {
   const prepareContent = createDocContentAdapter(document.defaultView);
   const content = createMemo(() => prepareContent(props.content()));
+  const ticketMetadata = () => props.ticketMetadata?.();
   const ticketFile = () => props.files().find((file) => file.isTicket);
   const repositoryFiles = () =>
     props.files().filter((file) => !file.isTicket);
@@ -103,6 +104,9 @@ export function DocsPane(props) {
             >
               <WorkspaceTicketContent
                 content={() => props.content()?.contents}
+                title={() => ticketMetadata()?.title}
+                status={() => ticketMetadata()?.status}
+                label={() => ticketMetadata()?.projectLabel}
               />
             </Show>
           </Show>

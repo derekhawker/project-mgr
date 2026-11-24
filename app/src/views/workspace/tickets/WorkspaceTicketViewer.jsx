@@ -231,6 +231,8 @@ export function WorkspaceTicketViewer(props) {
                 <WorkspaceTicketContent
                   content={() => ticket().content}
                   title={() => ticket().title}
+                  status={() => ticket().status}
+                  label={() => ticket().projectLabel}
                 />
               );
           }}</Show>
