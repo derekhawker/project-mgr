@@ -20,8 +20,12 @@ export function resolveTerminalConstructor(moduleNamespace) {
 
 const Terminal = resolveTerminalConstructor(xtermModule);
 
-const decode = (value) =>
-  Uint8Array.from(atob(value), (character) => character.charCodeAt(0));
+const decode = (value) => {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+};
 
 // These small state objects are deliberately independent of xterm and Tauri.
 // PTY output may arrive before a terminal is mounted or while its view is
@@ -480,9 +484,27 @@ export class TerminalRuntime {
             cols: session.terminal.cols,
             rows: session.terminal.rows,
           };
-    return prefix === "opencode_terminal"
-      ? invokeCommand(this.invoke, "opencode_terminal_resize", payload)
-      : repoToolTerminalCommand(this.invoke, "resize", payload);
+    const pending = Promise.resolve().then(() =>
+      prefix === "opencode_terminal"
+        ? invokeCommand(this.invoke, "opencode_terminal_resize", payload)
+        : repoToolTerminalCommand(this.invoke, "resize", payload),
+    );
+    session.pendingResizes ??= new Set();
+    session.pendingResizes.add(pending);
+    try {
+      return await pending;
+    } finally {
+      session.pendingResizes.delete(pending);
+    }
+  }
+
+  async suspendResizing(sessionId) {
+    const session = this.sessions.get(sessionId);
+    if (!session) return;
+    session.hidden = true;
+    await Promise.all(
+      [...(session.pendingResizes ?? [])].map((pending) => pending.catch(() => {})),
+    );
   }
 
   hide(sessionId) {

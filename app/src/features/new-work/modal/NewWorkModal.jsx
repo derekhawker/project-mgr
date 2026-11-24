@@ -1,5 +1,5 @@
 import { createEffect, Show } from "solid-js";
-import { Button, Input, Modal, Select, TextArea } from "@ui-lib";
+import { Button, Input, Modal, Select, Tabs, TextArea } from "@ui-lib";
 import { SetupProgressPanel } from "./SetupProgressPanel.jsx";
 import { newWorkProgressDestination } from "./newWorkProgress.js";
 import styles from "./NewWorkModal.module.css";
@@ -14,12 +14,18 @@ export function NewWorkModal(props) {
       const selector = props.workspaceVisible()
         ? "#workspace-repository-select"
         : review
-          ? "#quick-request-directory"
+          ? recoveringQuickRequest()
+            ? "#quick-request-retry-startup"
+            : proposal().workType === "quick_request"
+              ? `#quick-request-prompt-${props.promptChoice()}`
+              : "#quick-request-directory"
           : "#new-work-prompt";
       modal.querySelector(selector)?.focus({ preventScroll: true });
     });
   });
   const proposal = () => props.proposal();
+  const recoveringQuickRequest = () =>
+    Boolean(props.quickRequestRecoveryRecord?.());
   const progressDestination = () =>
     newWorkProgressDestination(
       props.captureVisible(),
@@ -39,7 +45,13 @@ export function NewWorkModal(props) {
         modal = element;
         props.setModal(element);
       }}
-      title={props.reviewVisible() ? proposal().title : "New Workspace"}
+      title={
+        recoveringQuickRequest()
+          ? "Recover Quick Request"
+          : props.reviewVisible()
+            ? proposal().title
+            : "New Workspace"
+      }
       titleId={props.reviewVisible() ? "proposal-title" : "new-work-title"}
       size={props.reviewVisible() ? "wide" : "compact"}
       onCloseRequest={props.onCancel}
@@ -91,26 +103,45 @@ export function NewWorkModal(props) {
                 {props.proposalError()}
               </p>
             </Show>
-            <Button
-              type="button"
-              id="proposal-cancel"
-              class={styles.cancel}
-              onClick={props.onCancel}
+            <Show
+              when={recoveringQuickRequest()}
+              fallback={
+                <>
+                  <Button
+                    type="button"
+                    id="proposal-cancel"
+                    class={styles.cancel}
+                    onClick={props.onCancel}
+                  >
+                    Cancel
+                  </Button>
+                  <Button type="button" id="proposal-back" onClick={props.onBack}>
+                    Back
+                  </Button>
+                  <Button
+                    variant="primary"
+                    type="button"
+                    id="proposal-create"
+                    disabled={props.proposalCreateDisabled()}
+                    onClick={props.onConfirm}
+                  >
+                    {proposal().createLabel}
+                  </Button>
+                </>
+              }
             >
-              Cancel
-            </Button>
-            <Button type="button" id="proposal-back" onClick={props.onBack}>
-              Back
-            </Button>
-            <Button
-              variant="primary"
-              type="button"
-              id="proposal-create"
-              disabled={props.proposalCreateDisabled()}
-              onClick={props.onConfirm}
-            >
-              {proposal().createLabel}
-            </Button>
+              <Button
+                variant="primary"
+                type="button"
+                id="quick-request-retry-startup"
+                disabled={props.quickRequestRecoveryBusy()}
+                onClick={props.onRetryQuickRequest}
+              >
+                {props.quickRequestRecoveryBusy()
+                  ? "Retrying startup…"
+                  : "Retry startup"}
+              </Button>
+            </Show>
           </Show>
         </>
       }
@@ -286,12 +317,20 @@ export function NewWorkModal(props) {
                 rows={props.progressRows}
               />
             </Show>
+            <Show when={recoveringQuickRequest()}>
+              <p class={styles.guidance} role="status">
+                This Quick Request is saved. Recovery uses its existing session
+                and will not create another request.
+              </p>
+            </Show>
             <div class={styles.fields}>
               <Select
                 id="proposal-model"
                 label="Model"
                 required
-                disabled={props.proposalModelDisabled()}
+                disabled={
+                  props.proposalModelDisabled() || recoveringQuickRequest()
+                }
                 aria-busy={props.proposalModelDisabled() ? "true" : undefined}
                 value={props.proposalSelectedModel()}
                 placeholder={

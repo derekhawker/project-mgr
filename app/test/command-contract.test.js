@@ -156,7 +156,7 @@ test("checked-in command inventory has one contract for every registered Rust co
   assert.deepEqual([...COMMAND_NAMES].sort(), [...rustAttributes].sort());
 });
 
-test("ticket session commands validate the multi-session and close wire shapes", async () => {
+test("ticket session commands validate the single-session and close wire shapes", async () => {
   const payloads = [];
   const invoke = async (name, payload) => {
     payloads.push([name, payload]);
@@ -166,8 +166,8 @@ test("ticket session commands validate the multi-session and close wire shapes",
     workspaceId: "workspace-1",
     filename: "ticket.md",
   });
-  assert.deepEqual(Object.keys(work).sort(), ["activeSessionId", "sessions"]);
-  assert.equal(work.sessions[0].openCodeSessionId, "ses-1");
+  assert.deepEqual(Object.keys(work), ["session"]);
+  assert.equal(work.session.openCodeSessionId, "ses-1");
   const created = await invokeCommand(
     invoke,
     "workspace_ticket_session_create",
@@ -182,7 +182,7 @@ test("ticket session commands validate the multi-session and close wire shapes",
     filename: "ticket.md",
     sessionId: "ses-ticket-new",
   });
-  assert.equal(next, "ses-ticket-old");
+  assert.equal(next, null);
   assert.deepEqual(
     payloads.map(([name]) => name),
     [
@@ -202,6 +202,7 @@ test("workspace navigation accepts the persisted OpenCode status on ticket rows"
       status: "in_progress",
       hasWorkSession: true,
       opencodeStatus: "idle",
+      projectLabel: null,
       modifiedAt: 1,
     },
   ];
@@ -296,7 +297,7 @@ test("ticket Workbench selection does not expose tools until row Work is activat
   );
   assert.match(
     main,
-    /async function workWorkspaceTicket\(workspaceId, filename\)[\s\S]*setWorkspaceShellVisible\(true\)[\s\S]*await showSession\(result\.activeSessionId\)/,
+    /async function workWorkspaceTicket\(workspaceId, filename\)[\s\S]*setWorkspaceShellVisible\(true\)[\s\S]*await showSession\(result\.session\.openCodeSessionId\)/,
   );
 });
 
@@ -395,7 +396,7 @@ test("New-work dialog class and accessible name derive from Solid view and propo
   );
   assert.match(
     newWorkModal,
-    /title=\{props\.reviewVisible\(\) \? proposal\(\)\.title : "New Workspace"\}[\s\S]*size=\{props\.reviewVisible\(\) \? "wide" : "compact"\}/,
+    /title=\{[\s\S]*?recoveringQuickRequest\(\)[\s\S]*?props\.reviewVisible\(\)[\s\S]*?proposal\(\)\.title[\s\S]*?"New Workspace"[\s\S]*?size=\{props\.reviewVisible\(\) \? "wide" : "compact"\}/,
   );
   assert.match(
     newWorkModal,
@@ -480,7 +481,7 @@ test("New-work proposal model selector disabled state is Solid-owned", () => {
   );
   assert.match(
     newWorkModal,
-    /id="proposal-model"[\s\S]*?required[\s\S]*?disabled=\{props\.proposalModelDisabled\(\)\}[\s\S]*?aria-busy=\{props\.proposalModelDisabled\(\) \? "true" : undefined\}[\s\S]*?value=\{props\.proposalSelectedModel\(\)\}/,
+    /id="proposal-model"[\s\S]*?required[\s\S]*?disabled=\{[\s\S]*?props\.proposalModelDisabled\(\)[\s\S]*?recoveringQuickRequest\(\)[\s\S]*?aria-busy=\{props\.proposalModelDisabled\(\) \? "true" : undefined\}[\s\S]*?value=\{props\.proposalSelectedModel\(\)\}/,
   );
   assert.match(
     state,
@@ -645,7 +646,7 @@ test("Tools toolbar disabled state is presented by the repository-tools componen
   );
   assert.match(
     repositoryToolsMenu,
-    /triggerId="show-repo-tools"[\s\S]*?disabled=\{props\.disabled\(\)\}[\s\S]*?hidden=\{!props\.available\(\)\}[\s\S]*?open=\{props\.open\(\)\}/,
+    /triggerId=\{props\.triggerId \?\? "show-repo-tools"\}[\s\S]*?disabled=\{props\.disabled\(\)\}[\s\S]*?hidden=\{!props\.available\(\)\}[\s\S]*?open=\{props\.open\}/,
   );
   assert.match(
     main,
@@ -754,8 +755,9 @@ test("Workspace navigation owns its list and busy attribute through Solid", () =
   );
   assert.match(
     applicationRoot,
-    /<WorkspaceNavigation \{\.\.\.props\.workspaceNavigation\} \/>/,
+    /<WorkspaceNavigation[\s\S]*?\{\.\.\.props\.workspaceNavigation\}/,
   );
+  assert.match(applicationRoot, /<TicketLabelEditor/);
   assert.match(main, /busy: navigationBusy/);
   assert.match(main, /setNavigationBusy,/);
   assert.match(main, /workspaceNavigation: workspaceNavigationProps/);
@@ -943,7 +945,10 @@ test("Quick Requests use a dedicated available-height page with a visible way ba
     rightContentShell,
     /"quick-request-terminal-page":[\s\S]*props\.location\(\)\.destination === "quick-request"/,
   );
-  assert.match(main, /setQuickRequestTerminalPage\(isQuickRequest\)/);
+  assert.match(
+    main,
+    /setQuickRequestTerminalPage\(isQuickRequest && !deferReveal\)/,
+  );
   assert.doesNotMatch(
     main,
     /classList\.(?:add|remove|toggle)\(['"](?:owner-active|quick-request-terminal-page)/,
@@ -1151,7 +1156,7 @@ test("regular Workspace navigation does not render retained legacy Task records"
   assert.match(main, /const workspaceNavigationProps = \{/);
   assert.match(
     applicationRoot,
-    /<WorkspaceNavigation \{\.\.\.props\.workspaceNavigation\} \/>/,
+    /<WorkspaceNavigation[\s\S]*?\{\.\.\.props\.workspaceNavigation\}/,
   );
   assert.doesNotMatch(renderNavigation, /data\.tasks|renderTasks|selectTask/);
   assert.doesNotMatch(html, /id="owner-tabs"/);
@@ -1470,6 +1475,21 @@ test("result validation is recursive and errors retain command identity", async 
       return error.message === "Tauri command app_shell_info failed: boom";
     },
   );
+});
+
+test("Quick Request proposal result contract accepts the suggested prompt", async () => {
+  const proposal = {
+    schemaVersion: 1,
+    workType: "quick_request",
+    repositories: [],
+    suggestedPrompt: "Summarize the request clearly.",
+  };
+  const result = await invokeCommand(() => proposal, "new_work_proposal_run", {
+    sessionId: "proposal-1",
+    originalPrompt: "summarize this",
+    workType: "quick_request",
+  });
+  assert.equal(result.suggestedPrompt, proposal.suggestedPrompt);
 });
 
 test("command tagging and nested quick-request shape are enforced", async () => {

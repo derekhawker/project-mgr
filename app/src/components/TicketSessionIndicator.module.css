@@ -1,0 +1,14 @@
+.indicator {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--ui-muted);
+}
+
+.question,
+.paused {
+  color: var(--ui-primary);
+}
+
+.error {
+  color: var(--ui-caution);
+}

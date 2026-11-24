@@ -42,6 +42,8 @@ const MIGRATION_22: &str = include_str!("migrations/0022_repository_soft_delete.
 const MIGRATION_23: &str = include_str!("migrations/0023_quick_request_custom_directory.sql");
 const MIGRATION_24: &str = include_str!("migrations/0024_workspace_session_context_roles.sql");
 const MIGRATION_25: &str = include_str!("migrations/0025_repository_path_identity.sql");
+const MIGRATION_26: &str = include_str!("migrations/0026_quick_request_starting_prompts.sql");
+const MIGRATION_27: &str = include_str!("migrations/0027_change_review_view_state.sql");
 #[cfg(test)]
 const LEGACY_MIGRATION_18: &str =
     include_str!("migrations/test_fixtures/0018_legacy_workspace_work_contexts.sql");
@@ -789,29 +791,58 @@ impl ManagementStore {
         {
             let connection = self.lock()?;
             if Self::get_workspace_from(&connection, &workspace.id)?.is_some() {
-                return Err(ManagementStoreError::InvalidTransition(format!("workspace ID {} already exists", workspace.id)));
+                return Err(ManagementStoreError::InvalidTransition(format!(
+                    "workspace ID {} already exists",
+                    workspace.id
+                )));
             }
-            let slug_exists: bool = connection.query_row("SELECT EXISTS(SELECT 1 FROM workspaces WHERE slug = ?1)", [&workspace.slug], |row| row.get(0))?;
-            if slug_exists { return Err(ManagementStoreError::InvalidTransition(format!("workspace slug {} is already in use", workspace.slug))); }
+            let slug_exists: bool = connection.query_row(
+                "SELECT EXISTS(SELECT 1 FROM workspaces WHERE slug = ?1)",
+                [&workspace.slug],
+                |row| row.get(0),
+            )?;
+            if slug_exists {
+                return Err(ManagementStoreError::InvalidTransition(format!(
+                    "workspace slug {} is already in use",
+                    workspace.slug
+                )));
+            }
         }
         let (repository, branch, created_path) = if let Some(id) = existing_repository_id {
             let repository = self
                 .list_repositories()?
                 .into_iter()
                 .find(|repository| repository.id == id)
-                .ok_or_else(|| ManagementStoreError::NotFound(format!("enabled repository {id}")))?;
+                .ok_or_else(|| {
+                    ManagementStoreError::NotFound(format!("enabled repository {id}"))
+                })?;
             let inspected = safety::inspect_repository(Path::new(&repository.repository_path))?;
             if inspected.repository.canonical_root != PathBuf::from(&repository.repository_path) {
-                return Err(ManagementStoreError::InvalidTransition("catalogued path is not the repository root".into()));
+                return Err(ManagementStoreError::InvalidTransition(
+                    "catalogued path is not the repository root".into(),
+                ));
             }
             verify_catalog_identity(&repository, &inspected.repository)?;
-            let branch = inspected.repository.default_branch.or(inspected.repository.current_branch).unwrap_or_else(|| "main".into());
+            let branch = inspected
+                .repository
+                .default_branch
+                .or(inspected.repository.current_branch)
+                .unwrap_or_else(|| "main".into());
             (repository, branch, None)
         } else {
-            let username = std::env::var("USER").or_else(|_| std::env::var("USERNAME"))
+            let username = std::env::var("USER")
+                .or_else(|_| std::env::var("USERNAME"))
                 .unwrap_or_else(|_| "user".into());
-            if username.is_empty() || !username.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-' || b == b'.') || username == "." || username == ".." {
-                return Err(ManagementStoreError::InvalidTransition("username is unsafe for repository path construction".into()));
+            if username.is_empty()
+                || !username
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-' || b == b'.')
+                || username == "."
+                || username == ".."
+            {
+                return Err(ManagementStoreError::InvalidTransition(
+                    "username is unsafe for repository path construction".into(),
+                ));
             }
             let library_root = self.resolved_repository_library_root()?;
             fs::create_dir_all(&library_root)?;
@@ -819,10 +850,12 @@ impl ManagementStore {
             let username_directory = canonical_library_root.join(&username);
             match fs::symlink_metadata(&username_directory) {
                 Ok(metadata) if metadata.file_type().is_dir() => {}
-                Ok(_) => return Err(ManagementStoreError::InvalidTransition(format!(
-                    "repository username path is not a regular directory: {}",
-                    username_directory.display()
-                ))),
+                Ok(_) => {
+                    return Err(ManagementStoreError::InvalidTransition(format!(
+                        "repository username path is not a regular directory: {}",
+                        username_directory.display()
+                    )))
+                }
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                     fs::create_dir(&username_directory)?;
                 }
@@ -833,36 +866,71 @@ impl ManagementStore {
                 || !canonical_username_directory.starts_with(&canonical_library_root)
             {
                 return Err(ManagementStoreError::InvalidTransition(
-                    "repository username directory escapes the configured repository library".into(),
+                    "repository username directory escapes the configured repository library"
+                        .into(),
                 ));
             }
             let path = canonical_username_directory.join(&workspace.slug);
             match fs::symlink_metadata(&path) {
-                Ok(_) => return Err(ManagementStoreError::InvalidTransition(format!(
-                    "repository destination already exists: {}",
-                    path.display()
-                ))),
+                Ok(_) => {
+                    return Err(ManagementStoreError::InvalidTransition(format!(
+                        "repository destination already exists: {}",
+                        path.display()
+                    )))
+                }
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
                 Err(error) => return Err(error.into()),
             }
             fs::create_dir(&path)?;
-            let output = std::process::Command::new("git").arg("init").arg(&path).output()?;
+            let output = std::process::Command::new("git")
+                .arg("init")
+                .arg(&path)
+                .output()?;
             if !output.status.success() {
                 let _ = fs::remove_dir(&path);
-                return Err(ManagementStoreError::InvalidTransition(format!("git init failed: {}", String::from_utf8_lossy(&output.stderr).trim())));
+                return Err(ManagementStoreError::InvalidTransition(format!(
+                    "git init failed: {}",
+                    String::from_utf8_lossy(&output.stderr).trim()
+                )));
             }
             let inspected = match safety::inspect_repository(&path) {
                 Ok(value) => value,
-                Err(error) => return Err(ManagementStoreError::InvalidTransition(format!("repository created at {} but inspection failed: {error}; directory retained", path.display()))),
+                Err(error) => {
+                    return Err(ManagementStoreError::InvalidTransition(format!(
+                    "repository created at {} but inspection failed: {error}; directory retained",
+                    path.display()
+                )))
+                }
             };
-            let branch = inspected.repository.default_branch.clone().or(inspected.repository.current_branch.clone()).unwrap_or_else(|| "main".into());
+            let branch = inspected
+                .repository
+                .default_branch
+                .clone()
+                .or(inspected.repository.current_branch.clone())
+                .unwrap_or_else(|| "main".into());
             let repository = NewRepository {
-                id: format!("repo-{}", workspace.id), name: workspace.name.clone(),
+                id: format!("repo-{}", workspace.id),
+                name: workspace.name.clone(),
                 repository_path: inspected.repository.canonical_root.display().to_string(),
                 repository_identity: inspected.repository.identity,
-                purpose: None, purpose_status: PurposeStatus::Available, created_at: workspace.created_at,
+                purpose: None,
+                purpose_status: PurposeStatus::Available,
+                created_at: workspace.created_at,
             };
-            (Repository { id: repository.id, name: repository.name, repository_path: repository.repository_path, repository_identity: repository.repository_identity, purpose: repository.purpose, purpose_status: repository.purpose_status, created_at: repository.created_at, updated_at: repository.created_at }, branch, Some(path))
+            (
+                Repository {
+                    id: repository.id,
+                    name: repository.name,
+                    repository_path: repository.repository_path,
+                    repository_identity: repository.repository_identity,
+                    purpose: repository.purpose,
+                    purpose_status: repository.purpose_status,
+                    created_at: repository.created_at,
+                    updated_at: repository.created_at,
+                },
+                branch,
+                Some(path),
+            )
         };
         // Persist workspace metadata with the repository itself as home/work context,
         // avoiding create_workspace's managed-home filesystem side effect.
@@ -870,18 +938,22 @@ impl ManagementStore {
         let mut connection = self.lock()?;
         let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let persist_result = (|| -> StoreResult<()> {
-        if created_path.is_some() {
-            tx.execute("INSERT INTO repository_catalog(id,name,repository_path,repository_identity,purpose,purpose_status,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?7)", params![repository.id, repository.name, repository.repository_path, repository.repository_identity, repository.purpose, repository.purpose_status.as_str(), repository.created_at])?;
-        }
-        tx.execute("INSERT INTO workspaces(id,name,slug,description,home_path,kind,created_at) VALUES (?1,?2,?3,?4,?5,'regular',?6)",
+            if created_path.is_some() {
+                tx.execute("INSERT INTO repository_catalog(id,name,repository_path,repository_identity,purpose,purpose_status,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?7)", params![repository.id, repository.name, repository.repository_path, repository.repository_identity, repository.purpose, repository.purpose_status.as_str(), repository.created_at])?;
+            }
+            tx.execute("INSERT INTO workspaces(id,name,slug,description,home_path,kind,created_at) VALUES (?1,?2,?3,?4,?5,'regular',?6)",
             params![workspace.id, workspace.name, workspace.slug, workspace.description, path_to_string(&repo_path)?, workspace.created_at])?;
-        tx.execute("INSERT INTO workspace_repositories(workspace_id,repository_id,checkout_path,checkout_mode,branch,verification_status,source_identity,checkout_identity,default_branch,created_at) VALUES (?1,?2,?3,'existing',?4,'verified',?5,?5,?4,?6)",
+            tx.execute("INSERT INTO workspace_repositories(workspace_id,repository_id,checkout_path,checkout_mode,branch,verification_status,source_identity,checkout_identity,default_branch,created_at) VALUES (?1,?2,?3,'existing',?4,'verified',?5,?5,?4,?6)",
             params![workspace.id, repository.id, repository.repository_path, branch, repository.repository_identity, workspace.created_at])?;
-        Ok(())
+            Ok(())
         })();
-        if let Err(error) = persist_result { drop(tx); return Err(error); }
+        if let Err(error) = persist_result {
+            drop(tx);
+            return Err(error);
+        }
         tx.commit()?;
-        let created = Self::get_workspace_from(&connection, &workspace.id)?.ok_or_else(|| ManagementStoreError::NotFound(format!("workspace {}", workspace.id)))?;
+        let created = Self::get_workspace_from(&connection, &workspace.id)?
+            .ok_or_else(|| ManagementStoreError::NotFound(format!("workspace {}", workspace.id)))?;
         Ok((created, repository))
     }
 
@@ -985,7 +1057,7 @@ impl ManagementStore {
             [],
             |row| row.get(0),
         )?;
-        if current_version > 25 {
+        if current_version > 27 {
             return Err(ManagementStoreError::UnsupportedSchemaVersion(
                 current_version,
             ));
@@ -1234,6 +1306,26 @@ impl ManagementStore {
                 ));
             }
         }
+        if current_version < 26 {
+            let transaction =
+                connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+            transaction.execute_batch(MIGRATION_26)?;
+            transaction.execute(
+                "INSERT INTO schema_migrations(version, applied_at) VALUES (26, 0)",
+                [],
+            )?;
+            transaction.commit()?;
+        }
+        if current_version < 27 {
+            let transaction =
+                connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+            transaction.execute_batch(MIGRATION_27)?;
+            transaction.execute(
+                "INSERT INTO schema_migrations(version, applied_at) VALUES (27, 0)",
+                [],
+            )?;
+            transaction.commit()?;
+        }
         Ok(())
     }
 
@@ -1395,6 +1487,139 @@ impl ManagementStore {
         self.connection
             .lock()
             .map_err(|_| ManagementStoreError::LockPoisoned)
+    }
+
+    fn sync_change_review_state_in(
+        connection: &Connection,
+        workspace_id: &str,
+        ticket_filename: &str,
+        repository_id: &str,
+        head_commit: &str,
+    ) -> StoreResult<Vec<String>> {
+        let current_head = connection
+            .query_row(
+                "SELECT head_commit FROM change_review_repository_state
+                 WHERE workspace_id = ?1 AND ticket_filename = ?2 AND repository_id = ?3",
+                params![workspace_id, ticket_filename, repository_id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?;
+        match current_head {
+            None => {
+                connection.execute(
+                    "INSERT INTO change_review_repository_state
+                     (workspace_id, ticket_filename, repository_id, head_commit, updated_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5)",
+                    params![
+                        workspace_id,
+                        ticket_filename,
+                        repository_id,
+                        head_commit,
+                        now_millis_for_cleanup()
+                    ],
+                )?;
+            }
+            Some(current) if current != head_commit => {
+                connection.execute(
+                    "UPDATE change_review_repository_state SET head_commit = ?4, updated_at = ?5
+                     WHERE workspace_id = ?1 AND ticket_filename = ?2 AND repository_id = ?3",
+                    params![
+                        workspace_id,
+                        ticket_filename,
+                        repository_id,
+                        head_commit,
+                        now_millis_for_cleanup()
+                    ],
+                )?;
+                connection.execute(
+                    "DELETE FROM change_review_viewed_files
+                     WHERE workspace_id = ?1 AND ticket_filename = ?2 AND repository_id = ?3",
+                    params![workspace_id, ticket_filename, repository_id],
+                )?;
+            }
+            Some(_) => {}
+        }
+        let mut statement = connection.prepare(
+            "SELECT path FROM change_review_viewed_files
+             WHERE workspace_id = ?1 AND ticket_filename = ?2 AND repository_id = ?3
+             ORDER BY path",
+        )?;
+        let viewed = statement
+            .query_map(
+                params![workspace_id, ticket_filename, repository_id],
+                |row| row.get(0),
+            )?
+            .collect::<Result<Vec<String>, _>>()
+            .map_err(ManagementStoreError::from)?;
+        Ok(viewed)
+    }
+
+    pub fn sync_change_review_state(
+        &self,
+        workspace_id: &str,
+        ticket_filename: &str,
+        repository_id: &str,
+        head_commit: &str,
+    ) -> StoreResult<Vec<String>> {
+        let mut connection = self.lock()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let viewed = Self::sync_change_review_state_in(
+            &transaction,
+            workspace_id,
+            ticket_filename,
+            repository_id,
+            head_commit,
+        )?;
+        transaction.commit()?;
+        Ok(viewed)
+    }
+
+    pub fn set_change_review_file_viewed(
+        &self,
+        workspace_id: &str,
+        ticket_filename: &str,
+        repository_id: &str,
+        head_commit: &str,
+        path: &str,
+        viewed: bool,
+    ) -> StoreResult<Vec<String>> {
+        if path.is_empty() || path.len() > 4096 || path.contains('\0') {
+            return Err(ManagementStoreError::InvalidTransition(
+                "invalid Change Review file path".into(),
+            ));
+        }
+        let mut connection = self.lock()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        Self::sync_change_review_state_in(
+            &transaction,
+            workspace_id,
+            ticket_filename,
+            repository_id,
+            head_commit,
+        )?;
+        if viewed {
+            transaction.execute(
+                "INSERT OR IGNORE INTO change_review_viewed_files
+                 (workspace_id, ticket_filename, repository_id, path)
+                 VALUES (?1, ?2, ?3, ?4)",
+                params![workspace_id, ticket_filename, repository_id, path],
+            )?;
+        } else {
+            transaction.execute(
+                "DELETE FROM change_review_viewed_files
+                 WHERE workspace_id = ?1 AND ticket_filename = ?2 AND repository_id = ?3 AND path = ?4",
+                params![workspace_id, ticket_filename, repository_id, path],
+            )?;
+        }
+        let viewed = Self::sync_change_review_state_in(
+            &transaction,
+            workspace_id,
+            ticket_filename,
+            repository_id,
+            head_commit,
+        )?;
+        transaction.commit()?;
+        Ok(viewed)
     }
 
     pub fn migration_versions(&self) -> StoreResult<Vec<i64>> {
@@ -1868,7 +2093,12 @@ impl ManagementStore {
         let mut quick_request_task = task.clone();
         quick_request_task.description = None;
         let guard = self.insert_task(&transaction, &quick_request_task, Some(&lifecycle))?;
-        Self::insert_quick_request_prompt(&transaction, &task.id, original_prompt)?;
+        Self::insert_quick_request_prompt(
+            &transaction,
+            &task.id,
+            original_prompt,
+            original_prompt,
+        )?;
         transaction.commit()?;
         if let Some(guard) = guard {
             guard.commit();
@@ -1938,7 +2168,25 @@ impl ManagementStore {
         selected_model: &str,
         original_prompt: &str,
     ) -> StoreResult<QuickRequestRecord> {
+        self.create_quick_request_with_starting_prompt(
+            task,
+            session,
+            selected_model,
+            original_prompt,
+            original_prompt,
+        )
+    }
+
+    pub fn create_quick_request_with_starting_prompt(
+        &self,
+        task: &NewTask,
+        session: &NewSession,
+        selected_model: &str,
+        original_prompt: &str,
+        starting_prompt: &str,
+    ) -> StoreResult<QuickRequestRecord> {
         validate_quick_request_prompt(original_prompt)?;
+        validate_quick_request_prompt(starting_prompt)?;
         if session.owner != SessionOwner::Task(task.id.clone()) {
             return Err(ManagementStoreError::InvalidTransition(
                 "Quick Request session owner must be its task".into(),
@@ -1983,7 +2231,12 @@ impl ManagementStore {
         let mut quick_request_task = task.clone();
         quick_request_task.description = None;
         let guard = self.insert_task(&transaction, &quick_request_task, Some(&lifecycle))?;
-        Self::insert_quick_request_prompt(&transaction, &task.id, original_prompt)?;
+        Self::insert_quick_request_prompt(
+            &transaction,
+            &task.id,
+            original_prompt,
+            starting_prompt,
+        )?;
         Self::insert_session_with_model(&transaction, session, Some(selected_model))?;
         transaction.commit()?;
         if let Some(guard) = guard {
@@ -2042,6 +2295,21 @@ impl ManagementStore {
         Self::quick_request_prompt_from(&connection, task_id)
     }
 
+    pub fn quick_request_starting_prompt(&self, task_id: &str) -> StoreResult<Option<String>> {
+        let connection = self.lock()?;
+        connection
+            .query_row(
+                "SELECT prompt.starting_prompt
+             FROM quick_request_prompts AS prompt
+             JOIN tasks ON tasks.id = prompt.task_id
+             WHERE prompt.task_id = ?1 AND tasks.quick_request_created_at IS NOT NULL",
+                [task_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(Into::into)
+    }
+
     fn quick_request_prompt_from(
         connection: &Connection,
         task_id: &str,
@@ -2063,11 +2331,13 @@ impl ManagementStore {
         connection: &Connection,
         task_id: &str,
         original_prompt: &str,
+        starting_prompt: &str,
     ) -> StoreResult<()> {
         validate_quick_request_prompt(original_prompt)?;
+        validate_quick_request_prompt(starting_prompt)?;
         connection.execute(
-            "INSERT INTO quick_request_prompts(task_id, original_prompt) VALUES (?1, ?2)",
-            params![task_id, original_prompt],
+            "INSERT INTO quick_request_prompts(task_id, original_prompt, starting_prompt) VALUES (?1, ?2, ?3)",
+            params![task_id, original_prompt, starting_prompt],
         )?;
         Ok(())
     }
@@ -4478,6 +4748,26 @@ impl ManagementStore {
                         .collect::<StoreResult<Vec<_>>>()?,
                 );
                 allowed.contains(&actual)
+                    || self.database_path.as_ref().is_some_and(|database_path| {
+                        crate::workspace_tickets::workspace_ticket_dir(
+                            database_path.parent().unwrap_or_else(|| Path::new(".")),
+                            &workspace.slug,
+                        )
+                        .is_ok_and(|ticket_directory| {
+                            self.list_workspace_repository_bindings(id)
+                                .is_ok_and(|bindings| {
+                                    bindings.iter().any(|binding| {
+                                        binding.verification_status == VerificationStatus::Verified
+                                            && crate::workspace_tickets::session_owns_worktree(
+                                                &ticket_directory,
+                                                session_id,
+                                                &actual,
+                                                Path::new(&binding.checkout_path),
+                                            )
+                                    })
+                                })
+                        })
+                    })
             }
             SessionOwner::Task(id) => {
                 let task = self
@@ -4645,8 +4935,9 @@ impl ManagementStore {
             "UPDATE sessions SET last_known_status='prompting', reconciliation_status='unknown',
              reconciliation_uncertain=1, updated_at=?2
              WHERE open_code_session_id=?1 AND
-               last_known_status IN ('failed', 'unknown', 'reconnecting') AND
-               (last_known_status='failed' OR reconciliation_uncertain=1)",
+               (last_known_status='starting' OR
+                (last_known_status IN ('failed', 'unknown', 'reconnecting') AND
+                 (last_known_status='failed' OR reconciliation_uncertain=1)))",
             params![session_id, updated_at],
         )?;
         if changed == 0 {
@@ -5915,23 +6206,63 @@ mod tests {
         let repository_library = root.path().join("repo-library");
         let db = root.path().join("db.sqlite");
         let store = ManagementStore::open_with_paths(&db, &home, root.path()).unwrap();
-        store.set_repository_library_root(repository_library.to_str().unwrap(), CREATED).unwrap();
-        let input = NewWorkspace { id:"single-1".into(), name:"Single".into(), slug:"single".into(), description:Some("A short purpose".into()), kind:WorkspaceKind::Regular, created_at:CREATED };
-        let (workspace, repo) = store.create_single_repository_workspace(&input, None).unwrap();
-        let username = std::env::var("USER").or_else(|_| std::env::var("USERNAME")).unwrap_or_else(|_| "user".into());
-        assert_eq!(Path::new(&repo.repository_path), repository_library.join(username).join("single"));
+        store
+            .set_repository_library_root(repository_library.to_str().unwrap(), CREATED)
+            .unwrap();
+        let input = NewWorkspace {
+            id: "single-1".into(),
+            name: "Single".into(),
+            slug: "single".into(),
+            description: Some("A short purpose".into()),
+            kind: WorkspaceKind::Regular,
+            created_at: CREATED,
+        };
+        let (workspace, repo) = store
+            .create_single_repository_workspace(&input, None)
+            .unwrap();
+        let username = std::env::var("USER")
+            .or_else(|_| std::env::var("USERNAME"))
+            .unwrap_or_else(|_| "user".into());
+        assert_eq!(
+            Path::new(&repo.repository_path),
+            repository_library.join(username).join("single")
+        );
         assert_eq!(workspace.home_path, repo.repository_path);
         assert!(Path::new(&repo.repository_path).join(".git").is_dir());
         assert!(!home.join("workspaces").exists());
-        assert!(repository_library.join(std::env::var("USER").or_else(|_| std::env::var("USERNAME")).unwrap_or_else(|_| "user".into())).is_dir());
-        let bindings = store.list_workspace_repository_bindings(&workspace.id).unwrap();
+        assert!(repository_library
+            .join(
+                std::env::var("USER")
+                    .or_else(|_| std::env::var("USERNAME"))
+                    .unwrap_or_else(|_| "user".into())
+            )
+            .is_dir());
+        let bindings = store
+            .list_workspace_repository_bindings(&workspace.id)
+            .unwrap();
         assert_eq!(bindings.len(), 1);
         assert_eq!(bindings[0].checkout_path, repo.repository_path);
-        assert_eq!(bindings[0].verification_status, VerificationStatus::Verified);
+        assert_eq!(
+            bindings[0].verification_status,
+            VerificationStatus::Verified
+        );
         drop(store);
         let reopened = ManagementStore::open_with_paths(&db, &home, root.path()).unwrap();
-        assert_eq!(reopened.get_workspace(&workspace.id).unwrap().unwrap().home_path, repo.repository_path);
-        assert_eq!(reopened.list_workspace_repository_bindings(&workspace.id).unwrap().len(), 1);
+        assert_eq!(
+            reopened
+                .get_workspace(&workspace.id)
+                .unwrap()
+                .unwrap()
+                .home_path,
+            repo.repository_path
+        );
+        assert_eq!(
+            reopened
+                .list_workspace_repository_bindings(&workspace.id)
+                .unwrap()
+                .len(),
+            1
+        );
     }
 
     #[test]
@@ -5941,10 +6272,21 @@ mod tests {
         fs::create_dir(&home).unwrap();
         let repository_library = root.path().join("repo-library");
         let store = ManagementStore::in_memory_with_paths(&home, root.path()).unwrap();
-        store.set_repository_library_root(repository_library.to_str().unwrap(), CREATED).unwrap();
-        let input = NewWorkspace { id:"missing-description".into(), name:"Missing description".into(), slug:"missing-description".into(), description:None, kind:WorkspaceKind::Regular, created_at:CREATED };
+        store
+            .set_repository_library_root(repository_library.to_str().unwrap(), CREATED)
+            .unwrap();
+        let input = NewWorkspace {
+            id: "missing-description".into(),
+            name: "Missing description".into(),
+            slug: "missing-description".into(),
+            description: None,
+            kind: WorkspaceKind::Regular,
+            created_at: CREATED,
+        };
 
-        assert!(store.create_single_repository_workspace(&input, None).is_err());
+        assert!(store
+            .create_single_repository_workspace(&input, None)
+            .is_err());
         assert!(!repository_library.exists());
         assert!(store.list_repositories().unwrap().is_empty());
     }
@@ -5958,14 +6300,45 @@ mod tests {
         git(&repo_path, &["init"]);
         let inspected = safety::inspect_repository(&repo_path).unwrap();
         let store = ManagementStore::in_memory_with_paths(&home, root.path()).unwrap();
-        let repo = store.create_repository(&NewRepository { id:"source".into(), name:"source".into(), repository_path:inspected.repository.canonical_root.display().to_string(), repository_identity:inspected.repository.identity, purpose:None, purpose_status:PurposeStatus::Available, created_at:CREATED }).unwrap();
-        let input = NewWorkspace { id:"existing-1".into(), name:"Existing".into(), slug:"existing".into(), description:None, kind:WorkspaceKind::Regular, created_at:CREATED };
-        let (workspace, _) = store.create_single_repository_workspace(&input, Some(&repo.id)).unwrap();
+        let repo = store
+            .create_repository(&NewRepository {
+                id: "source".into(),
+                name: "source".into(),
+                repository_path: inspected.repository.canonical_root.display().to_string(),
+                repository_identity: inspected.repository.identity,
+                purpose: None,
+                purpose_status: PurposeStatus::Available,
+                created_at: CREATED,
+            })
+            .unwrap();
+        let input = NewWorkspace {
+            id: "existing-1".into(),
+            name: "Existing".into(),
+            slug: "existing".into(),
+            description: None,
+            kind: WorkspaceKind::Regular,
+            created_at: CREATED,
+        };
+        let (workspace, _) = store
+            .create_single_repository_workspace(&input, Some(&repo.id))
+            .unwrap();
         assert_eq!(workspace.home_path, repo.repository_path);
-        let duplicate = NewWorkspace { id:"existing-1".into(), slug:"different".into(), ..input.clone() };
-        assert!(store.create_single_repository_workspace(&duplicate, Some(&repo.id)).is_err());
+        let duplicate = NewWorkspace {
+            id: "existing-1".into(),
+            slug: "different".into(),
+            ..input.clone()
+        };
+        assert!(store
+            .create_single_repository_workspace(&duplicate, Some(&repo.id))
+            .is_err());
         assert_eq!(store.list_repositories().unwrap().len(), 1);
-        assert_eq!(store.list_workspace_repository_bindings(&workspace.id).unwrap().len(), 1);
+        assert_eq!(
+            store
+                .list_workspace_repository_bindings(&workspace.id)
+                .unwrap()
+                .len(),
+            1
+        );
     }
 
     fn database_through_version(connection: &Connection, version: usize) {
@@ -6107,7 +6480,7 @@ mod tests {
         second.repository_identity = "same-git-id".into();
         store.create_repository(&second).unwrap();
 
-        assert_eq!(store.migration_versions().unwrap().last(), Some(&25));
+        assert_eq!(store.migration_versions().unwrap().last(), Some(&27));
         assert_eq!(
             store
                 .get_repository("repo-existing")
@@ -6204,7 +6577,7 @@ mod tests {
             })
             .unwrap();
 
-        assert_eq!(store.migration_versions().unwrap().last(), Some(&25));
+        assert_eq!(store.migration_versions().unwrap().last(), Some(&27));
         let contexts = store
             .list_workspace_session_context("w-legacy-context")
             .unwrap();
@@ -6332,7 +6705,7 @@ mod tests {
         }
         let migrated =
             ManagementStore::open_with_paths(&database, &user_home, &system_temp).unwrap();
-        assert_eq!(migrated.migration_versions().unwrap().last(), Some(&25));
+        assert_eq!(migrated.migration_versions().unwrap().last(), Some(&27));
         let connection = migrated.lock().unwrap();
         let legacy_table_count: i64 = connection
             .query_row(
@@ -6377,15 +6750,23 @@ mod tests {
             created_at: CREATED + 2,
         };
         let created = store
-            .create_quick_request_with_session_and_model(
+            .create_quick_request_with_starting_prompt(
                 &new_task,
                 &session,
                 "openai/gpt-6-luna",
                 original_prompt,
+                "selected starting prompt",
             )
             .unwrap();
 
         assert_eq!(created.prompt.as_deref(), Some(original_prompt));
+        assert_eq!(
+            store
+                .quick_request_starting_prompt("qr-prompt")
+                .unwrap()
+                .as_deref(),
+            Some("selected starting prompt")
+        );
         assert_eq!(created.task.description, None);
         assert_eq!(
             store.quick_request_prompt("qr-prompt").unwrap().as_deref(),
@@ -6394,6 +6775,20 @@ mod tests {
         let listed = store.list_quick_requests(true).unwrap();
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].prompt.as_deref(), Some(original_prompt));
+        let connection = store.lock().unwrap();
+        assert!(connection
+            .execute(
+                "UPDATE quick_request_prompts SET original_prompt = 'changed' WHERE task_id = ?1",
+                ["qr-prompt"],
+            )
+            .is_err());
+        assert!(connection
+            .execute(
+                "UPDATE quick_request_prompts SET starting_prompt = 'changed' WHERE task_id = ?1",
+                ["qr-prompt"],
+            )
+            .is_err());
+        drop(connection);
 
         let regular_task = store
             .create_task(&task("regular-task", "w-regular", "regular-task"))
@@ -6401,8 +6796,8 @@ mod tests {
         let connection = store.lock().unwrap();
         assert!(connection
             .execute(
-                "INSERT INTO quick_request_prompts(task_id, original_prompt) VALUES (?1, ?2)",
-                params![regular_task.id, "not a Quick Request"],
+                "INSERT INTO quick_request_prompts(task_id, original_prompt, starting_prompt) VALUES (?1, ?2, ?3)",
+                params![regular_task.id, "not a Quick Request", "not a Quick Request"],
             )
             .is_err());
     }
@@ -6533,10 +6928,17 @@ mod tests {
 
         let migrated =
             ManagementStore::open_with_paths(&database, &user_home, &system_temp).unwrap();
-        assert_eq!(migrated.migration_versions().unwrap().last(), Some(&25));
+        assert_eq!(migrated.migration_versions().unwrap().last(), Some(&27));
         assert_eq!(
             migrated
                 .quick_request_prompt("qr-legacy-prompt")
+                .unwrap()
+                .as_deref(),
+            Some("legacy Quick Request prompt")
+        );
+        assert_eq!(
+            migrated
+                .quick_request_starting_prompt("qr-legacy-prompt")
                 .unwrap()
                 .as_deref(),
             Some("legacy Quick Request prompt")
@@ -6955,7 +7357,7 @@ mod tests {
                 .unwrap(),
             vec![failed]
         );
-        assert_eq!(reopened.migration_versions().unwrap().last(), Some(&25));
+        assert_eq!(reopened.migration_versions().unwrap().last(), Some(&27));
     }
 
     #[test]
@@ -7392,7 +7794,7 @@ mod tests {
                 store.migration_versions().unwrap(),
                 vec![
                     1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22,
-                    23, 24, 25
+                    23, 24, 25, 26, 27
                 ]
             );
             assert_eq!(
@@ -7422,7 +7824,7 @@ mod tests {
             reopened.migration_versions().unwrap(),
             vec![
                 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
-                24, 25
+                24, 25, 26, 27
             ]
         );
         assert_eq!(
@@ -7593,7 +7995,7 @@ mod tests {
         }
 
         let migrated = ManagementStore::open_with_paths(&database, &home, fixture.path()).unwrap();
-        assert_eq!(migrated.migration_versions().unwrap().last(), Some(&25));
+        assert_eq!(migrated.migration_versions().unwrap().last(), Some(&27));
         assert!(migrated
             .list_workspace_repository_worktrees("workspace-with-no-worktrees")
             .unwrap()
@@ -8410,8 +8812,10 @@ mod tests {
     fn quick_request_accepts_an_existing_unregistered_working_directory() {
         let fixture = tempdir().unwrap();
         let store = ManagementStore::in_memory_with_paths(
-            fixture.path().join("home"), fixture.path().join("temp"),
-        ).unwrap();
+            fixture.path().join("home"),
+            fixture.path().join("temp"),
+        )
+        .unwrap();
         let workspace = store.create_workspace(&quick_workspace()).unwrap();
         let directory = fixture.path().join("chosen");
         fs::create_dir_all(&directory).unwrap();
@@ -8419,15 +8823,24 @@ mod tests {
         let session = NewSession {
             open_code_session_id: "ses-chosen".into(),
             owner: SessionOwner::Task(request.id.clone()),
-            directory: fs::canonicalize(&directory).unwrap().to_string_lossy().into_owned(),
+            directory: fs::canonicalize(&directory)
+                .unwrap()
+                .to_string_lossy()
+                .into_owned(),
             last_known_status: "starting".into(),
             created_at: CREATED,
         };
-        let record = store.create_quick_request_with_session_and_model(
-            &request, &session, "", "prompt",
-        ).unwrap();
+        let record = store
+            .create_quick_request_with_session_and_model(&request, &session, "", "prompt")
+            .unwrap();
         assert_eq!(record.session.unwrap().directory, session.directory);
-        assert_eq!(store.validate_session_context("ses-chosen", &directory).unwrap().directory, session.directory);
+        assert_eq!(
+            store
+                .validate_session_context("ses-chosen", &directory)
+                .unwrap()
+                .directory,
+            session.directory
+        );
     }
 
     #[test]
@@ -8726,6 +9139,126 @@ mod tests {
     }
 
     #[test]
+    fn ticket_session_is_valid_in_its_recorded_ticket_worktree() {
+        let root = tempfile::tempdir().unwrap();
+        let app_data = root.path().join("app-data");
+        fs::create_dir_all(root.path().join("home")).unwrap();
+        let store = ManagementStore::open_with_paths(
+            app_data.join("management.sqlite3"),
+            root.path().join("home"),
+            root.path().join("tmp"),
+        )
+        .unwrap();
+        let checkout = root.path().join("checkout");
+        let worktree = root.path().join("ticket-worktree");
+        fs::create_dir_all(&checkout).unwrap();
+        let git = |directory: &Path, args: &[&str]| {
+            let output = std::process::Command::new("git")
+                .args(args)
+                .current_dir(directory)
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "git {:?} failed", args);
+        };
+        git(&checkout, &["init"]);
+        git(&checkout, &["config", "user.email", "test@example.com"]);
+        git(&checkout, &["config", "user.name", "Test"]);
+        fs::write(checkout.join("README.md"), "test\n").unwrap();
+        git(&checkout, &["add", "README.md"]);
+        git(&checkout, &["commit", "-m", "initial"]);
+        git(
+            &checkout,
+            &[
+                "worktree",
+                "add",
+                "-b",
+                "ticket/live-build",
+                worktree.to_str().unwrap(),
+            ],
+        );
+        store
+            .create_workspace(&workspace("w-ticket-restore", "ticket-restore"))
+            .unwrap();
+        store
+            .create_repository(&repository("ticket-restore"))
+            .unwrap();
+        store
+            .save_workspace_repository_binding(&WorkspaceRepositoryBinding {
+                workspace_id: "w-ticket-restore".into(),
+                repository_id: "ticket-restore".into(),
+                checkout_path: checkout.to_string_lossy().into_owned(),
+                checkout_mode: CheckoutMode::Clone,
+                branch: "main".into(),
+                verification_status: VerificationStatus::Verified,
+                created_at: CREATED,
+            })
+            .unwrap();
+        let session = store
+            .create_session(&NewSession {
+                open_code_session_id: "ses_ticket_worktree".into(),
+                owner: SessionOwner::Workspace("w-ticket-restore".into()),
+                directory: worktree.to_string_lossy().into_owned(),
+                last_known_status: "starting".into(),
+                created_at: CREATED,
+            })
+            .unwrap();
+        let ticket_directory =
+            crate::workspace_tickets::workspace_ticket_dir(&app_data, "ticket-restore").unwrap();
+        fs::create_dir_all(&ticket_directory).unwrap();
+        fs::write(
+            ticket_directory.join("investigate-live-build-crash.md"),
+            format!(
+                "---\ntitle: Investigate live-build crash\nstatus: in_progress\nwork_session_id: ses_ticket_worktree\nworktree_path: \"{}\"\n---\n",
+                worktree.display()
+            ),
+        )
+        .unwrap();
+
+        let markdown =
+            fs::read_to_string(ticket_directory.join("investigate-live-build-crash.md")).unwrap();
+        assert_eq!(
+            crate::workspace_tickets::ticket_session_id(&markdown)
+                .unwrap()
+                .as_deref(),
+            Some("ses_ticket_worktree")
+        );
+        assert_eq!(
+            crate::workspace_tickets::ticket_worktree(&markdown)
+                .unwrap()
+                .unwrap()
+                .path,
+            worktree.to_string_lossy()
+        );
+        assert!(crate::workspace_tickets::session_owns_worktree(
+            &ticket_directory,
+            "ses_ticket_worktree",
+            &worktree,
+            &checkout,
+        ));
+        assert_eq!(
+            store
+                .validate_session_context("ses_ticket_worktree", Path::new(&session.directory))
+                .unwrap(),
+            session,
+        );
+        assert!(store
+            .validate_session_context("ses_ticket_worktree", &root.path().join("unrelated"))
+            .is_err());
+        store
+            .create_session(&NewSession {
+                open_code_session_id: "ses_unbound_ticket_worktree".into(),
+                owner: SessionOwner::Workspace("w-ticket-restore".into()),
+                directory: worktree.to_string_lossy().into_owned(),
+                last_known_status: "starting".into(),
+                created_at: CREATED,
+            })
+            .unwrap();
+        assert!(store
+            .validate_session_context("ses_unbound_ticket_worktree", &worktree)
+            .is_err());
+    }
+
+    #[test]
     fn claimed_prompt_failure_is_uncertain_and_explicitly_retryable() {
         let store = ManagementStore::in_memory().unwrap();
         store
@@ -8790,6 +9323,32 @@ mod tests {
         assert!(store
             .claim_retry_initial_prompt("ses-retry-claim", CREATED + 2)
             .is_err());
+
+        store
+            .create_workspace(&workspace("w-retry-starting", "retry-starting"))
+            .unwrap();
+        store
+            .create_task(&task("t-retry-starting", "w-retry-starting", "request"))
+            .unwrap();
+        store
+            .create_session_with_model(
+                &NewSession {
+                    open_code_session_id: "ses-retry-starting".into(),
+                    owner: SessionOwner::Task("t-retry-starting".into()),
+                    directory: "/fixtures/retry-starting".into(),
+                    last_known_status: "starting".into(),
+                    created_at: CREATED,
+                },
+                "openai/gpt-6-luna",
+            )
+            .unwrap();
+        assert_eq!(
+            store
+                .claim_retry_initial_prompt("ses-retry-starting", CREATED + 1)
+                .unwrap()
+                .last_known_status,
+            "prompting"
+        );
     }
 
     #[test]

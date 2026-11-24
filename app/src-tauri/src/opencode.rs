@@ -141,6 +141,29 @@ pub struct SessionHistory {
     pub cursor: Cursors,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InitialPromptRetryAssessment {
+    SafeToSend,
+    AlreadyAccepted,
+    Ambiguous,
+}
+
+/// Only a completely empty history proves an initial prompt has not appeared.
+/// A user message means it was accepted; any other nonempty shape is uncertain
+/// and must fail closed rather than risk sending the prompt twice.
+pub fn assess_initial_prompt_retry(messages: &[Value]) -> InitialPromptRetryAssessment {
+    if messages.is_empty() {
+        return InitialPromptRetryAssessment::SafeToSend;
+    }
+    if messages
+        .iter()
+        .any(|message| message.get("type").and_then(Value::as_str) == Some("user"))
+    {
+        return InitialPromptRetryAssessment::AlreadyAccepted;
+    }
+    InitialPromptRetryAssessment::Ambiguous
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct ActiveSession {
     #[serde(rename(serialize = "kind", deserialize = "type"))]
@@ -166,6 +189,8 @@ pub enum SessionApplicationStatus {
     Starting,
     Running,
     WaitingForInput,
+    Idle,
+    Retrying,
     ReadyForReview,
     Reconnecting,
     Unknown,
@@ -191,35 +216,27 @@ pub fn classify_session_status(evidence: SessionEvidence<'_>) -> SessionApplicat
     if matches!(evidence.outcome, Some("failed" | "error" | "interrupted")) {
         return SessionApplicationStatus::Failed;
     }
-    if !evidence.permissions.is_empty()
-        || !evidence.forms.is_empty()
-        || evidence.events.iter().any(|event| {
-            let text = event.to_string().to_ascii_lowercase();
-            text.contains("permission")
-                || text.contains("question")
-                || text.contains("input")
-                || text.contains("form")
-        })
-    {
+    if !evidence.permissions.is_empty() || !evidence.forms.is_empty() {
         return SessionApplicationStatus::WaitingForInput;
     }
-    if evidence.active.is_some()
-        || evidence.events.iter().any(|event| {
-            event
-                .get("type")
-                .and_then(Value::as_str)
-                .is_some_and(|kind| {
-                    matches!(
-                        kind,
-                        "session.status" | "session.updated" | "running" | "step.start"
-                    )
-                })
-        })
-    {
+    let event_status = latest_session_event_status(evidence.events);
+    match event_status {
+        Some("failed" | "interrupted") => return SessionApplicationStatus::Failed,
+        Some("running") => return SessionApplicationStatus::Running,
+        Some("retry") => return SessionApplicationStatus::Retrying,
+        _ => {}
+    }
+    // The active-session snapshot is current; successful outcomes/history may
+    // belong to a prior turn and must not hide a newly running follow-up.
+    if evidence.active.is_some() {
         return SessionApplicationStatus::Running;
     }
-    if evidence.reconnecting {
-        return SessionApplicationStatus::Reconnecting;
+    match event_status {
+        Some("succeeded") if !evidence.history.is_empty() => {
+            return SessionApplicationStatus::ReadyForReview;
+        }
+        Some("succeeded") => return SessionApplicationStatus::Unknown,
+        _ => {}
     }
     if matches!(
         evidence.outcome,
@@ -228,9 +245,102 @@ pub fn classify_session_status(evidence: SessionEvidence<'_>) -> SessionApplicat
     {
         return SessionApplicationStatus::ReadyForReview;
     }
+    if event_status == Some("idle") {
+        return SessionApplicationStatus::Idle;
+    }
+    if evidence.reconnecting {
+        return SessionApplicationStatus::Reconnecting;
+    }
     // An inactive session with no completion evidence is deliberately not
     // promoted to ReadyForReview.
     SessionApplicationStatus::Unknown
+}
+
+fn session_event_status(event: &Value) -> Option<&'static str> {
+    let event = event
+        .get("payload")
+        .or_else(|| event.get("event"))
+        .unwrap_or(event);
+    let kind = event.get("type")?.as_str()?;
+    let properties = event.get("properties").unwrap_or(event);
+    match kind {
+        "session.execution.started" => Some("running"),
+        "session.execution.succeeded" => Some("succeeded"),
+        "session.execution.failed" => Some("failed"),
+        "session.execution.interrupted" => Some("interrupted"),
+        "session.idle" => Some("idle"),
+        "session.status" => match properties.get("status")?.get("type")?.as_str()? {
+            "busy" => Some("running"),
+            "idle" => Some("idle"),
+            "retry" => Some("retry"),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn latest_session_event_status(events: &[Value]) -> Option<&'static str> {
+    let execution = events.iter().enumerate().rev().find_map(|(index, event)| {
+        let status = match session_event_status(event)? {
+            "succeeded" | "failed" | "interrupted" => session_event_status(event)?,
+            "running" if event_kind(event) == Some("session.execution.started") => "started",
+            _ => return None,
+        };
+        Some((index, status))
+    });
+    let activity = events.iter().enumerate().rev().find_map(|(index, event)| {
+        let status = session_event_status(event)?;
+        matches!(status, "running" | "idle" | "retry").then_some((index, status))
+    });
+    match (execution, activity) {
+        (Some((execution_index, "succeeded")), Some((activity_index, "running" | "retry")))
+            if activity_index > execution_index =>
+        {
+            activity.map(|(_, status)| status)
+        }
+        (Some((_, "succeeded")), _) => Some("succeeded"),
+        (Some((_, "failed")), _) => Some("failed"),
+        (Some((_, "interrupted")), _) => Some("interrupted"),
+        (Some((execution_index, "started")), Some((activity_index, status)))
+            if activity_index > execution_index =>
+        {
+            Some(status)
+        }
+        (Some((_, "started")), _) => Some("running"),
+        (_, Some((_, status))) => Some(status),
+        _ => None,
+    }
+}
+
+fn event_kind(event: &Value) -> Option<&str> {
+    event
+        .get("payload")
+        .or_else(|| event.get("event"))
+        .unwrap_or(event)
+        .get("type")?
+        .as_str()
+}
+
+fn apply_current_session_event(
+    classified: SessionApplicationStatus,
+    current_event: Option<&Value>,
+    has_pending_input: bool,
+    is_active: bool,
+) -> SessionApplicationStatus {
+    if !is_active
+        && !has_pending_input
+        && current_event
+            .and_then(session_event_status)
+            .is_some_and(|event_status| event_status == "idle")
+        && matches!(
+            classified,
+            SessionApplicationStatus::Running | SessionApplicationStatus::Retrying
+        )
+    {
+        SessionApplicationStatus::Idle
+    } else {
+        classified
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
@@ -457,6 +567,21 @@ impl Runtime {
         }
     }
 
+    /// Submit a persistent session prompt without waiting for generated output.
+    /// This lets a ticket investigation run without opening its TUI.
+    pub fn submit_session_prompt(&self, id: &str, prompt: &str) -> Result<(), String> {
+        let id = validate_session_id(id)?;
+        let (client, url) = self.client_url()?;
+        post_data_value(
+            &client,
+            &format!("{url}/api/session/{id}/prompt"),
+            &PromptRequest {
+                text: prompt.to_owned(),
+            },
+        )
+        .map(|_| ())
+    }
+
     /// Delete a temporary proposal session after capturing its result.
     pub fn delete_session(&self, id: &str) -> Result<(), String> {
         let id = validate_session_id(id)?;
@@ -537,6 +662,26 @@ impl Runtime {
         }
         let (client, url) = self.client_url()?;
         allow_directory_at(&client, &url, &id, path)
+    }
+
+    /// Allow investigation sessions to read ticket files without granting edit access.
+    pub fn allow_ticket_directory_read_only(
+        &self,
+        id: &str,
+        directory: &Path,
+    ) -> Result<(), String> {
+        let id = validate_session_id(id)?;
+        let directory = directory
+            .canonicalize()
+            .map_err(|error| error.to_string())?;
+        let path = directory
+            .to_str()
+            .ok_or("Ticket directory is not valid UTF-8")?;
+        if path.contains(['*', '?']) {
+            return Err("Ticket directory cannot contain permission wildcard characters".into());
+        }
+        let (client, url) = self.client_url()?;
+        allow_directory_actions_at(&client, &url, &id, path, &["external_directory", "read"])
     }
     pub fn generate_session_text(&self, id: &str, prompt: &str) -> Result<String, String> {
         let id = validate_session_id(id)?;
@@ -708,22 +853,61 @@ impl Runtime {
         cursor: Option<&str>,
     ) -> Result<SessionReconciliation, String> {
         let id = validate_session_id(id)?;
+        let active = self.active_sessions()?.remove(&id);
+        self.reconcile_session_with_active(&id, cursor, active)
+    }
+    pub fn reconcile_session_with_active(
+        &self,
+        id: &str,
+        cursor: Option<&str>,
+        active: Option<ActiveSession>,
+    ) -> Result<SessionReconciliation, String> {
+        self.reconcile_session_with_active_and_event(id, cursor, active, None)
+    }
+    pub fn reconcile_session_with_event(
+        &self,
+        id: &str,
+        cursor: Option<&str>,
+        event: &Value,
+    ) -> Result<SessionReconciliation, String> {
+        let id = validate_session_id(id)?;
+        let active = self.active_sessions()?.remove(&id);
+        self.reconcile_session_with_active_and_event(&id, cursor, active, Some(event))
+    }
+    fn reconcile_session_with_active_and_event(
+        &self,
+        id: &str,
+        cursor: Option<&str>,
+        active: Option<ActiveSession>,
+        current_event: Option<&Value>,
+    ) -> Result<SessionReconciliation, String> {
+        let id = validate_session_id(id)?;
         // Reconciliation only needs to know whether any history exists to
         // distinguish a completed, empty session from one with output.
         let history = self.session_history(&id, "asc", 1)?;
-        let active = self.session_status(&id)?.active;
+        let outcome = self.session_outcome(&id)?;
         let permissions = self.permissions(&id)?;
         let forms = self.forms(&id)?;
-        let (durable_events, next_cursor) =
+        let (mut durable_events, next_cursor) =
             self.durable_session_events_with_cursor(&id, cursor, false)?;
-        let status = classify_session_status(SessionEvidence {
+        if let Some(event) = current_event {
+            durable_events.push(event.clone());
+        }
+        let classified_status = classify_session_status(SessionEvidence {
             active: active.as_ref(),
+            outcome: outcome.as_deref(),
             permissions: &permissions,
             forms: &forms,
             history: &history.data,
             events: &durable_events,
             ..Default::default()
         });
+        let status = apply_current_session_event(
+            classified_status,
+            current_event,
+            !permissions.is_empty() || !forms.is_empty(),
+            active.is_some(),
+        );
         Ok(SessionReconciliation {
             session_id: id,
             cursor: next_cursor.or_else(|| cursor.map(str::to_owned)),
@@ -734,6 +918,15 @@ impl Runtime {
             durable_events,
             status,
         })
+    }
+    fn session_outcome(&self, id: &str) -> Result<Option<String>, String> {
+        let id = validate_session_id(id)?;
+        let (client, url) = self.client_url()?;
+        let session = get_data_value(&client, &format!("{url}/api/session/{id}"))?;
+        Ok(session
+            .get("outcome")
+            .and_then(Value::as_str)
+            .map(str::to_owned))
     }
     fn session_pending(&self, id: &str, route: &str) -> Result<Vec<Value>, String> {
         let (client, url) = self.client_url()?;
@@ -1094,7 +1287,23 @@ fn set_instruction_entry_at(
     )
 }
 fn allow_directory_at(client: &Client, base_url: &str, id: &str, path: &str) -> Result<(), String> {
-    let permissions = ["external_directory", "read", "edit"]
+    allow_directory_actions_at(
+        client,
+        base_url,
+        id,
+        path,
+        &["external_directory", "read", "edit"],
+    )
+}
+fn allow_directory_actions_at(
+    client: &Client,
+    base_url: &str,
+    id: &str,
+    path: &str,
+    actions: &[&str],
+) -> Result<(), String> {
+    let permissions = actions
+        .iter()
         .into_iter()
         .flat_map(|action| {
             [path.to_owned(), format!("{path}/*")].into_iter().map(
@@ -1627,6 +1836,14 @@ mod tests {
         assert_eq!(status_wire["sessionId"], "ses_wire");
         assert_eq!(status_wire["active"], json!({"kind":"running"}));
         assert_eq!(status_wire["applicationStatus"], "running");
+        assert_eq!(
+            serde_json::to_value(SessionApplicationStatus::Idle).unwrap(),
+            json!("idle")
+        );
+        assert_eq!(
+            serde_json::to_value(SessionApplicationStatus::Retrying).unwrap(),
+            json!("retrying")
+        );
         assert!(status_wire.get("session_id").is_none());
 
         let reconciliation = SessionReconciliation {
@@ -1662,6 +1879,26 @@ mod tests {
     }
 
     #[test]
+    fn retry_assessment_requires_empty_or_explicit_user_history() {
+        assert_eq!(
+            assess_initial_prompt_retry(&[]),
+            InitialPromptRetryAssessment::SafeToSend
+        );
+        assert_eq!(
+            assess_initial_prompt_retry(&[json!({"type":"user"})]),
+            InitialPromptRetryAssessment::AlreadyAccepted
+        );
+        assert_eq!(
+            assess_initial_prompt_retry(&[json!({"type":"assistant"})]),
+            InitialPromptRetryAssessment::Ambiguous
+        );
+        assert_eq!(
+            assess_initial_prompt_retry(&[json!({"unexpected":"shape"})]),
+            InitialPromptRetryAssessment::Ambiguous
+        );
+    }
+
+    #[test]
     fn classifier_prioritizes_pending_input_and_failure() {
         let permission = [json!({"id":"p1"})];
         assert_eq!(
@@ -1680,6 +1917,107 @@ mod tests {
                 ..Default::default()
             }),
             SessionApplicationStatus::Failed
+        );
+    }
+
+    #[test]
+    fn classifier_distinguishes_idle_completion_retry_and_unknown() {
+        let history = [json!({"type":"assistant"})];
+        assert_eq!(
+            classify_session_status(SessionEvidence {
+                events: &[json!({"type":"session.idle"})],
+                ..Default::default()
+            }),
+            SessionApplicationStatus::Idle
+        );
+        assert_eq!(
+            classify_session_status(SessionEvidence {
+                active: Some(&ActiveSession {
+                    kind: "running".into(),
+                }),
+                events: &[json!({"type":"session.idle"})],
+                ..Default::default()
+            }),
+            SessionApplicationStatus::Running
+        );
+        assert_eq!(
+            classify_session_status(SessionEvidence {
+                events: &[
+                    json!({"type":"session.status","properties":{"status":{"type":"retry"}}})
+                ],
+                ..Default::default()
+            }),
+            SessionApplicationStatus::Retrying
+        );
+        assert_eq!(
+            classify_session_status(SessionEvidence {
+                events: &[
+                    json!({"type":"session.execution.succeeded"}),
+                    json!({"type":"session.idle"}),
+                ],
+                history: &history,
+                ..Default::default()
+            }),
+            SessionApplicationStatus::ReadyForReview
+        );
+        assert_eq!(
+            classify_session_status(SessionEvidence {
+                events: &[json!({"type":"session.execution.failed"})],
+                ..Default::default()
+            }),
+            SessionApplicationStatus::Failed
+        );
+        assert_eq!(
+            classify_session_status(SessionEvidence {
+                active: Some(&ActiveSession {
+                    kind: "running".into(),
+                }),
+                forms: &[json!({"id":"form-1"})],
+                ..Default::default()
+            }),
+            SessionApplicationStatus::WaitingForInput
+        );
+        assert_eq!(
+            classify_session_status(SessionEvidence {
+                events: &[json!({"type":"session.updated","properties":{"title":"question"}})],
+                ..Default::default()
+            }),
+            SessionApplicationStatus::Unknown
+        );
+        assert_eq!(
+            classify_session_status(SessionEvidence::default()),
+            SessionApplicationStatus::Unknown
+        );
+        let active_idle = json!({"type":"session.idle","properties":{"sessionID":"ses_current"}});
+        assert_eq!(
+            apply_current_session_event(
+                SessionApplicationStatus::Running,
+                Some(&active_idle),
+                false,
+                true,
+            ),
+            SessionApplicationStatus::Running,
+            "an idle event must not replace stronger active-running evidence"
+        );
+        assert_eq!(
+            apply_current_session_event(
+                SessionApplicationStatus::Running,
+                Some(&active_idle),
+                false,
+                false,
+            ),
+            SessionApplicationStatus::Idle,
+            "an idle event still marks an inactive session idle"
+        );
+        assert_eq!(
+            apply_current_session_event(
+                SessionApplicationStatus::Running,
+                Some(&active_idle),
+                true,
+                false,
+            ),
+            SessionApplicationStatus::Running,
+            "pending human input still takes precedence over an idle signal"
         );
     }
     #[test]
@@ -2342,6 +2680,75 @@ mod tests {
     }
 
     #[test]
+    fn ticket_investigation_directory_access_is_read_only() {
+        let directory = tempfile::tempdir().unwrap();
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let address = listener.local_addr().unwrap();
+        let expected_directory = directory.path().canonicalize().unwrap();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut request_line = String::new();
+            reader.read_line(&mut request_line).unwrap();
+            assert_eq!(
+                request_line.split_whitespace().take(2).collect::<Vec<_>>(),
+                ["PATCH", "/api/session/ses_investigation"]
+            );
+            let mut content_length = 0;
+            loop {
+                let mut line = String::new();
+                reader.read_line(&mut line).unwrap();
+                if line == "\r\n" {
+                    break;
+                }
+                if let Some(length) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                    content_length = length.trim().parse::<usize>().unwrap();
+                }
+            }
+            let mut body = vec![0; content_length];
+            reader.read_exact(&mut body).unwrap();
+            let permissions: Value = serde_json::from_slice(&body).unwrap();
+            let permissions = permissions["permissions"].as_array().unwrap();
+            let actions = permissions
+                .iter()
+                .map(|permission| permission["action"].as_str().unwrap())
+                .collect::<std::collections::HashSet<_>>();
+            assert_eq!(
+                actions,
+                ["external_directory", "read"].into_iter().collect()
+            );
+            assert!(permissions.iter().any(|permission| {
+                permission["resource"] == expected_directory.to_string_lossy().as_ref()
+            }));
+            stream
+                .write_all(
+                    b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                )
+                .unwrap();
+        });
+        let runtime = Runtime {
+            server: Mutex::new(Some(Server {
+                info: RuntimeInfo {
+                    executable: "fake".into(),
+                    version: "2.1.4".into(),
+                    base_url: format!("http://{address}"),
+                },
+                _password: "secret".into(),
+                client: api_client("secret").unwrap(),
+            })),
+            terminals: TerminalManager::default(),
+            lifecycle: AtomicU8::new(0),
+            lifecycle_gate: Mutex::new(()),
+        };
+
+        runtime
+            .allow_ticket_directory_read_only("ses_investigation", directory.path())
+            .unwrap();
+        server.join().unwrap();
+        runtime.shutdown();
+    }
+
+    #[test]
     fn generated_session_text_rejects_empty_output_with_actionable_error() {
         for response in [json!({"text": ""}), json!({"text": "  \n\t"})] {
             let error = generated_session_text(&response).unwrap_err();
@@ -2486,6 +2893,62 @@ mod tests {
     }
 
     #[test]
+    fn submit_session_prompt_posts_without_waiting_for_session_history() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut request_line = String::new();
+            reader.read_line(&mut request_line).unwrap();
+            let mut content_length = 0;
+            loop {
+                let mut line = String::new();
+                reader.read_line(&mut line).unwrap();
+                if line == "\r\n" {
+                    break;
+                }
+                if let Some(length) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                    content_length = length.trim().parse::<usize>().unwrap();
+                }
+            }
+            let mut body = vec![0; content_length];
+            reader.read_exact(&mut body).unwrap();
+            assert_eq!(
+                request_line.split_whitespace().collect::<Vec<_>>(),
+                ["POST", "/api/session/ses_investigation/prompt", "HTTP/1.1",]
+            );
+            assert_eq!(
+                serde_json::from_slice::<Value>(&body).unwrap(),
+                json!({"text":"Investigate requirements only"})
+            );
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 11\r\nConnection: close\r\n\r\n{\"data\":{}}")
+                .unwrap();
+        });
+        let runtime = Runtime {
+            server: Mutex::new(Some(Server {
+                info: RuntimeInfo {
+                    executable: "fake".into(),
+                    version: "2.1.4".into(),
+                    base_url: format!("http://{address}"),
+                },
+                _password: "secret".into(),
+                client: api_client("secret").unwrap(),
+            })),
+            terminals: TerminalManager::default(),
+            lifecycle: AtomicU8::new(0),
+            lifecycle_gate: Mutex::new(()),
+        };
+
+        runtime
+            .submit_session_prompt("ses_investigation", "Investigate requirements only")
+            .unwrap();
+        server.join().unwrap();
+        runtime.shutdown();
+    }
+
+    #[test]
     fn non_success_responses_include_status_without_credentials() {
         let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
         let address = listener.local_addr().unwrap();
@@ -2537,13 +3000,13 @@ mod tests {
     }
 
     #[test]
-    fn session_reconciliation_fetches_only_the_history_evidence_it_needs() {
+    fn session_reconciliation_prioritizes_pending_requests_over_active_run() {
         let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
         let address = listener.local_addr().unwrap();
         let server = thread::spawn(move || {
             for expected_path in [
                 "/api/session/ses_exact/message?order=asc&limit=1",
-                "/api/session/active",
+                "/api/session/ses_exact",
                 "/api/session/ses_exact/permission",
                 "/api/session/ses_exact/form",
                 "/api/experimental/session/ses_exact/log?follow=false",
@@ -2567,8 +3030,12 @@ mod tests {
                     "data: {\"seq\":18}\n\n"
                 } else if expected_path.ends_with("/message?order=asc&limit=1") {
                     r#"{"data":[{"id":"m1"}],"cursor":{"next":"2"}}"#
-                } else if expected_path.ends_with("/active") {
-                    r#"{"data":{}}"#
+                } else if expected_path == "/api/session/ses_exact" {
+                    r#"{"data":{"outcome":null}}"#
+                } else if expected_path.ends_with("/permission") {
+                    r#"{"data":[{"id":"p1"}]}"#
+                } else if expected_path.ends_with("/form") {
+                    r#"{"data":[{"id":"f1"}]}"#
                 } else {
                     r#"{"data":[]}"#
                 };
@@ -2595,9 +3062,108 @@ mod tests {
             lifecycle_gate: Mutex::new(()),
         };
 
-        let result = runtime.reconcile_session("ses_exact", None).unwrap();
+        let result = runtime
+            .reconcile_session_with_active_and_event(
+                "ses_exact",
+                None,
+                Some(ActiveSession {
+                    kind: "running".into(),
+                }),
+                Some(&json!({"type":"session.idle","properties":{"sessionID":"ses_exact"}})),
+            )
+            .unwrap();
         assert_eq!(result.history.data, [json!({"id":"m1"})]);
-        assert_eq!(result.status, SessionApplicationStatus::Unknown);
+        assert_eq!(result.status, SessionApplicationStatus::WaitingForInput);
+        assert_eq!(result.permissions, [json!({"id":"p1"})]);
+        assert_eq!(result.forms, [json!({"id":"f1"})]);
+        server.join().unwrap();
+        runtime.shutdown();
+    }
+
+    #[test]
+    fn active_session_snapshot_reopens_idle_ticket_when_start_event_was_missed() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let address = listener.local_addr().unwrap();
+        let mut responses = Vec::new();
+        for (active, history, outcome, events) in [
+            (
+                r#"{"data":{}}"#,
+                r#"{"data":[]}"#,
+                r#"{"data":{"outcome":null}}"#,
+                "data: {\"type\":\"session.idle\",\"properties\":{\"sessionID\":\"ses_exact\"}}\n\n",
+            ),
+            (
+                r#"{"data":{"ses_exact":{"type":"running"}}}"#,
+                r#"{"data":[{"id":"prior-message"}]}"#,
+                r#"{"data":{"outcome":"succeeded"}}"#,
+                "data: {\"type\":\"session.execution.succeeded\",\"properties\":{\"sessionID\":\"ses_exact\"}}\n\ndata: {\"type\":\"session.idle\",\"properties\":{\"sessionID\":\"ses_exact\"}}\n\n",
+            ),
+        ] {
+            responses.extend([
+                ("/api/session/active", active),
+                (
+                    "/api/session/ses_exact/message?order=asc&limit=1",
+                    history,
+                ),
+                ("/api/session/ses_exact", outcome),
+                ("/api/session/ses_exact/permission", r#"{"data":[]}"#),
+                ("/api/session/ses_exact/form", r#"{"data":[]}"#),
+                (
+                    "/api/experimental/session/ses_exact/log?follow=false",
+                    events,
+                ),
+            ]);
+        }
+        let server = thread::spawn(move || {
+            for (expected_path, body) in responses {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                let mut request_line = String::new();
+                reader.read_line(&mut request_line).unwrap();
+                assert_eq!(
+                    request_line.split_whitespace().collect::<Vec<_>>(),
+                    vec!["GET", expected_path, "HTTP/1.1"]
+                );
+                loop {
+                    let mut line = String::new();
+                    reader.read_line(&mut line).unwrap();
+                    if line == "\r\n" {
+                        break;
+                    }
+                }
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                stream.write_all(response.as_bytes()).unwrap();
+            }
+        });
+        let runtime = Runtime {
+            server: Mutex::new(Some(Server {
+                info: RuntimeInfo {
+                    executable: "fake".into(),
+                    version: "2.1.4".into(),
+                    base_url: format!("http://{address}"),
+                },
+                _password: "secret".into(),
+                client: api_client("secret").unwrap(),
+            })),
+            terminals: TerminalManager::default(),
+            lifecycle: AtomicU8::new(0),
+            lifecycle_gate: Mutex::new(()),
+        };
+
+        assert_eq!(
+            runtime.reconcile_session("ses_exact", None).unwrap().status,
+            SessionApplicationStatus::Idle
+        );
+        assert_eq!(
+            runtime.reconcile_session("ses_exact", None).unwrap().status,
+            SessionApplicationStatus::Running,
+            "a fresh active-session snapshot must recover a missed execution-start event"
+        );
+
         server.join().unwrap();
         runtime.shutdown();
     }

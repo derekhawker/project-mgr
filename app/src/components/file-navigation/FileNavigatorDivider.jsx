@@ -2,8 +2,8 @@ import styles from "./FileNavigatorDivider.module.css";
 
 export function FileNavigatorDivider(props) {
   let drag;
-  const width = () => props.width?.() ?? 300;
-  const clamp = (value) => Math.max(120, Math.min(640, Math.round(value)));
+  const width = () => props.width?.() ?? 285;
+  const clamp = (value) => Math.max(120, Math.min(600, Math.round(value)));
   function move(event) {
     if (!drag || event.pointerId !== drag.id) return;
     props.onResize?.(clamp(drag.width + event.clientX - drag.x), false);
@@ -20,7 +20,7 @@ export function FileNavigatorDivider(props) {
       aria-label="Resize file navigator"
       aria-orientation="vertical"
       aria-valuemin="120"
-      aria-valuemax="640"
+      aria-valuemax="600"
       aria-valuenow={width()}
       tabindex="0"
       onPointerDown={(event) => {

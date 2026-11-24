@@ -18,6 +18,7 @@ import {
   Tooltip,
 } from "@ui-lib";
 import { AppPageLayout } from "../../../components/page/AppPageLayout.jsx";
+import { TicketSessionIndicator } from "../../../components/TicketSessionIndicator.jsx";
 import { TicketStatusBadge } from "./TicketStatusBadge.jsx";
 import { CreateTicketIdeaModal } from "./CreateTicketIdeaModal.jsx";
 import { recordUiDiagnostic } from "../../../lib/uiDiagnostics.js";
@@ -26,6 +27,7 @@ import {
   splitTicketFrontmatter,
 } from "./ticketContent.js";
 import styles from "./WorkspaceTicketViewer.module.css";
+import repositoryToolsStyles from "../repository-tools/RepositoryToolsMenu.module.css";
 
 const statusOrder = { blocked: 0, in_progress: 1, draft: 2 };
 const activeSortOptions = [
@@ -151,6 +153,9 @@ export function WorkspaceTicketViewer(props) {
                 )}
               </For>
             </ActionMenu>
+          </div>
+          <div class={repositoryToolsStyles.control}>
+            {props.toolsMenu?.()}
           </div>
           <CreateTicketIdeaModal
             disabled={() =>

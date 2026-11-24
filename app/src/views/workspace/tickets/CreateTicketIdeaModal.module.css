@@ -42,21 +42,25 @@
   width: 2.25rem;
   height: 2.25rem;
   padding: var(--ui-space-4);
-  border: 1px solid var(--ui-border);
+  border: 1px solid var(--ui-surface-pressed);
   border-radius: 50%;
-  color: var(--ui-muted);
-  background: var(--ui-surface-raised);
+  color: var(--ui-text);
+  background: var(--ui-surface-pressed);
   font-weight: 700;
 }
 
 .steps .current .stepNumber {
-  border: 2px solid var(--ui-focus);
-  color: var(--ui-focus);
-  background: var(--ui-surface);
+  border-color: var(--ui-primary);
+  color: var(--ui-primary-text);
+  background: var(--ui-primary);
 }
 .stepLabel { color: var(--ui-text); font-weight: 400; }
 
 .form { display: grid; gap: var(--ui-space-6); }
 .form label { font-weight: 700; }
 .note { margin: 0; color: var(--ui-muted); font-size: 0.85rem; }
-.actions { display: flex; justify-content: flex-end; gap: var(--ui-space-6); }
+.investigationOption { display: flex; flex: 1 1 14rem; align-items: flex-start; gap: var(--ui-space-3); margin-inline-end: auto; font-weight: 400; }
+.investigationOption > :first-child { margin-block-start: 2px; }
+.investigationOption > span { display: grid; gap: var(--ui-space-2); }
+.investigationOption strong { font-weight: 700; }
+.actions { display: flex; align-items: center; justify-content: flex-end; gap: var(--ui-space-6); }

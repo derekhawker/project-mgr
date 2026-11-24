@@ -264,18 +264,46 @@ test("ErrorMessage is hidden when empty and announces present errors assertively
   mounted.dispose();
 });
 
-test("AppNotice keeps its polite status announcement and updates its hidden state", () => {
+test("AppNotice keeps its polite status and can dismiss the visible notice", () => {
   const [message, setMessage] = createSignal("");
-  const mounted = mount(() => component(AppNotice, { message }));
+  const mounted = mount(() =>
+    component(AppNotice, { message, onDismiss: () => setMessage("") }),
+  );
   const notice = mounted.host.querySelector("#app-notice");
   assert.equal(notice.getAttribute("role"), "status");
   assert.equal(notice.getAttribute("aria-live"), "polite");
   assert.equal(notice.hidden, true);
   setMessage("Could not load workspaces.");
   assert.equal(notice.hidden, false);
-  assert.equal(notice.textContent, "Could not load workspaces.");
-  setMessage("");
+  assert.equal(notice.querySelector("span").textContent, "Could not load workspaces.");
+  notice.querySelector("button").click();
   assert.equal(notice.hidden, true);
+  mounted.dispose();
+});
+
+test("repository search filters case-insensitive names and paths while keeping ancestors", () => {
+  const repositories = Array.from({ length: 6 }, (_, index) => ({
+    repository: {
+      id: `repo-${index}`,
+      name: index === 0 ? "Alpha" : `Repo ${index}`,
+      repositoryPath: `/code/team-${index}/repo-${index}`,
+    },
+    enabled: index !== 5,
+  }));
+  const mounted = mount(() =>
+    component(RepositoryDirectories, {
+      directories: () => [{ path: "/code", repositories }],
+      pendingRepositoryId: () => null,
+      onToggleRepository: () => {},
+      onDeleteMany: async () => {},
+    }),
+  );
+  const search = mounted.host.querySelector('input[type="search"]');
+  search.value = "TEAM-0/REPO-0";
+  search.dispatchEvent(new Event("input", { bubbles: true }));
+  assert.match(mounted.host.textContent, /Alpha/);
+  assert.match(mounted.host.textContent, /team-0/);
+  assert.doesNotMatch(mounted.host.textContent, /Repo 1/);
   mounted.dispose();
 });
 
@@ -356,7 +384,7 @@ test("repository library edits save on blur without an explicit save button", ()
       onDeleteMany: async () => {},
     }),
   );
-  const checkbox = list.host.querySelector("input");
+  const checkbox = list.host.querySelector('input[type="checkbox"]');
   assert.equal(checkbox.checked, true);
   checkbox.click();
   assert.deepEqual(toggled, [repository, false]);
@@ -374,6 +402,11 @@ test("Workspace creation presents direct repository choices in the native dialog
   const props = {
     setModal: () => {},
     proposal: () => proposal,
+    promptChoice: () => "suggested",
+    onPromptChoiceChange: () => {},
+    originalPrompt: () => "original",
+    suggestedPrompt: () => "suggested",
+    onSuggestedPromptChange: () => {},
     captureVisible: () => false,
     reviewVisible: () => false,
     workType: () => "workspace",
@@ -460,6 +493,28 @@ test("Workspace creation presents direct repository choices in the native dialog
   assert.equal(cancel.defaultPrevented, true);
   assert.equal(cancelled, 3, "Escape uses the same caller-owned cleanup");
   mounted.dispose();
+
+  const recovery = mount(() =>
+    component(NewWorkModal, {
+      ...props,
+      proposal: () => ({
+        ...proposal,
+        workType: "quick_request",
+        originalPrompt: "saved prompt",
+      }),
+      workspaceVisible: () => false,
+      reviewVisible: () => true,
+      quickRequestRecoveryRecord: () => ({
+        session: { directory: "/saved/working-directory" },
+      }),
+      quickRequestRecoveryBusy: () => false,
+    }),
+  );
+  assert.equal(recovery.host.querySelector("#proposal-cancel"), null);
+  assert.equal(recovery.host.querySelector("#quick-request-directory"), null);
+  assert.ok(recovery.host.querySelector("#quick-request-retry-startup"));
+  assert.match(recovery.host.textContent, /\/saved\/working-directory/);
+  recovery.dispose();
 });
 
 test("ActionMenu uses its accessible label as the native disclosure trigger", async () => {

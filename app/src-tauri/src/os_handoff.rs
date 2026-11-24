@@ -1,5 +1,6 @@
 use crate::management::{ManagementStore, WorkspaceKind, WorkspaceStatus};
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 pub fn owner_home(
     store: &ManagementStore,
@@ -36,9 +37,84 @@ pub struct Launch {
     pub args: Vec<String>,
 }
 
+fn find_executable_in_path(program: &str) -> Option<PathBuf> {
+    std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default())
+        .map(|directory| directory.join(program))
+        .find(|path| {
+            let Ok(metadata) = std::fs::metadata(path) else {
+                return false;
+            };
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                metadata.is_file() && metadata.permissions().mode() & 0o111 != 0
+            }
+            #[cfg(not(unix))]
+            {
+                metadata.is_file()
+            }
+        })
+}
+
+fn linux_external_terminal_launch(
+    directory: &Path,
+    mut find: impl FnMut(&str) -> Option<PathBuf>,
+) -> Result<Launch, String> {
+    let path = directory.to_string_lossy().into_owned();
+    const SHELL: [&str; 4] = [
+        "sh",
+        "-lc",
+        "cd -- \"$1\" && exec \"${SHELL:-/bin/sh}\"",
+        "project-manager",
+    ];
+    if let Some(executable) = find("x-terminal-emulator") {
+        let mut args = vec!["-e".to_owned()];
+        args.extend(SHELL.iter().map(|arg| (*arg).to_owned()));
+        args.push(path);
+        return Ok(Launch {
+            executable: executable.display().to_string(),
+            args,
+        });
+    }
+    if let Some(executable) = find("konsole") {
+        return Ok(Launch {
+            executable: executable.display().to_string(),
+            args: vec![
+                "--workdir".into(),
+                path,
+                "-e".into(),
+                "sh".into(),
+                "-lc".into(),
+                "exec \"${SHELL:-/bin/sh}\"".into(),
+            ],
+        });
+    }
+    Err("No supported external terminal was found (tried x-terminal-emulator and konsole).".into())
+}
+
 pub fn external_launch(action: &str, directory: &Path, platform: &str) -> Result<Launch, String> {
     let path = directory.to_string_lossy().into_owned();
     match (platform, action) {
+        ("linux", "external_terminal") => {
+            linux_external_terminal_launch(directory, find_executable_in_path)
+        }
+        ("macos", "external_terminal") => {
+            let quoted = path.replace('\'', "'\\''");
+            let command = format!("cd -- '{quoted}' && exec \"${{SHELL:-/bin/sh}}\"");
+            let applescript = format!(
+                "tell application \"Terminal\" to do script \"{}\"",
+                command.replace('\\', "\\\\").replace('"', "\\\"")
+            );
+            Ok(Launch {
+                executable: "osascript".into(),
+                args: vec![
+                    "-e".into(),
+                    applescript,
+                    "-e".into(),
+                    "tell application \"Terminal\" to activate".into(),
+                ],
+            })
+        }
         ("linux", "idea") => Ok(Launch {
             executable: "idea".into(),
             args: vec![path],
@@ -70,11 +146,36 @@ pub fn platform() -> &'static str {
     }
 }
 
-pub fn spawn_external(launch: &Launch) -> Result<std::process::Child, String> {
-    std::process::Command::new(&launch.executable)
+pub fn spawn_external(launch: &Launch) -> Result<(), String> {
+    let mut child = std::process::Command::new(&launch.executable)
         .args(&launch.args)
         .spawn()
-        .map_err(|error| format!("Could not launch {}: {error}", launch.executable))
+        .map_err(|error| format!("Could not launch {}: {error}", launch.executable))?;
+    let deadline = Instant::now() + Duration::from_millis(300);
+    loop {
+        match child
+            .try_wait()
+            .map_err(|error| format!("Could not check {}: {error}", launch.executable))?
+        {
+            Some(status) if !status.success() => {
+                return Err(format!(
+                    "{} exited with status {}",
+                    launch.executable,
+                    status
+                        .code()
+                        .map_or_else(|| "after a signal".to_owned(), |code| code.to_string())
+                ));
+            }
+            Some(_) => return Ok(()),
+            None if Instant::now() >= deadline => {
+                std::thread::spawn(move || {
+                    let _ = child.wait();
+                });
+                return Ok(());
+            }
+            None => std::thread::sleep(Duration::from_millis(20)),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -129,6 +230,38 @@ mod tests {
                 args: vec!["/tmp/a path/project".into()],
             }
         );
+        let mac_terminal = external_launch("external_terminal", path, "macos").unwrap();
+        assert_eq!(mac_terminal.executable, "osascript");
+        assert!(mac_terminal.args[1].contains("/tmp/a path/project"));
+    }
+
+    #[test]
+    fn linux_external_terminal_uses_an_installed_launcher_when_default_is_missing() {
+        let launch = linux_external_terminal_launch(Path::new("/tmp/a project"), |name| {
+            (name == "konsole").then(|| PathBuf::from("/usr/bin/konsole"))
+        })
+        .unwrap();
+        assert_eq!(launch.executable, "/usr/bin/konsole");
+        assert_eq!(launch.args[0..2], ["--workdir", "/tmp/a project"]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn quickly_failing_handoff_launcher_is_reported_as_an_error() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = tempdir().unwrap();
+        let executable = root.path().join("failing-launcher");
+        std::fs::write(&executable, "#!/bin/sh\nexit 23\n").unwrap();
+        let mut permissions = std::fs::metadata(&executable).unwrap().permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(&executable, permissions).unwrap();
+        let error = spawn_external(&Launch {
+            executable: executable.display().to_string(),
+            args: vec![],
+        })
+        .unwrap_err();
+        assert!(error.contains("exited with status 23"), "{error}");
     }
 
     #[test]

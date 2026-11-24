@@ -9,6 +9,8 @@ import {
   proposeWorkspaceTicket,
   createWorkspaceTicket,
   listWorkspaceTickets,
+  listWorkspaceTicketLabels,
+  setWorkspaceTicketLabel,
   workOnWorkspaceTicket,
   setDefaultModel,
   createWorkspaceTicketSession,
@@ -41,6 +43,7 @@ import { createChangeReviewController } from "./views/workspace/change-review/ch
 import {
   createRepositoryToolsActionForwarders,
   createRepositoryToolsController,
+  isRepositoryToolsMenuOpen,
 } from "./views/workspace/repository-tools/repositoryToolsController.js";
 import { createDocsController } from "./views/workspace/docs/docsController.js";
 import { createDocsView } from "./views/workspace/docs/docsView.js";
@@ -51,6 +54,7 @@ import {
 import { handleEnterToSubmit } from "./lib/formKeyboard.js";
 import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
+import { attachReplacementBeforeClosingPrevious } from "./views/workspace/sessions/ticketSessionScope.js";
 import { createApplicationLifetime } from "./application/applicationLifetime.js";
 import { createWorkspaceTicketCache } from "./views/workspace/tickets/workspaceTicketCache.js";
 import { recordUiDiagnostic } from "./lib/uiDiagnostics.js";
@@ -123,7 +127,11 @@ const invoke = (name, payload) => {
     return Promise.reject(
       new Error("Application presentation has been disposed."),
     );
-  payload = withSelectedTicketContext(name, payload, selectedTicketFilename());
+  payload = withSelectedTicketContext(
+    name,
+    payload,
+    ticketWorkbenchActive() ? selectedTicketFilename() : undefined,
+  );
   return payload === undefined
     ? invokeCommand(name)
     : invokeCommand(name, payload);
@@ -260,6 +268,7 @@ const [ticketError, setTicketError] = createSignal("");
 const [selectedTicketFilename, setSelectedTicketFilename] = createSignal(null);
 const [ticketSessionScope, setTicketSessionScope] = createSignal(null);
 const [ticketArchived, setTicketArchived] = createSignal(false);
+const [ticketWorkbenchActive, setTicketWorkbenchActive] = createSignal(false);
 const [workspaceTicketView, setWorkspaceTicketView] = createSignal("grouped");
 const workspaceTicketCache = createWorkspaceTicketCache(
   async (workspaceId, archived) => {
@@ -370,6 +379,7 @@ async function workWorkspaceTicket(workspaceId, filename) {
       rememberWorkspaceSession(session);
     }
     setTicketSessionScope(filename);
+    setTicketWorkbenchActive(true);
     setTicketViewerVisible(false);
     setWorkspaceShellVisible(true);
     setSelectedOwnerVisible(true);
@@ -416,6 +426,7 @@ async function startNewWorkspaceTicketSession() {
   const filename = selectedTicketFilename();
   if (ticketWorking() || !workspaceId || !filename || ticketArchived()) return;
   setTicketWorking(true);
+  const replacedSessionId = sessions.ticketSessionId();
   try {
     const session = await createWorkspaceTicketSession(
       invoke,
@@ -463,6 +474,7 @@ const workspaceTicketViewerProps = {
       filename,
     });
     setTicketSessionScope(filename);
+    setTicketWorkbenchActive(false);
     sessions.hide();
     setWorkspaceShellVisible(false);
     setSelectedOwnerVisible(false);
@@ -487,7 +499,7 @@ const workspaceTicketViewerProps = {
       );
     return proposeWorkspaceTicket(invoke, workspaceId, idea);
   },
-  onCreateTicket: async (title, body) => {
+  onCreateTicket: async (title, body, startInvestigation) => {
     const workspaceId = selectedWorkspace?.id;
     if (!workspaceId) throw new Error("Select a Workspace first.");
     const ticket = await createWorkspaceTicket(
@@ -503,7 +515,12 @@ const workspaceTicketViewerProps = {
     setTicketArchived(false);
     workspaceTicketCache.invalidate();
     await refreshTicketList(false);
-    setSelectedTicketFilename(ticket.filename);
+    setSelectedTicketFilename(result.ticket.filename);
+    setTicketError(
+      result.investigationFailureStage
+        ? "Ticket created, but its investigation could not be started. You can open the ticket with Work and continue manually."
+        : "",
+    );
   },
 };
 const [fullRequestVisible, setFullRequestVisibleState] = createSignal(false);
@@ -536,6 +553,11 @@ const workspaceNavigationProps = {
   isTicketCurrent: (workspace, ticket) =>
     selectedWorkspace?.id === workspace.id &&
     selectedTicketFilename() === ticket.filename,
+  onLoadLabels: () => listWorkspaceTicketLabels(invoke),
+  onSetTicketLabel: async (workspace, filename, label) => {
+    await setWorkspaceTicketLabel(invoke, workspace.id, filename, label);
+    await refreshNavigation();
+  },
 };
 
 function clearActiveNavigationItems() {
@@ -656,7 +678,7 @@ const [changeReviewRepositories, setChangeReviewRepositories] = createSignal(
 const [changeReviewError, setChangeReviewError] = createSignal("");
 const [changeReviewMode, setChangeReviewMode] = createSignal("unified");
 const [changeReviewSummary, setChangeReviewSummary] = createSignal("");
-const [navigatorWidth, setNavigatorWidth] = createSignal(300);
+const [navigatorWidth, setNavigatorWidth] = createSignal(285);
 let navigatorWidthChanged = false;
 let changeReviewModeChanged = false;
 let preferenceSave = Promise.resolve();
@@ -703,6 +725,39 @@ const changeReview = () =>
     navigatorWidth,
     onNavigatorResize: resizeNavigator,
     onMode: selectChangeReviewMode,
+    onFileViewed: async (repositoryId, path, viewed) => {
+      const ownerId = selectedWorkspace?.id;
+      const ticketFilename = selectedTicketFilename();
+      if (!ownerId || !ticketFilename)
+        throw new Error("Select a ticket before reviewing files.");
+      const state = await setChangeReviewFileViewed(
+        invoke,
+        "workspace",
+        ownerId,
+        repositoryId,
+        path,
+        viewed,
+        ticketFilename,
+      );
+      if (
+        selectedWorkspace?.id !== ownerId ||
+        selectedTicketFilename() !== ticketFilename
+      )
+        return;
+      setChangeReviewRepositories((repositories) =>
+        repositories.map((repository) =>
+          repository.repositoryId !== repositoryId
+            ? repository
+            : {
+                ...repository,
+                files: repository.files.map((file) => ({
+                  ...file,
+                  viewed: state.viewedFiles.includes(file.path),
+                })),
+              },
+        ),
+      );
+    },
     onFullDiff: async (repositoryId, path) => {
       const ownerId = selectedWorkspace?.id;
       if (!ownerId) throw new Error("No workspace selected.");
@@ -748,6 +803,8 @@ const docsController = createDocsController({
 const [repositoryToolGroups, setRepositoryToolGroups] = createSignal([]);
 const [repositoryToolLoadError, setRepositoryToolLoadError] = createSignal("");
 const [repositoryToolsOpen, setRepositoryToolsOpen] = createSignal(false);
+const [repositoryToolsTriggerId, setRepositoryToolsTriggerId] =
+  createSignal(null);
 const [repositoryToolsAvailable, setRepositoryToolsAvailable] =
   createSignal(false);
 const [repositoryToolsDisabled, setRepositoryToolsDisabled] =
@@ -757,14 +814,28 @@ const [repositoryToolActions, setRepositoryToolActions] = createSignal({
   onInstall: () => {},
   onHandoff: () => {},
 });
-const repositoryTools = () =>
+const repositoryTools = (triggerId = "show-repo-tools") =>
   RepositoryToolsMenu({
     groups: repositoryToolGroups,
     error: repositoryToolLoadError,
-    open: repositoryToolsOpen,
+    open: () =>
+      isRepositoryToolsMenuOpen(
+        repositoryToolsOpen(),
+        repositoryToolsTriggerId(),
+        triggerId,
+      ),
     available: repositoryToolsAvailable,
     disabled: repositoryToolsDisabled,
-    onToggle: () => toggleRepositoryTools(),
+    triggerId,
+    contentId:
+      triggerId === "show-repo-tools" ? "repo-tools-menu" : `${triggerId}-menu`,
+    externalActionsOnly: triggerId === "ticket-view-show-repo-tools",
+    onToggle: () => {
+      setRepositoryToolsTriggerId(triggerId);
+      void toggleRepositoryTools({
+        includeProjectTools: triggerId !== "ticket-view-show-repo-tools",
+      });
+    },
     ...createRepositoryToolsActionForwarders(repositoryToolActions),
   });
 const repositoryToolsController = createRepositoryToolsController({
@@ -781,6 +852,7 @@ const repositoryToolsController = createRepositoryToolsController({
   openWorkspaceShellTerminal: sessions.openWorkspaceShellTerminal,
   launchWorkspaceOsHandoff,
   installStarted: sessions.installStarted,
+  reportHandoffError: setAppNotice,
 });
 let selectedOwnerRepositoryCount = 0;
 
@@ -960,6 +1032,7 @@ function selectWorkspace(workspace, data = navigationData) {
   setTicketArchived(false);
   setSelectedTicketFilename(null);
   setTicketSessionScope(null);
+  setTicketWorkbenchActive(false);
   setTicketViewerVisible(true);
   showCachedTicketList(false);
   newWork.hide();
@@ -993,7 +1066,7 @@ function selectQuickRequest(
   setFullRequestVisible(false);
   const isQuickRequest = Boolean(task.quickRequest);
   setWorkspaceShellVisible(!isQuickRequest);
-  setQuickRequestTerminalPage(isQuickRequest);
+  setQuickRequestTerminalPage(isQuickRequest && !deferReveal);
   setProposalMode(false);
   setRightContentOwnerActive(true);
   setOwnerStatus("");
@@ -1003,14 +1076,18 @@ function selectQuickRequest(
   setSelectedTicketFilename(null);
   setWorkspaceNavigation({ data, selected: null });
   selectedOwnerRepositoryCount = 0;
-  showOwnerTerminal();
-  syncChangeReviewAvailability();
+  if (!deferReveal) showOwnerTerminal();
+  if (deferReveal) {
+    setChangeReviewVisible(false);
+    setChangeReviewAvailable(false);
+    setChangeReviewSelected(false);
+  } else syncChangeReviewAvailability();
   syncRepositoryToolsAvailability();
   setNoSelectionVisible(false);
   setWorkspaceSelected(false);
   setWorkspaceShellVisible(!isQuickRequest);
-  setSelectedOwnerVisible(true);
-  newWork.hide();
+  setSelectedOwnerVisible(!deferReveal);
+  if (!deferReveal) newWork.hide();
   setOwnerTitle(task.name);
   rightPaneRouter.navigate(
     isQuickRequest ? "quick-request" : "workspace-owner",
@@ -1095,6 +1172,7 @@ const newWork = createNewWork({
   selectWorkspace,
   selectQuickRequest,
   showSession,
+  finishSession: sessions.finishSessionStartup,
   waitForTerminal: async () => {
     if (!(await terminalRuntime))
       throw new Error("Terminal runtime is unavailable.");

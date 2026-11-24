@@ -1,8 +1,9 @@
 // A browser fixture, not an implementation of the Rust backend. It never
 // invokes native APIs, network, persistent storage, filesystem, or processes.
 const timestamp = 1700000000000;
-let navigatorWidth = 300;
+let navigatorWidth = 285;
 let changeReviewMode = "unified";
+const viewedReviewFiles = new Map();
 let defaultModel = { providerId: "fixture", id: "model" };
 let createdWorkspaceTickets = [];
 let portSelection =
@@ -243,6 +244,7 @@ export async function invokeBrowserFixture(name, payload = {}) {
               title: "Example active ticket",
               status: "in_progress",
               hasWorkSession: true,
+              projectLabel: ticketLabelOverrides.get(`${example.id}:example-active.md`) ?? example.name,
               modifiedAt: timestamp,
             },
             {
@@ -250,6 +252,7 @@ export async function invokeBrowserFixture(name, payload = {}) {
               title: "Example blocked ticket",
               status: "blocked",
               hasWorkSession: false,
+              projectLabel: ticketLabelOverrides.get(`${example.id}:example-blocked.md`) ?? example.name,
               modifiedAt: timestamp - 1,
             },
             {
@@ -257,6 +260,7 @@ export async function invokeBrowserFixture(name, payload = {}) {
               title: "Example draft in progress",
               status: "draft",
               hasWorkSession: true,
+              projectLabel: ticketLabelOverrides.get(`${example.id}:example-draft-session.md`) ?? example.name,
               modifiedAt: timestamp - 2,
             },
             {
@@ -264,6 +268,7 @@ export async function invokeBrowserFixture(name, payload = {}) {
               title: "Example new draft",
               status: "draft",
               hasWorkSession: false,
+              projectLabel: ticketLabelOverrides.get(`${example.id}:example-new-draft.md`) ?? example.name,
               modifiedAt: timestamp - 3,
             },
           ],
@@ -291,6 +296,7 @@ export async function invokeBrowserFixture(name, payload = {}) {
               title: "Blocked example ticket",
               status: "blocked",
               hasWorkSession: false,
+              projectLabel: example.name,
               modifiedAt: 1_793_500_000_000,
               archivedAt: null,
               content:
@@ -301,6 +307,7 @@ export async function invokeBrowserFixture(name, payload = {}) {
               title: "In-progress example ticket",
               status: "in_progress",
               hasWorkSession: false,
+              projectLabel: example.name,
               modifiedAt: 1_793_600_000_000,
               archivedAt: null,
               content:
@@ -311,6 +318,7 @@ export async function invokeBrowserFixture(name, payload = {}) {
               title: "Example ticket",
               status: "draft",
               hasWorkSession: true,
+              projectLabel: example.name,
               modifiedAt: 1_793_700_000_000,
               archivedAt: null,
               content: `---\ntitle: Example ticket\nstatus: draft\nwork_session_id: fixture-session\n---\n# Example ticket\n\nA fixture ticket for the Workspace with readable **Markdown**.\n\n${"This long paragraph checks reader scrolling and keeps the full ticket body available. ".repeat(28)}\n\n## Acceptance checks\n\n- List and reader scroll independently\n- Metadata follows the body\n\n\`\`\`js\nconsole.log("safe fixture Markdown");\n\`\`\``,
@@ -320,6 +328,7 @@ export async function invokeBrowserFixture(name, payload = {}) {
               title: "Other-status example",
               status: "review",
               hasWorkSession: false,
+              projectLabel: example.name,
               modifiedAt: 1_793_650_000_000,
               archivedAt: null,
               content:
@@ -331,6 +340,39 @@ export async function invokeBrowserFixture(name, payload = {}) {
               .map(({ workspaceId, ...ticket }) => ticket),
           );
       break;
+    case "workspace_ticket_labels": {
+      const labels = new Map();
+      for (const workspace of workspaces) {
+        for (const [key, label] of ticketLabelOverrides) {
+          if (!key.startsWith(`${workspace.id}:`) || !label) continue;
+          const current = labels.get(label.toLowerCase()) || { label, ticketCount: 0, workspaceCount: new Set() };
+          current.ticketCount += 1;
+          current.workspaceCount.add(workspace.id);
+          labels.set(label.toLowerCase(), current);
+        }
+        for (const ticket of createdWorkspaceTickets.filter((item) => item.workspaceId === workspace.id)) {
+          const label = ticket.projectLabel || workspace.name;
+          const key = label.toLowerCase();
+          const current = labels.get(key) || { label, ticketCount: 0, workspaceCount: new Set() };
+          current.ticketCount += 1;
+          current.workspaceCount.add(workspace.id);
+          labels.set(key, current);
+        }
+      }
+      labels.set(example.name.toLowerCase(), { label: example.name, ticketCount: 1, workspaceCount: new Set([example.id]) });
+      result = [...labels.values()].map(({ label, ticketCount, workspaceCount }) => ({ label, ticketCount, workspaceCount: workspaceCount.size }));
+      break;
+    }
+    case "workspace_ticket_label_set": {
+      const ticket = createdWorkspaceTickets.find((item) => item.workspaceId === request.workspaceId && item.filename === request.filename);
+      if (ticket) ticket.projectLabel = request.label;
+      else if (request.workspaceId === example.id && ["example-active.md", "example-blocked.md", "example-draft-session.md", "example-new-draft.md"].includes(request.filename)) {
+        const key = `${request.workspaceId}:${request.filename}`;
+        ticketLabelOverrides.set(key, request.label);
+      }
+      result = request.label;
+      break;
+    }
     case "workspace_ticket_proposal": {
       if (!workspaces.some((item) => item.id === request.workspaceId))
         throw new Error("Workspace was not found");
@@ -368,13 +410,20 @@ export async function invokeBrowserFixture(name, payload = {}) {
         filename,
         title: request.title,
         status: "draft",
-        hasWorkSession: false,
+        hasWorkSession: Boolean(investigationSessionId),
         opencodeStatus: null,
-        content: `---\ntitle: ${JSON.stringify(request.title)}\nstatus: draft\n---\n\n${request.body}\n`,
+        projectLabel: workspace.name,
+        content,
         modifiedAt: Date.now(),
         archivedAt: null,
       };
-      createdWorkspaceTickets.push({ ...result, workspaceId: workspace.id });
+      createdWorkspaceTickets.push({ ...ticket, workspaceId: workspace.id });
+      result = {
+        ticket,
+        investigationSessionId,
+        investigationStarted: Boolean(investigationSessionId),
+        investigationFailureStage: null,
+      };
       break;
     }
     case "workspace_ticket_work": {
@@ -399,7 +448,7 @@ export async function invokeBrowserFixture(name, payload = {}) {
         }
         return session;
       });
-      result = { sessions: entries, activeSessionId: ids.at(-1) };
+      result = { session: entries.at(-1) };
       break;
     }
     case "workspace_ticket_session_create": {
@@ -408,12 +457,10 @@ export async function invokeBrowserFixture(name, payload = {}) {
       );
       if (!workspace) throw new Error("Workspace was not found");
       const key = `${workspace.id}:${payload.filename}`;
-      const ids = [...(ticketSessions.get(key) || [])];
-      const sessionId = `fixture-ticket-session-${ids.length + 1}`;
+      const sessionId = `fixture-ticket-session-${++ticketSessionSequence}`;
       result = { ...makeSession(workspace), openCodeSessionId: sessionId };
       sessions.push(result);
-      ids.push(sessionId);
-      ticketSessions.set(key, ids);
+      ticketSessions.set(key, [sessionId]);
       break;
     }
     case "workspace_ticket_session_close": {
@@ -518,25 +565,72 @@ export async function invokeBrowserFixture(name, payload = {}) {
       );
       result = null;
       break;
-    case "change_review_load":
+    case "change_review_load": {
+      const reviewScope = JSON.stringify([
+        payload.request.ownerId,
+        payload.request.ticketFilename || "",
+        repository.id,
+      ]);
+      const viewedFiles = viewedReviewFiles.get(reviewScope) || new Set();
+      const additionalReviewFiles = Array.from({ length: 23 }, (_, index) => {
+        const path = `src/review/file-${String(index + 1).padStart(2, "0")}.js`;
+        const previous = `export const value = ${index};`;
+        const next = `export const value = ${index + 1};`;
+        return {
+          path,
+          status: "M",
+          changeSource: "branch",
+          viewed: viewedFiles.has(path),
+          diff: `diff --git a/${path} b/${path}\n--- a/${path}\n+++ b/${path}\n@@ -1 +1 @@\n-${previous}\n+${next}\n`,
+          diffError: null,
+        };
+      });
       result = [
         {
           repositoryId: repository.id,
           name: repository.name,
           path: "/fixture/repository",
           comparisonTarget: "origin/main",
+          mergeBase: "fixture-merge-base",
           comparisonError: null,
           files: [
             {
               path: "src/example.js",
               status: "M",
+              changeSource: "branch",
+              viewed: viewedFiles.has("src/example.js"),
               diff: "--- a/src/example.js\n+++ b/src/example.js\n@@ -3,5 +3,5 @@\n function greet(name) {\n-  return 'Hello ' + name;\n+  return `Hello, ${name}!`;\n }\n \n greet('world');\n",
               diffError: null,
             },
+            ...additionalReviewFiles,
           ],
         },
       ];
       break;
+    }
+    case "change_review_file_viewed_set": {
+      if (
+        payload.request.repositoryId !== repository.id ||
+        !/^src\/(?:example\.js|review\/file-\d{2}\.js)$/.test(
+          payload.request.path,
+        )
+      )
+        throw new Error("Unknown fixture file.");
+      const reviewScope = JSON.stringify([
+        payload.request.ownerId,
+        payload.request.ticketFilename || "",
+        payload.request.repositoryId,
+      ]);
+      const viewedFiles = viewedReviewFiles.get(reviewScope) || new Set();
+      if (payload.request.viewed) viewedFiles.add(payload.request.path);
+      else viewedFiles.delete(payload.request.path);
+      viewedReviewFiles.set(reviewScope, viewedFiles);
+      result = {
+        headCommit: "fixture-head",
+        viewedFiles: [...viewedFiles],
+      };
+      break;
+    }
     case "change_review_full_diff":
       if (
         payload.request.repositoryId !== repository.id ||
@@ -684,6 +778,8 @@ export async function invokeBrowserFixture(name, payload = {}) {
                 path: "/fixture/repository",
                 packageScripts: ["test"],
                 makeTargets: ["build"],
+                packageScriptEntries: [{ name: "test", directory: "" }],
+                makeTargetEntries: [{ name: "build", directory: "" }],
                 npmInstallNeeded: false,
               },
             ]

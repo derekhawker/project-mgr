@@ -18,6 +18,7 @@ import {
   selectCreatedWorkspace,
   resolveQuickRequestDirectory,
   submitResolvedQuickRequestFlow,
+  retryResolvedQuickRequestFlow,
   formatWorkspaceError,
 } from "../../services/shell.js";
 
@@ -32,6 +33,7 @@ export function createNewWork({
   selectWorkspace,
   selectQuickRequest,
   showSession,
+  finishSession,
   waitForTerminal,
   forgetProposalSession,
   refreshRequests,
@@ -60,10 +62,17 @@ export function createNewWork({
     startingPrompt: "",
     createLabel: "Create",
   });
+  const [quickRequestPromptChoice, setQuickRequestPromptChoice] = createSignal("suggested");
+  const [quickRequestSuggestedPrompt, setQuickRequestSuggestedPrompt] =
+    createSignal("");
   const [progressVisible, setProgressVisible] = createSignal(false);
   const [progressRows, setProgressRows] = createSignal(new Map());
   const [newWorkCaptureError, setNewWorkCaptureError] = createSignal("");
   const [proposalError, setProposalError] = createSignal("");
+  const [quickRequestRecoveryRecord, setQuickRequestRecoveryRecord] =
+    createSignal(null);
+  const [quickRequestRecoveryBusy, setQuickRequestRecoveryBusy] =
+    createSignal(false);
   const [workspaceError, setWorkspaceError] = createSignal("");
   const [workspaceRepositoryChoice, setWorkspaceRepositoryChoice] =
     createSignal("");
@@ -209,6 +218,8 @@ export function createNewWork({
       repositoryCatalog: getCatalog(),
     });
     currentProposal = proposal;
+    setQuickRequestPromptChoice("suggested");
+    setQuickRequestSuggestedPrompt(proposal.suggestedPrompt);
     setProposalCreateDisabled(false);
     setProposalView(review);
     if (review.workType === "quick_request") {
@@ -276,6 +287,9 @@ export function createNewWork({
     modelsReady: isModelsReady,
     quickRequestDirectoryReady: () => quickRequestDirectoryReady,
     getOriginalPrompt: newWorkPromptValue,
+    getStartingPrompt: () => quickRequestPromptChoice() === "original"
+      ? newWorkPromptValue()
+      : quickRequestSuggestedPrompt() || newWorkPromptValue(),
     getSelectedModel: proposalSelectedModel,
     getRepositoryId: () =>
       customQuickDirectory() === defaultQuickDirectory()
@@ -288,6 +302,7 @@ export function createNewWork({
     proposalSessionId: () => proposalSessionId,
     invoke,
     submitResolvedQuickRequestFlow,
+    retryResolvedQuickRequestFlow,
     waitForTerminal,
     onCreated: (record) => {
       const data = getNavigationData();
@@ -299,9 +314,29 @@ export function createNewWork({
         kind: "quick_requests",
         status: "active",
       };
-      selectQuickRequest(record.task, workspace, data);
+      selectQuickRequest(record.task, workspace, data, {
+        deferRestore: true,
+        deferReveal: true,
+      });
     },
     showSession,
+    setRecoveryRecord: setQuickRequestRecoveryRecord,
+    setRecoveryBusy: setQuickRequestRecoveryBusy,
+    finishQuickRequestStartup: async (record) => {
+      const data = getNavigationData();
+      const workspace = data.workspaces.find(
+        (entry) => entry.id === record.task.workspaceId,
+      ) || {
+        id: record.task.workspaceId,
+        name: "Quick Requests",
+        kind: "quick_requests",
+        status: "active",
+      };
+      selectQuickRequest(record.task, workspace, data, { deferRestore: true });
+      const sessionId = record.session?.openCodeSessionId;
+      if (!sessionId) throw new Error("Quick Request has no recorded session.");
+      await finishSession(sessionId);
+    },
     refreshRequests,
     setCreateDisabled: setProposalCreateDisabled,
     setOwnerSetupBusy: owner.setSetupBusy,

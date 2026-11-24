@@ -151,25 +151,24 @@ test("fixture creates and reopens a workspace and tool without external operatio
       workspaceId: created.id, filename: "example.md",
     });
     assert.deepEqual(
-      await invokeBrowserFixture("opencode_session_restore", { sessionId: ticketWork.sessions[0].openCodeSessionId }),
-      ticketWork.sessions[0],
+      await invokeBrowserFixture("opencode_session_restore", { sessionId: ticketWork.session.openCodeSessionId }),
+      ticketWork.session,
     );
-    assert.equal(ticketWork.activeSessionId, ticketWork.sessions[0].openCodeSessionId);
+    assert.ok(ticketWork.session.openCodeSessionId);
     const extraSession = await invokeBrowserFixture("workspace_ticket_session_create", {
       workspaceId: created.id, filename: "example.md",
     });
     const afterCreate = await invokeBrowserFixture("workspace_ticket_work", {
       workspaceId: created.id, filename: "example.md",
     });
-    assert.equal(afterCreate.sessions.length, 2);
-    assert.equal(afterCreate.activeSessionId, extraSession.openCodeSessionId);
+    assert.equal(afterCreate.session.openCodeSessionId, extraSession.openCodeSessionId);
     assert.equal(
       await invokeBrowserFixture("workspace_ticket_session_close", {
         workspaceId: created.id,
         filename: "example.md",
         sessionId: extraSession.openCodeSessionId,
       }),
-      ticketWork.activeSessionId,
+      null,
     );
     assert.equal(
       (await invokeBrowserFixture("opencode_session_restore", {
@@ -219,6 +218,6 @@ test("created ticket fixtures stay scoped to their owning workspace", async () =
 
   const ownerTickets = await listWorkspaceTickets(invokeBrowserFixture, workspaceId);
   const otherTickets = await listWorkspaceTickets(invokeBrowserFixture, "fixture-workspace");
-  assert.equal(ownerTickets.some((item) => item.filename === ticket.filename), true);
-  assert.equal(otherTickets.some((item) => item.filename === ticket.filename), false);
+  assert.equal(ownerTickets.some((item) => item.filename === ticket.ticket.filename), true);
+  assert.equal(otherTickets.some((item) => item.filename === ticket.ticket.filename), false);
 });

@@ -4,9 +4,10 @@ import { invokeCommand } from "../../../services/commandContract.js";
 import { SessionTabList } from "./SessionTabList.jsx";
 import { PendingInputList } from "./PendingInputList.jsx";
 import {
-  linkedTicketFilename,
   scopedSessionOwnerKey,
   sessionInTicketScope,
+  ticketFilenameForSessionClose,
+  TICKET_SESSION_TAB_LABEL,
 } from "./ticketSessionScope.js";
 import {
   ownerSessionTabState,
@@ -63,6 +64,7 @@ export function createWorkspaceSessions({
   const [pendingInputMessage, setPendingInputMessage] = createSignal("");
   const openSessions = new Set();
   const sessionOwners = new Map();
+  const sessionRestoreRecords = new Map();
   const selectedSessionByOwner = new Map();
   const sessionDirectories = new Map();
   const missingSessionReplacements = new Map();
@@ -187,22 +189,30 @@ export function createWorkspaceSessions({
     }
   }
 
-  async function closeWorkspaceSession(sessionId) {
+  async function closeWorkspaceSession(sessionId, { unlinkTicket = true } = {}) {
     if (sessionId === proposalSessionId()) return;
     const ownerKey = sessionOwners.get(sessionId);
     const owningTab = sessionTabEntries().find((entry) => entry.sessionId === sessionId);
-    const ticketScope = ownerKey?.startsWith("workspace:") &&
-      owningTab?.ticketScope === getSessionScope()
-      ? linkedTicketFilename(owningTab.ticketScope)
-      : undefined;
+    const isToolTerminal = repositoryToolTerminals.has(sessionId);
+    const ticketScope = ticketFilenameForSessionClose(
+      owningTab,
+      getSessionScope(),
+      isToolTerminal,
+    );
     let nextTicketSessionId;
+    let runtime = null;
     try {
-      if (repositoryToolTerminals.has(sessionId))
+      if (isToolTerminal) {
+        runtime = await getRuntime();
+        // Stop observer-driven resizes before Rust removes this ephemeral PTY.
+        await runtime?.suspendResizing(sessionId);
+      }
+      if (isToolTerminal)
         await repoToolTerminalCommand(invoke, "cleanup", {
           terminalId: sessionId,
         });
       else await cleanupTerminal(invoke, sessionId);
-      if (ticketScope) {
+      if (ticketScope && unlinkTicket) {
         const workspaceId = ownerKey.slice("workspace:".length);
         nextTicketSessionId = await closeWorkspaceTicketSession(
           invoke,
@@ -212,18 +222,20 @@ export function createWorkspaceSessions({
         );
       }
     } catch (error) {
+      runtime?.reopen(sessionId);
       const message = formatWorkspaceError("Close terminal", error);
       setOwnerStatus(message);
       setCommandResultMessage(message);
       return;
     }
-    const runtime = await getRuntime();
+    const activeRuntime = runtime ?? (await getRuntime());
     if (appLifetime.disposed) return;
-    runtime?.forget(sessionId);
+    activeRuntime?.forget(sessionId);
     terminalSurfaces.remove(sessionId);
     removeSessionTab(sessionId);
     openSessions.delete(sessionId);
     sessionOwners.delete(sessionId);
+    sessionRestoreRecords.delete(sessionId);
     repositoryToolTerminals.delete(sessionId);
     releaseInstall(sessionId);
     if (selectedSessionByOwner.get(selectionKey(ownerKey)) === sessionId) {
@@ -254,7 +266,12 @@ export function createWorkspaceSessions({
 
   const showSession = createKeyedSingleFlight(
     async (sessionId, options = {}) => {
-      const { proposal = false } = options;
+      const {
+        proposal = false,
+        deferEvidence = false,
+        deferReveal = false,
+        requireExactSession = false,
+      } = options;
       sessionId = resolveSessionReplacement(
         missingSessionReplacements,
         sessionId,
@@ -267,12 +284,15 @@ export function createWorkspaceSessions({
       // Resolve the exact persisted owner/directory in Rust before creating xterm.
       const restored = proposal
         ? null
-        : await invokeCommand(invoke, "opencode_session_restore", {
+        : sessionRestoreRecords.get(sessionId) ||
+          (await invokeCommand(invoke, "opencode_session_restore", {
             sessionId,
-          });
+          }));
       if (appLifetime.disposed) return;
       const data = getNavigationData();
       if (!proposal && restored?.openCodeSessionId !== sessionId) {
+        if (requireExactSession)
+          throw new Error("The saved Quick Request session is unavailable.");
         const replacementId = recordSessionReplacement(
           missingSessionReplacements,
           data,
@@ -297,6 +317,7 @@ export function createWorkspaceSessions({
             (task) => task.id === owner.owner_id && task.quickRequest,
           ));
       if (ownerKey) sessionOwners.set(sessionId, ownerKey);
+      if (!proposal && restored) sessionRestoreRecords.set(sessionId, restored);
       if (restored?.directory)
         sessionDirectories.set(sessionId, restored.directory);
       if (!openSessions.has(sessionId)) {
@@ -308,7 +329,7 @@ export function createWorkspaceSessions({
           const label = proposal
             ? "Proposal"
             : ownerKey?.startsWith("workspace:") && getSessionScope()
-              ? `Session ${sessionTabEntries().filter((entry) => entry.ownerKey === ownerKey && entry.ticketScope === getSessionScope()).length + 1}`
+              ? TICKET_SESSION_TAB_LABEL
             : workspaceSessionTabLabel(
                 restored,
                 data.workspaceSessionContexts,
@@ -342,13 +363,26 @@ export function createWorkspaceSessions({
         syncOwnerSessions({ focus: false });
         return;
       }
-      terminalSurfaces.show(sessionId);
+      if (!deferReveal) terminalSurfaces.show(sessionId);
       if (ownerKey) selectedSessionByOwner.set(selectionKey(ownerKey), sessionId);
       if (proposal) setSessionStatus("Proposal session · interactive");
-      else await refreshSessionEvidence(sessionId);
+      else if (!deferEvidence) await refreshSessionEvidence(sessionId);
       syncOwnerSessions();
     },
   );
+
+  async function finishSessionStartup(sessionId) {
+    const ownerKey = sessionOwners.get(sessionId);
+    if (!ownerKey || ownerKey !== selectedOwnerKey())
+      throw new Error("The attached session is not selected for this owner.");
+    const runtime = await getRuntime();
+    if (!runtime) throw new Error("Terminal runtime is unavailable.");
+    terminalSurfaces.show(sessionId);
+    selectedSessionByOwner.set(selectionKey(ownerKey), sessionId);
+    runtime.select(sessionId);
+    await refreshSessionEvidence(sessionId);
+    syncOwnerSessions();
+  }
 
   async function restoreTrackedOwnerSession(owner) {
     const ownerKey = `${owner.type}:${owner.id}`;
@@ -393,6 +427,7 @@ export function createWorkspaceSessions({
     removeSessionTab(sessionId);
     openSessions.delete(sessionId);
     sessionOwners.delete(sessionId);
+    sessionRestoreRecords.delete(sessionId);
     if (ownerKey && selectedSessionByOwner.get(selectionKey(ownerKey)) === sessionId)
       selectedSessionByOwner.delete(selectionKey(ownerKey));
     return true;
@@ -458,6 +493,7 @@ export function createWorkspaceSessions({
     repository,
     kind,
     name = "",
+    sourceDirectory = "",
     installKey = null,
   ) {
     const owner = getToolsOwner();
@@ -470,6 +506,8 @@ export function createWorkspaceSessions({
         repository.repositoryId,
         kind,
         name,
+        sourceDirectory,
+        owner.ticketFilename,
       );
       if (installKey) installTerminalKeys.set(started.terminalId, installKey);
       return await attachManagedTerminal(
@@ -478,6 +516,9 @@ export function createWorkspaceSessions({
         `${repository.name} · ${started.label}`,
       );
     } catch (error) {
+      // The ticket reader hides the Workspace shell. Bring the owner page
+      // forward so command-start failures are visible there as well.
+      showOwnerTerminal();
       setSessionStatus(`Could not start ${name || kind}: ${String(error)}`);
       return false;
     }
@@ -486,7 +527,12 @@ export function createWorkspaceSessions({
   async function openWorkspaceShellTerminal(owner) {
     let started = null;
     try {
-      started = await startWorkspaceShell(invoke, owner.type, owner.id);
+      started = await startWorkspaceShell(
+        invoke,
+        owner.type,
+        owner.id,
+        owner.ticketFilename,
+      );
       return await attachManagedTerminal(started, owner, started.label);
     } catch (error) {
       if (
@@ -508,6 +554,7 @@ export function createWorkspaceSessions({
 
   return {
     showSession,
+    finishSessionStartup,
     restoreTrackedOwnerSession,
     syncOwnerSessions,
     openRepositoryToolTerminal,
@@ -533,6 +580,13 @@ export function createWorkspaceSessions({
     selectedSessionId: () =>
       sessionTabEntries().find((entry) => entry.visible && entry.selected)
         ?.sessionId,
+    ticketSessionId: () => sessionTabEntries().find(
+      (entry) =>
+        entry.ownerKey === selectedOwnerKey() &&
+        entry.ticketScope === getSessionScope(),
+    )?.sessionId,
+    closeReplacedTicketSession: (sessionId) =>
+      closeWorkspaceSession(sessionId, { unlinkTicket: false }),
     tabs: () => SessionTabList({ tabs: sessionTabEntries }),
     pendingInputs: () =>
       PendingInputList({

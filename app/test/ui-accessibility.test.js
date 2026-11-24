@@ -106,7 +106,11 @@ test("basic controls preserve native disabled, labeling, and announcement overri
   assert.equal(instances[0].host.querySelector("button").disabled, true);
   assert.equal(instances[1].host.querySelector("#name").disabled, true);
   assert.equal(instances[2].host.querySelector("#notes").required, true);
-  assert.equal(instances[3].host.querySelector("#choice").disabled, true);
+  assert.equal(
+    instances[3].host.querySelector("#choice").getAttribute("aria-disabled"),
+    "true",
+  );
+  assert.equal(instances[3].host.querySelector("#choice").tabIndex, -1);
   assert.equal(instances[4].host.querySelector("#accept").checked, true);
   assert.equal(
     instances[5].host.querySelector("[role=alert]").getAttribute("aria-live"),

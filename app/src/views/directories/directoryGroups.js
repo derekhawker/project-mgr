@@ -39,8 +39,13 @@ function relativeSegments(rootPath, repositoryPath) {
 }
 
 const MAX_COLLAPSED_REPOSITORIES = 5;
+const LARGE_CATALOG_THRESHOLD = 20;
+const compareNames = (left, right) =>
+  left.localeCompare(right, undefined, { sensitivity: "base" }) ||
+  left.localeCompare(right);
 
-function groupRepositoryRoots(directories) {
+function groupRepositoryRoots(directories, preserveRoots) {
+  if (preserveRoots) return directories;
   const rootGroups = new Map();
   for (const directory of directories) {
     const firstComponent = pathParts(directory.path)[0] || "";
@@ -82,7 +87,12 @@ function collapseSmallDirectoryGroups(nodes) {
 }
 
 export function buildRepositoryDirectoryTree(directories) {
-  return groupRepositoryRoots(directories).map((directory) => {
+  const totalEntries = directories.reduce(
+    (count, directory) => count + directory.repositories.length,
+    0,
+  );
+  const preserveStructure = totalEntries > LARGE_CATALOG_THRESHOLD;
+  const roots = groupRepositoryRoots(directories, preserveStructure).map((directory) => {
     const root = {
       path: directory.path,
       name: basename(directory.path),
@@ -107,10 +117,51 @@ export function buildRepositoryDirectoryTree(directories) {
         }
         children = folder.children;
       }
-      children.push({ kind: "repository", entry });
+      children.push({
+        kind: "repository",
+        name: entry.repository.name,
+        entry,
+      });
     }
 
-    root.children = collapseSmallDirectoryGroups(root.children);
+    root.children = preserveStructure
+      ? root.children
+      : collapseSmallDirectoryGroups(root.children);
+    sortSiblings(root.children);
     return root;
+  });
+  roots.sort((left, right) => compareNames(left.name, right.name));
+  return roots;
+}
+
+function sortSiblings(nodes) {
+  nodes.sort((left, right) => compareNames(left.name, right.name));
+  for (const node of nodes) {
+    if (node.kind === "directory") sortSiblings(node.children);
+  }
+}
+
+export function filterRepositoryDirectoryTree(tree, query) {
+  const needle = query.trim().toLocaleLowerCase();
+  if (!needle) return tree;
+
+  function filterNodes(nodes) {
+    return nodes.flatMap((node) => {
+      if (node.kind === "repository") {
+        const repository = node.entry.repository;
+        return `${repository.name}\n${repository.repositoryPath}`
+          .toLocaleLowerCase()
+          .includes(needle)
+          ? [node]
+          : [];
+      }
+      const children = filterNodes(node.children);
+      return children.length ? [{ ...node, children }] : [];
+    });
+  }
+
+  return tree.flatMap((root) => {
+    const children = filterNodes(root.children);
+    return children.length ? [{ ...root, children }] : [];
   });
 }

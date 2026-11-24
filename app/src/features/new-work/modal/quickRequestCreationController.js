@@ -5,17 +5,22 @@ export function createQuickRequestCreationController(deps) {
     modelsReady,
     quickRequestDirectoryReady,
     getOriginalPrompt,
+    getStartingPrompt = getOriginalPrompt,
     getSelectedModel,
     getRepositoryId,
     getDirectory,
     proposalSessionId,
     invoke,
     submitResolvedQuickRequestFlow,
+    retryResolvedQuickRequestFlow,
     waitForTerminal,
     onCreated,
     showSession,
     refreshRequests,
     setCreateDisabled,
+    setRecoveryBusy = () => {},
+    setRecoveryRecord = () => {},
+    finishQuickRequestStartup = async () => {},
     setOwnerSetupBusy,
     setProposalError,
     clearOwnerSetupNotice,
@@ -30,15 +35,59 @@ export function createQuickRequestCreationController(deps) {
     clearPendingPromptAction,
     syncPendingPrompt,
   } = deps;
+  let recoveryRecord = null;
+  let busy = false;
+
+  function rememberCreatedRequest(record) {
+    recoveryRecord = record;
+    setRecoveryRecord(record);
+    onCreated(record);
+  }
+
+  async function completeStartup(record) {
+    await finishQuickRequestStartup(record);
+    recoveryRecord = null;
+    setRecoveryRecord(null);
+    setNewWorkView("closed");
+    clearProposal();
+    closeModal();
+    clearPendingPromptAction();
+    if (proposalSessionId()) {
+      try {
+        await closeProposalSession();
+      } catch (error) {
+        setOwnerStatus(formatWorkspaceError("Close proposal terminal", error));
+      }
+    }
+    try {
+      await refreshRequests();
+    } catch (error) {
+      setAppNotice(
+        `Quick Request started, but its list could not be refreshed: ${String(error)}`,
+      );
+    }
+  }
+
+  function setBusy(value) {
+    busy = value;
+    setOwnerSetupBusy(value);
+    setRecoveryBusy(value);
+  }
 
   async function createQuickRequest() {
-    if (!getProposal() || !modelsReady() || !quickRequestDirectoryReady())
+    if (
+      recoveryRecord ||
+      busy ||
+      !getProposal() ||
+      !modelsReady() ||
+      !quickRequestDirectoryReady()
+    )
       return;
     const generation = getGeneration?.();
     const isCurrent = () =>
       getGeneration?.() === undefined || getGeneration() === generation;
     setCreateDisabled(true);
-    setOwnerSetupBusy(true);
+    setBusy(true);
     setProposalError("");
     clearOwnerSetupNotice();
     setProgressProposalSession(proposalSessionId());
@@ -48,6 +97,7 @@ export function createQuickRequestCreationController(deps) {
       await submitResolvedQuickRequestFlow({
         invoke,
         originalPrompt: getOriginalPrompt(),
+        startingPrompt: getStartingPrompt(),
         model,
         repositoryId: getRepositoryId() || null,
         directory: getDirectory?.() || null,
@@ -57,7 +107,6 @@ export function createQuickRequestCreationController(deps) {
           if (isCurrent()) onCreated(record);
         },
         showSession,
-        refreshRequests,
       });
       if (isCurrent()) {
         setNewWorkView("closed");
@@ -92,11 +141,37 @@ export function createQuickRequestCreationController(deps) {
       } else if (isCurrent())
         setProposalError(formatWorkspaceError("Create work", error));
     } finally {
-      setOwnerSetupBusy(false);
+      setBusy(false);
       syncPendingPrompt();
       if (isCurrent())
         setCreateDisabled(ownerCreated || !quickRequestDirectoryReady());
     }
   }
-  return { createQuickRequest };
+
+  async function retryQuickRequest() {
+    const record = recoveryRecord;
+    if (!record || busy) return;
+    setRecoveryBusy(true);
+    setOwnerSetupBusy(true);
+    busy = true;
+    setProposalError("");
+    try {
+      await retryResolvedQuickRequestFlow({
+        invoke,
+        record,
+        model: JSON.parse(getSelectedModel()),
+        showSession,
+      });
+      await completeStartup(record);
+    } catch (error) {
+      setProposalError(formatWorkspaceError("Recover Quick Request", error));
+    } finally {
+      busy = false;
+      setRecoveryBusy(false);
+      setOwnerSetupBusy(false);
+      syncPendingPrompt();
+    }
+  }
+
+  return { createQuickRequest, retryQuickRequest, hasRecovery: () => Boolean(recoveryRecord) };
 }

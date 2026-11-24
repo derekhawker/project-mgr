@@ -16,6 +16,13 @@ discussions. For workflow behavior beyond the UX vocabulary, see
 - **Ticket idea proposal:** Transient OpenCode-generated title and Markdown
   content shown for review before Rust creates a new `draft` ticket. It is not a
   ticket record or an interactive session.
+- **Ticket investigation:** An opt-in research turn started when a draft ticket
+  is created. It uses a persistent ticket-bound OpenCode session to identify
+  requirements gaps, unclear or changing behavior, integration risks, and
+  readiness questions. It may implement only when the task is clearly defined,
+  low-effort (a small, localized change using existing patterns), and has one
+  obvious narrow solution; otherwise it stops for discussion. It does not
+  automatically open its terminal/workbench.
 - **Legacy Task record:** A retained pre-refactor database record, not a target
   product concept or a creation option. Existing archived metadata remains
   internal compatibility data and is not exposed as an in-app destination.
@@ -32,8 +39,11 @@ discussions. For workflow behavior beyond the UX vocabulary, see
 ## OpenCode interaction
 
 - **OpenCode session:** One OpenCode conversation, with history owned by
-  OpenCode. Except for the internal proposal step in New work, a session runs
-  attached to an interactive terminal.
+  OpenCode. Except for internal proposal steps and an opt-in ticket
+  investigation, a session runs attached to an interactive terminal.
+- **Waiting for input:** An OpenCode session with one or more pending question
+  forms or permission decisions. This is a session attention state, separate from
+  the ticket's workflow status; the user responds in the interactive terminal.
 - **Interactive terminal:** The user's live interface to an OpenCode session or
   interactive tool process. Users watch progress and handle follow-ups,
   approvals, input, and changes there. The terminal is not an app-rendered
@@ -57,8 +67,12 @@ discussions. For workflow behavior beyond the UX vocabulary, see
 - **Docs reader:** The destination for reading discovered Markdown and text
   files by paths relative to their Workspace or repository source. It is not a
   general file browser or editor.
-- **Tools menu:** The menu opened by **Tools** in the Workspace screen
-  toolbar. It offers OS handoff actions and tools for associated repositories.
+ - **Tools menu:** The menu opened by **Tools** in the Workspace Tickets view or
+  ticket-workbench toolbar. The Tickets-view menu works without a selected
+  ticket, offers external terminal/IntelliJ/folder actions only, and targets the
+  Workspace repository checkout. The ticket-workbench menu includes project
+  commands and uses the ticket worktree when recorded, otherwise the Workspace
+  checkout.
 
 ## Avoid as product vocabulary
 

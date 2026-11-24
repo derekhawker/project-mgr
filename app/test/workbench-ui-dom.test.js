@@ -20,6 +20,7 @@ export { SessionTabList } from ${JSON.stringify(resolve(root, "src/views/workspa
 export { WorkspaceShell } from ${JSON.stringify(resolve(root, "src/views/workspace/WorkspaceShell.jsx"))};
 export { TabList } from "@ui-lib";
 export { RepositoryToolsMenu } from ${JSON.stringify(resolve(root, "src/views/workspace/repository-tools/RepositoryToolsMenu.jsx"))};
+export { isRepositoryToolsMenuOpen } from ${JSON.stringify(resolve(root, "src/views/workspace/repository-tools/repositoryToolsController.js"))};
 export { WorkspaceOwnerPanel } from ${JSON.stringify(resolve(root, "src/views/workspace/sessions/WorkspaceOwnerPanel.jsx"))};
 export { NewWorkModal } from ${JSON.stringify(resolve(root, "src/features/new-work/modal/NewWorkModal.jsx"))};
 export { createQuickRequestCreationController } from ${JSON.stringify(resolve(root, "src/features/new-work/modal/quickRequestCreationController.js"))};
@@ -68,6 +69,7 @@ const {
   WorkspaceShell,
   TabList,
   RepositoryToolsMenu,
+  isRepositoryToolsMenuOpen,
   WorkspaceOwnerPanel,
   NewWorkModal,
   createQuickRequestCreationController,
@@ -93,27 +95,38 @@ test("Quick Request confirmation disables repeat clicks and allows retry after c
   const [disabled, setDisabled] = createSignal(false);
   const [error, setError] = createSignal("");
   const [review, setReview] = createSignal(true);
+  const [promptChoice, setPromptChoice] = createSignal("suggested");
+  const [suggestedPrompt, setSuggestedPrompt] = createSignal(
+    "Improve the clarity of this prompt",
+  );
   const proposal = {
     workType: "quick_request",
     title: "Confirm",
     createLabel: "Start Quick Request",
     originalPrompt: "Keep this prompt",
+    suggestedPrompt: "Improve the clarity of this prompt",
   };
   let rejectCreation;
   let attempts = 0;
   let pending;
+  const submittedStartingPrompts = [];
   const noop = () => {};
   const controller = createQuickRequestCreationController({
     getProposal: () => proposal,
     modelsReady: () => true,
     quickRequestDirectoryReady: () => true,
     getOriginalPrompt: () => proposal.originalPrompt,
+    getStartingPrompt: () =>
+      promptChoice() === "original"
+        ? proposal.originalPrompt
+        : suggestedPrompt(),
     getSelectedModel: () => '{"providerId":"p","id":"m"}',
     getRepositoryId: () => null,
     getDirectory: () => "/work",
     proposalSessionId: () => null,
-    submitResolvedQuickRequestFlow: () => {
+    submitResolvedQuickRequestFlow: ({ startingPrompt }) => {
       attempts++;
+      submittedStartingPrompts.push(startingPrompt);
       if (attempts === 1)
         return new Promise((_, reject) => {
           rejectCreation = reject;
@@ -151,8 +164,39 @@ test("Quick Request confirmation disables repeat clicks and allows retry after c
     workspaceCreateDisabled: no,
     onWorkspaceSubmit: noop,
     captureVisible: no,
+    workspaceVisible: no,
+    workspaceError: empty,
+    workspaceCreateDisabled: no,
+    workspaceCatalogLoading: no,
+    workspaceRepositoryChoice: empty,
+    workspaceRepositories: () => [],
+    workspaceEmptySelected: no,
+    emptyWorkspaceChoice: "__empty__",
+    onWorkspaceRepositoryChange: noopSetter,
+    workspaceDescription: empty,
+    setWorkspaceDescription: noopSetter,
+    onWorkspaceSubmit: noopSetter,
+    captureError: empty,
+    captureDisabled: no,
+    onCapture: noopSetter,
+    onEnterToSubmit: noopSetter,
     workType: () => "quick_request",
     proposal: () => proposal,
+    promptChoice,
+    onPromptChoiceChange: setPromptChoice,
+    originalPrompt: () => proposal.originalPrompt,
+    suggestedPrompt,
+    onSuggestedPromptChange: setSuggestedPrompt,
+    workspaceVisible: no,
+    workspaceError: empty,
+    workspaceCreateDisabled: no,
+    workspaceCatalogLoading: no,
+    workspaceRepositoryChoice: empty,
+    workspaceRepositories: () => [],
+    workspaceEmptySelected: no,
+    emptyWorkspaceChoice: "__empty__",
+    onWorkspaceRepositoryChange: noopSetter,
+    onWorkspaceSubmit: noopSetter,
     proposalError: error,
     proposalCreateDisabled: disabled,
     onConfirm: () => {
@@ -174,6 +218,42 @@ test("Quick Request confirmation disables repeat clicks and allows retry after c
     setStartingPrompt: noopSetter,
   });
   try {
+    const promptTabs = [...view.host.querySelectorAll('[role="tab"]')];
+    const suggestedTab = promptTabs.find(
+      (tab) => tab.textContent.trim() === "Suggested",
+    );
+    const originalTab = promptTabs.find(
+      (tab) => tab.textContent.trim() === "Original",
+    );
+    assert.deepEqual(
+      promptTabs.map((tab) => tab.textContent.trim()),
+      ["Original", "Suggested"],
+    );
+    assert.equal(suggestedTab.getAttribute("aria-selected"), "true");
+    assert.equal(originalTab.getAttribute("aria-selected"), "false");
+    const suggestedArea = view.host.querySelector(
+      "#quick-request-prompt-suggested",
+    );
+    assert.equal(suggestedArea.value, "Improve the clarity of this prompt");
+    assert.equal(suggestedArea.readOnly, false);
+    suggestedArea.value = "A longer edited suggestion";
+    suggestedArea.dispatchEvent(new window.Event("input", { bubbles: true }));
+    assert.equal(suggestedPrompt(), "A longer edited suggestion");
+    originalTab.click();
+    assert.equal(promptChoice(), "original");
+    assert.equal(originalTab.getAttribute("aria-selected"), "true");
+    const originalArea = view.host.querySelector(
+      "#quick-request-prompt-original",
+    );
+    assert.equal(originalArea.value, "Keep this prompt");
+    assert.equal(originalArea.readOnly, true);
+    suggestedTab.click();
+    assert.equal(promptChoice(), "suggested");
+    assert.equal(
+      view.host.querySelector("#quick-request-prompt-suggested").value,
+      "A longer edited suggestion",
+    );
+
     const button = view.host.querySelector("#proposal-create");
     button.click();
     assert.equal(button.disabled, true);
@@ -185,14 +265,15 @@ test("Quick Request confirmation disables repeat clicks and allows retry after c
       view.host.querySelector("#proposal-error").textContent,
       /Cannot create request/,
     );
-    assert.equal(
-      view.host.querySelector("#quick-request-original").textContent,
-      "Keep this prompt",
-    );
+    assert.deepEqual(submittedStartingPrompts, ["A longer edited suggestion"]);
     assert.equal(button.disabled, false);
     button.click();
     await pending;
     assert.equal(attempts, 2);
+    assert.deepEqual(submittedStartingPrompts, [
+      "A longer edited suggestion",
+      "A longer edited suggestion",
+    ]);
     assert.equal(view.host.querySelector("#proposal-error"), null);
     assert.equal(review(), false);
   } finally {
@@ -403,7 +484,7 @@ test("ticket Workbench heading keeps workspace, Tickets, and shortened ticket co
   }
 });
 
-test("repository menu remains controlled and forwards selected tool", () => {
+test("repository menu opens, forwards selected tool, and closes after selection", () => {
   const [open, setOpen] = createSignal(false);
   const calls = [];
   const view = mount(RepositoryToolsMenu, {
@@ -421,13 +502,14 @@ test("repository menu remains controlled and forwards selected tool", () => {
   const disclosure = toggle.closest("details");
   assert.equal(disclosure.open, false);
   toggle.click();
-  assert.equal(toggle.getAttribute("aria-expanded"), "true");
+  assert.equal(open(), true);
   assert.equal(disclosure.open, true);
   [...menu.querySelectorAll("button")]
-    .find((button) => button.textContent === "test")
+    .find((button) => button.textContent === "test · repository root")
     .click();
   assert.equal(calls[0][1], "npm_script");
   assert.equal(calls[0][2], "test");
+  assert.equal(open(), false);
   view.dispose();
 });
 
@@ -454,6 +536,96 @@ test("repository menu omits the repository section when empty", () => {
   setGroups([]);
   assert.equal(menu.querySelector("hr"), null);
   view.dispose();
+});
+
+test("Tickets-view Tools exposes only external actions", () => {
+  const view = mount(RepositoryToolsMenu, {
+    open: () => true,
+    available: () => true,
+    disabled: () => false,
+    error: () => "",
+    groups: () => [{ name: "Repo", packageScripts: ["test"], makeTargets: [] }],
+    externalActionsOnly: true,
+    onToggle: () => {},
+    onHandoff: () => {},
+    onRun: () => {},
+  });
+  try {
+    const menu = view.host.querySelector("#repo-tools-menu");
+    assert.match(menu.textContent, /Open in external terminal/);
+    assert.match(menu.textContent, /Open in IntelliJ/);
+    assert.match(menu.textContent, /Show in folder/);
+    assert.doesNotMatch(menu.textContent, /Open terminal/);
+    assert.doesNotMatch(menu.textContent, /test · repository root/);
+  } finally {
+    view.dispose();
+  }
+});
+
+test("hidden workbench Tools menu cannot dismiss ticket-reader Tools before its action runs", async () => {
+  const [open, setOpen] = createSignal(true);
+  const activeTrigger = () => "ticket-reader";
+  const handoffs = [];
+  const host = document.createElement("div");
+  document.body.append(host);
+  const propsFor = (triggerId, externalActionsOnly) => ({
+    triggerId,
+    contentId: `${triggerId}-menu`,
+    open: () => isRepositoryToolsMenuOpen(open(), activeTrigger(), triggerId),
+    available: () => true,
+    disabled: () => false,
+    error: () => "",
+    groups: () => [],
+    externalActionsOnly,
+    onToggle: () => setOpen(false),
+    onHandoff: (action, handoffView) => {
+      handoffs.push([triggerId, action]);
+      handoffView.setDisabled(true);
+      // A pending handoff must not hold the menu open while its OS action runs.
+      return new Promise(() => {});
+    },
+    onRun: () => {},
+  });
+  const dispose = render(() => [
+    createComponent(RepositoryToolsMenu, propsFor("ticket-reader", true)),
+    createComponent(RepositoryToolsMenu, propsFor("ticket-workbench", false)),
+  ], host);
+  try {
+    const button = host.querySelector("#ticket-reader-menu button");
+    button.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
+    button.click();
+    await Promise.resolve();
+    assert.equal(open(), false);
+    assert.equal(button.closest("details").open, false);
+    assert.deepEqual(handoffs, [["ticket-reader", "external_terminal"]]);
+  } finally {
+    dispose();
+    host.remove();
+  }
+});
+
+test("ticket-workbench Tools closes when a menu action is selected", async () => {
+  const [open, setOpen] = createSignal(true);
+  const view = mount(RepositoryToolsMenu, {
+    open,
+    available: () => true,
+    disabled: () => false,
+    error: () => "",
+    groups: () => [],
+    onToggle: () => setOpen(false),
+    onHandoff: () => {},
+    onRun: () => {},
+  });
+  try {
+    const action = [...view.host.querySelectorAll("button")]
+      .find((button) => button.textContent === "Open terminal")
+    action.click();
+    await Promise.resolve();
+    assert.equal(open(), false);
+    assert.equal(action.closest("details").open, false);
+  } finally {
+    view.dispose();
+  }
 });
 
 test("owner visibility preserves the terminal while removed workspace controls stay absent", () => {

@@ -12,4 +12,13 @@
   background: var(--ui-surface-raised);
   box-shadow: 0 8px 24px rgb(25 20 55 / 14%);
   font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-8);
+}
+
+.notice span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }

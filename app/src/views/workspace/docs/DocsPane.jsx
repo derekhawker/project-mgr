@@ -29,7 +29,7 @@ export function DocsPane(props) {
       role="tabpanel"
       aria-labelledby="show-docs"
       tabindex="0"
-      style={{ "--navigator-width": `${props.navigatorWidth?.() ?? 300}px` }}
+      style={{ "--navigator-width": `${props.navigatorWidth?.() ?? 285}px` }}
     >
       <aside
         class="docs-files"

@@ -3,6 +3,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+const MIN_NAVIGATOR_WIDTH: u32 = 120;
+const MAX_NAVIGATOR_WIDTH: u32 = 600;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct PresentationPreferences {
@@ -67,7 +70,7 @@ pub struct FileNavigatorPreferences {
 impl Default for FileNavigatorPreferences {
     fn default() -> Self {
         Self {
-            width: 300,
+            width: 285,
             other: BTreeMap::new(),
         }
     }
@@ -119,21 +122,27 @@ pub fn set_port_selection(
 }
 
 pub fn load(store: &ManagementStore) -> Result<PresentationPreferences, String> {
-    match store
+    let mut preferences = match store
         .get_setting("presentation_preferences")
         .map_err(|e| e.to_string())?
     {
         Some(setting) => serde_json::from_str(&setting.value).map_err(|e| e.to_string()),
         None => Ok(PresentationPreferences::default()),
-    }
+    }?;
+    preferences.shared.file_navigator.width = preferences
+        .shared
+        .file_navigator
+        .width
+        .clamp(MIN_NAVIGATOR_WIDTH, MAX_NAVIGATOR_WIDTH);
+    Ok(preferences)
 }
 
 pub fn set_navigator_width(
     store: &ManagementStore,
     width: u32,
 ) -> Result<PresentationPreferences, String> {
-    if !(120..=640).contains(&width) {
-        return Err("Navigator width must be between 120 and 640 pixels.".into());
+    if !(MIN_NAVIGATOR_WIDTH..=MAX_NAVIGATOR_WIDTH).contains(&width) {
+        return Err("Navigator width must be between 120 and 600 pixels.".into());
     }
     let mut preferences = load(store)?;
     preferences.shared.file_navigator.width = width;
@@ -196,5 +205,18 @@ mod tests {
             load(&store).unwrap().ports.selection,
             PortPreferences::default().selection
         );
+    }
+
+    #[test]
+    fn persisted_navigator_width_is_limited_to_the_current_maximum() {
+        let store = ManagementStore::in_memory().unwrap();
+        store
+            .set_setting(
+                "presentation_preferences",
+                r#"{"shared":{"fileNavigator":{"width":640}}}"#,
+                1,
+            )
+            .unwrap();
+        assert_eq!(load(&store).unwrap().shared.file_navigator.width, 600);
     }
 }

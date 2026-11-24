@@ -182,6 +182,8 @@ export const SESSION_STATUS_LABELS = Object.freeze({
   starting: "Starting",
   running: "Running",
   waitingForInput: "Waiting for input",
+  idle: "Idle",
+  retrying: "Retrying",
   readyForReview: "Ready for review",
   reconnecting: "Reconnecting",
   unknown: "Unknown",
@@ -250,9 +252,10 @@ export function cleanupTerminal(invoke, sessionId) {
   return invokeCommand(invoke, "opencode_terminal_cleanup", { sessionId });
 }
 
-export function createQuickRequest(invoke, prompt, model, repositoryId = null, directory = null) {
+export function createQuickRequest(invoke, prompt, model, repositoryId = null, directory = null, startingPrompt = undefined) {
   return invokeCommand(invoke, "quick_request_create", {
     prompt,
+    ...(startingPrompt === undefined ? {} : { startingPrompt }),
     model,
     repositoryId,
     ...(directory ? { directory } : {}),
@@ -300,13 +303,13 @@ export async function submitQuickRequestFlow({
 export async function submitResolvedQuickRequestFlow({
   invoke,
   originalPrompt,
+  startingPrompt = originalPrompt,
   model,
   repositoryId,
   directory,
   waitForTerminal,
   onCreated,
   showSession,
-  refreshRequests,
 }) {
   if (!originalPrompt?.trim())
     throw new Error("Enter an original prompt first.");
@@ -317,14 +320,18 @@ export async function submitResolvedQuickRequestFlow({
     model,
     repositoryId,
     directory,
+    startingPrompt === originalPrompt ? undefined : startingPrompt,
   );
   onCreated(record);
   const sessionId = record.session?.openCodeSessionId;
   if (!sessionId)
     throw new Error("Quick Request creation returned no session ID.");
-  await showSession(sessionId);
+  await showSession(sessionId, {
+    deferEvidence: true,
+    deferReveal: true,
+    requireExactSession: true,
+  });
   await startQuickRequestPrompt(invoke, record.task.id, model);
-  await refreshRequests();
   return record;
 }
 
@@ -333,6 +340,27 @@ export function retryQuickRequestPrompt(invoke, requestId, model) {
     requestId,
     model,
   });
+}
+
+export async function retryResolvedQuickRequestFlow({
+  invoke,
+  record,
+  model,
+  showSession,
+}) {
+  const sessionId = record?.session?.openCodeSessionId;
+  const requestId = record?.task?.id;
+  if (!sessionId || !requestId)
+    throw new Error("The saved Quick Request session is unavailable.");
+  await showSession(sessionId, {
+    deferEvidence: true,
+    deferReveal: true,
+    requireExactSession: true,
+  });
+  const result = await retryQuickRequestPrompt(invoke, requestId, model);
+  if (typeof result?.promptSent !== "boolean")
+    throw new Error("Quick Request recovery returned an invalid result.");
+  return result;
 }
 
 export function sessionTabAttributes(sessionId, selected) {
@@ -685,16 +713,27 @@ export function proposeWorkspaceTicket(invoke, workspaceId, idea) {
   });
 }
 
-export function createWorkspaceTicket(invoke, workspaceId, title, body) {
+export function createWorkspaceTicket(invoke, workspaceId, title, body, startInvestigation = false) {
   return invokeCommand(invoke, "workspace_ticket_create", {
     workspaceId,
     title,
     body,
+    startInvestigation,
   });
 }
 
 export function listWorkspaceTickets(invoke, workspaceId, archived = false) {
   return invokeCommand(invoke, "workspace_tickets_list", { workspaceId, archived });
+}
+
+export function listWorkspaceTicketLabels(invoke) {
+  return invokeCommand(invoke, "workspace_ticket_labels");
+}
+
+export function setWorkspaceTicketLabel(invoke, workspaceId, filename, label) {
+  return invokeCommand(invoke, "workspace_ticket_label_set", {
+    workspaceId, filename, label,
+  });
 }
 
 export function workOnWorkspaceTicket(invoke, workspaceId, filename) {

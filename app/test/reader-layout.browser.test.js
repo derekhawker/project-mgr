@@ -113,7 +113,7 @@ test("readers keep gutters aligned and wide tables readable", async (t) => {
     `gutter must follow navigator resize: ${JSON.stringify(result)}`,
   );
 
-  browser(session, "find", "role", "button", "click", "--name", "Split");
+  browser(session, "find", "role", "switch", "click", "--name", "Split diff");
   const split = JSON.parse(
     browser(
       session,

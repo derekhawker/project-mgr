@@ -1,5 +1,5 @@
 import { createSignal, Show } from "solid-js";
-import { Button, ErrorMessage, Input, Modal, TextArea } from "@ui-lib";
+import { Button, Checkbox, ErrorMessage, Input, Modal, TextArea } from "@ui-lib";
 import styles from "./CreateTicketIdeaModal.module.css";
 
 /** Captures an idea, reviews generated content, then asks the owner to save it. */

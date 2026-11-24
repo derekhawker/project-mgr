@@ -9,6 +9,7 @@ function setup(overrides = {}) {
     modelsReady: () => true,
     quickRequestDirectoryReady: () => true,
     getOriginalPrompt: () => " original\n",
+    getStartingPrompt: () => " improved prompt",
     getSelectedModel: () => '{"providerId":"p","id":"m"}',
     getRepositoryId: () => "repo",
     proposalSessionId: () => "proposal",
@@ -47,12 +48,12 @@ test("passes exact prompt/model/repository and completes callbacks in order", as
       args.onCreated({});
       calls.push(["created"]);
       args.showSession();
-      await args.refreshRequests();
     },
   });
   await controller.createQuickRequest();
   const args = calls.find(([key]) => key === "submit")[1];
   assert.equal(args.originalPrompt, " original\n");
+  assert.equal(args.startingPrompt, " improved prompt");
   assert.deepEqual(args.model, { providerId: "p", id: "m" });
   assert.equal(args.repositoryId, "repo");
   assert.deepEqual(
@@ -63,7 +64,7 @@ test("passes exact prompt/model/repository and completes callbacks in order", as
         ),
       )
       .map(([key]) => key),
-    ["terminal", "created", "created", "show", "refresh", "closeProposal"],
+    ["terminal", "created", "created", "show", "closeProposal", "refresh"],
   );
   assert.deepEqual(calls.slice(-3), [
     ["busy", false],

@@ -32,6 +32,9 @@ The modal does not reset the current destination or terminal. Cancel returns to
 the unchanged destination. Clicking outside does not dismiss it; use Cancel or
 Escape, which runs the same cleanup before closing. A labelled close icon in the
 header requests that same cancellation; failed cleanup keeps the dialog open.
+After a Quick Request is durably created but startup is not accepted, cancellation
+is blocked until recovery succeeds so the saved request cannot be abandoned from
+the confirmation flow.
 Opening focuses Original prompt. Review focuses Workspace name or the working
 directory selector; Back returns focus to Original prompt and resets body
 scroll. Tab and Shift+Tab stay within the dialog's visible enabled controls.
@@ -91,12 +94,23 @@ This is a two-step flow:
    uses the shared default Quick Request directory. This step does not create a
    Quick Request, generate a replacement prompt, or create a terminal.
 2. **Confirm and start.** The user reviews or corrects the resolved directory
-   and confirms it.
-   Rust creates the Quick Request under the special Quick Requests workspace,
-    creates and records its exact OpenCode session and working directory, opens
-     the Quick Request page with a **Quick Request / <name>** masthead above
-     the terminal, which fills the remaining main work area, and sends the
-     original prompt unchanged.
+    and confirms it.
+    Rust creates the Quick Request under the special Quick Requests workspace,
+     creates and records its exact OpenCode session and working directory, and
+     attaches that session without revealing its terminal or reconciling owner
+     evidence. Rust sends the original prompt unchanged. Only after prompt
+     acceptance does the app reveal the Quick Request page with a
+     **Quick Request / <name>** masthead and reconcile session evidence.
+
+If attachment or prompt delivery fails after durable creation, keep the review
+modal open and replace its normal actions with **Retry startup**. Explain that
+the request is saved and recovery will reuse the existing request/session. Retry
+must check that exact session's history first: if any user message exists, never
+resend the original prompt; ambiguous, unavailable, or incomplete evidence is
+reported as unknown and fails closed. Do not create a second request. Keep this
+recovery available only while the modal remains open; recovery after application
+exit/restart is out of scope. Once accepted, reveal the session and finish
+reconciliation before closing the modal.
 
 There is no workspace choice or editable starting-prompt step in this flow. The
 terminal destination and navigation are specified in

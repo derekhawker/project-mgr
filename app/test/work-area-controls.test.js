@@ -46,6 +46,8 @@ for (const key of [
   "Node",
   "Element",
   "HTMLElement",
+  "customElements",
+  "CSSStyleSheet",
   "Event",
 ])
   globalThis[key] =
@@ -131,17 +133,14 @@ test("Change Review controls preserve mode without a back button", () => {
     onMode: setMode,
     onBack: () => back++,
   });
-  const unified = view.host.querySelector('[data-review-mode="unified"]');
-  const split = view.host.querySelector('[data-review-mode="split"]');
-  assert.equal(unified.getAttribute("aria-pressed"), "true");
-  assert.equal(split.getAttribute("aria-pressed"), "false");
+  const split = view.host.querySelector('[role="switch"]');
+  assert.equal(split.checked, false);
   split.click();
   assert.equal(mode(), "split");
-  assert.equal(unified.getAttribute("aria-pressed"), "false");
-  assert.equal(split.getAttribute("aria-pressed"), "true");
-  unified.click();
+  assert.equal(split.checked, true);
+  split.click();
   assert.equal(mode(), "unified");
-  assert.equal(unified.getAttribute("aria-pressed"), "true");
+  assert.equal(split.checked, false);
   assert.equal(view.host.querySelector("#change-review-back"), null);
   assert.equal(back, 0);
   view.dispose();
@@ -167,7 +166,7 @@ test("Change Review shows loading without an empty-state message", () => {
 });
 
 test("file navigator divider adjusts a shared width from either tab", () => {
-  const [width, setWidth] = createSignal(300);
+  const [width, setWidth] = createSignal(285);
   const commits = [];
   const resize = (value, commit) => {
     setWidth(value);
@@ -200,12 +199,12 @@ test("file navigator divider adjusts a shared width from either tab", () => {
   reviewDivider.dispatchEvent(
     new window.KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }),
   );
-  assert.equal(reviewDivider.getAttribute("aria-valuenow"), "290");
-  assert.equal(docsDivider.getAttribute("aria-valuenow"), "290");
+  assert.equal(reviewDivider.getAttribute("aria-valuenow"), "275");
+  assert.equal(docsDivider.getAttribute("aria-valuenow"), "275");
   docsDivider.dispatchEvent(
     new window.KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }),
   );
-  assert.deepEqual(commits, [290, 300]);
+  assert.deepEqual(commits, [275, 285]);
   review.dispose();
   docs.dispose();
 });
@@ -271,7 +270,7 @@ test("the toolbar follows the selected repository in a multi-repository review",
   view.dispose();
 });
 
-test("Change Review renders aligned split changes without interpreting file content as HTML", () => {
+test("Change Review presents all files in a viewer without injecting file content", () => {
   const [mode, setMode] = createSignal("unified");
   const view = mount(ChangeReviewPanel, {
     visible: () => true,
@@ -294,24 +293,29 @@ test("Change Review renders aligned split changes without interpreting file cont
     onMode: setMode,
     onBack: () => {},
   });
-  assert.match(view.host.textContent, /old/);
-  assert.match(view.host.textContent, /<img src=x onerror=alert\(1\)>/);
+  assert.ok(view.host.querySelector('[aria-label="All changed-file diffs"]'));
   assert.equal(view.host.querySelector("img"), null);
-  view.host.querySelector('[data-review-mode="split"]').click();
-  const rows = view.host.querySelectorAll(".d2h-diff-tbody tr");
-  assert.ok(rows.length > 0);
-  assert.ok([...rows].every((row) => row.children.length === 4));
+  const splitSwitch = view.host.querySelector('[role="switch"]');
+  splitSwitch.click();
+  assert.equal(splitSwitch.checked, true);
   assert.equal(view.host.querySelector("img"), null);
-  assert.match(view.host.textContent, /<img src=x onerror=alert\(1\)>/);
-  assert.match(view.host.textContent, /same/);
-  assert.match(view.host.textContent, /tail/);
   view.dispose();
 });
 
-test("Change Review selects files in the shared folder tree", () => {
+test("Change Review selects files in the navigator and keeps the all-files viewer", () => {
   const files = [
-    { path: "src/first.txt", status: "M", diff: "" },
-    { path: "src/second.txt", status: "A", diff: "" },
+    {
+      path: "src/first.txt",
+      status: "changed",
+      changeSource: "branch",
+      diff: "",
+    },
+    {
+      path: "src/second.txt",
+      status: "M",
+      changeSource: "workingTree",
+      diff: "",
+    },
   ];
   const view = mount(ChangeReviewPanel, {
     visible: () => true,
@@ -323,19 +327,27 @@ test("Change Review selects files in the shared folder tree", () => {
     onBack: () => {},
   });
   assert.equal(view.host.querySelector("details").open, true);
+  assert.match(view.host.textContent, /Branch changes \(1\)/);
+  assert.match(view.host.textContent, /Local changes \(1\)/);
   const second = [...view.host.querySelectorAll("button")].find((button) =>
     button.textContent.includes("second.txt"),
   );
   second.click();
   assert.equal(second.getAttribute("aria-current"), "true");
+  assert.ok(view.host.querySelector('[aria-label="All changed-file diffs"]'));
+  const search = view.host.querySelector('input[type="search"]');
+  search.value = "first.txt";
+  search.dispatchEvent(new window.Event("input", { bubbles: true }));
   assert.equal(
-    view.host.querySelector('[aria-label="Selected file diff"] h2').textContent,
-    "src/second.txt",
+    [...view.host.querySelectorAll("button")].some((button) =>
+      button.textContent.includes("second.txt"),
+    ),
+    false,
   );
   view.dispose();
 });
 
-test("full context loads for the selected repository and ignores a stale response", async () => {
+test("selecting another file does not request a replacement one-file diff", () => {
   const files = [
     {
       path: "first.txt",
@@ -348,7 +360,6 @@ test("full context loads for the selected repository and ignores a stale respons
       diff: "--- a/second.txt\n+++ b/second.txt\n@@ -1 +1 @@\n-old\n+other\n",
     },
   ];
-  const pending = [];
   const calls = [];
   const view = mount(ChangeReviewPanel, {
     visible: () => true,
@@ -362,27 +373,19 @@ test("full context loads for the selected repository and ignores a stale respons
     onBack: () => {},
     onFullDiff: (repo, path) => {
       calls.push([repo, path]);
-      return new Promise((done) => {
-        pending.push(done);
-      });
+      return Promise.resolve("unused");
     },
   });
-  assert.deepEqual(calls, [["repo", "first.txt"]]);
+  assert.deepEqual(calls, []);
   [...view.host.querySelectorAll("button")]
     .find((button) => button.textContent.includes("second.txt"))
     .click();
-  assert.deepEqual(calls, [
-    ["repo", "first.txt"],
-    ["repo", "second.txt"],
-  ]);
-  pending[0]("--- a/first.txt\n+++ b/first.txt\n@@ -1 +1 @@\n+STALE\n");
-  await Promise.resolve();
-  assert.doesNotMatch(view.host.textContent, /STALE/);
-  assert.match(view.host.textContent, /other/);
+  assert.deepEqual(calls, []);
+  assert.ok(view.host.querySelector('[aria-label="All changed-file diffs"]'));
   view.dispose();
 });
 
-test("full context loads automatically without a toggle", async () => {
+test("review does not request full-file context for a multi-file review", async () => {
   const entry = {
     path: "file.txt",
     status: "M",
@@ -403,7 +406,8 @@ test("full context loads automatically without a toggle", async () => {
     },
   });
   await Promise.resolve();
-  assert.match(view.host.textContent, /context/);
+  assert.ok(view.host.querySelector('[aria-label="All changed-file diffs"]'));
+  assert.equal(view.host.textContent.includes("context"), false);
   assert.doesNotMatch(
     view.host.textContent,
     /Show full file context|Show changed sections/,
@@ -411,7 +415,7 @@ test("full context loads automatically without a toggle", async () => {
   view.dispose();
 });
 
-test("failed automatic full context retains the compact diff", async () => {
+test("the multi-file viewer does not turn a full-context failure into a review error", async () => {
   const entry = {
     path: "file.txt",
     status: "M",
@@ -432,11 +436,8 @@ test("failed automatic full context retains the compact diff", async () => {
     },
   });
   await Promise.resolve();
-  assert.match(
-    view.host.querySelector('[role="alert"]').textContent,
-    /size limit/,
-  );
-  assert.match(view.host.textContent, /new/);
+  assert.equal(view.host.querySelector('[role="alert"]'), null);
+  assert.ok(view.host.querySelector('[aria-label="All changed-file diffs"]'));
   view.dispose();
 });
 

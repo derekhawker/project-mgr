@@ -1,19 +1,18 @@
 import { For, Show, createEffect, createMemo, createSignal } from "solid-js";
-import { Button } from "@ui-lib";
 import styles from "../../../application/workArea.module.css";
-import { DiffView } from "./DiffView.jsx";
+import { MultiFileDiffView } from "./MultiFileDiffView.jsx";
 import { FileTree } from "../../../components/file-navigation/FileTree.jsx";
 import { FileNavigatorDivider } from "../../../components/file-navigation/FileNavigatorDivider.jsx";
 
 export function ChangeReviewPanel(props) {
   const [selectedFile, setSelectedFile] = createSignal(null);
+  const [search, setSearch] = createSignal("");
   const repositories = createMemo(() => props.repositories() || []);
   createEffect(() => {
     repositories();
     setSelectedFile(null);
   });
-  const allFiles = () =>
-    repositories().flatMap((repo) => (repo.comparisonError ? [] : repo.files));
+  const allFiles = () => repositories().flatMap((repo) => repo.files);
   const file = () => selectedFile() || allFiles()[0] || null;
   const selectedRepository = () =>
     repositories().find((repository) => repository.files.includes(file())) ||
@@ -40,6 +39,9 @@ export function ChangeReviewPanel(props) {
               </strong>
               <span>
                 Compare with: {repository().comparisonTarget || "unavailable"}
+                {repository().mergeBase
+                  ? ` · merge base ${repository().mergeBase.slice(0, 8)}`
+                  : ""}
               </span>
             </div>
           )}
@@ -50,41 +52,40 @@ export function ChangeReviewPanel(props) {
           <p role="status">{props.summary()}</p>
         </Show>
         <div class="change-review-actions">
-          <div
-            class="change-review-mode"
-            role="group"
-            aria-label="Diff presentation"
-          >
-            <Button
-              data-review-mode="unified"
-              variant={props.mode() === "unified" ? "selected" : undefined}
-              aria-pressed={props.mode() === "unified"}
-              onClick={() => props.onMode("unified")}
-            >
-              Unified
-            </Button>
-            <Button
-              data-review-mode="split"
-              variant={props.mode() === "split" ? "selected" : undefined}
-              aria-pressed={props.mode() === "split"}
-              onClick={() => props.onMode("split")}
-            >
-              Split
-            </Button>
-          </div>
+          <label class="change-review-mode">
+            <span>Split diff</span>
+            <input
+              type="checkbox"
+              role="switch"
+              aria-label="Split diff"
+              checked={props.mode() === "split"}
+              onChange={(event) =>
+                props.onMode(event.currentTarget.checked ? "split" : "unified")
+              }
+            />
+          </label>
         </div>
       </header>
       <Show when={!props.loading?.()}>
         <div
           class="change-review-content"
           style={{
-            "--navigator-width": `${props.navigatorWidth?.() ?? 300}px`,
+            "--navigator-width": `${props.navigatorWidth?.() ?? 285}px`,
           }}
         >
           <aside
             class="change-review-files"
             aria-label="Changed files grouped by repository"
           >
+            <label class="change-review-search">
+              <input
+                type="search"
+                placeholder="Search changed files"
+                aria-label="Search changed files"
+                value={search()}
+                onInput={(event) => setSearch(event.currentTarget.value)}
+              />
+            </label>
             <For each={repositories()}>
               {(repository) => (
                 <section class="change-review-repository">
@@ -111,12 +112,57 @@ export function ChangeReviewPanel(props) {
                       </p>
                     }
                   >
-                    <FileTree
-                      files={repository.files}
-                      isSelected={(entry) => file() === entry}
-                      onSelect={setSelectedFile}
-                      renderFile={(entry, name) => `${name} · ${entry.status}`}
-                    />
+                    <For
+                      each={[
+                        {
+                          source: "branch",
+                          label: "Branch changes",
+                          files: repository.files.filter(
+                            (entry) => entry.changeSource === "branch",
+                          ),
+                        },
+                        {
+                          source: "workingTree",
+                          label: "Local changes",
+                          files: repository.files.filter(
+                            (entry) => entry.changeSource !== "branch",
+                          ),
+                        },
+                      ].filter((group) => group.files.length > 0)}
+                    >
+                      {(group) => {
+                        const matchingFiles = () =>
+                          group.files.filter((entry) =>
+                            entry.path
+                              .toLocaleLowerCase()
+                              .includes(search().trim().toLocaleLowerCase()),
+                          );
+                        return (
+                          <details open>
+                            <summary>
+                              {group.label} ({group.files.length})
+                            </summary>
+                            <Show
+                              when={matchingFiles().length}
+                              fallback={
+                                <p class="change-review-empty-search">
+                                  No matching files.
+                                </p>
+                              }
+                            >
+                              <FileTree
+                                files={matchingFiles()}
+                                isSelected={(entry) => file() === entry}
+                                onSelect={setSelectedFile}
+                                renderFile={(entry, name) =>
+                                  `${name} · ${entry.status}`
+                                }
+                              />
+                            </Show>
+                          </details>
+                        );
+                      }}
+                    </For>
                   </Show>
                 </section>
               )}
@@ -132,23 +178,12 @@ export function ChangeReviewPanel(props) {
             width={props.navigatorWidth}
             onResize={props.onNavigatorResize}
           />
-          <DiffView
-            file={file}
+          <MultiFileDiffView
+            repositories={repositories}
+            selectedFile={file}
             mode={props.mode}
             visible={props.visible}
-            onFullDiff={
-              props.onFullDiff &&
-              ((entry) => {
-                const repository = repositories().find((item) =>
-                  item.files.includes(entry),
-                );
-                if (!repository)
-                  return Promise.reject(
-                    new Error("Repository is no longer available."),
-                  );
-                return props.onFullDiff(repository.repositoryId, entry.path);
-              })
-            }
+            onFileViewed={props.onFileViewed}
           />
         </div>
       </Show>

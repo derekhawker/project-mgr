@@ -34,6 +34,14 @@
   margin: 0 0 var(--ui-space-6);
   font-size: 14px;
 }
+.promptEditor {
+  display: grid;
+  gap: var(--ui-space-8);
+}
+.promptTextArea {
+  min-height: 12rem;
+  padding: var(--ui-space-12);
+}
 .fields {
   display: grid;
   gap: var(--ui-space-4);

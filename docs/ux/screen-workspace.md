@@ -31,26 +31,37 @@ enabled catalog. Use the shared ActionMenu for the model dropdown. If its saved
 value is unavailable, show an explicit choose-model state instead of silently
 selecting another model. The primary **Create ticket** action opens a two-step
 dialog. Its progress indicator shows connected numbered circles **1** and **2**,
-outlines the active circle, fills the other, and places one summary below:
+fills both circles, colors the active circle with the primary accent, leaves the
+other grey, and places one summary below:
 **Description** or **Review**. The first
 step captures an idea; the second displays an editable title and Markdown body
-with the app-managed `draft` status read-only. Cancel creates no file.
-Confirmation creates the ticket in external Workspace storage; success closes
-the dialog and selects the refreshed ticket, while failure keeps the review step
-and edits visible.
+with the app-managed `draft` status read-only. The footer offers an unchecked by
+default **Start ticket** checkbox to the left of **Create ticket**.
+Its helper text says implementation proceeds only for clearly defined,
+low-effort tasks with one obvious solution. Cancel creates no file.
+Confirmation creates the ticket in external Workspace storage. When selected,
+the app starts a persistent investigation in a ticket-bound session without
+opening its terminal or workbench. Success closes the dialog and selects the
+refreshed ticket, while ticket-creation failure keeps the review step and edits
+visible. An investigation setup failure is reported without inviting duplicate
+submission.
 
-Selecting a ticket establishes context but does not show the session tabs or tools.
-Activating **Work** opens or resumes its interactive session. The heading is
+The ticket browser's **Tools** menu is available even with no selected ticket.
+It offers only external-terminal, IntelliJ, and folder actions, using the
+Workspace's verified repository checkout. It has no in-app terminal or
+project-command actions. Selecting a ticket establishes context but does
+not show the session tabs. Activating **Work** opens or resumes its interactive session. The heading is
 `Workspace / <workspace name> / Tickets / <shortened ticket title>`; the
 workspace name is a button that returns to the ticket list without closing the
 session.
 
 The ticket workbench starts with a **New session** button immediately before the
-session/view tab strip. It creates a fresh conversation bound to the selected
-ticket, makes it active, and keeps earlier ticket sessions available as tabs.
-Ticket tabs use stable session labels. Closing a tab closes its terminal and
-removes its ID from that ticket; it does not delete OpenCode's conversation
-history. Closing the active tab selects the most recently retained session.
+session/view tab strip. It creates a fresh conversation for the selected ticket.
+The workbench shows one session tab labeled **OpenCode**. Starting a new session
+attaches the replacement before changing the ticket binding, then closes the old
+terminal without deleting its OpenCode conversation. Closing the tab closes the
+terminal and clears the ticket's session binding; it does not delete OpenCode's
+conversation history.
 
 ## Purpose and layout
 
@@ -74,6 +85,12 @@ worktree, or in the Workspace repository checkout when no worktree is recorded.
 A stale or foreign recorded path is reported instead of silently routing to a
 different checkout. Native OpenCode worktree creation may update the ticket's
 current associated path; shell-created worktrees are not automatically tracked.
+Ticket-workbench Tools, Change Review, and Docs use that same selected-ticket
+directory. The workbench Tools menu offers both its in-app terminal and a
+separate external-terminal action; discovered commands identify their source
+directory and run there. With no selected ticket, only the Tickets-view Tools
+menu is shown and it offers external actions targeting the Workspace repository
+checkout.
 The ticket workspace after Work has no Workspace options collapsible or its
 controls. Clear the workspace-loading status after the terminal opens.
 

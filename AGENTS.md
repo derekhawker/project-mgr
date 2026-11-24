@@ -1,14 +1,15 @@
 # Project Principles
 
-- For UI component boundaries, app-specific abstractions, and component styling, follow [UI component design](.agents/skills/ui-component-design/SKILL.md). When extending the presentation library in `app/packages/ui-lib/` (imported as `@ui-lib`), also follow [UI library extension](.agents/skills/ui-library-extension/SKILL.md).
+- For UI component boundaries, app-specific abstractions, and component styling, follow [UI component design](.agents/skills/ui-component-design/SKILL.md).
 - **Give coherent UI elements clear component boundaries.** Extract an element when separating its presentation or interaction makes the surrounding screen easier to understand or change. Reuse an existing component when it fits. Put product-neutral components in `app/packages/ui-lib/` and application-specific components in `app/src/components/` or beside their screen. Keep product behavior out of the UI library.
 - Put application behavior, validation, state changes, persistence, and process ownership in Rust. Keep raw HTML/CSS/JavaScript as presentation and a Tauri-command adapter.
 - Read `docs/application-workflows.md` before changing product behavior.
 - Workspace/task prompts are transient inputs, never application database/file records. Log their send failures to Tauri's OS-specific `app_log_dir()/application.log` with session/error metadata only; do not write prompt contents to logs.
+- Application-owned logs must contain only necessary diagnostic metadata; never log prompts, PII, credentials, secrets, environment dumps, or process command lines. Review raw diagnostic output for sensitive content before sharing it. See [crash diagnostics](docs/crash-diagnostics.md) for live-run log locations and coverage.
 
 ## Bug Discussions
 
-- For crashes or unclear failures, consult [crash diagnostics](docs/crash-diagnostics.md) for log, frontend-diagnostic, and OS dump locations.
+- **When diagnosing a crash, launch failure, or unexplained runtime behavior, follow [Find the relevant live-run log](docs/crash-diagnostics.md#find-the-relevant-live-run-log) before drawing conclusions from logs.** Match the affected worktree and incident time; use the native PID marker when a coredump PID is available.
 - When a bug is discussed, first inspect the reported context and accessible evidence, including relevant logs and errors, without changing user data. Confirm only the material unknowns with the user before relying on assumptions or making changes: for UI bugs, the screen or interaction area, preconditions, reproduction steps, and expected versus actual behavior. Preserve safety and obtain authorization before operations that could affect user data or live services.
 - For native initial-prompt failures, inspect Tauri's `app_log_dir()/application.log`: on Linux, `${XDG_DATA_HOME:-$HOME/.local/share}/dev.opencode.projectmgr/logs/application.log`; on macOS, `~/Library/Logs/dev.opencode.projectmgr/application.log`; on Windows, `%LOCALAPPDATA%\dev.opencode.projectmgr\logs\application.log`. An application directory override changes the location to `<override>/logs/application.log`. The file may not exist until a failure is logged; inspect terminal stderr and the UI error too. Never copy prompts, credentials, or other secrets into reports or logs.
 - For frontend command failures, inspect `window.appDiagnostics()` in the browser/WebView developer console, or `agent-browser console` in the mock browser. These bounded, in-memory records contain command names and categories only and reset on reload; they do not cover failures before frontend startup. UI and other console/stderr messages may contain sensitive details, so review before sharing.
@@ -35,9 +36,17 @@
 
 - When using Codesitter in this repository, keep the frontend and Rust indexes separate: index `app/` with `--lang js,ts,tsx`, and `app/src-tauri/` with `--lang rust`. These are distinct project roots, each with its own `.codesitter` index; run queries against the matching root and use file paths relative to that root. `app/` is the frontend root because it includes its source, tests, and HTML entry point; `app/src-tauri/` is the Rust root. Codesitter skips generated `target/` directories.
 
+## Review and testing
+
+- Before handing work off for review, run the code-review agent in a subagent.
+- For all but the simplest tasks, delegate test writing to the tester agent in a subagent.
+- Address both agents' findings before proceeding; report any finding left unresolved.
+
 ## Delivery
 
-- For ticket work, do not create pull requests. Push the ticket branch and squash-merge directly into `main`, then fast-forward the primary `main` worktree to `origin/main`. Check that worktree for uncommitted changes first; preserve its work and ask before proceeding if it is dirty. Verify it is clean and up to date before removing the ticket worktree.
+- Keep a dedicated branch and worktree for each ticket; multiple ticket worktrees may remain open. Do all implementation and revisions in the ticket worktree.
+- Before delivery, ensure the ticket branch includes the latest `main`. If `main` has advanced and the ticket branch cannot fast-forward, merge the latest `main` into the ticket branch and rerun relevant checks. Do not rebase unless the user asks.
+- For ticket work, do not create pull requests. After required checks pass, push the ticket branch and fast-forward `main` to its tip; do not squash-merge. Publish the updated `main`, then verify the main worktree is clean and up to date before removing the ticket worktree and local branch. Preserve its work and ask before proceeding if it is dirty. Remote branch deletion is separate and is not implied.
 
 ## Testing
 - Avoid end-to-end tests; their cost is not justified.

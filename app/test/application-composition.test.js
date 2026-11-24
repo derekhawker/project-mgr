@@ -11,7 +11,7 @@ import { presentationAliases } from "../vite.config.js";
 // Run the real entry, command contracts, feature controllers and Solid tree.
 // The browser command transport and terminal renderer are fixtures: no live
 // processes, user directories, network services or application data are used.
-test("application areas compose once and retain terminals across navigation and creation", async () => {
+test("application composes, saves new ticket labels through the Rust boundary, and retains terminals", async () => {
   const root = resolve(import.meta.dirname, "..");
   const temp = await mkdtemp("/tmp/opencode/application-composition-");
   const window = new Window();
@@ -23,6 +23,8 @@ test("application areas compose once and retain terminals across navigation and 
     "Node",
     "Element",
     "HTMLElement",
+    "customElements",
+    "CSSStyleSheet",
     "HTMLHeadElement",
     "Event",
     "MouseEvent",
@@ -55,9 +57,11 @@ test("application areas compose once and retain terminals across navigation and 
         select(id, { focus = true } = {}) {
           if (focus) document.getElementById("terminal-" + id)?.focus();
         }
+        reopen() {}
         isExited(id) { return this.exited.has(id); }
         exit(id) { this.exited.add(id); this.options.onExit({sessionId: id}); }
         async restart(id, directory, container) { this.restarted.push({id, directory, container}); }
+        async suspendResizing() {}
         forget(id) { this.forgotten.push(id); }
         dispose() {}
       }
@@ -82,7 +86,9 @@ test("application areas compose once and retain terminals across navigation and 
         if (name === "quick_request_create") {
           calls++;
           globalThis.__quickRequestCreateCalls = calls;
-          globalThis.__quickRequestCreatePrompts.push(payload.request.prompt);
+          globalThis.__quickRequestCreatePrompts.push(
+            payload.request.startingPrompt || payload.request.prompt,
+          );
           if (calls === 1) return new Promise((_, reject) => { globalThis.__rejectQuickRequestCreate = reject; });
         }
         return invoke(name, payload);
@@ -171,6 +177,75 @@ test("application areas compose once and retain terminals across navigation and 
       () => $("#workspace-list").getAttribute("aria-busy") === "false",
     );
 
+    // Exercise the complete UI-to-Rust-boundary flow: right-click a ticket,
+    // create a new label, apply it, and confirm navigation reflects the save.
+    const labelTicket = () =>
+      [...$("#workspace-list").querySelectorAll("button")].find((button) =>
+        button.textContent.includes("Example active ticket"),
+      );
+    labelTicket().dispatchEvent(
+      new window.MouseEvent("contextmenu", {
+        bubbles: true,
+        cancelable: true,
+        button: 2,
+        clientX: 240,
+        clientY: 180,
+      }),
+    );
+    await waitFor(() => window.document.querySelector("[role='menu'] [role='menuitem']"));
+    $("[role='menuitem']").click();
+    await waitFor(() => window.document.querySelector("dialog[open]"));
+    assert.equal($("dialog[open] input[aria-label='Current label']").readOnly, true);
+    assert.equal($("dialog[open] input[aria-label='Current label']").value, "Example Workspace");
+    assert.equal(window.document.querySelector("dialog[open] [role='listbox']"), null);
+    input('dialog[open] input[aria-label="Search labels"]', "Cross-workspace rollout");
+    const createLabel = () =>
+      [...$("dialog[open]").querySelectorAll('[role="option"]')].find(
+        (option) => option.textContent.includes('Create “Cross-workspace rollout”'),
+      );
+    await waitFor(createLabel);
+    createLabel().click();
+    assert.equal(window.document.querySelector("dialog[open] [role='listbox']"), null);
+    assert.equal($("dialog[open] input[aria-label='Search labels']").value, "Cross-workspace rollout");
+    const applyLabel = () =>
+      [...$("dialog[open]").querySelectorAll("button")].find(
+        (button) => button.textContent.trim() === "Apply label",
+      );
+    if (!applyLabel()) throw new Error("Missing Apply label action");
+    applyLabel().click();
+    await waitFor(() => globalThis.__ticketLabelSetCalls.length === 1);
+    await waitFor(() => !window.document.querySelector("dialog[open]"));
+    assert.deepEqual(globalThis.__ticketLabelSetCalls, [
+      {
+        request: {
+          workspaceId: "fixture-workspace",
+          filename: "example-active.md",
+          label: "Cross-workspace rollout",
+        },
+      },
+    ]);
+
+    labelTicket().dispatchEvent(
+      new window.MouseEvent("contextmenu", {
+        bubbles: true,
+        cancelable: true,
+        button: 2,
+        clientX: 240,
+        clientY: 180,
+      }),
+    );
+    await waitFor(() => window.document.querySelector("[role='menuitem']"));
+    $("[role='menuitem']").click();
+    await waitFor(() => window.document.querySelector("dialog[open] input[aria-label='Current label']"));
+    assert.equal(
+      $("dialog[open] input[aria-label='Current label']").value,
+      "Cross-workspace rollout",
+    );
+    assert.equal($("dialog[open] input[aria-label='Current label']").readOnly, true);
+    [...$("dialog[open]").querySelectorAll("button")]
+      .find((button) => button.textContent.trim() === "Cancel")
+      .click();
+
     assert.equal($("#workspace-shell").hidden, true);
     const ticketSessionId =
       "fixture-ticket-work-fixture-workspace-example-active.md";
@@ -223,7 +298,7 @@ test("application areas compose once and retain terminals across navigation and 
     $("#show-repo-tools").click();
     const toolAction = () =>
       [...$("#repo-tools-menu").querySelectorAll("button")].find(
-        (button) => button.textContent === "test",
+        (button) => button.textContent === "test · repository root",
       );
     await waitFor(toolAction);
     toolAction().click();
@@ -267,20 +342,14 @@ test("application areas compose once and retain terminals across navigation and 
       () =>
         !$("#change-review-page").hidden && !$("#show-change-review").disabled,
     );
-    $('[data-review-mode="split"]').click();
-    assert.equal(
-      $('[data-review-mode="split"]').getAttribute("aria-pressed"),
-      "true",
-    );
+    $('[role="switch"]').click();
+    assert.equal($('[role="switch"]').checked, true);
     await waitFor(() => !$("#show-docs").disabled);
     $("#show-docs").click();
     await waitFor(() => !$("#docs-page").hidden);
     $("#show-change-review").click();
     await waitFor(() => !$("#change-review-page").hidden);
-    assert.equal(
-      $('[data-review-mode="split"]').getAttribute("aria-pressed"),
-      "true",
-    );
+    assert.equal($('[role="switch"]').checked, true);
     window.document.getElementById(`session-tab-${ticketSessionId}`).click();
     $('[aria-label="Close Example repository · Fixture test"]').click();
     await waitFor(
@@ -355,11 +424,17 @@ test("application areas compose once and retain terminals across navigation and 
     );
     await waitFor(() => !$("#new-work-review").hidden);
     await waitFor(() => !$("#proposal-create").disabled);
+    [...window.document.querySelectorAll('[role="tab"]')]
+      .find((tab) => tab.textContent === "Suggested")
+      .click();
     input("#quick-request-directory", "");
     assert.equal($("#proposal-create").disabled, true);
     input("#quick-request-directory", "/fixture/custom-working-directory");
     assert.equal($("#proposal-create").disabled, false);
-    assert.equal($("#quick-request-original").textContent, originalPrompt);
+    assert.equal(
+      $("#quick-request-prompt-suggested").value,
+      `Clarify this Quick Request: ${originalPrompt}`,
+    );
     $("#proposal-create").click();
     await waitFor(() => globalThis.__quickRequestCreateCalls === 1);
     assert.equal($("#proposal-create").disabled, true);
@@ -373,12 +448,18 @@ test("application areas compose once and retain terminals across navigation and 
         .querySelector("#proposal-error")
         ?.textContent.includes("Deferred creation failed"),
     );
-    assert.equal($("#quick-request-original").textContent, originalPrompt);
+    assert.equal(
+      $("#quick-request-prompt-suggested").value,
+      `Clarify this Quick Request: ${originalPrompt}`,
+    );
     assert.equal($("#proposal-create").disabled, false);
     $("#proposal-create").click();
     await waitFor(() => !$("#new-work-modal").open);
     assert.equal(globalThis.__quickRequestCreateCalls, 2);
-    assert.equal(globalThis.__quickRequestCreatePrompts[1], originalPrompt);
+    assert.equal(
+      globalThis.__quickRequestCreatePrompts[1],
+      `Clarify this Quick Request: ${originalPrompt}`,
+    );
     assert.match(
       $("#quick-request-list").textContent,
       /A quick fixture prompt/,

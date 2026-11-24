@@ -26,12 +26,15 @@ import {
   resolveQuickRequestDirectory,
   submitQuickRequestFlow,
   submitResolvedQuickRequestFlow,
+  retryResolvedQuickRequestFlow,
   startQuickRequestPrompt,
   listAvailableModels,
   getDefaultModel,
   setDefaultModel,
   proposeWorkspaceTicket,
   createWorkspaceTicket,
+  listWorkspaceTicketLabels,
+  setWorkspaceTicketLabel,
   followUpQuickRequest,
   restoreQuickRequest,
   listQuickRequests,
@@ -124,6 +127,8 @@ test("maps every application session state to its visible label", () => {
       "starting",
       "running",
       "waitingForInput",
+      "idle",
+      "retrying",
       "readyForReview",
       "reconnecting",
       "unknown",
@@ -133,6 +138,8 @@ test("maps every application session state to its visible label", () => {
       "Starting",
       "Running",
       "Waiting for input",
+      "Idle",
+      "Retrying",
       "Ready for review",
       "Reconnecting",
       "Unknown",
@@ -1236,13 +1243,43 @@ test("Workspace ticket proposal and confirmation adapters preserve their explici
     return Promise.resolve(resultForCommand(args[0]));
   };
   const proposal = await proposeWorkspaceTicket(invoke, "workspace-1", "An idea");
-  const ticket = await createWorkspaceTicket(invoke, "workspace-1", "Fixture proposal", "Edited body");
+  const ticket = await createWorkspaceTicket(invoke, "workspace-1", "Fixture proposal", "Edited body", true);
   assert.equal(proposal.title, "Fixture proposal");
-  assert.equal(ticket.status, "draft");
+  assert.equal(ticket.ticket.status, "draft");
   assert.deepEqual(calls, [
     ["workspace_ticket_proposal", { workspaceId: "workspace-1", idea: "An idea" }],
-    ["workspace_ticket_create", { workspaceId: "workspace-1", title: "Fixture proposal", body: "Edited body" }],
+    ["workspace_ticket_create", { workspaceId: "workspace-1", title: "Fixture proposal", body: "Edited body", startInvestigation: true }],
   ]);
+});
+
+test("ticket-label discovery invokes the no-payload Rust command", async () => {
+  const calls = [];
+  const invoke = (...args) => {
+    calls.push(args);
+    return Promise.resolve([]);
+  };
+  assert.deepEqual(await listWorkspaceTicketLabels(invoke), []);
+  assert.deepEqual(calls, [["workspace_ticket_labels"]]);
+});
+
+test("ticket-label updates send a required, non-null label to Rust", async () => {
+  const calls = [];
+  const invoke = (...args) => {
+    calls.push(args);
+    return Promise.resolve(args[1].label);
+  };
+  assert.equal(
+    await setWorkspaceTicketLabel(invoke, "workspace-1", "ticket.md", "Initiative"),
+    "Initiative",
+  );
+  assert.deepEqual(calls, [["workspace_ticket_label_set", {
+    workspaceId: "workspace-1", filename: "ticket.md", label: "Initiative",
+  }]]);
+  await assert.rejects(
+    setWorkspaceTicketLabel(invoke, "workspace-1", "ticket.md", null),
+    /must not be null/,
+  );
+  assert.equal(calls.length, 1, "null labels fail before crossing the Rust boundary");
 });
 
 test("Quick Request submit preserves surrounding UI state and clears only the prompt after full success", async () => {
@@ -1344,7 +1381,7 @@ test("Quick Request submit failure preserves entered prompt for recovery", async
   assert.ok(!events.includes("refresh"));
 });
 
-test("confirmed Quick Request flow preserves the original prompt and opens the terminal page before sending it", async () => {
+test("confirmed Quick Request flow stores the original and starts with the selected suggestion", async () => {
   const events = [];
   const model = { providerId: "openai", id: "gpt-6-luna" };
   const originalPrompt = "  Keep this exact prompt\n";
@@ -1360,12 +1397,12 @@ test("confirmed Quick Request flow preserves the original prompt and opens the t
       return null;
     },
     originalPrompt,
+    startingPrompt: "A lightly improved prompt",
     model,
     repositoryId: "repo-1",
     waitForTerminal: async () => events.push(["terminal-ready"]),
     onCreated: (created) => events.push(["created", created.task.id]),
-    showSession: async (id) => events.push(["show-session", id]),
-    refreshRequests: async () => events.push(["refresh"]),
+    showSession: async (...args) => events.push(["show-session", ...args]),
   });
 
   assert.equal(result, record);
@@ -1377,13 +1414,13 @@ test("confirmed Quick Request flow preserves the original prompt and opens the t
       "created",
       "show-session",
       "quick_request_start_prompt",
-      "refresh",
     ],
   );
   assert.deepEqual(events[1], [
     "quick_request_create",
     {
       prompt: originalPrompt,
+      startingPrompt: "A lightly improved prompt",
       model,
       repositoryId: "repo-1",
     },
@@ -1393,6 +1430,15 @@ test("confirmed Quick Request flow preserves the original prompt and opens the t
     {
       requestId: "quick-confirmed",
       model,
+    },
+  ]);
+  assert.deepEqual(events[3], [
+    "show-session",
+    "ses-quick-confirmed",
+    {
+      deferEvidence: true,
+      deferReveal: true,
+      requireExactSession: true,
     },
   ]);
 });
@@ -1431,6 +1477,42 @@ test("confirmed Quick Request startup failure happens after durable creation and
     "durable-record",
     "terminal-mounted",
     "quick_request_start_prompt",
+  ]);
+});
+
+test("Quick Request recovery attaches the exact saved session before retrying", async () => {
+  const events = [];
+  const record = {
+    task: { id: "qr-recover", quickRequest: {} },
+    session: { openCodeSessionId: "ses-recover" },
+  };
+  const result = await retryResolvedQuickRequestFlow({
+    invoke: async (name, payload) => {
+      events.push([name, payload]);
+      return { promptSent: false };
+    },
+    record,
+    model: { providerId: "openai", id: "gpt-test" },
+    showSession: async (...args) => events.push(["show", ...args]),
+  });
+  assert.deepEqual(result, { promptSent: false });
+  assert.deepEqual(events, [
+    [
+      "show",
+      "ses-recover",
+      {
+        deferEvidence: true,
+        deferReveal: true,
+        requireExactSession: true,
+      },
+    ],
+    [
+      "quick_request_retry_prompt",
+      {
+        requestId: "qr-recover",
+        model: { providerId: "openai", id: "gpt-test" },
+      },
+    ],
   ]);
 });
 

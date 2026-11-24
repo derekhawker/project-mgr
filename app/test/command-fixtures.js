@@ -147,11 +147,11 @@ export function resultForCommand(name) {
     case "workspace_navigation":
       return navigation;
     case "workspace_ticket_work":
-      return { sessions: [session], activeSessionId: session.openCodeSessionId };
+      return { session };
     case "workspace_ticket_session_create":
       return { ...session, openCodeSessionId: "ses-ticket-new" };
     case "workspace_ticket_session_close":
-      return "ses-ticket-old";
+      return null;
     case "workspace_tickets_list":
       return [{
         filename: "example.md",
@@ -195,9 +195,10 @@ export function resultForCommand(name) {
     case "quick_request_expire":
     case "quick_request_promote":
       return task;
-    case "quick_request_retry_prompt":
     case "opencode_session_restore":
       return session;
+    case "quick_request_retry_prompt":
+      return { promptSent: true };
     case "opencode_terminal_attach":
     case "opencode_terminal_start":
     case "opencode_terminal_replay":
@@ -218,14 +219,20 @@ export function resultForCommand(name) {
       return { title: "Fixture proposal", body: "# Fixture proposal\n\n## Idea\n\nFixture body." };
     case "workspace_ticket_create":
       return {
-        filename: "fixture-proposal.md",
-        title: "Fixture proposal",
-        status: "draft",
-        hasWorkSession: false,
-        opencodeStatus: null,
-        content: "---\ntitle: Fixture proposal\nstatus: draft\n---\n\nFixture body.\n",
-        modifiedAt: 1,
-        archivedAt: null,
+        ticket: {
+          filename: "fixture-proposal.md",
+          title: "Fixture proposal",
+          status: "draft",
+          hasWorkSession: false,
+          opencodeStatus: null,
+          projectLabel: "Fixture Workspace",
+          content: "---\ntitle: Fixture proposal\nstatus: draft\nproject_label: Fixture Workspace\n---\n\nFixture body.\n",
+          modifiedAt: 1,
+          archivedAt: null,
+        },
+        investigationSessionId: null,
+        investigationStarted: false,
+        investigationFailureStage: null,
       };
     case "app_shell_info":
       return {

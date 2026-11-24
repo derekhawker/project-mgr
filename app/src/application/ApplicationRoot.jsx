@@ -24,7 +24,10 @@ export function ApplicationRoot(props) {
               {props.workspaceViewToggle?.()}
             </div>
             <div class="navigation-scroll">
-              <WorkspaceNavigation {...props.workspaceNavigation} />
+              <WorkspaceNavigation
+                {...props.workspaceNavigation}
+                onChangeLabel={(workspace, ticket) => setTicketLabelSelection({ workspace, ticket })}
+              />
             </div>
             <div class={styles.destinations}>
               {props.portsNavigationButton()}

@@ -1,4 +1,4 @@
-import { createSignal, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import styles from "./ActionMenu.module.css";
 import controlStyles from "./controls.module.css";
@@ -11,6 +11,7 @@ export function ActionMenu(props) {
   let menu;
   let surface;
   let popupDialog;
+  let selectionSurface;
   let popupRegistered = false;
   let usesPopover = false;
   const [portalTarget, setPortalTarget] = createSignal(null);
@@ -20,6 +21,12 @@ export function ActionMenu(props) {
   const [disclosureOpen, setDisclosureOpen] = createSignal(
     Boolean(props.defaultOpen),
   );
+  const controlled = props.open !== undefined;
+  const isOpen = () =>
+    typeof props.open === "function" ? props.open() : props.open;
+  createEffect(() => {
+    if (controlled && menu) menu.open = Boolean(isOpen());
+  });
   const positionPortal = () => {
     if (!props.portal || !menu?.open || !surface) return;
     const trigger = menu.querySelector("summary");
@@ -69,8 +76,28 @@ export function ActionMenu(props) {
     return true;
   };
   const close = () => {
-    if (props.open !== undefined) props.onRequestClose?.();
-    else if (menu) menu.open = false;
+    if (controlled) {
+      if (menu) menu.open = false;
+      props.onRequestClose?.();
+    } else if (menu) menu.open = false;
+  };
+  const closeOnSelection = (event) => {
+    const action = event.target.closest?.("button, a");
+    if (
+      props.closeOnSelect !== false &&
+      action &&
+      surface?.contains(action) &&
+      !action.disabled &&
+      action.getAttribute("aria-disabled") !== "true"
+    )
+      close();
+  };
+  const attachSurface = (element) => {
+    if (selectionSurface)
+      selectionSurface.removeEventListener("click", closeOnSelection, true);
+    surface = element;
+    selectionSurface = element;
+    selectionSurface?.addEventListener("click", closeOnSelection, true);
   };
   const releaseDialogPopup = () => {
     if (!popupRegistered || !popupDialog) return;
@@ -110,7 +137,10 @@ export function ActionMenu(props) {
       document.removeEventListener("scroll", reposition, true);
     });
   });
-  onCleanup(releaseDialogPopup);
+  onCleanup(() => {
+    selectionSurface?.removeEventListener("click", closeOnSelection, true);
+    releaseDialogPopup();
+  });
   const className = () => [styles.menu, props.class].filter(Boolean).join(" ");
   const triggerClassName = () =>
     [
@@ -138,7 +168,7 @@ export function ActionMenu(props) {
       class={className()}
       data-direction={props.direction === "up" ? "up" : "down"}
       hidden={props.hidden}
-      open={props.open ?? props.defaultOpen}
+      open={controlled ? isOpen() : props.defaultOpen}
       onToggle={(event) => {
         setDisclosureOpen(event.currentTarget.open);
         setPortalOpen(event.currentTarget.open);
@@ -148,7 +178,7 @@ export function ActionMenu(props) {
           else syncDialogPopup(event.currentTarget.open);
         }
         if (event.currentTarget.open) queueMicrotask(positionPortal);
-        if (props.open === undefined)
+        if (!controlled)
           props.onToggle?.(event.currentTarget.open);
       }}
     >
@@ -159,9 +189,9 @@ export function ActionMenu(props) {
         aria-label={props.label}
         aria-disabled={props.disabled ? "true" : undefined}
         aria-expanded={
-          props.open === undefined
+          !controlled
             ? String(disclosureOpen())
-            : String(props.open)
+            : String(isOpen())
         }
         aria-controls={props.contentId}
         role={props.triggerRole}
@@ -171,9 +201,9 @@ export function ActionMenu(props) {
         aria-busy={props.triggerBusy}
         tabIndex={props.disabled ? -1 : undefined}
         onClick={(event) => {
-          if (props.disabled || props.open !== undefined)
+          if (props.disabled || controlled)
             event.preventDefault();
-          if (!props.disabled && props.open !== undefined)
+          if (!props.disabled && controlled)
             props.onRequestToggle?.();
         }}
       >
@@ -186,7 +216,7 @@ export function ActionMenu(props) {
             <Portal mount={target()}>
               <MenuSurface
                 ref={(element) => {
-                  surface = element;
+                  attachSurface(element);
                   queueMicrotask(positionPortal);
                 }}
                 style={portalStyle()}
@@ -197,17 +227,6 @@ export function ActionMenu(props) {
                 class={`${styles.actions} ${styles.portalActions} ${props.contentClass || ""}`}
                 role={props.contentRole ?? "group"}
                 aria-label={props.actionsLabel ?? props.label}
-                onClick={(event) => {
-                  const action = event.target.closest("button, a");
-                  if (
-                    props.closeOnSelect !== false &&
-                    action &&
-                    event.currentTarget.contains(action) &&
-                    !action.disabled &&
-                    action.getAttribute("aria-disabled") !== "true"
-                  )
-                    close();
-                }}
               >
                 {props.children}
               </MenuSurface>
@@ -216,25 +235,12 @@ export function ActionMenu(props) {
         </Show>
       ) : (
         <MenuSurface
-          ref={(element) => {
-            surface = element;
-          }}
+          ref={attachSurface}
           id={props.contentId}
           surfaceVariant={props.surfaceVariant ?? "accent"}
           class={`${styles.actions} ${props.contentClass || ""}`}
           role={props.contentRole ?? "group"}
           aria-label={props.actionsLabel ?? props.label}
-          onClick={(event) => {
-            const action = event.target.closest("button, a");
-            if (
-              props.closeOnSelect !== false &&
-              action &&
-              event.currentTarget.contains(action) &&
-              !action.disabled &&
-              action.getAttribute("aria-disabled") !== "true"
-            )
-              close();
-          }}
         >
           {props.children}
         </MenuSurface>

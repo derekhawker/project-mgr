@@ -51,6 +51,15 @@ ticket uses the saved model only when Rust creates a new session; a valid
 recorded session is resumed without model lookup or change. If the saved model
 is no longer available, the user must select an available model.
 
+The Tickets view's **Tools** menu is available even when no ticket is selected.
+It offers external-terminal, IntelliJ, and folder actions only, all targeting the
+Workspace's verified repository checkout; it has no app-managed terminal or
+project-command actions. In the ticket workbench, tools,
+Change Review, and Docs use the selected ticket's verified worktree when one is
+recorded, falling back to the Workspace checkout only when the ticket has no
+worktree. Nested project commands run from and show the directory containing
+their `package.json` or Makefile.
+
 Creating a ticket uses a two-step dialog. The first step captures the user's
 idea and asks OpenCode for a proposal in the Workspace's sole verified
 repository. The request explicitly invokes the ticket-management skill's
@@ -67,13 +76,45 @@ is not written to application logs; failures log only session and error-category
 metadata.
 
 The review step lets the user edit the title and Markdown body; `status: draft`
-is displayed read-only. Canceling creates no ticket. Confirmation rechecks the
-active regular Workspace and verified repository, derives a safe filename from
-the reviewed title, and creates a new Markdown file exclusively under the
+is displayed read-only. A **Start ticket** checkbox is unchecked
+by default. Canceling creates no ticket. Confirmation rechecks the active
+regular Workspace and verified repository, derives a safe filename from the
+reviewed title, and creates a new Markdown file exclusively under the
 Workspace's canonical external ticket directory. Existing files are never
-overwritten. The dialog closes after the create command succeeds and remains
-open with the reviewed edits if creation fails; the ticket list then refreshes
-and selects the created draft.
+overwritten. With the checkbox off, this is the existing draft-only flow. With
+it on, Rust creates a persistent OpenCode session in the Workspace repository,
+adds its exact ID to the draft ticket, and submits an investigation prompt. The
+session receives read-only access to the external ticket directory and is not
+attached to a terminal. The prompt asks OpenCode to inspect requirements,
+unclear behavior, behavior changes, and integration risks; assess readiness for
+implementation; and identify questions and needed decisions. For complex work
+or new library integrations it asks for deeper analysis and subagents when
+helpful. It uses a conservative gate: most tasks need discussion. After
+investigation, it permits implementation only when the task is clearly defined,
+low-effort (a small, localized change using existing patterns), and has one
+obvious, narrow solution. A straightforward bug fix may qualify. Redesigns and
+tasks with plausible alternatives stop for discussion rather than guessing a
+direction. Creating the session does not open the ticket workbench or terminal;
+the user can later use **Work** to open/resume the saved session. The ticket
+remains `draft`.
+
+Investigation prompt delivery runs on the bounded blocking worker pool so model
+research does not keep the creation dialog open. If session setup fails after
+ticket creation, the draft remains created and selected; the UI reports that
+investigation setup failed rather than keeping a retryable create form that
+could create a duplicate. If prompt delivery fails asynchronously, the session
+binding remains for inspection through **Work**. Failures are logged to the
+application log with session/error-category metadata only, never prompt
+contents. A ticket creation failure keeps the review step and edits visible.
+The ticket list refreshes and selects the created draft after a successful
+create command.
+
+Each ticket tracks at most one OpenCode work session in `work_session_id`.
+Starting **New session** creates and attaches the replacement before updating
+that ticket binding; only after the new session is attached does the app close
+the previous session's terminal. Closing the terminal does not delete the old
+OpenCode conversation. Older `work_session_ids` front matter is normalized to
+the one active binding when the ticket is worked.
 
 The Workspace ticket list keeps separate sort selections for active and archived
 tickets. Active tickets retain the **Status**, **Recently modified**, and
@@ -86,25 +127,43 @@ Rust backfills missing or invalid timestamps from each ticket file's current
 modification time. Missing timestamps remain non-fatal if a file cannot be
 updated; the list falls back to modification time for display and ordering.
 
-For tickets with an active `work_session_id`, Rust subscribes to OpenCode's
-volatile `GET /api/event` stream and takes one `GET /api/session/active`
-snapshot after connecting, after each reconnect, and every 30 seconds. The
-snapshot is authoritative for this indicator: listed sessions are busy and
-sessions absent from the response are idle. SSE provides faster transitions;
-the periodic snapshot repairs missed events. It stores the active
-session's exact `idle`, `busy`, or `retry` status as app-maintained
-`opencode-status` frontmatter only when the ticket's current value differs.
-The ticket Markdown watcher refreshes navigation and the ticket reader. In left
-navigation, blocked tickets show their special blocked icon;
-`in_progress` tickets without a `work_session_id` show a caution triangle; and
-tickets with `opencode-status: idle` show a pause icon regardless of ticket
-lifecycle status. Running sessions show no attention icon. The ticket reader
-retains its caution triangle for `in_progress` tickets without a
-`work_session_id`, and a pause icon for `in_progress` tickets with
-`opencode-status: idle`. Icons appear before the title; the status field stays
-hidden from reader metadata.
-During a stream disconnect, the last persisted status remains visible until the
-next 30-second or reconnect snapshot updates it.
+For tickets with a `work_session_id`, Rust subscribes to OpenCode's volatile
+`GET /api/event` stream and reconciles the exact session after connecting, after
+each reconnect. A periodic pass snapshots `/api/session/active` once every 30
+seconds and reconciles every ticket session, including settled or unknown
+sessions, so missed events are repaired even when a prior transition was not
+observed.
+Relevant session execution/status and form/permission events trigger an
+immediate reconciliation. For each ticket session, reconciliation combines its
+pending form and permission lists, session outcome, a small history sample, and
+durable session events with the shared active-session snapshot. Pending forms or
+permissions take precedence over the active-session `running` signal and mean
+the session is waiting for human input. Replied/cancelled events trigger a fresh
+pending-input snapshot, so another outstanding request keeps the session in
+that state. SSE is an update path, not replay; periodic and reconnect snapshots
+repair missed events.
+
+The ticket-specific `opencode-status` frontmatter is app-maintained and records
+`starting`, `running`, `waiting_for_input`, `idle`, `retrying`,
+`ready_for_review`, `reconnecting`, `unknown`, or `failed` only when the value
+changes. Absence from `/api/session/active` is not enough to infer idle or
+completion: explicit idle evidence means idle; successful execution plus
+session history means ready for review; failed/interrupted evidence means
+failed; otherwise the result is unknown. If OpenCode cannot provide a complete
+reconciliation snapshot, the state is reconnecting and is retried. These states
+never change the ticket's workflow status.
+
+The ticket Markdown watcher refreshes navigation and the ticket reader. Blocked
+tickets keep their blocked icon; `in_progress` tickets without a
+`work_session_id` show an error/caution indicator. Session details collapse to
+four user-facing states: `starting`, `running`, and `retrying` show no icon;
+`waiting_for_input` shows a question-bubble icon; `idle` and
+`ready_for_review` show a pause icon; and `failed`, `reconnecting`, or
+`unknown` show an error/caution indicator. These session indicators appear in
+both navigation and the ticket reader independently of ticket workflow status.
+The status field stays hidden from reader metadata. If API reconciliation fails,
+the status becomes `reconnecting`; a later successful snapshot restores the
+current state.
 
 The application uses Tauri, Rust, raw HTML/CSS/JavaScript, a Rust-managed PTY,
 xterm.js, and OpenCode's shared local background server. Rust discovers the
@@ -156,17 +215,18 @@ SQLite records include:
 - Task repository bindings, branches, and worktree paths.
 - OpenCode session IDs, session owners, working directories, and last-known
   status.
-- Quick Request creation time and original prompt; deletion removes the app-owned
+- Quick Request creation time, original prompt, and selected starting prompt; deletion removes the app-owned
   request/prompt/session association while preserving OpenCode conversation data.
-- Original Quick Request prompts in a dedicated task-linked table; regular
+- Original and selected starting Quick Request prompts in a dedicated task-linked table; regular
   workspace/task prompts remain transient inputs.
 - Cleanup jobs, attempts, deferrals, and failure details.
 - User preferences, including the project-home root.
 
-SQLite does not store a second copy of conversation messages. The sole prompt
-exception is a Quick Request's original prompt, stored in a dedicated table
-linked to its request so the full list can display it without reading OpenCode
-history. Workspace/task original and starting prompts remain transient.
+SQLite does not store a second copy of conversation messages. Quick Requests
+store both the original prompt and the selected starting prompt in a dedicated
+table linked to the request. The original is used for history/list display; the
+selected starting prompt is used for initial delivery and retry. Workspace/task
+original and starting prompts remain transient.
 
 ### 3.2 User project home
 
@@ -290,9 +350,9 @@ remain pinned in the navigation.
 8. OpenCode owns conversation history; SQLite stores associations only.
 9. Regular workspace/task original and starting prompts are transient command
    inputs. The application does not persist them in SQLite or files; OpenCode
-   owns any submitted conversation history. A Quick Request's original prompt is
-   the explicit exception: SQLite stores it in `quick_request_prompts`, linked
-   to its task, while OpenCode continues to own the conversation history.
+   owns any submitted conversation history. A Quick Request stores its original
+   and selected starting prompts in `quick_request_prompts`, linked to its task,
+   while OpenCode continues to own the conversation history.
 10. A new session means a new OpenCode conversation in the same owner context;
    it does not create a child task.
 11. Completed tasks cannot be reopened. Further work starts as a new task.
@@ -308,8 +368,12 @@ remain pinned in the navigation.
 
 ## 5. Common Session Flow
 
-Every session type uses the same terminal runtime. Only the context resolver
-changes how the owner, session ID, and working directory are found.
+Interactive session types use the same terminal runtime. Only the context
+resolver changes how the owner, session ID, and working directory are found.
+The internal ticket-proposal session and the opt-in ticket-investigation session
+are non-interactive API prompt flows: proposals are temporary, while
+investigations persist their exact session ID in the ticket and can be opened
+later through **Work**.
 
 ### 5.1 Create and start a new session
 
@@ -467,7 +531,7 @@ inferred.
 |---:|---|---|---|
 | 1 | User | Opens **Repositories** from top navigation and uses **Add directories** to select one or more folders with the native folder picker. | The GUI sends only those explicit paths to Rust. |
 | 2 | Rust | Runs traversal and Git discovery on a bounded blocking worker; canonicalizes selected roots, but does not follow child directory symlinks. | The UI/startup thread remains available while filesystem work runs. |
-| 3 | Rust/Git | Prunes common dependency, generated-output, and build directory names during broad traversal; stops at Git markers and verifies candidates with lightweight Git root/common-directory facts. | The managed project and repository-library trees are excluded; invalid markers are not cataloged; linked worktrees and submodules are excluded, while independent separate-Git-dir checkouts are eligible. |
+| 3 | Rust/Git | Prunes common dependency, generated-output, and build directory names during broad traversal; stops at Git markers and verifies candidates with one `git rev-parse --show-toplevel --git-common-dir` process. | The managed project and repository-library trees are excluded; invalid or ambiguous/non-UTF-8 Git output is not cataloged; linked worktrees and submodules are excluded, while independent separate-Git-dir checkouts are eligible. |
 | 4 | Rust | De-duplicates by canonical repository path and retires absent active entries only after a complete scan; incomplete roots do not trigger cleanup. | A move creates a path-keyed entry at the new location; old catalog history and workspace bindings remain attached to the old entry. Repository files are never deleted. |
 | 5 | OpenCode | Generates a concise purpose description from repository content or metadata when requested by the discovery flow. | The description is proposed content, not repository identity. |
 | 6 | User | Reviews or edits the purpose description. | The catalog stores the accepted concise purpose. |
@@ -480,13 +544,17 @@ traversal prunes common names such as `node_modules`, `vendor`, `target`, `dist`
 is always eligible regardless of its name. These name-based rules apply only to
 descendants and may leave repositories inside a pruned directory undiscovered.
 Repository paths discovered under overlapping roots are shown only once under
-the most-specific root. The Repositories page groups saved roots under their shortest shared
-parent when their filesystem-level path component matches and the group
-contains at most five repositories. Larger groups retain their separate saved
-scan roots; a lone scan root keeps its own path. Within a displayed root,
-child folders containing at most five repositories collapse into the parent;
-larger child folders remain separate. Apply that rule independently per branch.
-Different filesystem-level branches remain separate. Individual
+the most-specific root. For catalogs with at most 20 entries, the Repositories
+page keeps its existing grouping: compatible saved roots may merge under their
+shortest shared parent when the group has at most five repositories, and child
+folders containing at most five repositories collapse into the parent. Larger
+groups remain separate; a lone scan root keeps its own path. For catalogs above
+20 entries, saved roots never merge and no child folders collapse. The threshold
+counts all catalog entries, including disabled repositories, and does not
+change while searching. In either mode, sibling roots, folders, and repositories
+sort by case-insensitive name. Search stays in place and matches repository
+names or full paths case-insensitively, retaining only the ancestor folders
+needed to display matches. Individual
 repository checkboxes persist enabled/disabled state. Only
 enabled repositories are included in the initial New-work proposal context and
 can be selected as a Quick Request working directory; the user's original
@@ -741,19 +809,26 @@ recreates a missing worktree automatically.
 | Step | Actor | Action | Result |
 |---:|---|---|---|
 | 1 | User | Chooses **Quick Request**, reviews the prefilled default directory, optionally types or chooses another existing directory, and enters an original prompt. | The directory choice applies only to this request; the shared New-work modal preserves the current destination. |
-| 2 | GUI/Rust/OpenCode | Runs an internal directory proposal. An explicit directory must be returned unchanged, without supplying the repository catalog; otherwise the proposal may choose an enabled repository. | Rust validates the exact path or repository; no record or terminal is created. |
-| 3 | User | Reviews the directory, optionally types a path, chooses a folder, or resets to the default, then confirms. If no directory was explicitly chosen and no repository is identified, the default is `<configured OpenCode Projects root>/Quick Requests/`. | The original prompt remains unchanged; no workspace choice or starting-prompt rewrite is involved. |
+| 2 | GUI/Rust/OpenCode | Runs an internal proposal that lightly rewrites the prompt and resolves a directory. An explicit directory must be returned unchanged, without supplying the repository catalog; otherwise the proposal may choose an enabled repository. | Rust validates the exact path or repository; no record or terminal is created. |
+| 3 | User | Reviews the original and suggested prompts and directory; chooses which prompt to send, may edit the directory, then confirms. If no directory was explicitly chosen and no repository is identified, the default is `<configured OpenCode Projects root>/Quick Requests/`. | The suggested prompt is selected by default; the original remains available and unchanged. |
 | 4 | Rust | Ensures the special Quick Requests workspace and resolved directory, then connects to the shared OpenCode service (starting it only if absent). | The working directory is the identified repository or shared default. |
-| 5 | Rust | Creates the Quick Request task, stores its original prompt in `quick_request_prompts`, and records the OpenCode session ID, working directory, and creation time in one transaction. | The request and its exact prompt/session association are durable; the task's generic description remains unused. |
-| 6 | Rust/GUI | Attaches the exact session in a PTY and opens its dedicated Quick Request page. | The terminal fills the available main work area; app navigation remains visible and no session tabs or workspace/task controls are shown. |
-| 7 | Rust | Sends the original prompt unchanged through the session. | Generation starts in the matching TUI. |
-| 8 | OpenCode/TUI | Streams output, handles tools, and asks for approval/input when needed. | The user can interact in the same terminal. |
-| 9 | Rust/GUI | Stores status and emits output without copying transcript content into SQLite. | The request remains associated and recoverable. |
+| 5 | Rust | Creates the Quick Request task, stores its original and selected starting prompts in `quick_request_prompts`, and records the OpenCode session ID, working directory, and creation time in one transaction. | The request, original, selected prompt, and exact session association are durable; the task's generic description remains unused. |
+| 6 | Rust/GUI | Attaches the exact session in a PTY without revealing its terminal or reconciling owner evidence yet. | The saved request/session remains associated while startup is incomplete. |
+| 7 | Rust | Sends the selected starting prompt through the session. | Prompt acceptance must succeed before the terminal is revealed; retry uses that same selected text. |
+| 8 | GUI | Reveals the attached session and reconciles its evidence only after prompt acceptance. | The dedicated page fills the available main work area; navigation remains visible and no session tabs or workspace/task controls are shown. |
+| 9 | OpenCode/TUI and Rust/GUI | Streams output, handles tools and input, and stores status without copying transcript content into SQLite. | The user interacts in the same session. |
 | 10 | Rust/GUI | Applies the 24-hour creation-time cutoff to recent navigation; follow-ups do not reset it. | Older requests remain in the full Quick Requests list. |
 
 The proposal is transient: cancellation or proposal failure creates no Quick
-Request. Confirmation follows the common session startup flow and must not claim
-success if creation, attachment, or initial prompt delivery fails.
+Request. If attachment or prompt delivery fails after durable creation, keep the
+confirmation modal open with a recovery action for that same request/session.
+Retry inspects the exact OpenCode history first: any user message proves the
+prompt was accepted and is never resent; ambiguous, unavailable, or incomplete
+history records the session as unknown and fails closed. Recovery never creates
+a replacement request. After retrying, attach/reuse the exact session, then
+reconcile its evidence and reveal its terminal. This recovery covers failures
+while the modal remains open only; recovery after application exit/restart is
+out of scope. Failure logs contain session/error metadata, never prompt text.
 
 ### 10.2 Follow up on a Quick Request
 

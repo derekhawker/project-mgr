@@ -8,6 +8,10 @@ export function createRepositoryToolsActionForwarders(getActions) {
   };
 }
 
+export function isRepositoryToolsMenuOpen(open, activeTriggerId, triggerId) {
+  return open && activeTriggerId === triggerId;
+}
+
 export function createRepositoryToolsController({
   invoke,
   listRepositoryTools,
@@ -22,8 +26,9 @@ export function createRepositoryToolsController({
   openWorkspaceShellTerminal,
   launchWorkspaceOsHandoff,
   installStarted,
+  reportHandoffError = () => {},
 }) {
-  async function toggleRepositoryTools() {
+  async function toggleRepositoryTools({ includeProjectTools = true } = {}) {
     if (isOpen()) {
       setOpen(false);
       return;
@@ -32,25 +37,41 @@ export function createRepositoryToolsController({
     if (!owner) return;
     const isCurrentOwner = () => {
       const current = getOwner();
-      return current?.type === owner.type && current?.id === owner.id;
+      return (
+        current?.type === owner.type &&
+        current?.id === owner.id &&
+        current?.ticketFilename === owner.ticketFilename
+      );
     };
     setDisabled(true);
     try {
       let groups = [];
       let loadError = "";
-      try {
-        groups = await listRepositoryTools(invoke, owner.type, owner.id);
-      } catch (error) {
-        loadError = `Could not load repository tools: ${String(error)}`;
+      if (includeProjectTools) {
+        try {
+          groups = await listRepositoryTools(
+            invoke,
+            owner.type,
+            owner.id,
+            owner.ticketFilename,
+          );
+        } catch (error) {
+          loadError = `Could not load repository tools: ${String(error)}`;
+        }
       }
       if (!isCurrentOwner()) return;
       // Publishing groups can synchronously mount InstallControl and invoke
       // onInstall, even while the menu is hidden. Register this owner's actions
       // first so installation never uses the previous owner's callbacks.
       setActions({
-        onRun: (repository, kind, name) => {
+        onRun: (repository, kind, name, sourceDirectory = "") => {
           if (isCurrentOwner())
-            void openRepositoryToolTerminal(repository, kind, name);
+            void openRepositoryToolTerminal(
+              repository,
+              kind,
+              name,
+              sourceDirectory,
+            );
         },
         onHandoff: async (action, view) => {
           if (!isCurrentOwner()) return;
@@ -72,10 +93,13 @@ export function createRepositoryToolsController({
                 owner.type,
                 owner.id,
                 action,
+                owner.ticketFilename,
               );
             view.setStatus("Opened successfully.");
           } catch (error) {
-            view.setStatus(`Could not open: ${String(error)}`);
+            const message = `Could not open: ${String(error)}`;
+            view.setStatus(message);
+            reportHandoffError(message);
           } finally {
             view.setDisabled(false);
           }
@@ -93,6 +117,7 @@ export function createRepositoryToolsController({
           const started = await openRepositoryToolTerminal(
             repository,
             "npm_install",
+            "",
             "",
             key,
           );

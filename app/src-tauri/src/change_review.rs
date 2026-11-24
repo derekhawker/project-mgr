@@ -16,8 +16,17 @@ thread_local! {
 pub struct ReviewFile {
     pub path: String,
     pub status: String,
+    pub change_source: String,
     pub diff: Option<String>,
     pub diff_error: Option<String>,
+    pub viewed: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewViewState {
+    pub head_commit: String,
+    pub viewed_files: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -27,6 +36,7 @@ pub struct ReviewRepository {
     pub name: String,
     pub path: String,
     pub comparison_target: Option<String>,
+    pub merge_base: Option<String>,
     pub comparison_error: Option<String>,
     pub files: Vec<ReviewFile>,
 }
@@ -63,9 +73,31 @@ fn diff_for(
     path: &Path,
     file: &str,
     status: &str,
-    target: Option<&str>,
+    old_ref: Option<&str>,
+    new_ref: Option<&str>,
 ) -> (Option<String>, Option<String>) {
     if status == "untracked" {
+        let relative_path = Path::new(file);
+        if file.is_empty()
+            || !relative_path
+                .components()
+                .all(|part| matches!(part, std::path::Component::Normal(_)))
+        {
+            return (None, Some("Invalid repository-relative file path.".into()));
+        }
+        let mut ancestor = path.to_path_buf();
+        for part in relative_path.components() {
+            ancestor.push(part);
+            if fs::symlink_metadata(&ancestor)
+                .map(|metadata| metadata.file_type().is_symlink())
+                .unwrap_or(false)
+            {
+                return (
+                    None,
+                    Some("Symbolic links are not included as text diffs.".into()),
+                );
+            }
+        }
         let file_path = path.join(file);
         match fs::read(&file_path) {
             Ok(bytes) if bytes.len() > 1024 * 1024 => (
@@ -96,27 +128,29 @@ fn diff_for(
             },
             Err(error) => (None, Some(format!("Could not read file: {error}"))),
         }
-    } else if let Some(target) = target {
-        match git(
-            path,
-            &[
-                "--no-pager",
-                "diff",
-                "--no-ext-diff",
-                "--no-color",
-                "--unified=3",
-                target,
-                "--",
-                file,
-            ],
-        ) {
+    } else if old_ref.is_some() {
+        let mut args = vec![
+            "--no-pager",
+            "diff",
+            "--no-ext-diff",
+            "--no-renames",
+            "--no-color",
+            "--unified=3",
+        ];
+        args.push(old_ref.unwrap());
+        if let Some(new_ref) = new_ref {
+            args.push(new_ref);
+        }
+        args.extend(["--", file]);
+        let target_label = new_ref.unwrap_or("working tree");
+        match git(path, &args) {
             Ok(bytes) => match String::from_utf8(bytes) {
                 Ok(text) if text.contains("Binary files ") || text.contains("GIT binary patch") => {
                     (None, Some("Binary file; text diff unavailable.".into()))
                 }
                 Ok(text) if text.is_empty() && status == "conflicted" => (
                     None,
-                    Some(format!("Conflict has no text diff against {target}.")),
+                    Some(format!("Conflict has no text diff against {target_label}.")),
                 ),
                 Ok(text) => (Some(text), None),
                 Err(_) => (
@@ -129,10 +163,7 @@ fn diff_for(
     } else {
         (
             None,
-            Some(
-                "Diff unavailable because no origin or local main/master branch could be resolved."
-                    .into(),
-            ),
+            Some("Diff unavailable because the comparison base could not be resolved.".into()),
         )
     }
 }
@@ -144,6 +175,7 @@ pub fn review_repository(repository_id: &str, name: &str, path: &Path) -> Review
         name: name.to_owned(),
         path: canonical.display().to_string(),
         comparison_target: None,
+        merge_base: None,
         comparison_error: None,
         files: Vec::new(),
     };
@@ -153,30 +185,49 @@ pub fn review_repository(repository_id: &str, name: &str, path: &Path) -> Review
         return result;
     }
     let comparison_target = resolve_comparison_target(path);
-    let target_ref = match comparison_target {
-        Ok((git_ref, label)) => {
+    let merge_base = match comparison_target {
+        Ok((_git_ref, label, merge_base)) => {
             result.comparison_target = Some(label);
-            Some(git_ref)
+            result.merge_base = Some(merge_base.clone());
+            Some(merge_base)
         }
         Err(error) => {
             result.comparison_error = Some(error);
             None
         }
     };
-    let mut files = BTreeMap::<String, String>::new();
-    if let Some(target) = &target_ref {
-        if let Ok(names) = git(path, &["diff", "--name-only", "-z", target, "--"]) {
+    let mut branch_files = BTreeMap::<String, String>::new();
+    if let Some(merge_base) = &merge_base {
+        if let Ok(names) = git(
+            path,
+            &[
+                "diff",
+                "--name-only",
+                "-z",
+                "--no-renames",
+                merge_base,
+                "HEAD",
+                "--",
+            ],
+        ) {
             for name in names
                 .split(|byte| *byte == 0)
                 .filter(|item| !item.is_empty())
             {
-                files.insert(String::from_utf8_lossy(name).into_owned(), "changed".into());
+                branch_files.insert(String::from_utf8_lossy(name).into_owned(), "changed".into());
             }
         }
     }
+    let mut working_files = BTreeMap::<String, String>::new();
     if let Ok(status) = git(
         path,
-        &["status", "--porcelain=v1", "-z", "--untracked-files=all"],
+        &[
+            "status",
+            "--porcelain=v1",
+            "-z",
+            "--untracked-files=all",
+            "--renames",
+        ],
     ) {
         let mut entries = status
             .split(|byte| *byte == 0)
@@ -184,7 +235,7 @@ pub fn review_repository(repository_id: &str, name: &str, path: &Path) -> Review
         while let Some(entry) = entries.next() {
             let state = String::from_utf8_lossy(&entry[..2]).trim().to_owned();
             let file = String::from_utf8_lossy(&entry[3..]).into_owned();
-            files.insert(file, classify_status(&state));
+            working_files.insert(file, classify_status(&state));
             if state.contains('R') || state.contains('C') {
                 // In porcelain -z output, rename/copy entries carry the second
                 // path as a separate NUL-delimited record.
@@ -192,22 +243,43 @@ pub fn review_repository(repository_id: &str, name: &str, path: &Path) -> Review
             }
         }
     }
-    result.files = files
+    result.files = branch_files
         .into_iter()
         .map(|(file, status)| {
-            let (diff, diff_error) = diff_for(path, &file, &status, target_ref.as_deref());
+            let (diff, diff_error) =
+                diff_for(path, &file, &status, merge_base.as_deref(), Some("HEAD"));
             ReviewFile {
                 path: file,
                 status,
+                change_source: "branch".into(),
                 diff,
                 diff_error,
+                viewed: false,
             }
         })
+        .chain(working_files.into_iter().map(|(file, status)| {
+            let (diff, diff_error) = if status == "conflicted" {
+                (
+                    None,
+                    Some("Conflict has no text diff while unresolved.".into()),
+                )
+            } else {
+                diff_for(path, &file, &status, Some("HEAD"), None)
+            };
+            ReviewFile {
+                path: file,
+                status,
+                change_source: "workingTree".into(),
+                diff,
+                diff_error,
+                viewed: false,
+            }
+        }))
         .collect();
     result
 }
 
-fn resolve_comparison_target(path: &Path) -> Result<(String, String), String> {
+fn resolve_comparison_target(path: &Path) -> Result<(String, String, String), String> {
     let advertised = git(
         path,
         &[
@@ -229,7 +301,7 @@ fn resolve_comparison_target(path: &Path) -> Result<(String, String), String> {
         )
         .is_ok()
         {
-            return Ok((target.clone(), target));
+            return comparison_with_merge_base(path, target.clone(), target);
         }
     }
     for target in ["origin/main", "origin/master", "main", "master"] {
@@ -244,10 +316,26 @@ fn resolve_comparison_target(path: &Path) -> Result<(String, String), String> {
             } else {
                 format!("local {target}")
             };
-            return Ok((target.to_owned(), label));
+            return comparison_with_merge_base(path, target.to_owned(), label);
         }
     }
     Err("Cannot resolve origin/main, origin/master, local main, or local master".into())
+}
+
+fn comparison_with_merge_base(
+    path: &Path,
+    git_ref: String,
+    label: String,
+) -> Result<(String, String, String), String> {
+    let merge_base = git(path, &["merge-base", &git_ref, "HEAD"])
+        .map_err(|_| format!("Could not find a merge base between {label} and HEAD."))?;
+    let merge_base = String::from_utf8_lossy(&merge_base).trim().to_owned();
+    if merge_base.is_empty() {
+        return Err(format!(
+            "Could not find a merge base between {label} and HEAD."
+        ));
+    }
+    Ok((git_ref, label, merge_base))
 }
 
 pub fn validate_repo_root(path: &Path) -> Result<PathBuf, String> {
@@ -270,18 +358,8 @@ pub fn full_diff_for_owner(
     repository_id: &str,
     file: &str,
 ) -> Result<String, String> {
-    const LIMIT: u64 = 1024 * 1024;
     if owner_type != "workspace" {
         return Err("Change Review owner type must be workspace.".into());
-    }
-    if file.is_empty()
-        || file.len() > 4096
-        || file.contains('\0')
-        || !Path::new(file)
-            .components()
-            .all(|part| matches!(part, std::path::Component::Normal(_)))
-    {
-        return Err("Invalid repository-relative file path.".into());
     }
     let workspace = store
         .get_workspace(owner_id)
@@ -297,6 +375,21 @@ pub fn full_diff_for_owner(
         })
         .ok_or("Repository is not associated with this workspace.")?;
     let root = validate_repo_root(Path::new(&binding.checkout_path))?;
+    full_diff_for_path(&root, file)
+}
+
+pub fn full_diff_for_path(root: &Path, file: &str) -> Result<String, String> {
+    const LIMIT: u64 = 1024 * 1024;
+    if file.is_empty()
+        || file.len() > 4096
+        || file.contains('\0')
+        || !Path::new(file)
+            .components()
+            .all(|part| matches!(part, std::path::Component::Normal(_)))
+    {
+        return Err("Invalid repository-relative file path.".into());
+    }
+    let root = validate_repo_root(root)?;
     let target = resolve_comparison_target(&root)?.0;
     let file_path = root.join(file);
     let mut ancestor = root.clone();
@@ -419,6 +512,86 @@ pub fn load_for_owner(
     Ok(reviews)
 }
 
+pub fn load_for_repository_path(
+    store: &ManagementStore,
+    repository_id: &str,
+    path: &Path,
+) -> Result<Vec<ReviewRepository>, String> {
+    let name = store
+        .get_repository(repository_id)
+        .map_err(|error| error.to_string())?
+        .map(|repository| repository.name)
+        .unwrap_or_else(|| repository_id.to_owned());
+    Ok(vec![review_repository(repository_id, &name, path)])
+}
+
+pub fn load_for_ticket_repository_path(
+    store: &ManagementStore,
+    workspace_id: &str,
+    ticket_filename: &str,
+    repository_id: &str,
+    path: &Path,
+) -> Result<Vec<ReviewRepository>, String> {
+    let mut repositories = load_for_repository_path(store, repository_id, path)?;
+    let head_commit = current_head_commit(path)?;
+    let viewed_files = store
+        .sync_change_review_state(workspace_id, ticket_filename, repository_id, &head_commit)
+        .map_err(|error| error.to_string())?;
+    if let Some(repository) = repositories.first_mut() {
+        for file in &mut repository.files {
+            file.viewed = viewed_files.iter().any(|viewed| viewed == &file.path);
+        }
+    }
+    Ok(repositories)
+}
+
+pub fn set_ticket_file_viewed(
+    store: &ManagementStore,
+    workspace_id: &str,
+    ticket_filename: &str,
+    repository_id: &str,
+    path: &Path,
+    file: &str,
+    viewed: bool,
+) -> Result<ReviewViewState, String> {
+    if file.is_empty()
+        || file.len() > 4096
+        || file.contains('\0')
+        || !Path::new(file)
+            .components()
+            .all(|part| matches!(part, std::path::Component::Normal(_)))
+    {
+        return Err("Invalid repository-relative file path.".into());
+    }
+    validate_repo_root(path)?;
+    let head_commit = current_head_commit(path)?;
+    let viewed_files = store
+        .set_change_review_file_viewed(
+            workspace_id,
+            ticket_filename,
+            repository_id,
+            &head_commit,
+            file,
+            viewed,
+        )
+        .map_err(|error| error.to_string())?;
+    Ok(ReviewViewState {
+        head_commit,
+        viewed_files,
+    })
+}
+
+fn current_head_commit(path: &Path) -> Result<String, String> {
+    let Ok(revision) = git(path, &["rev-parse", "--verify", "HEAD^{commit}"]) else {
+        return Ok("unborn".into());
+    };
+    let revision = String::from_utf8_lossy(&revision).trim().to_owned();
+    if revision.is_empty() {
+        return Err("Could not resolve the current repository commit.".into());
+    }
+    Ok(revision)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -455,7 +628,138 @@ mod tests {
     }
 
     #[test]
-    fn review_includes_tracked_and_untracked_text_files_against_origin_main() {
+    fn viewed_files_persist_per_ticket_and_are_cleared_when_head_changes() {
+        let store = ManagementStore::in_memory().unwrap();
+        let first = store
+            .set_change_review_file_viewed(
+                "workspace-1",
+                "ticket-a.md",
+                "repo-1",
+                "head-1",
+                "src/a.rs",
+                true,
+            )
+            .unwrap();
+        assert_eq!(first, vec!["src/a.rs"]);
+
+        let same_head = store
+            .sync_change_review_state("workspace-1", "ticket-a.md", "repo-1", "head-1")
+            .unwrap();
+        assert_eq!(same_head, vec!["src/a.rs"]);
+
+        let another_ticket = store
+            .sync_change_review_state("workspace-1", "ticket-b.md", "repo-1", "head-1")
+            .unwrap();
+        assert!(another_ticket.is_empty());
+        let another_repository = store
+            .sync_change_review_state("workspace-1", "ticket-a.md", "repo-2", "head-1")
+            .unwrap();
+        assert!(another_repository.is_empty());
+
+        let new_head = store
+            .sync_change_review_state("workspace-1", "ticket-a.md", "repo-1", "head-2")
+            .unwrap();
+        assert!(new_head.is_empty());
+    }
+
+    #[test]
+    fn viewed_file_can_be_unchecked_without_affecting_other_paths() {
+        let store = ManagementStore::in_memory().unwrap();
+        for file in ["src/a.rs", "src/b.rs"] {
+            store
+                .set_change_review_file_viewed(
+                    "workspace-1",
+                    "ticket-a.md",
+                    "repo-1",
+                    "head-1",
+                    file,
+                    true,
+                )
+                .unwrap();
+        }
+        let remaining = store
+            .set_change_review_file_viewed(
+                "workspace-1",
+                "ticket-a.md",
+                "repo-1",
+                "head-1",
+                "src/a.rs",
+                false,
+            )
+            .unwrap();
+        assert_eq!(remaining, vec!["src/b.rs"]);
+    }
+
+    #[test]
+    fn repository_view_state_marks_files_and_resets_on_a_new_commit() {
+        let dir = repository();
+        run(dir.path(), &["checkout", "-qb", "ticket"]);
+        fs::write(dir.path().join("tracked.txt"), "ticket change\n").unwrap();
+        run(dir.path(), &["commit", "-qam", "ticket change"]);
+        let store = ManagementStore::in_memory().unwrap();
+
+        let first = load_for_ticket_repository_path(
+            &store,
+            "workspace-1",
+            "ticket-a.md",
+            "repo-1",
+            dir.path(),
+        )
+        .unwrap();
+        assert!(!first[0].files[0].viewed);
+        store
+            .set_change_review_file_viewed(
+                "workspace-1",
+                "ticket-a.md",
+                "repo-1",
+                &current_head_commit(dir.path()).unwrap(),
+                "tracked.txt",
+                true,
+            )
+            .unwrap();
+        let viewed = load_for_ticket_repository_path(
+            &store,
+            "workspace-1",
+            "ticket-a.md",
+            "repo-1",
+            dir.path(),
+        )
+        .unwrap();
+        assert!(viewed[0].files[0].viewed);
+
+        fs::write(dir.path().join("tracked.txt"), "local edit\n").unwrap();
+        let local_edit = load_for_ticket_repository_path(
+            &store,
+            "workspace-1",
+            "ticket-a.md",
+            "repo-1",
+            dir.path(),
+        )
+        .unwrap();
+        assert!(
+            local_edit[0]
+                .files
+                .iter()
+                .find(|file| file.change_source == "branch")
+                .unwrap()
+                .viewed
+        );
+
+        run(dir.path(), &["add", "tracked.txt"]);
+        run(dir.path(), &["commit", "-qm", "new revision"]);
+        let new_commit = load_for_ticket_repository_path(
+            &store,
+            "workspace-1",
+            "ticket-a.md",
+            "repo-1",
+            dir.path(),
+        )
+        .unwrap();
+        assert!(new_commit[0].files.iter().all(|file| !file.viewed));
+    }
+
+    #[test]
+    fn review_includes_tracked_and_untracked_working_tree_files() {
         let dir = repository();
         fs::write(dir.path().join("tracked.txt"), "updated\n").unwrap();
         fs::write(dir.path().join("new file.txt"), "added\n").unwrap();
@@ -464,7 +768,7 @@ mod tests {
         let tracked = review
             .files
             .iter()
-            .find(|file| file.path == "tracked.txt")
+            .find(|file| file.path == "tracked.txt" && file.change_source == "workingTree")
             .unwrap();
         assert!(tracked.diff.as_deref().unwrap().contains("+updated"));
         let untracked = review
@@ -474,6 +778,75 @@ mod tests {
             .unwrap();
         assert_eq!(untracked.status, "untracked");
         assert!(untracked.diff.as_deref().unwrap().contains("+added"));
+    }
+
+    #[test]
+    fn review_separates_merge_base_branch_changes_from_local_changes() {
+        let dir = repository();
+        run(dir.path(), &["checkout", "-qb", "topic"]);
+        fs::write(dir.path().join("tracked.txt"), "branch version\n").unwrap();
+        run(dir.path(), &["commit", "-qam", "topic change"]);
+        run(
+            dir.path(),
+            &["checkout", "-qb", "upstream-progress", "main"],
+        );
+        fs::write(dir.path().join("upstream-only.txt"), "base progressed\n").unwrap();
+        run(dir.path(), &["add", "upstream-only.txt"]);
+        run(dir.path(), &["commit", "-qm", "advance base"]);
+        run(
+            dir.path(),
+            &["update-ref", "refs/remotes/origin/main", "HEAD"],
+        );
+        run(dir.path(), &["checkout", "-q", "topic"]);
+
+        fs::write(dir.path().join("tracked.txt"), "local version\n").unwrap();
+        fs::write(dir.path().join("untracked.txt"), "local new file\n").unwrap();
+
+        let review = review_repository("repo", "Example", dir.path());
+        let branch_file = review
+            .files
+            .iter()
+            .find(|file| file.path == "tracked.txt" && file.change_source == "branch")
+            .unwrap();
+        let local_file = review
+            .files
+            .iter()
+            .find(|file| file.path == "tracked.txt" && file.change_source == "workingTree")
+            .unwrap();
+        let untracked_file = review
+            .files
+            .iter()
+            .find(|file| file.path == "untracked.txt")
+            .unwrap();
+
+        assert!(branch_file
+            .diff
+            .as_deref()
+            .unwrap()
+            .contains("+branch version"));
+        assert!(local_file
+            .diff
+            .as_deref()
+            .unwrap()
+            .contains("+local version"));
+        assert_eq!(untracked_file.change_source, "workingTree");
+        assert!(review
+            .files
+            .iter()
+            .all(|file| file.path != "upstream-only.txt"));
+        assert_eq!(review.comparison_target.as_deref(), Some("origin/main"));
+    }
+
+    #[test]
+    fn review_excludes_untracked_files_ignored_by_gitignore() {
+        let dir = repository();
+        fs::write(dir.path().join(".gitignore"), "ignored.tmp\n").unwrap();
+        fs::write(dir.path().join("ignored.tmp"), "ignored\n").unwrap();
+        let review = review_repository("repo", "Example", dir.path());
+        assert!(
+            review.files.iter().all(|file| file.path != "ignored.tmp"),
+            "ignored untracked files must not appear in Change Review"
+        );
     }
 
     #[test]
@@ -490,8 +863,8 @@ mod tests {
         GIT_INVOCATIONS.with(|count| count.set(0));
         let review = review_repository("repo", "Example", dir.path());
         let calls = GIT_INVOCATIONS.with(|count| count.get());
-        assert_eq!(review.files.len(), 10);
-        assert!(calls <= 16, "unexpected Git process count: {calls}");
+        assert_eq!(review.files.len(), 20);
+        assert!(calls <= 30, "unexpected Git process count: {calls}");
     }
 
     #[test]
@@ -512,10 +885,9 @@ mod tests {
             .contains("local main, or local master"));
         assert!(review.comparison_target.is_none());
         assert_eq!(review.files.len(), 2);
-        assert!(review
-            .files
-            .iter()
-            .any(|file| file.path == "tracked.txt" && file.diff.is_none()));
+        assert!(review.files.iter().any(|file| {
+            file.path == "tracked.txt" && file.change_source == "workingTree" && file.diff.is_none()
+        }));
         assert!(review
             .files
             .iter()
@@ -611,6 +983,33 @@ mod tests {
         assert!(file.diff_error.as_deref().unwrap().contains("Binary"));
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn untracked_symlinks_are_listed_without_reading_their_targets() {
+        let dir = repository();
+        let outside = tempfile::tempdir().unwrap();
+        fs::write(outside.path().join("private.txt"), "outside contents").unwrap();
+        std::os::unix::fs::symlink(
+            outside.path().join("private.txt"),
+            dir.path().join("linked.txt"),
+        )
+        .unwrap();
+
+        let review = review_repository("repo", "Example", dir.path());
+        let file = review
+            .files
+            .iter()
+            .find(|file| file.path == "linked.txt")
+            .unwrap();
+
+        assert!(file.diff.is_none());
+        assert!(file
+            .diff_error
+            .as_deref()
+            .unwrap()
+            .contains("Symbolic links"));
+    }
+
     #[test]
     fn tracked_binary_remains_listed_without_rendering_git_binary_patch() {
         let dir = repository();
@@ -651,7 +1050,7 @@ mod tests {
         let file = review
             .files
             .iter()
-            .find(|file| file.path == "tracked.txt")
+            .find(|file| file.path == "tracked.txt" && file.change_source == "workingTree")
             .unwrap();
         assert_eq!(file.status, "conflicted");
     }
@@ -673,18 +1072,24 @@ mod tests {
             name: "Example".into(),
             path: "/repo".into(),
             comparison_target: Some("origin/master".into()),
+            merge_base: Some("abc123".into()),
             comparison_error: None,
             files: vec![ReviewFile {
                 path: "file.txt".into(),
                 status: "M".into(),
+                change_source: "workingTree".into(),
                 diff: Some("+line".into()),
                 diff_error: None,
+                viewed: false,
             }],
         };
         let value = serde_json::to_value(repository).unwrap();
         assert_eq!(value["repositoryId"], "repo");
         assert_eq!(value["comparisonError"], serde_json::Value::Null);
         assert_eq!(value["comparisonTarget"], "origin/master");
+        assert_eq!(value["mergeBase"], "abc123");
+        assert_eq!(value["files"][0]["changeSource"], "workingTree");
+        assert_eq!(value["files"][0]["viewed"], false);
         assert_eq!(value["files"][0]["diffError"], serde_json::Value::Null);
     }
 
