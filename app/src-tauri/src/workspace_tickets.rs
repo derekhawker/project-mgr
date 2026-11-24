@@ -55,7 +55,8 @@ pub fn create_draft_with_investigation<R: TicketInvestigationRuntime>(
     start_investigation: bool,
     runtime: &mut R,
 ) -> Result<TicketCreationResult, String> {
-    let mut ticket = create_draft_with_label(directory, repository, title, body, Some(workspace_name))?;
+    let mut ticket =
+        create_draft_with_label(directory, repository, title, body, Some(workspace_name))?;
     let mut result = TicketCreationResult {
         ticket: ticket.clone(),
         investigation_session_id: None,
@@ -651,10 +652,13 @@ pub fn session_owns_worktree(
             return false;
         };
         ticket_session_id(&markdown).ok().flatten().as_deref() == Some(session_id)
-            && ticket_worktree(&markdown).ok().flatten().is_some_and(|ticket_worktree| {
-                resolve_ticket_directory(repository, Some(&ticket_worktree))
-                    .is_ok_and(|path| path == worktree)
-            })
+            && ticket_worktree(&markdown)
+                .ok()
+                .flatten()
+                .is_some_and(|ticket_worktree| {
+                    resolve_ticket_directory(repository, Some(&ticket_worktree))
+                        .is_ok_and(|path| path == worktree)
+                })
     })
 }
 
@@ -1258,6 +1262,24 @@ pub fn selected_ticket_repository(
     Ok((repository, binding.repository_id.clone()))
 }
 
+/// Read the selected ticket's canonical Markdown after validating its Workspace
+/// and verified repository context.
+pub fn read_selected_ticket(
+    store: &crate::management::ManagementStore,
+    app_data: &Path,
+    workspace_id: &str,
+    filename: &str,
+) -> Result<String, String> {
+    selected_ticket_repository(store, app_data, workspace_id, filename)?;
+    let workspace = store
+        .get_workspace(workspace_id)
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "Workspace was not found.".to_owned())?;
+    let directory = workspace_ticket_dir(app_data, &workspace.slug)?;
+    let ticket = canonical_ticket(&directory, filename)?;
+    fs::read_to_string(ticket).map_err(|error| format!("Could not read ticket: {error}"))
+}
+
 /// Resolve the selected ticket's verified repository checkout or its recorded
 /// worktree. A missing worktree deliberately falls back to the checkout.
 pub fn selected_ticket_working_directory(
@@ -1369,8 +1391,7 @@ pub fn list_with_default_label(
                 .unwrap_or("Ticket"),
         );
         let archived_at = archived_at(&content);
-        let project_label = project_label(&content)?
-            .or_else(|| default_label.map(str::to_owned));
+        let project_label = project_label(&content)?.or_else(|| default_label.map(str::to_owned));
         tickets.push(Ticket {
             filename: path.file_name().unwrap().to_string_lossy().into_owned(),
             title,
@@ -1423,7 +1444,8 @@ pub fn list_for_navigation_with_default_label(
             status,
             has_work_session,
             opencode_status,
-            project_label: project_label.or_else(|| (!default_label.is_empty()).then(|| default_label.to_owned())),
+            project_label: project_label
+                .or_else(|| (!default_label.is_empty()).then(|| default_label.to_owned())),
             modified_at,
         });
     }
@@ -1465,7 +1487,8 @@ fn navigation_metadata(
             if let Some(value) = line.strip_prefix("project_label:") {
                 let value = value.trim();
                 project_label = Some(if value.starts_with('"') {
-                    serde_json::from_str(value).unwrap_or_else(|_| value.trim_matches(['"', '\'']).to_owned())
+                    serde_json::from_str(value)
+                        .unwrap_or_else(|_| value.trim_matches(['"', '\'']).to_owned())
                 } else {
                     value.trim_matches(['"', '\'']).to_owned()
                 });
@@ -1592,29 +1615,42 @@ pub fn list_project_labels(
     for (workspace_id, workspace_name, workspace_slug) in workspaces {
         let root = workspace_ticket_dir(app_data, &workspace_slug)?;
         for directory in [root.clone(), root.join("archived")] {
-            if !directory.is_dir() { continue; }
+            if !directory.is_dir() {
+                continue;
+            }
             let mut paths = fs::read_dir(&directory)
                 .map_err(|error| error.to_string())?
                 .filter_map(Result::ok)
                 .map(|entry| entry.path())
-                .filter(|path| path.is_file() && path.extension().and_then(|value| value.to_str()) == Some("md"))
+                .filter(|path| {
+                    path.is_file()
+                        && path.extension().and_then(|value| value.to_str()) == Some("md")
+                })
                 .collect::<Vec<_>>();
             paths.sort();
             for path in paths {
-                let markdown = fs::read_to_string(&path)
-                    .map_err(|error| format!("Could not read ticket {}: {error}", path.display()))?;
+                let markdown = fs::read_to_string(&path).map_err(|error| {
+                    format!("Could not read ticket {}: {error}", path.display())
+                })?;
                 let label = project_label(&markdown)?.unwrap_or_else(|| workspace_name.clone());
                 let label = normalize_project_label(&label)?;
                 let key = label.to_lowercase();
-                let entry = labels.entry(key).or_insert_with(|| (label, 0, HashSet::new()));
+                let entry = labels
+                    .entry(key)
+                    .or_insert_with(|| (label, 0, HashSet::new()));
                 entry.1 += 1;
                 entry.2.insert(workspace_id.clone());
             }
         }
     }
-    Ok(labels.into_values().map(|(label, ticket_count, owners)| ProjectLabelOption {
-        label, ticket_count, workspace_count: owners.len(),
-    }).collect())
+    Ok(labels
+        .into_values()
+        .map(|(label, ticket_count, owners)| ProjectLabelOption {
+            label,
+            ticket_count,
+            workspace_count: owners.len(),
+        })
+        .collect())
 }
 
 pub fn set_ticket_label(directory: &Path, filename: &str, label: &str) -> Result<String, String> {
@@ -1622,7 +1658,9 @@ pub fn set_ticket_label(directory: &Path, filename: &str, label: &str) -> Result
     let path = canonical_ticket(directory, filename)?;
     let original = fs::read_to_string(&path).map_err(|error| error.to_string())?;
     let updated = set_project_label(&original, Some(&label))?;
-    if original != updated { write_ticket_markdown_safely(&path, &original, &updated)?; }
+    if original != updated {
+        write_ticket_markdown_safely(&path, &original, &updated)?;
+    }
     Ok(label)
 }
 
@@ -2103,6 +2141,11 @@ mod tests {
         let dir = workspace_ticket_dir(&app_data, &workspace.slug).unwrap();
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join("one.md"), "---\ntitle: One\nstatus: draft\n---\n").unwrap();
+        assert_eq!(
+            read_selected_ticket(&store, &app_data, &workspace.id, "one.md").unwrap(),
+            "---\ntitle: One\nstatus: draft\n---\n"
+        );
+        assert!(read_selected_ticket(&store, &app_data, &workspace.id, "../outside.md").is_err());
         let (actual_path, actual_id) =
             selected_ticket_repository(&store, &app_data, &workspace.id, "one.md").unwrap();
         assert_eq!(actual_path, PathBuf::from(&repository.repository_path));
@@ -3094,30 +3137,58 @@ mod tests {
         fs::write(directory.join("open.md"), open_source).unwrap();
         fs::write(archived.join("closed.md"), archived_source).unwrap();
 
-        let navigation = list_for_navigation_with_default_label(&directory, "Alpha Workspace").unwrap();
-        assert_eq!(navigation[0].project_label.as_deref(), Some("Alpha Workspace"));
+        let navigation =
+            list_for_navigation_with_default_label(&directory, "Alpha Workspace").unwrap();
+        assert_eq!(
+            navigation[0].project_label.as_deref(),
+            Some("Alpha Workspace")
+        );
         let tickets = list_with_default_label(&directory, Some("Alpha Workspace")).unwrap();
         assert_eq!(tickets[0].project_label.as_deref(), Some("Alpha Workspace"));
         let labels = list_project_labels(
             root.path(),
-            &[("workspace-id".into(), "Alpha Workspace".into(), "alpha".into())],
-        ).unwrap();
-        assert_eq!(labels, vec![ProjectLabelOption {
-            label: "Alpha Workspace".into(), ticket_count: 2, workspace_count: 1,
-        }]);
-        assert_eq!(fs::read_to_string(directory.join("open.md")).unwrap(), open_source);
-        assert_eq!(fs::read_to_string(archived.join("closed.md")).unwrap(), archived_source);
+            &[(
+                "workspace-id".into(),
+                "Alpha Workspace".into(),
+                "alpha".into(),
+            )],
+        )
+        .unwrap();
+        assert_eq!(
+            labels,
+            vec![ProjectLabelOption {
+                label: "Alpha Workspace".into(),
+                ticket_count: 2,
+                workspace_count: 1,
+            }]
+        );
+        assert_eq!(
+            fs::read_to_string(directory.join("open.md")).unwrap(),
+            open_source
+        );
+        assert_eq!(
+            fs::read_to_string(archived.join("closed.md")).unwrap(),
+            archived_source
+        );
 
-        assert_eq!(set_ticket_label(&directory, "open.md", "Initiative").unwrap(), "Initiative");
+        assert_eq!(
+            set_ticket_label(&directory, "open.md", "Initiative").unwrap(),
+            "Initiative"
+        );
         assert!(set_ticket_label(&directory, "open.md", "  ").is_err());
         let saved = list_with_default_label(&directory, Some("Alpha Workspace")).unwrap();
         assert_eq!(saved[0].project_label.as_deref(), Some("Initiative"));
-        assert!(fs::read_to_string(directory.join("open.md")).unwrap().contains("project_label: \"Initiative\""));
+        assert!(fs::read_to_string(directory.join("open.md"))
+            .unwrap()
+            .contains("project_label: \"Initiative\""));
     }
 
     #[test]
     fn project_labels_validate_preserve_ticket_content_and_discover_in_stable_order() {
-        assert_eq!(normalize_project_label("  Initiative  ").unwrap(), "Initiative");
+        assert_eq!(
+            normalize_project_label("  Initiative  ").unwrap(),
+            "Initiative"
+        );
         assert!(normalize_project_label(" \t ").is_err());
         assert!(normalize_project_label(&"x".repeat(81)).is_err());
         assert!(normalize_project_label("bad\nlabel").is_err());
@@ -3125,7 +3196,10 @@ mod tests {
 
         let markdown = "---\ntitle: Example\nstatus: in_progress\nowner: team\n---\nTicket body\n";
         let updated = set_project_label(markdown, Some("  Initiative  ")).unwrap();
-        assert_eq!(project_label(&updated).unwrap().as_deref(), Some("Initiative"));
+        assert_eq!(
+            project_label(&updated).unwrap().as_deref(),
+            Some("Initiative")
+        );
         assert!(updated.contains("owner: team\n"));
         assert!(updated.ends_with("---\nTicket body\n"));
 
@@ -3140,7 +3214,8 @@ mod tests {
         )
         .unwrap();
         fs::write(
-            root.path().join("workspace-tickets/alpha/archived/closed.md"),
+            root.path()
+                .join("workspace-tickets/alpha/archived/closed.md"),
             "---\ntitle: Closed\nstatus: done\nproject_label: Zeta\n---\n",
         )
         .unwrap();

@@ -1,8 +1,17 @@
 import { loadDocs, readDoc } from "./docsUi.js";
 
 function ownerKey(owner) {
-  return owner ? `${owner.type}:${owner.id}` : null;
+  return owner
+    ? `${owner.type}:${owner.id}:${owner.ticketFilename ?? ""}`
+    : null;
 }
+
+const ticketItem = {
+  path: "Ticket",
+  repositoryId: null,
+  repositoryName: null,
+  isTicket: true,
+};
 
 export function createDocsController({ invoke, getOwner, onOpen, view: ui }) {
   const currentOwnerKey = () => ownerKey(getOwner());
@@ -20,6 +29,7 @@ export function createDocsController({ invoke, getOwner, onOpen, view: ui }) {
         owner.type,
         owner.id,
         documentPath,
+        owner.ticketFilename,
       );
       if (currentOwnerKey() !== requestedKey || version !== selectionVersion)
         return;
@@ -38,10 +48,15 @@ export function createDocsController({ invoke, getOwner, onOpen, view: ui }) {
     }
     ui.setButtonDisabled(true);
     try {
-      const files = await loadDocs(invoke, owner.type, owner.id);
+      const files = await loadDocs(
+        invoke,
+        owner.type,
+        owner.id,
+        owner.ticketFilename,
+      );
       if (currentOwnerKey() === ownerKey(owner)) {
         cached = { ownerKey: ownerKey(owner), files };
-        ui.setButtonDisabled(files.length === 0);
+        ui.setButtonDisabled(false);
       }
     } catch {
       // Discovery failure is not evidence that there are no documents. Keep the
@@ -66,17 +81,11 @@ export function createDocsController({ invoke, getOwner, onOpen, view: ui }) {
       const files =
         cached?.ownerKey === requestedKey
           ? cached.files
-          : await loadDocs(invoke, owner.type, owner.id);
+          : await loadDocs(invoke, owner.type, owner.id, owner.ticketFilename);
       if (currentOwnerKey() !== requestedKey) return;
-      if (!files.length) {
-        cached = { ownerKey: requestedKey, files };
-        ui.setPageMessage("No Markdown or text files were found.");
-        ui.setButtonDisabled(true);
-        return;
-      }
       cached = { ownerKey: requestedKey, files };
-      ui.setFiles(files);
-      await select(owner, files[0]);
+      ui.setFiles([ticketItem, ...files]);
+      await select(owner, ticketItem);
       if (currentOwnerKey() === requestedKey) ui.setButtonDisabled(false);
     } catch (error) {
       if (currentOwnerKey() !== requestedKey) return;
@@ -91,7 +100,10 @@ export function createDocsController({ invoke, getOwner, onOpen, view: ui }) {
     select(path, repositoryId = null) {
       const owner = getOwner();
       if (!owner) return Promise.resolve();
-      return select(owner, { path, repositoryId });
+      return select(
+        owner,
+        typeof path === "object" ? path : { path, repositoryId },
+      );
     },
     showTerminal() {
       ui.setPageVisible(false);

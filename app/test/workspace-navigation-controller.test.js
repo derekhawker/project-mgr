@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createWorkspaceNavigationController } from "../src/views/workspace/navigation/workspaceNavigationController.js";
+import { createChangeReviewController } from "../src/views/workspace/change-review/changeReviewController.js";
 
 function setup({ workspace = null, quickRequest = null } = {}) {
   const state = {
@@ -73,4 +74,51 @@ test("no-selection and Quick Request navigation do not recalculate review count"
     assert.equal(state.reviews, 0);
     assert.equal(state.count, null);
   }
+});
+
+test("navigation refresh does not desynchronize an open Docs page from its tab", () => {
+  const workspace = { id: "w1" };
+  const state = { docsVisible: true, docsSelected: true };
+  const review = createChangeReviewController({
+    getSelectedWorkspace: () => workspace,
+    getSelectedOwnerRepositoryCount: () => 1,
+    getSelectedQuickRequest: () => null,
+    isTicketViewerVisible: () => false,
+    getRepositoryToolsOwner: () => null,
+    syncRepositoryToolsAvailability: () => {},
+    docsController: {
+      showTerminal: () => {
+        state.docsVisible = false;
+        state.docsSelected = false;
+      },
+    },
+    setChangeReviewAvailable: () => {},
+    setChangeReviewSelected: () => {},
+    setChangeReviewDisabled: () => {},
+    setChangeReviewVisible: () => {},
+    setChangeReviewSummary: () => {},
+    setChangeReviewError: () => {},
+    setChangeReviewRepositories: () => {},
+    setChangeReviewLoading: () => {},
+    setSelectedOwnerVisible: () => {},
+  });
+  const controller = createWorkspaceNavigationController({
+    getSelectedWorkspace: () => workspace,
+    getSelectedQuickRequest: () => null,
+    setNavigationData: () => {},
+    setWorkspaceNavigation: () => {},
+    setWorkspaceSelected: () => {},
+    setNavigationBusy: () => {},
+    setSelectedOwnerRepositoryCount: () => {},
+    syncChangeReviewAvailability: review.syncChangeReviewAvailability,
+  });
+
+  controller.renderNavigation({
+    workspaceRepositories: [
+      { workspaceId: workspace.id, verificationStatus: "verified" },
+    ],
+  });
+
+  assert.equal(state.docsVisible, true);
+  assert.equal(state.docsSelected, true);
 });

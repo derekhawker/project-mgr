@@ -38,14 +38,14 @@ function setup(invoke) {
   };
 }
 
-test("production Docs view/controller caches discovery, selects first source, and changes content independently of the list", async () => {
+test("production Docs view/controller caches discovery, starts with the ticket, and changes content independently of the list", async () => {
   const calls = [];
   const { view, controller, opened } = setup(async (name, payload) => {
     calls.push({ name, payload });
     return name === "docs_list"
       ? files
       : {
-          path: payload.request.path,
+          path: payload.request.isTicket ? "Ticket.md" : payload.request.path,
           contents: payload.request.repositoryId ?? "home",
         };
   });
@@ -57,9 +57,17 @@ test("production Docs view/controller caches discovery, selects first source, an
   assert.equal(opened(), 1);
   assert.equal(view.visible(), true);
   assert.equal(view.buttonSelected(), true);
-  assert.deepEqual(view.files(), files);
-  assert.deepEqual(view.selected(), files[0]);
-  assert.deepEqual(view.content(), { path: "README.md", contents: "api" });
+  assert.deepEqual(view.files(), [
+    {
+      path: "Ticket",
+      repositoryId: null,
+      repositoryName: null,
+      isTicket: true,
+    },
+    ...files,
+  ]);
+  assert.deepEqual(view.selected(), view.files()[0]);
+  assert.deepEqual(view.content(), { path: "Ticket.md", contents: "home" });
   assert.equal(view.pageMessage(), "");
   assert.equal(view.contentMessage(), "");
   assert.equal(calls.filter(({ name }) => name === "docs_list").length, 1);
@@ -68,13 +76,98 @@ test("production Docs view/controller caches discovery, selects first source, an
   assert.equal(view.content().contents, "web");
   await controller.select("notes.txt");
   assert.equal(view.content().contents, "home");
-  assert.deepEqual(view.files(), files);
+  assert.deepEqual(view.files(), [
+    {
+      path: "Ticket",
+      repositoryId: null,
+      repositoryName: null,
+      isTicket: true,
+    },
+    ...files,
+  ]);
   controller.showTerminal();
   assert.equal(view.visible(), false);
   assert.equal(view.buttonSelected(), false);
 });
 
-test("confirmed empty discovery disables Docs; discovery failure stays retryable with a page message", async () => {
+test("ticket Docs opens on the special ticket before repository docs and preserves repository selection", async () => {
+  const repositoryDocs = [
+    { path: "README.md", repositoryId: "api", repositoryName: "api" },
+  ];
+  const ticket = {
+    path: "Ticket",
+    repositoryId: null,
+    repositoryName: null,
+    isTicket: true,
+  };
+  const calls = [];
+  const view = createDocsView();
+  const controller = createDocsController({
+    invoke: async (name, payload) => {
+      calls.push({ name, payload });
+      if (name === "docs_list") return repositoryDocs;
+      if (payload.request.isTicket) {
+        return { path: "Ticket.md", contents: "# Ticket body" };
+      }
+      return { path: payload.request.path, contents: "# Repository README" };
+    },
+    view,
+    getOwner: () => ({
+      type: "workspace",
+      id: "workspace-1",
+      ticketFilename: "ticket.md",
+    }),
+    onOpen: () => {},
+  });
+
+  await controller.refresh();
+  await controller.open();
+  assert.deepEqual(view.files(), [ticket, ...repositoryDocs]);
+  assert.deepEqual(view.selected(), ticket);
+  assert.deepEqual(view.content(), {
+    path: "Ticket.md",
+    contents: "# Ticket body",
+  });
+
+  await controller.select(
+    repositoryDocs[0].path,
+    repositoryDocs[0].repositoryId,
+  );
+  assert.deepEqual(view.selected(), {
+    path: "README.md",
+    repositoryId: "api",
+  });
+  assert.equal(view.content().contents, "# Repository README");
+  assert.deepEqual(view.files(), [ticket, ...repositoryDocs]);
+  assert.equal(
+    calls.some(
+      ({ name, payload }) =>
+        name === "docs_read" && payload.request.isTicket === true,
+    ),
+    true,
+    "the special ticket selection is identified on its docs_read request",
+  );
+  assert.equal(
+    calls.every(
+      ({ payload }) => payload.request.ticketFilename === "ticket.md",
+    ),
+    true,
+    "ticket discovery and reads stay scoped to the selected ticket",
+  );
+  assert.equal(
+    calls.some(
+      ({ name, payload }) =>
+        name === "docs_read" &&
+        payload.request.path === "README.md" &&
+        payload.request.repositoryId === "api" &&
+        payload.request.isTicket !== true,
+    ),
+    true,
+    "repository reads retain their repository scope",
+  );
+});
+
+test("ticket keeps Docs available with no repository documents; discovery failure stays retryable", async () => {
   let result = [];
   const { view, controller } = setup(async () => {
     if (result instanceof Error) throw result;
@@ -82,9 +175,10 @@ test("confirmed empty discovery disables Docs; discovery failure stays retryable
   });
   await controller.refresh();
   await controller.open();
-  assert.equal(view.buttonDisabled(), true);
-  assert.deepEqual(view.files(), []);
-  assert.match(view.pageMessage(), /No Markdown or text/);
+  assert.equal(view.buttonDisabled(), false);
+  assert.equal(view.files()[0].isTicket, true);
+  assert.deepEqual(view.selected(), view.files()[0]);
+  assert.equal(view.pageMessage(), "");
   result = new Error("temporary failure");
   await controller.refresh();
   assert.equal(view.buttonDisabled(), false);
@@ -135,7 +229,15 @@ test("pending selection clears prior content; latest source wins over late succe
     view.contentMessage(),
     /Could not load document: Error: unreadable/,
   );
-  assert.deepEqual(view.files(), files);
+  assert.deepEqual(view.files(), [
+    {
+      path: "Ticket",
+      repositoryId: null,
+      repositoryName: null,
+      isTicket: true,
+    },
+    ...files,
+  ]);
 });
 
 test("owner changes reject stale discovery, read results, and read errors; no owner emits no commands", async () => {
@@ -171,4 +273,37 @@ test("owner changes reject stale discovery, read results, and read errors; no ow
   await controller.refresh();
   assert.equal(pending.length, count);
   assert.equal(view.buttonDisabled(), true);
+});
+
+test("switching tickets in one Workspace invalidates pending reads and cached repository docs", async () => {
+  const pending = [];
+  let owner = { type: "workspace", id: "w", ticketFilename: "first.md" };
+  const view = createDocsView();
+  const controller = createDocsController({
+    invoke: () => {
+      const request = deferred();
+      pending.push(request);
+      return request.promise;
+    },
+    view,
+    getOwner: () => owner,
+    onOpen: () => {},
+  });
+
+  const staleOpen = controller.open();
+  await new Promise(setImmediate);
+  pending[0].resolve(files);
+  await new Promise(setImmediate);
+  owner = { type: "workspace", id: "w", ticketFilename: "second.md" };
+  pending[1].resolve({ path: "Ticket.md", contents: "# Stale ticket" });
+  await staleOpen;
+  assert.equal(view.content(), null);
+
+  const currentOpen = controller.open();
+  await new Promise(setImmediate);
+  pending[2].resolve(files);
+  await new Promise(setImmediate);
+  pending[3].resolve({ path: "Ticket.md", contents: "# Current ticket" });
+  await currentOpen;
+  assert.equal(view.content().contents, "# Current ticket");
 });

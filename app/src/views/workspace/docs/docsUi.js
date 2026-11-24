@@ -2,7 +2,11 @@ import { invokeCommand } from "../../../services/commandContract.js";
 
 export function loadDocs(invoke, ownerType, ownerId, ticketFilename) {
   return invokeCommand(invoke, "docs_list", {
-    request: { ownerType, ownerId, ...(ticketFilename ? { ticketFilename } : {}) },
+    request: {
+      ownerType,
+      ownerId,
+      ...(ticketFilename ? { ticketFilename } : {}),
+    },
   });
 }
 
@@ -14,6 +18,7 @@ export function readDoc(invoke, ownerType, ownerId, path, ticketFilename) {
       ...(ticketFilename ? { ticketFilename } : {}),
       path: path.path,
       repositoryId: path.repositoryId ?? null,
+      ...(path.isTicket ? { isTicket: true } : {}),
     },
   });
 }

@@ -19,6 +19,11 @@ test("Docs adapters validate owner-scoped list/read commands, including Workspac
     contents: "# API",
   });
   await readDoc(invoke, "workspace", "w", { path: "notes.txt" });
+  await readDoc(invoke, "workspace", "w", {
+    path: "Ticket",
+    repositoryId: null,
+    isTicket: true,
+  });
   assert.deepEqual(calls, [
     {
       name: "docs_list",
@@ -43,6 +48,18 @@ test("Docs adapters validate owner-scoped list/read commands, including Workspac
           ownerId: "w",
           path: "notes.txt",
           repositoryId: null,
+        },
+      },
+    },
+    {
+      name: "docs_read",
+      payload: {
+        request: {
+          ownerType: "workspace",
+          ownerId: "w",
+          path: "Ticket",
+          repositoryId: null,
+          isTicket: true,
         },
       },
     },

@@ -55,10 +55,14 @@ The Tickets view's **Tools** menu is available even when no ticket is selected.
 It offers external-terminal, IntelliJ, and folder actions only, all targeting the
 Workspace's verified repository checkout; it has no app-managed terminal or
 project-command actions. In the ticket workbench, tools,
-Change Review, and Docs use the selected ticket's verified worktree when one is
-recorded, falling back to the Workspace checkout only when the ticket has no
-worktree. Nested project commands run from and show the directory containing
-their `package.json` or Makefile.
+Change Review, and repository documents in Docs use the selected ticket's
+  verified worktree when one is recorded, falling back to the Workspace checkout
+  only when the ticket has no worktree. Docs also lists the selected ticket as a
+  special read-only item above repository documents and reads its canonical
+  Markdown from Workspace-owned ticket storage outside the repository, using the
+  same application ticket-content component as the Workspace ticket reader.
+  Nested project commands run from and show the directory containing their `package.json`
+or Makefile.
 
 Creating a ticket uses a two-step dialog. The first step captures the user's
 idea and asks OpenCode for a proposal in the Workspace's sole verified

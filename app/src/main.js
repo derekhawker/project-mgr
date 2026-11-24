@@ -468,6 +468,7 @@ const workspaceTicketViewerProps = {
   },
   toolsMenu: () => repositoryTools("ticket-view-show-repo-tools"),
   onSelect: (filename) => {
+    docsController.showTerminal();
     setSelectedTicketFilename(filename);
     rightPaneRouter.navigate("workspace-tickets", {
       workspaceId: selectedWorkspace?.id ?? null,
@@ -651,6 +652,7 @@ const workspaceShell = () =>
         (ticket) => ticket.filename === selectedTicketFilename(),
       )?.title,
     onWorkspaceClick: () => {
+      docsController.showTerminal();
       setWorkspaceShellVisible(false);
       setTicketViewerVisible(true);
       sessions.hide();
@@ -783,16 +785,23 @@ const changeReview = () =>
 const docsPane = () =>
   DocsPane({
     ...docsView,
+    ticketMetadata: () =>
+      ticketItems().find(
+        (ticket) => ticket.filename === selectedTicketFilename(),
+      ),
     navigatorWidth,
     onNavigatorResize: resizeNavigator,
-    onSelect: (file) =>
-      void docsController.select(file.path, file.repositoryId),
+    onSelect: (file) => void docsController.select(file),
   });
 const docsController = createDocsController({
   invoke,
   getOwner: () =>
     selectedWorkspace && selectedTicketFilename() && !ticketArchived()
-      ? { type: "workspace", id: selectedWorkspace.id }
+      ? {
+          type: "workspace",
+          id: selectedWorkspace.id,
+          ticketFilename: selectedTicketFilename(),
+        }
       : null,
   view: docsView,
   onOpen: () => {
@@ -1013,6 +1022,7 @@ function selectWorkspace(workspace, data = navigationData) {
   // this click handler returns, so keep the pre-paint path to selection and pane
   // visibility; terminal/repository setup can follow on the next task.
   changeReviewController.cancelPendingReview();
+  docsController.showTerminal();
   setDirectoriesVisible(false);
   setPortsVisible(false);
   setFullRequestVisible(false);
@@ -1060,6 +1070,7 @@ function selectQuickRequest(
   { deferRestore = false, deferReveal = false } = {},
 ) {
   if (!task.quickRequest) return;
+  docsController.showTerminal();
   setTicketViewerVisible(false);
   setDirectoriesVisible(false);
   setPortsVisible(false);
@@ -1223,6 +1234,7 @@ const quickRequests = createQuickRequests({
     visible: fullRequestVisible,
     isQuickRequestVisible: quickRequestTerminalPage,
     clearSelectedRequest: () => {
+      docsController.showTerminal();
       setSelectedQuickRequest(null);
       selectedWorkspace = null;
       setQuickRequestTerminalPage(false);

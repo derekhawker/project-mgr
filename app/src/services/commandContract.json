@@ -5381,6 +5381,9 @@
               "type": "string",
               "nullable": true
             },
+            "isTicket": {
+              "type": "boolean"
+            },
             "ticketFilename": {
               "type": "string"
             }

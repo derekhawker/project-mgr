@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { pathToFileURL } from "node:url";
@@ -95,32 +95,41 @@ function mountIdeaModal(props) {
 }
 
 const longContent = "x".repeat(1300);
+const ticketHeadingStyles = await readFile(
+  resolve(root, "src/views/workspace/tickets/WorkspaceTicketViewer.module.css"),
+  "utf8",
+);
+const statusBadgeStyles = await readFile(
+  resolve(root, "src/views/workspace/tickets/TicketStatusBadge.module.css"),
+  "utf8",
+);
 const tickets = [
   {
     filename: "one.md",
     title: "First",
     status: "draft",
     modifiedAt: 100,
-    content: `---\ntitle: First\nstatus: draft\nowner: Alice\n---\n# First body\n\n${longContent}`,
+    content: `---\ntitle: First\nstatus: draft\nproject_label: Example Project\nowner: Alice\n---\n# First\n\n${longContent}`,
   },
   {
     filename: "one-session.md",
     title: "Draft with session",
     status: "draft",
     hasWorkSession: true,
+    opencodeStatus: "ready_for_review",
     modifiedAt: 90,
     content:
-      "---\ntitle: Draft with session\nstatus: draft\nwork_session_id: ses-draft\n---\nDraft body",
+      "---\ntitle: Draft with session\nstatus: draft\nwork_session_id: ses-draft\nopencode-status: ready_for_review\n---\nDraft body",
   },
   {
     filename: "two.md",
     title: "Second",
     status: "blocked",
     hasWorkSession: false,
-    opencodeStatus: "idle",
+    opencodeStatus: "waiting_for_input",
     modifiedAt: 200,
     content:
-      "---\ntitle: Second\nstatus: blocked\nopencode-status: idle\n---\nSecond body",
+      "---\ntitle: Second\nstatus: blocked\nopencode-status: waiting_for_input\n---\nSecond body",
   },
   {
     filename: "three.md",
@@ -137,10 +146,10 @@ const tickets = [
     title: "Fourth",
     status: "in_progress",
     hasWorkSession: true,
-    opencodeStatus: "busy",
+    opencodeStatus: "unknown",
     modifiedAt: 60,
     content:
-      "---\ntitle: Fourth\nstatus: in_progress\nwork_session_id: ses-four\nopencode-status: busy\n---\nFourth body",
+      "---\ntitle: Fourth\nstatus: in_progress\nwork_session_id: ses-four\nopencode-status: unknown\n---\nFourth body",
   },
   {
     filename: "five.md",
@@ -434,6 +443,14 @@ test("ticket browser keeps selection separate from Work, renders the complete sa
       view.host.querySelector("ul li button").children[1].textContent,
       "Second",
     );
+    const waitingIcon = first.querySelector(
+      '[aria-label="OpenCode is waiting for your input"]',
+    );
+    assert.ok(
+      waitingIcon,
+      "the ticket reader shows waiting input independently of workflow status",
+    );
+    assert.equal(waitingIcon.parentElement.firstElementChild, waitingIcon);
     assert.equal(first.querySelector("p"), null, "rows have no body preview");
     first.querySelector('button[aria-label="Work ticket: Second"]').click();
     assert.deepEqual(calls, [
@@ -463,10 +480,29 @@ test("ticket browser keeps selection separate from Work, renders the complete sa
     assert.deepEqual(calls.at(-1), ["select", "one.md"]);
     const detail = view.host.querySelector("article");
     assert.equal(detail.getAttribute("aria-label"), "Selected ticket: First");
-    assert.equal(detail.querySelector(".detailHeading"), null);
-    assert.equal(detail.querySelector("h3"), null);
-    assert.equal(detail.children[0].textContent.includes("First body"), true);
-    assert.equal(detail.children[0].textContent.includes(longContent), true);
+    const titleHeading = detail.querySelector(":scope > header > h2");
+    assert.equal(titleHeading.querySelector("strong")?.textContent, "First");
+    assert.equal(
+      titleHeading.querySelector('[aria-label="Status: Draft"]')?.textContent,
+      "Draft",
+    );
+    assert.match(
+      titleHeading.textContent,
+      /Draft\s+Example Project\s+-\s+First/,
+    );
+    assert.equal(titleHeading.querySelectorAll("h1").length, 0);
+    const markdown = detail.children[1];
+    assert.equal(
+      markdown.querySelector("h1"),
+      null,
+      "a body H1 matching the title is suppressed",
+    );
+    assert.equal(
+      markdown.textContent.includes("First"),
+      false,
+      "the duplicate title is not rendered in the body",
+    );
+    assert.equal(markdown.textContent.includes(longContent), true);
     assert.equal(detail.querySelector("script"), null);
     assert.equal(
       detail.querySelector('[aria-label="Ticket metadata"] dt').textContent,
@@ -477,11 +513,11 @@ test("ticket browser keeps selection separate from Work, renders the complete sa
       "First",
     );
     assert.equal(
-      detail.querySelector('[aria-label="OpenCode session is idle"]'),
+      detail.querySelector('[aria-label="OpenCode session is paused"]'),
       null,
     );
     assert.equal(
-      detail.children[0].compareDocumentPosition(
+      markdown.compareDocumentPosition(
         detail.querySelector('[aria-label="Ticket metadata"]'),
       ) & Node.DOCUMENT_POSITION_FOLLOWING,
       Node.DOCUMENT_POSITION_FOLLOWING,
@@ -492,12 +528,12 @@ test("ticket browser keeps selection separate from Work, renders the complete sa
     ].find((button) => button.textContent.includes("Third"));
     idleRow.click();
     assert.equal(
-      view.host.querySelectorAll('[aria-label="OpenCode session is idle"]')
+      view.host.querySelectorAll('[aria-label="OpenCode session is paused"]')
         .length,
-      1,
+      2,
     );
     const idleIcon = idleRow.querySelector(
-      '[aria-label="OpenCode session is idle"]',
+      '[aria-label="OpenCode session is paused"]',
     );
     assert.equal(
       idleIcon.parentElement.firstElementChild,
@@ -539,6 +575,24 @@ test("ticket browser keeps selection separate from Work, renders the complete sa
     assert.equal(
       sessionDraftRow.querySelector('[aria-label="Ticket has saved session"]'),
       null,
+    );
+    assert.equal(
+      sessionDraftRow
+        .querySelector('[aria-label="OpenCode session is paused"] svg path')
+        .getAttribute("d"),
+      idleIcon.querySelector("svg path").getAttribute("d"),
+      "ready-for-review sessions use the paused icon too",
+    );
+    const errorRow = [
+      ...view.host.querySelectorAll("button[aria-pressed]"),
+    ].find((button) => button.textContent.includes("Fourth"));
+    assert.ok(
+      errorRow.querySelector(
+        '[aria-label="OpenCode session needs attention: unknown"]',
+      ),
+    );
+    assert.ok(
+      !errorRow.querySelector('[aria-label="OpenCode session is paused"]'),
     );
     const resumeAction = sessionDraftRow.parentElement.querySelector(
       'button[aria-label="Resume ticket: Draft with session"]',
@@ -582,6 +636,18 @@ test("ticket browser keeps selection separate from Work, renders the complete sa
   } finally {
     view.dispose();
   }
+});
+
+test("ticket heading keeps its prefix together while allowing a long title to wrap", () => {
+  assert.match(
+    ticketHeadingStyles,
+    /\.ticketHeading\s*\{[^}]*overflow-wrap:\s*anywhere/s,
+  );
+  assert.doesNotMatch(
+    ticketHeadingStyles,
+    /\.ticketProjectLabel\s*\{[^}]*white-space:\s*nowrap/s,
+  );
+  assert.match(statusBadgeStyles, /\.badge\s*\{[^}]*white-space:\s*nowrap/s);
 });
 
 test("archive toggle reports state and clears selection; create opens the first modal step", () => {

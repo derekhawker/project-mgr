@@ -64,9 +64,10 @@ discussions. For workflow behavior beyond the UX vocabulary, see
 - **Change Review:** The single name for the repository-diff destination. Use it
   in toolbar labels and prose. Change Review is separate from OpenCode's
   interactive terminal.
-- **Docs reader:** The destination for reading discovered Markdown and text
-  files by paths relative to their Workspace or repository source. It is not a
-  general file browser or editor.
+- **Docs reader:** The destination for reading the selected ticket and discovered
+  Markdown or text files by source-relative paths. The ticket is a special
+  read-only item outside the repository; Docs is not a general file browser or
+  editor.
  - **Tools menu:** The menu opened by **Tools** in the Workspace Tickets view or
   ticket-workbench toolbar. The Tickets-view menu works without a selected
   ticket, offers external terminal/IntelliJ/folder actions only, and targets the

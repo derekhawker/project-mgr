@@ -1,5 +1,4 @@
 import {
-  createEffect,
   createMemo,
   createSignal,
   For,
@@ -22,10 +21,7 @@ import { TicketSessionIndicator } from "../../../components/TicketSessionIndicat
 import { TicketStatusBadge } from "./TicketStatusBadge.jsx";
 import { CreateTicketIdeaModal } from "./CreateTicketIdeaModal.jsx";
 import { recordUiDiagnostic } from "../../../lib/uiDiagnostics.js";
-import {
-  renderTicketMarkdown,
-  splitTicketFrontmatter,
-} from "./ticketContent.js";
+import { WorkspaceTicketContent } from "./WorkspaceTicketContent.jsx";
 import styles from "./WorkspaceTicketViewer.module.css";
 import repositoryToolsStyles from "../repository-tools/RepositoryToolsMenu.module.css";
 
@@ -106,11 +102,6 @@ export function WorkspaceTicketViewer(props) {
       .tickets()
       .find((ticket) => ticket.filename === props.selectedFilename()),
   );
-  const markdown = createMemo(() => {
-    const ticket = selected();
-    if (!ticket) return null;
-    return renderTicketMarkdown(ticket.content, window);
-  });
   return (
     <AppPageLayout
       type="Workspace"
@@ -161,7 +152,6 @@ export function WorkspaceTicketViewer(props) {
             }
             onPropose={props.onProposeTicket}
             onCreate={props.onCreateTicket}
-            onTicketCreated={props.onTicketCreated}
           />
         </header>
         <ErrorMessage message={props.modelError?.()} />
@@ -250,38 +240,11 @@ export function WorkspaceTicketViewer(props) {
                           >
                             <TicketStatusBadge status={ticket.status} />
                             <span class={styles.ticketTitleGroup}>
-                              <Show
-                                when={
-                                  ticket.status === "in_progress" &&
-                                  !ticket.hasWorkSession
-                                }
-                              >
-                                <span
-                                  class={styles.idleAttention}
-                                  role="img"
-                                  aria-label="Ticket has no work session"
-                                >
-                                  <Icon name="caution" size="small" />
-                                </span>
-                              </Show>
-                              <Show
-                                when={
-                                  ticket.status === "in_progress" &&
-                                  ticket.opencodeStatus === "idle"
-                                }
-                              >
-                                <span
-                                  class={styles.idleAttention}
-                                  role="img"
-                                  aria-label="OpenCode session is idle"
-                                >
-                                  <Icon
-                                    name="pause"
-                                    size="small"
-                                    class={styles.pauseIcon}
-                                  />
-                                </span>
-                              </Show>
+                              <TicketSessionIndicator
+                                ticketStatus={ticket.status}
+                                hasWorkSession={ticket.hasWorkSession}
+                                opencodeStatus={ticket.opencodeStatus}
+                              />
                               <span class={styles.ticketTitle}>
                                 {ticket.title}
                               </span>
@@ -354,43 +317,13 @@ export function WorkspaceTicketViewer(props) {
               }
             >
               {(ticket) => {
-                const fields = createMemo(() =>
-                  splitTicketFrontmatter(ticket().content).fields.filter(
-                    ([key]) => key !== "opencode-status",
-                  ),
-                );
                 return (
-                  <article
-                    class={styles.detail}
-                    aria-label={`Selected ticket: ${ticket().title}`}
-                  >
-                    <div
-                      class={styles.markdown}
-                      ref={(element) =>
-                        createEffect(() => {
-                          element.innerHTML = markdown() ?? "";
-                        })
-                      }
-                    />
-                    <Show when={fields().length}>
-                      <section
-                        class={styles.frontmatter}
-                        aria-label="Ticket metadata"
-                      >
-                        <h4>Ticket metadata</h4>
-                        <dl>
-                          <For each={fields()}>
-                            {([key, value]) => (
-                              <>
-                                <dt>{key}</dt>
-                                <dd>{value || "—"}</dd>
-                              </>
-                            )}
-                          </For>
-                        </dl>
-                      </section>
-                    </Show>
-                  </article>
+                  <WorkspaceTicketContent
+                    content={() => ticket().content}
+                    title={() => ticket().title}
+                    status={() => ticket().status}
+                    label={() => ticket().projectLabel}
+                  />
                 );
               }}
             </Show>
