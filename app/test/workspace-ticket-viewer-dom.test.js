@@ -425,6 +425,23 @@ test("sort and model menus remain operable when ticket rows refresh", async () =
   }
 });
 
+test("an open ticket menu closes when the ticket becomes done", async () => {
+  const [rows, setRows] = createSignal([{ ...tickets[0] }]);
+  const view = mount({ tickets: rows, selectedFilename: () => null, loading: () => false, error: () => "" });
+  try {
+    const trigger = view.host.querySelector('summary[aria-label="Actions for ticket: First"]');
+    trigger.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(trigger.closest("details").open, true);
+    setRows([{ ...tickets[0], status: "done" }]);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(trigger.closest("details").open, false);
+    assert.equal(trigger.getAttribute("aria-disabled"), "true");
+  } finally {
+    view.dispose();
+  }
+});
+
 test("ticket actions follow archive location and block cancellation while a session is active", async () => {
   const calls = [];
   const [archived, setArchived] = createSignal(false);

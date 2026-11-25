@@ -152,6 +152,9 @@ export function ActionMenu(props) {
       props.onRequestClose?.();
     } else if (menu) menu.open = false;
   };
+  createEffect(() => {
+    if (props.disabled && menu?.open) close();
+  });
   const closeOnSelection = (event) => {
     const action = event.target.closest?.("button, a");
     if (
