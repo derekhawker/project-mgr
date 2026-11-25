@@ -42,11 +42,18 @@
 - For all but the simplest tasks, delegate test writing to the tester agent in a subagent.
 - Address both agents' findings before proceeding; report any finding left unresolved.
 
+## Final manual verification
+
+- Manual verification is a precondition for completing a ticket, not a requirement after every development step. Finish implementation and relevant automated checks in the ticket worktree first; then verify the final committed candidate before marking the ticket complete.
+- Use the main worktree as the single, serialized manual-verification lane. The existing `npm run live --prefix app` process runs from the main worktree; checking out the candidate there lets it hot-reload without restarting the dev build. Keep that runtime running and use its normal reload behavior.
+- At final verification time, identify the current worktree with `git worktree list`. If working in a ticket worktree, locate the main worktree. Confirm the main worktree is clean before changing its checkout. Then check out the exact candidate commit there in detached HEAD state. Do not check out the ticket branch: a branch can be checked out in only one worktree at a time. If the main worktree is dirty, inspect and preserve its changes; ask before proceeding if switching would affect them.
+- Do not implement or commit from the main worktree. Record the candidate commit and manual verification results in the ticket. If the candidate changes after verification, verify the new final candidate before completing the ticket.
+
 ## Delivery
 
 - Keep a dedicated branch and worktree for each ticket; multiple ticket worktrees may remain open. Do all implementation and revisions in the ticket worktree.
 - Before delivery, ensure the ticket branch includes the latest `main`. If `main` has advanced and the ticket branch cannot fast-forward, merge the latest `main` into the ticket branch and rerun relevant checks. Do not rebase unless the user asks.
-- For ticket work, do not create pull requests. After required checks pass, push the ticket branch and fast-forward `main` to its tip; do not squash-merge. Publish the updated `main`, then verify the main worktree is clean and up to date before removing the ticket worktree and local branch. Preserve its work and ask before proceeding if it is dirty. Remote branch deletion is separate and is not implied.
+- For ticket work, do not create pull requests. After required checks and final manual verification pass, push the ticket branch and fast-forward `main` to its tip; do not squash-merge. Publish the updated `main`, then verify the main worktree is clean and up to date before removing the ticket worktree and local branch. Preserve its work and ask before proceeding if it is dirty. Remote branch deletion is separate and is not implied.
 
 ## Testing
 - Avoid end-to-end tests; their cost is not justified.
