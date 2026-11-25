@@ -15,7 +15,6 @@ export function TicketActionsMenu(props) {
       triggerText="Actions"
       actionsLabel={`Ticket actions: ${props.ticket.title}`}
       triggerVariant="compact"
-      surfaceVariant="neutral"
       portal
       disabled={props.disabled}
     >
