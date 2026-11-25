@@ -543,6 +543,10 @@ impl workspace_tickets::TicketWorkRuntime for TicketWorkAdapter<'_> {
     fn session_directory(&mut self, id: &str) -> Result<Option<std::path::PathBuf>, String> {
         self.runtime.session_directory(id).map(Some)
     }
+
+    fn cleanup_failed_attach(&mut self, id: &str) -> Result<(), String> {
+        self.runtime.cleanup_terminal(id)
+    }
 }
 
 impl workspace_tickets::TicketInvestigationRuntime for TicketWorkAdapter<'_> {
@@ -564,7 +568,12 @@ impl workspace_tickets::TicketInvestigationRuntime for TicketWorkAdapter<'_> {
             .set_instruction_entry(id, "workspace-ticket", instructions)
     }
 
-    fn submit_prompt(&mut self, id: &str, prompt: &str) -> Result<(), String> {
+    fn submit_prompt(
+        &mut self,
+        id: &str,
+        prompt: &str,
+        pending: workspace_tickets::PendingInvestigation,
+    ) -> Result<(), String> {
         let app = self.app.clone();
         let session_id = id.to_owned();
         let prompt = prompt.to_owned();
@@ -573,6 +582,7 @@ impl workspace_tickets::TicketInvestigationRuntime for TicketWorkAdapter<'_> {
             .clone()
             .ok_or_else(|| "Ticket investigation model was not selected".to_owned())?;
         tauri::async_runtime::spawn(async move {
+            let _pending = pending;
             let worker_app = app.clone();
             let worker_session_id = session_id.clone();
             let send_result = run_ports_work(move || {

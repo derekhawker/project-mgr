@@ -18,6 +18,11 @@ pub trait TicketWorkRuntime {
     fn session_directory(&mut self, _id: &str) -> Result<Option<PathBuf>, String> {
         Ok(None)
     }
+    /// Stop a newly opened terminal if binding fails. Keep the session itself
+    /// recoverable; it may already have accumulated user data.
+    fn cleanup_failed_attach(&mut self, _id: &str) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 /// Effects needed to create a persistent investigation without attaching its
@@ -30,7 +35,13 @@ pub trait TicketInvestigationRuntime {
         ticket_directory: &Path,
         instructions: &str,
     ) -> Result<(), String>;
-    fn submit_prompt(&mut self, id: &str, prompt: &str) -> Result<(), String>;
+    /// Retain `pending` until the queued request has finished delivery.
+    fn submit_prompt(
+        &mut self,
+        id: &str,
+        prompt: &str,
+        pending: PendingInvestigation,
+    ) -> Result<(), String>;
     fn delete(&mut self, id: &str) -> Result<(), String>;
 }
 
@@ -55,9 +66,10 @@ pub fn create_draft_with_investigation<R: TicketInvestigationRuntime>(
     start_investigation: bool,
     runtime: &mut R,
 ) -> Result<TicketCreationResult, String> {
-    let _guard = ticket_work_lock()?;
-    let mut ticket =
-        create_draft_with_label_locked(directory, repository, title, body, Some(workspace_name))?;
+    let mut ticket = {
+        let _guard = ticket_work_lock()?;
+        create_draft_with_label_locked(directory, repository, title, body, Some(workspace_name))?
+    };
     let mut result = TicketCreationResult {
         ticket: ticket.clone(),
         investigation_session_id: None,
@@ -68,6 +80,15 @@ pub fn create_draft_with_investigation<R: TicketInvestigationRuntime>(
         return Ok(result);
     }
 
+    let coordination = ticket_coordination(directory, &ticket.filename)?;
+    let _ticket_guard = match try_ticket_guard(&coordination) {
+        Ok(guard) => guard,
+        Err(_) => {
+            result.investigation_failure_stage = Some("ticket_context".into());
+            return Ok(result);
+        }
+    };
+
     let context = (|| {
         let repository = repository
             .canonicalize()
@@ -77,6 +98,9 @@ pub fn create_draft_with_investigation<R: TicketInvestigationRuntime>(
             .map_err(|error| error.to_string())?;
         let ticket_path = canonical_ticket(&ticket_directory, &ticket.filename)?;
         let original = fs::read_to_string(&ticket_path).map_err(|error| error.to_string())?;
+        if original != ticket.content {
+            return Err("Ticket changed before investigation could start".into());
+        }
         Ok::<_, String>((repository, ticket_directory, ticket_path, original))
     })();
     let (repository, ticket_directory, ticket_path, original) = match context {
@@ -116,21 +140,33 @@ pub fn create_draft_with_investigation<R: TicketInvestigationRuntime>(
         return Ok(result);
     }
 
+    let _guard = ticket_work_lock()?;
+    // Creation and preparation happen outside the global lock. Never bind a
+    // session to a ticket that changed or disappeared in the meantime.
+    if fs::read_to_string(&ticket_path).ok().as_deref() != Some(original.as_str()) {
+        drop(_guard);
+        let _ = runtime.delete(&session_id);
+        result.investigation_failure_stage = Some("ticket_binding".into());
+        return Ok(result);
+    }
     let updated = match record_ticket_session(&original, Some(&session_id)) {
         Ok(updated) => updated,
         Err(_) => {
+            drop(_guard);
             let _ = runtime.delete(&session_id);
             result.investigation_failure_stage = Some("ticket_binding".into());
             return Ok(result);
         }
     };
     if write_ticket_markdown_safely(&ticket_path, &original, &updated).is_err() {
+        drop(_guard);
         let _ = runtime.delete(&session_id);
         result.investigation_failure_stage = Some("ticket_binding".into());
         return Ok(result);
     }
     ticket.has_work_session = true;
     ticket.content = updated;
+    drop(_guard);
 
     let prompt = render_ticket_investigation_prompt(
         &ticket.title,
@@ -138,7 +174,14 @@ pub fn create_draft_with_investigation<R: TicketInvestigationRuntime>(
         &ticket_path,
         &repository,
     );
-    if runtime.submit_prompt(&session_id, &prompt).is_err() {
+    coordination
+        .pending
+        .store(true, std::sync::atomic::Ordering::Release);
+    let pending = PendingInvestigation(coordination.clone());
+    if runtime
+        .submit_prompt(&session_id, &prompt, pending)
+        .is_err()
+    {
         result.ticket = ticket;
         result.investigation_failure_stage = Some("prompt_submission".into());
         return Ok(result);
@@ -175,6 +218,67 @@ fn ticket_work_lock() -> Result<std::sync::MutexGuard<'static, ()>, String> {
         .map_err(|error| error.to_string())
 }
 
+// Keep same-ticket session operations serialized, including network requests,
+// without making unrelated tickets wait for OpenCode.
+#[derive(Default)]
+struct TicketCoordination {
+    lock: std::sync::Mutex<()>,
+    pending: std::sync::atomic::AtomicBool,
+}
+
+/// A queued submission owns this token until its request completes or fails.
+pub struct PendingInvestigation(std::sync::Arc<TicketCoordination>);
+impl Drop for PendingInvestigation {
+    fn drop(&mut self) {
+        self.0
+            .pending
+            .store(false, std::sync::atomic::Ordering::Release);
+    }
+}
+
+fn ticket_coordination(
+    directory: &Path,
+    filename: &str,
+) -> Result<std::sync::Arc<TicketCoordination>, String> {
+    use std::sync::{Arc, Mutex, OnceLock, Weak};
+    static LOCKS: OnceLock<Mutex<std::collections::HashMap<PathBuf, Weak<TicketCoordination>>>> =
+        OnceLock::new();
+    let key = directory
+        .canonicalize()
+        .map_err(|e| e.to_string())?
+        .join(filename);
+    let mut locks = LOCKS
+        .get_or_init(|| Mutex::new(std::collections::HashMap::new()))
+        .lock()
+        .map_err(|e| e.to_string())?;
+    locks.retain(|_, lock| lock.strong_count() > 0);
+    if let Some(lock) = locks.get(&key).and_then(Weak::upgrade) {
+        return Ok(lock);
+    }
+    let lock = Arc::new(TicketCoordination::default());
+    locks.insert(key, Arc::downgrade(&lock));
+    Ok(lock)
+}
+
+// Do not occupy the bounded command executor waiting behind a slow request for
+// the same ticket: reject it so other tickets can still use the executor.
+fn try_ticket_guard(
+    coordination: &TicketCoordination,
+) -> Result<std::sync::MutexGuard<'_, ()>, String> {
+    let guard = coordination.lock.try_lock().map_err(|_| {
+        "This ticket has another session operation in progress. Try again shortly.".to_owned()
+    })?;
+    if coordination
+        .pending
+        .load(std::sync::atomic::Ordering::Acquire)
+    {
+        return Err(
+            "This ticket has another session operation in progress. Try again shortly.".into(),
+        );
+    }
+    Ok(guard)
+}
+
 /// Restore the ticket's sole session, creating and attaching a replacement only
 /// when its recorded OpenCode session is confirmed missing.
 pub fn work<R: TicketWorkRuntime>(
@@ -184,6 +288,8 @@ pub fn work<R: TicketWorkRuntime>(
     filename: &str,
     runtime: &mut R,
 ) -> Result<TicketWorkResult<R::Session>, String> {
+    let coordination = ticket_coordination(directory, filename)?;
+    let _ticket_guard = try_ticket_guard(&coordination)?;
     let _guard = ticket_work_lock()?;
     let repository = repository
         .canonicalize()
@@ -197,6 +303,7 @@ pub fn work<R: TicketWorkRuntime>(
         fs::read_to_string(&ticket).map_err(|e| format!("Could not read ticket: {e}"))?;
     let (title, status) = ticket_metadata(&markdown, filename);
     let recorded_session = ticket_session_id(&markdown)?;
+    drop(_guard);
     // A retained OpenCode session already has an exact, persisted working
     // directory. Do not make restoring it depend on ticket worktree metadata:
     // that path may have been removed after delivery while the session remains
@@ -219,7 +326,8 @@ pub fn work<R: TicketWorkRuntime>(
             recorded_worktree.as_ref(),
         )?)
     };
-    if active.is_none() {
+    let created = active.is_none();
+    if created {
         let id = runtime.create(
             &format!("{workspace_name}: {title}"),
             target.as_deref().expect("replacement target was resolved"),
@@ -241,20 +349,58 @@ pub fn work<R: TicketWorkRuntime>(
         &active_id,
         target.as_deref().unwrap_or(repository.as_path()),
     )?;
-    let updated = record_ticket_session(&markdown, Some(&active_id))?;
-    if updated != markdown {
-        record_attached_session(
-            &ticket,
-            directory,
-            &repository,
-            filename,
-            &active_id,
-            &markdown,
-            &updated,
-            runtime,
-        )?;
-    } else {
-        record_session_worktree(directory, &repository, filename, &active_id, runtime)?;
+    let session_directory = match runtime.session_directory(&active_id) {
+        Ok(directory) => directory,
+        Err(error) if created => {
+            let cleanup = runtime.cleanup_failed_attach(&active_id);
+            return Err(format!(
+                "{error} Session {active_id} was retained for recovery{}.",
+                cleanup
+                    .err()
+                    .map(|e| format!("; terminal cleanup failed: {e}"))
+                    .unwrap_or_default()
+            ));
+        }
+        Err(error) => return Err(error),
+    };
+    let result = (|| {
+        let _guard = ticket_work_lock()?;
+        let current = reconcile_session_snapshot(&ticket, &markdown)?;
+        let updated = record_ticket_session(&current, Some(&active_id))?;
+        if updated != current {
+            record_attached_session(
+                &ticket,
+                directory,
+                &repository,
+                filename,
+                &active_id,
+                &current,
+                &updated,
+                session_directory.as_deref(),
+            )?;
+        } else {
+            record_session_worktree(
+                directory,
+                &repository,
+                filename,
+                &active_id,
+                session_directory.as_deref(),
+            )?;
+        }
+        Ok::<(), String>(())
+    })();
+    if let Err(error) = result {
+        if created {
+            let cleanup = runtime.cleanup_failed_attach(&active_id);
+            return Err(format!(
+                "{error} Session {active_id} was retained for recovery{}.",
+                cleanup
+                    .err()
+                    .map(|e| format!("; terminal cleanup failed: {e}"))
+                    .unwrap_or_default()
+            ));
+        }
+        return Err(error);
     }
     Ok(TicketWorkResult { session })
 }
@@ -266,6 +412,8 @@ pub fn new_session<R: TicketWorkRuntime>(
     filename: &str,
     runtime: &mut R,
 ) -> Result<R::Session, String> {
+    let coordination = ticket_coordination(directory, filename)?;
+    let _ticket_guard = try_ticket_guard(&coordination)?;
     let _guard = ticket_work_lock()?;
     let repository = repository
         .canonicalize()
@@ -281,6 +429,7 @@ pub fn new_session<R: TicketWorkRuntime>(
         fs::read_to_string(&ticket).map_err(|error| format!("Could not read ticket: {error}"))?;
     let (title, status) = ticket_metadata(&original, filename);
     let target = resolve_ticket_directory(&repository, ticket_worktree(&original)?.as_ref())?;
+    drop(_guard);
     let id = runtime.create(&format!("{workspace_name}: {title}"), &target)?;
     let instructions = ticket_instructions(
         &title,
@@ -293,28 +442,68 @@ pub fn new_session<R: TicketWorkRuntime>(
     );
     runtime.prepare(&id, &ticket_dir, &instructions)?;
     let session = runtime.attach(&id, &target)?;
-    let updated = record_ticket_session(&original, Some(&id))?;
-    record_attached_session(
-        &ticket,
-        directory,
-        &repository,
-        filename,
-        &id,
-        &original,
-        &updated,
-        runtime,
-    )?;
+    let session_directory = match runtime.session_directory(&id) {
+        Ok(directory) => directory,
+        Err(error) => {
+            let cleanup = runtime.cleanup_failed_attach(&id);
+            return Err(format!(
+                "{error} Session {id} was retained for recovery{}.",
+                cleanup
+                    .err()
+                    .map(|e| format!("; terminal cleanup failed: {e}"))
+                    .unwrap_or_default()
+            ));
+        }
+    };
+    let result = (|| {
+        let _guard = ticket_work_lock()?;
+        let current = reconcile_session_snapshot(&ticket, &original)?;
+        let updated = record_ticket_session(&current, Some(&id))?;
+        record_attached_session(
+            &ticket,
+            directory,
+            &repository,
+            filename,
+            &id,
+            &current,
+            &updated,
+            session_directory.as_deref(),
+        )
+    })();
+    if let Err(error) = result {
+        let cleanup = runtime.cleanup_failed_attach(&id);
+        return Err(format!(
+            "{error} Session {id} was retained for recovery{}.",
+            cleanup
+                .err()
+                .map(|e| format!("; terminal cleanup failed: {e}"))
+                .unwrap_or_default()
+        ));
+    }
     Ok(session)
 }
 
-fn record_session_worktree<R: TicketWorkRuntime>(
+// Preserve unrelated metadata updates that arrived while OpenCode was being
+// contacted, but never overwrite a changed session or worktree binding.
+fn reconcile_session_snapshot(path: &Path, snapshot: &str) -> Result<String, String> {
+    let current = fs::read_to_string(path).map_err(|e| format!("Could not read ticket: {e}"))?;
+    if ticket_session_id(&current)? != ticket_session_id(snapshot)?
+        || ticket_worktree(&current)? != ticket_worktree(snapshot)?
+        || frontmatter_value(&current, "status")?.as_deref() == Some("cancelled")
+    {
+        return Err("Ticket session or worktree changed while opening its session; no ticket content was overwritten.".into());
+    }
+    Ok(current)
+}
+
+fn record_session_worktree(
     directory: &Path,
     repository: &Path,
     filename: &str,
     session_id: &str,
-    runtime: &mut R,
+    session_directory: Option<&Path>,
 ) -> Result<(), String> {
-    let Some(session_directory) = runtime.session_directory(session_id)? else {
+    let Some(session_directory) = session_directory else {
         return Ok(());
     };
     let repository = repository
@@ -336,7 +525,7 @@ fn record_session_worktree<R: TicketWorkRuntime>(
     Ok(())
 }
 
-fn record_attached_session<R: TicketWorkRuntime>(
+fn record_attached_session(
     ticket: &Path,
     directory: &Path,
     repository: &Path,
@@ -344,12 +533,16 @@ fn record_attached_session<R: TicketWorkRuntime>(
     session_id: &str,
     original: &str,
     updated: &str,
-    runtime: &mut R,
+    session_directory: Option<&Path>,
 ) -> Result<(), String> {
     write_ticket_markdown_safely(ticket, original, updated)?;
-    if let Err(error) =
-        record_session_worktree(directory, repository, filename, session_id, runtime)
-    {
+    if let Err(error) = record_session_worktree(
+        directory,
+        repository,
+        filename,
+        session_id,
+        session_directory,
+    ) {
         return match write_ticket_markdown_safely(ticket, updated, original) {
             Ok(()) => Err(error),
             Err(rollback_error) => Err(format!(
@@ -364,6 +557,8 @@ pub fn close_session(directory: &Path, filename: &str, session_id: &str) -> Resu
     if !valid_ticket_session_id(session_id) {
         return Err("Invalid OpenCode session ID".into());
     }
+    let coordination = ticket_coordination(directory, filename)?;
+    let _ticket_guard = try_ticket_guard(&coordination)?;
     let _guard = ticket_work_lock()?;
     let ticket = canonical_ticket(directory, filename)?;
     let original =
@@ -1707,14 +1902,20 @@ pub fn cancel_ticket_with_session_check(
     archived: bool,
     check_idle: impl Fn(&str) -> Result<(), String>,
 ) -> Result<(), String> {
+    let coordination = ticket_coordination(directory, filename)?;
+    let _ticket_guard = try_ticket_guard(&coordination)?;
     let _guard = ticket_work_lock()?;
     let archive = ticket_archive_directory(directory, !archived)?;
     let source = canonical_ticket(if archived { &archive } else { directory }, filename)?;
     let original = fs::read_to_string(&source).map_err(|e| e.to_string())?;
     // Reject ambiguous front matter rather than silently discarding duplicate fields.
-    frontmatter_value(&original, "status")?;
+    if frontmatter_value(&original, "status")?.as_deref() == Some("done") {
+        return Err("Done tickets cannot be cancelled.".into());
+    }
     frontmatter_value(&original, "archived_at")?;
+    drop(_guard);
     check_ticket_sessions_idle(&original, &check_idle)?;
+    let _guard = ticket_work_lock()?;
     let timestamp = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
     let unbound = record_ticket_session(&original, None)?;
     let updated = replace_frontmatter_fields(
@@ -1745,6 +1946,8 @@ pub fn uncancel_ticket_with_session_check(
     archived: bool,
     check_idle: impl Fn(&str) -> Result<(), String>,
 ) -> Result<(), String> {
+    let coordination = ticket_coordination(directory, filename)?;
+    let _ticket_guard = try_ticket_guard(&coordination)?;
     let _guard = ticket_work_lock()?;
     let archive = if archived {
         Some(ticket_archive_directory(directory, false)?)
@@ -1757,7 +1960,9 @@ pub fn uncancel_ticket_with_session_check(
         return Err("Only cancelled tickets can be uncancelled.".into());
     }
     frontmatter_value(&original, "archived_at")?;
+    drop(_guard);
     check_ticket_sessions_idle(&original, &check_idle)?;
+    let _guard = ticket_work_lock()?;
     let unbound = record_ticket_session(&original, None)?;
     let updated = replace_frontmatter_fields(
         &unbound,
@@ -2090,7 +2295,334 @@ mod tests {
     use super::*;
 
     #[test]
-    fn other_ticket_writers_wait_for_cancellation_and_do_not_recreate_source() {
+    fn conflicting_binding_cleans_up_new_terminal_without_overwriting_ticket() {
+        struct ConflictingRuntime {
+            path: PathBuf,
+            cleaned: bool,
+        }
+        impl TicketWorkRuntime for ConflictingRuntime {
+            type Session = ();
+            fn exists(&mut self, _: &str) -> Result<bool, String> {
+                Ok(false)
+            }
+            fn create(&mut self, _: &str, _: &Path) -> Result<String, String> {
+                Ok("ses_new".into())
+            }
+            fn prepare(&mut self, _: &str, _: &Path, _: &str) -> Result<(), String> {
+                Ok(())
+            }
+            fn attach(&mut self, _: &str, _: &Path) -> Result<(), String> {
+                fs::write(
+                    &self.path,
+                    "---\ntitle: Test\nstatus: draft\nwork_session_id: ses_other\n---\nBody\n",
+                )
+                .unwrap();
+                Ok(())
+            }
+            fn cleanup_failed_attach(&mut self, id: &str) -> Result<(), String> {
+                assert_eq!(id, "ses_new");
+                self.cleaned = true;
+                Ok(())
+            }
+        }
+        for replacement in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let repo = root.path().join("repo");
+            let dir = root.path().join("tickets");
+            fs::create_dir(&repo).unwrap();
+            fs::create_dir(&dir).unwrap();
+            let path = dir.join("ticket.md");
+            fs::write(&path, "---\ntitle: Test\nstatus: draft\n---\nBody\n").unwrap();
+            let mut runtime = ConflictingRuntime {
+                path: path.clone(),
+                cleaned: false,
+            };
+            let result = if replacement {
+                new_session(&dir, &repo, "Workspace", "ticket.md", &mut runtime)
+            } else {
+                work(&dir, &repo, "Workspace", "ticket.md", &mut runtime).map(|_| ())
+            };
+            assert!(result.unwrap_err().contains("ses_new"));
+            assert!(runtime.cleaned);
+            assert_eq!(
+                ticket_session_id(&fs::read_to_string(path).unwrap())
+                    .unwrap()
+                    .as_deref(),
+                Some("ses_other")
+            );
+        }
+    }
+
+    #[test]
+    fn work_and_new_session_preserve_concurrent_ticket_edits() {
+        use std::sync::mpsc;
+        use std::time::Duration;
+        struct Paused {
+            entered: mpsc::Sender<()>,
+            resume: mpsc::Receiver<()>,
+        }
+        impl TicketWorkRuntime for Paused {
+            type Session = ();
+            fn exists(&mut self, _: &str) -> Result<bool, String> {
+                Ok(false)
+            }
+            fn create(&mut self, _: &str, _: &Path) -> Result<String, String> {
+                self.entered.send(()).unwrap();
+                self.resume.recv().unwrap();
+                Ok("ses_new".into())
+            }
+            fn prepare(&mut self, _: &str, _: &Path, _: &str) -> Result<(), String> {
+                Ok(())
+            }
+            fn attach(&mut self, _: &str, _: &Path) -> Result<(), String> {
+                Ok(())
+            }
+        }
+        for replacement in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let repo = root.path().join("repo");
+            let tickets = root.path().join("tickets");
+            fs::create_dir(&repo).unwrap();
+            fs::create_dir(&tickets).unwrap();
+            for name in ["ticket.md", "other.md"] {
+                fs::write(
+                    tickets.join(name),
+                    "---\ntitle: Test\nstatus: draft\n---\nBody\n",
+                )
+                .unwrap();
+            }
+            let (entered_tx, entered_rx) = mpsc::channel();
+            let (resume_tx, resume_rx) = mpsc::channel();
+            let dir = tickets.clone();
+            let worker = std::thread::spawn(move || {
+                let mut runtime = Paused {
+                    entered: entered_tx,
+                    resume: resume_rx,
+                };
+                if replacement {
+                    new_session(&dir, &repo, "Workspace", "ticket.md", &mut runtime)
+                } else {
+                    work(&dir, &repo, "Workspace", "ticket.md", &mut runtime).map(|_| ())
+                }
+            });
+            entered_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+            let (tx, rx) = mpsc::channel();
+            let dir = tickets.clone();
+            let editor = std::thread::spawn(move || {
+                let result = set_ticket_label(&dir, "other.md", "Other")
+                    .and_then(|_| set_ticket_label(&dir, "ticket.md", "Changed"))
+                    .and_then(|_| {
+                        let path = dir.join("ticket.md");
+                        let text = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+                        fs::write(path, text.replace("status: draft", "status: blocked"))
+                            .map_err(|e| e.to_string())
+                    });
+                tx.send(result).unwrap();
+            });
+            let edit = rx.recv_timeout(Duration::from_secs(5));
+            resume_tx.send(()).unwrap();
+            let result = worker.join().unwrap();
+            editor.join().unwrap();
+            assert!(edit.unwrap().is_ok());
+            assert!(result.is_ok());
+            let text = fs::read_to_string(tickets.join("ticket.md")).unwrap();
+            assert!(text.contains("Changed"));
+            assert!(text.contains("status: blocked"));
+            assert!(text.contains("ses_new"));
+        }
+    }
+
+    #[test]
+    fn cancel_and_uncancel_release_global_lock_during_idle_check() {
+        use std::sync::mpsc;
+        use std::time::Duration;
+        for restoring in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let dir = root.path().to_owned();
+            fs::create_dir(dir.join("archived")).unwrap();
+            let source = if restoring {
+                dir.join("archived/ticket.md")
+            } else {
+                dir.join("ticket.md")
+            };
+            let status = if restoring { "cancelled" } else { "draft" };
+            fs::write(
+                &source,
+                format!(
+                    "---\ntitle: Test\nstatus: {status}\nwork_session_id: ses_old\n---\nBody\n"
+                ),
+            )
+            .unwrap();
+            fs::write(
+                dir.join("other.md"),
+                "---\ntitle: Other\nstatus: draft\n---\n",
+            )
+            .unwrap();
+            let (entered_tx, entered_rx) = mpsc::channel();
+            let (resume_tx, resume_rx) = mpsc::channel();
+            let worker_dir = dir.clone();
+            let worker = std::thread::spawn(move || {
+                let check = |_: &str| {
+                    entered_tx.send(()).unwrap();
+                    resume_rx.recv().unwrap();
+                    Ok(())
+                };
+                if restoring {
+                    uncancel_ticket_with_session_check(&worker_dir, "ticket.md", true, check)
+                } else {
+                    cancel_ticket_with_session_check(&worker_dir, "ticket.md", false, check)
+                }
+            });
+            entered_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+            let (tx, rx) = mpsc::channel();
+            let editor_dir = dir.clone();
+            let editor = std::thread::spawn(move || {
+                tx.send(set_ticket_label(&editor_dir, "other.md", "Changed"))
+                    .unwrap()
+            });
+            let edit = rx.recv_timeout(Duration::from_secs(5));
+            resume_tx.send(()).unwrap();
+            let result = worker.join().unwrap();
+            editor.join().unwrap();
+            assert!(edit.unwrap().is_ok());
+            assert!(result.is_ok());
+        }
+    }
+
+    #[test]
+    fn investigation_network_does_not_block_other_tickets_but_serializes_cancellation() {
+        use std::sync::mpsc;
+        use std::time::Duration;
+        struct PausedRuntime {
+            entered: mpsc::Sender<()>,
+            resume: Option<mpsc::Receiver<()>>,
+            done: mpsc::Sender<()>,
+        }
+        impl TicketInvestigationRuntime for PausedRuntime {
+            fn create(&mut self, _: &str, _: &Path) -> Result<String, String> {
+                Ok("ses_test".into())
+            }
+            fn prepare(&mut self, _: &str, _: &Path, _: &str) -> Result<(), String> {
+                Ok(())
+            }
+            fn submit_prompt(
+                &mut self,
+                _: &str,
+                _: &str,
+                pending: PendingInvestigation,
+            ) -> Result<(), String> {
+                let entered = self.entered.clone();
+                let resume = self.resume.take().unwrap();
+                let done = self.done.clone();
+                std::thread::spawn(move || {
+                    entered.send(()).unwrap();
+                    resume.recv().unwrap();
+                    drop(pending);
+                    done.send(()).unwrap();
+                });
+                Ok(())
+            }
+            fn delete(&mut self, _: &str) -> Result<(), String> {
+                Ok(())
+            }
+        }
+        let root = tempfile::tempdir().unwrap();
+        let tickets = root.path().join("tickets");
+        let repo = root.path().join("repo");
+        fs::create_dir(&tickets).unwrap();
+        fs::create_dir(&repo).unwrap();
+        fs::write(
+            tickets.join("other.md"),
+            "---\ntitle: Other\nstatus: draft\n---\n",
+        )
+        .unwrap();
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let (resume_tx, resume_rx) = mpsc::channel();
+        let (done_tx, done_rx) = mpsc::channel();
+        let dir = tickets.clone();
+        let worker = std::thread::spawn(move || {
+            create_draft_with_investigation(
+                &dir,
+                &repo,
+                "Workspace",
+                "Investigate",
+                "Body",
+                true,
+                &mut PausedRuntime {
+                    entered: entered_tx,
+                    resume: Some(resume_rx),
+                    done: done_tx,
+                },
+            )
+            .unwrap()
+        });
+        entered_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        let result = worker.join().unwrap();
+        let (other_tx, other_rx) = mpsc::channel();
+        let dir = tickets.clone();
+        let other = std::thread::spawn(move || {
+            other_tx
+                .send(cancel_ticket(&dir, "other.md", false))
+                .unwrap()
+        });
+        let other_result = other_rx.recv_timeout(Duration::from_secs(5));
+        let filename = fs::read_dir(&tickets)
+            .unwrap()
+            .filter_map(Result::ok)
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .find(|name| name.ends_with(".md") && name != "other.md")
+            .unwrap();
+        let (same_tx, same_rx) = mpsc::channel();
+        let dir = tickets.clone();
+        let same_filename = filename.clone();
+        let same = std::thread::spawn(move || {
+            same_tx
+                .send(cancel_ticket_with_session_check(
+                    &dir,
+                    &same_filename,
+                    false,
+                    |_| Ok(()),
+                ))
+                .unwrap()
+        });
+        let same_early = same_rx.recv_timeout(Duration::from_millis(100));
+        // Always release the worker, even if the assertion would fail.
+        resume_tx.send(()).unwrap();
+        done_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        other.join().unwrap();
+        same.join().unwrap();
+        assert!(other_result.unwrap().is_ok());
+        assert!(same_early.unwrap().is_err());
+        assert!(result.investigation_started);
+        assert!(cancel_ticket_with_session_check(&tickets, &filename, false, |_| Ok(())).is_ok());
+    }
+
+    #[test]
+    fn done_tickets_cannot_be_cancelled_even_when_archived() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir(root.path().join("archived")).unwrap();
+        let original = "---\ntitle: Complete\nstatus: done\nwork_session_id: ses_old\n---\nBody\n";
+        for archived in [false, true] {
+            let path = if archived {
+                root.path().join("archived/ticket.md")
+            } else {
+                root.path().join("ticket.md")
+            };
+            fs::write(&path, original).unwrap();
+            assert!(cancel_ticket_with_session_check(
+                root.path(),
+                "ticket.md",
+                archived,
+                |_| panic!("must reject before checking session")
+            )
+            .is_err());
+            assert_eq!(fs::read_to_string(&path).unwrap(), original);
+            fs::remove_file(path).unwrap();
+        }
+    }
+
+    #[test]
+    fn cancellation_rechecks_after_idle_request_and_preserves_concurrent_edits() {
         let root = tempfile::tempdir().unwrap();
         let source = root.path().join("ticket.md");
         fs::write(
@@ -2098,32 +2630,13 @@ mod tests {
             "---\ntitle: Example\nstatus: draft\nwork_session_id: ses_old\n---\nBody\n",
         )
         .unwrap();
-        let (tx, rx) = std::sync::mpsc::channel();
-        let writers = std::cell::RefCell::new(Vec::new());
-        cancel_ticket_with_session_check(root.path(), "ticket.md", false, |_| {
-            let directory = root.path().to_owned();
-            let tx1 = tx.clone();
-            writers.borrow_mut().push(std::thread::spawn(move || {
-                tx1.send(()).unwrap();
-                set_ticket_label(&directory, "ticket.md", "Label").map(|_| ())
-            }));
-            let directory = root.path().to_owned();
-            let tx2 = tx.clone();
-            writers.borrow_mut().push(std::thread::spawn(move || {
-                tx2.send(()).unwrap();
-                record_observed_worktree(&directory, &directory, "ticket.md", "ses_old", &directory)
-                    .map(|_| ())
-            }));
-            rx.recv().unwrap();
-            rx.recv().unwrap();
+        let result = cancel_ticket_with_session_check(root.path(), "ticket.md", false, |_| {
+            set_ticket_label(root.path(), "ticket.md", "Label")?;
             Ok(())
-        })
-        .unwrap();
-        for writer in writers.into_inner() {
-            assert!(writer.join().unwrap().is_err());
-        }
-        assert!(!source.exists());
-        assert!(root.path().join("archived/ticket.md").exists());
+        });
+        assert!(result.is_err());
+        assert!(fs::read_to_string(source).unwrap().contains("Label"));
+        assert!(!root.path().join("archived/ticket.md").exists());
     }
 
     #[test]
@@ -2145,7 +2658,7 @@ mod tests {
     }
 
     #[test]
-    fn status_writer_waiting_for_cancellation_does_not_recreate_ticket() {
+    fn cancellation_detects_status_update_during_idle_check() {
         let root = tempfile::tempdir().unwrap();
         let source = root.path().join("ticket.md");
         fs::write(
@@ -2153,27 +2666,24 @@ mod tests {
             "---\ntitle: Example\nstatus: draft\nwork_session_id: ses_old\n---\nBody\n",
         )
         .unwrap();
-        let (started_tx, started_rx) = std::sync::mpsc::channel();
-        let writer = std::cell::RefCell::new(None);
-        cancel_ticket_with_session_check(root.path(), "ticket.md", false, |_| {
-            let path = source.clone();
-            let started_tx = started_tx.clone();
-            *writer.borrow_mut() = Some(std::thread::spawn(move || {
-                started_tx.send(()).unwrap();
-                record_opencode_status_for_session(&path, "running", Some("ses_old"))
-            }));
-            started_rx.recv().unwrap();
+        let result = cancel_ticket_with_session_check(root.path(), "ticket.md", false, |_| {
+            assert!(record_opencode_status_for_session(
+                &source,
+                "running",
+                Some("ses_old")
+            )?);
             Ok(())
-        })
-        .unwrap();
-        assert!(!writer.into_inner().unwrap().join().unwrap().unwrap());
-        assert!(!source.exists());
-        assert!(root.path().join("archived/ticket.md").exists());
+        });
+        assert!(result.is_err());
+        assert!(fs::read_to_string(source)
+            .unwrap()
+            .contains("opencode-status: running"));
+        assert!(!root.path().join("archived/ticket.md").exists());
     }
 
     #[test]
     fn cancellation_round_trip_preserves_ticket_data_for_each_active_status() {
-        for status in ["draft", "ready", "in_progress", "blocked", "done"] {
+        for status in ["draft", "ready", "in_progress", "blocked"] {
             let root = tempfile::tempdir().unwrap();
             let source = root.path().join("ticket.md");
             let original = format!("---\ntitle: Example\nstatus: {status}\nwork_session_id: ses_keep\nwork_session_ids:\n  - ses_keep\n  - ses_legacy\nworktree: /existing/tree\ncustom: retained\n---\n# Body\nKeep this text.\n");
@@ -2219,7 +2729,7 @@ mod tests {
         let archive = root.path().join("archived");
         fs::create_dir(&archive).unwrap();
         let path = archive.join("ticket.md");
-        let original = "---\ntitle: Complete\nstatus: done\narchived_at: \"2024-01-01T00:00:00Z\"\nwork_session_id: ses_old\n---\nBody\n";
+        let original = "---\ntitle: Archived\nstatus: blocked\narchived_at: \"2024-01-01T00:00:00Z\"\nwork_session_id: ses_old\n---\nBody\n";
         fs::write(&path, original).unwrap();
         assert!(uncancel_ticket(root.path(), "ticket.md").is_err());
         assert_eq!(fs::read_to_string(&path).unwrap(), original);
@@ -2337,7 +2847,12 @@ mod tests {
             }
         }
 
-        fn submit_prompt(&mut self, id: &str, prompt: &str) -> Result<(), String> {
+        fn submit_prompt(
+            &mut self,
+            id: &str,
+            prompt: &str,
+            _pending: PendingInvestigation,
+        ) -> Result<(), String> {
             self.prompts.push((id.into(), prompt.into()));
             if self.fail_prompt {
                 Err("send failed".into())
