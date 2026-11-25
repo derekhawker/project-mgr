@@ -266,6 +266,7 @@ function setTicketViewerVisible(value) {
 }
 const [ticketItems, setTicketItems] = createSignal([]);
 const [ticketLoading, setTicketLoading] = createSignal(false);
+const [ticketRefreshing, setTicketRefreshing] = createSignal(false);
 const [ticketWorking, setTicketWorking] = createSignal(false);
 const [ticketError, setTicketError] = createSignal("");
 const [selectedTicketFilename, setSelectedTicketFilename] = createSignal(null);
@@ -299,6 +300,7 @@ const workspaceTicketCache = createWorkspaceTicketCache(
 function showCachedTicketList(archived = ticketArchived()) {
   const workspaceId = selectedWorkspace?.id;
   if (!workspaceId) return;
+  setTicketRefreshing(false);
   const tickets = workspaceTicketCache.get(workspaceId, archived);
   setTicketError("");
   if (tickets) {
@@ -328,7 +330,9 @@ async function preloadWorkspaceTicketLists(workspaces) {
 async function refreshTicketList(archived = ticketArchived()) {
   const workspaceId = selectedWorkspace?.id;
   if (!workspaceId) return;
-  setTicketLoading(true);
+  const hasCachedList = Boolean(workspaceTicketCache.get(workspaceId, archived));
+  if (hasCachedList || !ticketLoading()) setTicketRefreshing(true);
+  else setTicketLoading(true);
   setTicketError("");
   try {
     await workspaceTicketCache.load(workspaceId, archived, { force: true });
@@ -340,6 +344,9 @@ async function refreshTicketList(archived = ticketArchived()) {
       setTicketError(formatWorkspaceError("Load Workspace tickets", error));
       setTicketLoading(false);
     }
+  } finally {
+    if (selectedWorkspace?.id === workspaceId && ticketArchived() === archived)
+      setTicketRefreshing(false);
   }
 }
 async function workWorkspaceTicket(workspaceId, filename) {
@@ -490,6 +497,7 @@ const workspaceTicketViewerProps = {
   tickets: ticketItems,
   selectedFilename: selectedTicketFilename,
   loading: ticketLoading,
+  refreshing: ticketRefreshing,
   archived: ticketArchived,
   working: ticketWorking,
   error: ticketError,
@@ -555,6 +563,9 @@ const workspaceTicketViewerProps = {
     if (selectedWorkspace?.id !== workspaceId) return;
     setTicketArchived(false);
     workspaceTicketCache.invalidate();
+    // The current rows may be from the archived scope. Install the active
+    // scope's cache (or clear the rows) before a refresh can fail.
+    showCachedTicketList(false);
     await refreshTicketList(false);
     setSelectedTicketFilename(ticket.filename);
     setTicketError(

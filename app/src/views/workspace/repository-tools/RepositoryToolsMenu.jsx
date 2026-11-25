@@ -37,7 +37,6 @@ export function RepositoryToolsMenu(props) {
       open={props.open}
       onRequestToggle={props.onToggle}
       onRequestClose={props.onToggle}
-      closeOnSelect
     >
       <ActionMenuGroup label="Open in…">
         <For each={

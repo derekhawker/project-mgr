@@ -2,10 +2,7 @@ import { ActionMenu, ActionMenuItem } from "@ui-lib";
 import styles from "../../application/navigation.module.css";
 
 export function NewWorkMenu(props) {
-  const choose = (type, event) => {
-    event.currentTarget.closest("details").open = false;
-    props.onChoose(type);
-  };
+  const choose = (type) => props.onChoose(type);
   return (
     <div id="new-work-menu" class={styles.newWork}>
       <ActionMenu
@@ -18,13 +15,13 @@ export function NewWorkMenu(props) {
       >
         <ActionMenuItem
           data-new-work-type="workspace"
-          onClick={(event) => choose("workspace", event)}
+          onClick={() => choose("workspace")}
         >
           Workspace
         </ActionMenuItem>
         <ActionMenuItem
           data-new-work-type="quick_request"
-          onClick={(event) => choose("quick_request", event)}
+          onClick={() => choose("quick_request")}
         >
           Quick Request
         </ActionMenuItem>

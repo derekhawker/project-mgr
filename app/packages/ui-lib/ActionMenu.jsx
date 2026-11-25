@@ -1,4 +1,4 @@
-import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createSignal, createUniqueId, onCleanup, onMount, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import styles from "./ActionMenu.module.css";
 import controlStyles from "./controls.module.css";
@@ -14,8 +14,12 @@ export function ActionMenu(props) {
   let selectionSurface;
   let popupRegistered = false;
   let usesPopover = false;
+  let layoutObserver;
+  let sizeObserver;
+  let repositionFrame;
+  const generatedContentId = `action-menu-${createUniqueId()}`;
+  const contentId = () => props.contentId ?? (props.portal ? generatedContentId : undefined);
   const [portalTarget, setPortalTarget] = createSignal(null);
-  const [portalInDialog, setPortalInDialog] = createSignal(false);
   const [portalStyle, setPortalStyle] = createSignal({});
   const [portalOpen, setPortalOpen] = createSignal(false);
   const [disclosureOpen, setDisclosureOpen] = createSignal(
@@ -31,28 +35,94 @@ export function ActionMenu(props) {
     if (!props.portal || !menu?.open || !surface) return;
     const trigger = menu.querySelector("summary");
     const dialog = menu.closest("dialog");
-    if (!trigger || !dialog) return;
+    if (!trigger) return;
     const anchor = trigger.getBoundingClientRect();
-    const frame = dialog.getBoundingClientRect();
+    const frame = dialog?.getBoundingClientRect();
+    const fixed = usesPopover || !frame;
     const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
-    const below = (usesPopover ? viewportHeight : frame.bottom) - anchor.bottom;
-    const above = anchor.top - (usesPopover ? 0 : frame.top);
+    const below = (fixed ? viewportHeight : frame.bottom) - anchor.bottom;
+    const above = anchor.top - (fixed ? 0 : frame.top);
     const optionCount = surface.querySelectorAll("button, a").length;
     const desired = Math.min(360, Math.max(72, optionCount * 36));
     const openDown = below >= desired || (above < desired && below >= above);
     const available = Math.max(1, (openDown ? below : above) - 8);
     setPortalStyle({
-      position: usesPopover ? "fixed" : "absolute",
-      left: `${usesPopover ? anchor.left : anchor.left - frame.left}px`,
+      position: fixed ? "fixed" : "absolute",
+      left: `${fixed ? Math.max(0, Math.min(anchor.left, window.innerWidth - surface.offsetWidth)) : anchor.left - frame.left}px`,
       width: "auto",
       maxHeight: `${Math.min(360, available)}px`,
       top: openDown
-        ? `${usesPopover ? anchor.bottom : anchor.bottom - frame.top}px`
+        ? `${fixed ? anchor.bottom : anchor.bottom - frame.top}px`
         : undefined,
       bottom: openDown
         ? undefined
-        : `${usesPopover ? viewportHeight - anchor.top : frame.bottom - anchor.top}px`,
+        : `${fixed ? viewportHeight - anchor.top : frame.bottom - anchor.top}px`,
     });
+  };
+  const stopTrackingLayout = () => {
+    layoutObserver?.disconnect();
+    sizeObserver?.disconnect();
+    if (repositionFrame) cancelAnimationFrame(repositionFrame);
+    repositionFrame = undefined;
+  };
+  const trackLayout = () => {
+    stopTrackingLayout();
+    if (!props.portal || !menu?.open) return;
+    const schedule = () => {
+      if (repositionFrame) return;
+      repositionFrame = requestAnimationFrame(() => {
+        repositionFrame = undefined;
+        positionPortal();
+      });
+    };
+    // Watch the nearest scrolling region (or the parent), not the whole app.
+    // Row moves and text changes can move the anchor without resizing it.
+    let root = menu.parentElement;
+    while (root && root !== document.body &&
+      !/(auto|scroll)/.test(getComputedStyle(root).overflowY)) root = root.parentElement;
+    if (!root || root === document.body) root = menu.parentElement;
+    if (root && typeof MutationObserver !== "undefined") {
+      layoutObserver = new MutationObserver(schedule);
+      layoutObserver.observe(root, { childList: true, characterData: true, subtree: true });
+    }
+    if (typeof window.ResizeObserver !== "undefined") {
+      sizeObserver = new window.ResizeObserver(schedule);
+      sizeObserver.observe(menu);
+      if (root) sizeObserver.observe(root);
+      if (surface) sizeObserver.observe(surface);
+    }
+  };
+  const focusable = (root) => Array.from(root.querySelectorAll(
+    'a[href], button, input, select, textarea, summary, [tabindex]:not([tabindex="-1"])',
+  )).filter((element) => !element.disabled && element.tabIndex >= 0 &&
+    !element.closest('[hidden], [inert], [aria-hidden="true"]') && element.getClientRects().length);
+  const handlePortalTab = (event) => {
+    if (event.defaultPrevented || !props.portal || !menu?.open || event.key !== "Tab" || !surface) return;
+    const trigger = menu.querySelector("summary");
+    const items = focusable(surface);
+    const active = document.activeElement;
+    if (!event.shiftKey && active === trigger && items.length) {
+      event.preventDefault();
+      items[0].focus();
+    } else if (event.shiftKey && active === items[0]) {
+      event.preventDefault();
+      trigger.focus();
+    } else if (!event.shiftKey && active === items.at(-1)) {
+      const scope = menu.closest("dialog") || document;
+      const order = focusable(scope).filter((element) => !surface.contains(element));
+      const next = order[order.indexOf(trigger) + 1];
+      if (next) {
+        event.preventDefault();
+        next.focus();
+      }
+    } else if (event.shiftKey && items.length) {
+      const scope = menu.closest("dialog") || document;
+      const order = focusable(scope).filter((element) => !surface.contains(element));
+      if (active === order[order.indexOf(trigger) + 1]) {
+        event.preventDefault();
+        items.at(-1).focus();
+      }
+    }
   };
   const syncPopover = (open) => {
     if (!surface || typeof surface.showPopover !== "function") return false;
@@ -63,6 +133,7 @@ export function ActionMenu(props) {
         if (!surface.matches(":popover-open")) {
           try {
             surface.showPopover();
+            positionPortal();
           } catch {
             usesPopover = false;
             syncDialogPopup(true);
@@ -89,15 +160,24 @@ export function ActionMenu(props) {
       surface?.contains(action) &&
       !action.disabled &&
       action.getAttribute("aria-disabled") !== "true"
-    )
+    ) {
+      const restoreFocus = document.activeElement === action;
       close();
+      // Let the selected action run first. Restore only if it kept focus on
+      // itself; an action that deliberately moved focus owns that decision.
+      if (restoreFocus) queueMicrotask(() => {
+        if (document.activeElement === action)
+          menu?.querySelector("summary")?.focus();
+      });
+    }
   };
   const attachSurface = (element) => {
-    if (selectionSurface)
-      selectionSurface.removeEventListener("click", closeOnSelection, true);
+    if (selectionSurface) {
+      selectionSurface.removeEventListener("click", closeOnSelection);
+    }
     surface = element;
     selectionSurface = element;
-    selectionSurface?.addEventListener("click", closeOnSelection, true);
+    selectionSurface?.addEventListener("click", closeOnSelection);
   };
   const releaseDialogPopup = () => {
     if (!popupRegistered || !popupDialog) return;
@@ -132,13 +212,16 @@ export function ActionMenu(props) {
     const reposition = () => positionPortal();
     window.addEventListener("resize", reposition);
     document.addEventListener("scroll", reposition, true);
+    document.addEventListener("keydown", handlePortalTab);
     onCleanup(() => {
       window.removeEventListener("resize", reposition);
       document.removeEventListener("scroll", reposition, true);
+      document.removeEventListener("keydown", handlePortalTab);
     });
   });
   onCleanup(() => {
-    selectionSurface?.removeEventListener("click", closeOnSelection, true);
+    selectionSurface?.removeEventListener("click", closeOnSelection);
+    stopTrackingLayout();
     releaseDialogPopup();
   });
   const className = () => [styles.menu, props.class].filter(Boolean).join(" ");
@@ -160,8 +243,7 @@ export function ActionMenu(props) {
           queueMicrotask(() => {
             if (menu === element) {
               const dialog = element?.closest("dialog");
-              setPortalTarget(dialog || null);
-              setPortalInDialog(Boolean(dialog));
+              setPortalTarget(dialog || document.body);
             }
           });
       }}
@@ -176,6 +258,8 @@ export function ActionMenu(props) {
           const hasPopover = syncPopover(event.currentTarget.open);
           if (hasPopover) releaseDialogPopup();
           else syncDialogPopup(event.currentTarget.open);
+          if (event.currentTarget.open) trackLayout();
+          else stopTrackingLayout();
         }
         if (event.currentTarget.open) queueMicrotask(positionPortal);
         if (!controlled)
@@ -193,7 +277,7 @@ export function ActionMenu(props) {
             ? String(disclosureOpen())
             : String(isOpen())
         }
-        aria-controls={props.contentId}
+        aria-controls={contentId()}
         role={props.triggerRole}
         aria-haspopup={props.triggerHasPopup}
         aria-labelledby={props.triggerLabelledBy}
@@ -210,7 +294,7 @@ export function ActionMenu(props) {
         {props.triggerText ?? props.label}
         <Icon name="chevron" class={styles.indicator} muted />
       </summary>
-      {props.portal && portalInDialog() ? (
+      {props.portal ? (
         <Show when={portalTarget()}>
           {(target) => (
             <Portal mount={target()}>
@@ -222,7 +306,7 @@ export function ActionMenu(props) {
                 style={portalStyle()}
                 hidden={!portalOpen()}
                 popover="manual"
-                id={props.contentId}
+                id={contentId()}
                 surfaceVariant={props.surfaceVariant ?? "accent"}
                 class={`${styles.actions} ${styles.portalActions} ${props.contentClass || ""}`}
                 role={props.contentRole ?? "group"}

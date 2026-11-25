@@ -1,11 +1,13 @@
 import {
   createMemo,
+  createEffect,
   createSignal,
   For,
   onCleanup,
   onMount,
   Show,
 } from "solid-js";
+import { createStore, reconcile } from "solid-js/store";
 import {
   ActionMenu,
   ActionMenuItem,
@@ -95,9 +97,12 @@ export function WorkspaceTicketViewer(props) {
     (props.modelOptions?.() ?? []).find(
       (option) => option.value === props.selectedModel?.(),
     )?.label ?? "Choose an available model";
-  const orderedTickets = createMemo(() =>
-    sortedTickets(props.tickets(), sort()),
-  );
+  // Refreshes replace ticket objects. Reconcile by filename so a row's menu and
+  // focus survive updates while its fields still reflect the latest snapshot.
+  const [ticketList, setTicketList] = createStore({ ordered: [] });
+  createEffect(() => {
+    setTicketList("ordered", reconcile(sortedTickets(props.tickets(), sort()), { key: "filename" }));
+  });
   const selected = createMemo(() =>
     props
       .tickets()
@@ -158,7 +163,7 @@ export function WorkspaceTicketViewer(props) {
         <ErrorMessage message={props.modelError?.()} />
         <ErrorMessage message={props.error()} />
         <Show
-          when={!props.loading()}
+          when={!props.loading() || props.tickets().length > 0 ? true : false}
           fallback={<p role="status">Loading tickets…</p>}
         >
           <div class={styles.columns}>
@@ -180,7 +185,7 @@ export function WorkspaceTicketViewer(props) {
                   <IconButton
                     label="Refresh tickets"
                     title="Refresh tickets"
-                    disabled={props.loading() || props.working?.()}
+                    disabled={props.loading() || props.refreshing?.() || props.working?.()}
                     onClick={props.onRefresh}
                   >
                     <Icon name="refresh" />
@@ -215,18 +220,18 @@ export function WorkspaceTicketViewer(props) {
                 aria-label={archived() ? "Archived tickets" : "Tickets"}
               >
                 <Show
-                  when={orderedTickets().length}
+                  when={ticketList.ordered.length}
                   fallback={
                     <li class={styles.emptyList} role="listitem">
                       No {archived() ? "archived " : "active "}tickets.
                     </li>
                   }
                 >
-                  <For each={orderedTickets()}>
+                  <For each={ticketList.ordered}>
                     {(ticket) => {
                       const selected = () =>
                         props.selectedFilename() === ticket.filename;
-                      const date = displayedDate(ticket);
+                      const date = () => displayedDate(ticket);
                       return (
                         <li
                           role="listitem"
@@ -256,14 +261,14 @@ export function WorkspaceTicketViewer(props) {
                               when={!archived()}
                               fallback={
                                 <Tooltip
-                                  content={ticket.archivedAt ?? date.dateTime}
+                                  content={ticket.archivedAt ?? date().dateTime}
                                   delay={150}
                                   renderTrigger={(tooltipProps) => (
                                     <time
                                       class={styles.archivedAt}
-                                      dateTime={date.dateTime}
+                                      dateTime={date().dateTime}
                                       tabIndex="0"
-                                      aria-label={`Archived ${date.label}`}
+                                      aria-label={`Archived ${date().label}`}
                                       aria-describedby={
                                         tooltipProps["aria-describedby"]
                                       }
@@ -274,7 +279,7 @@ export function WorkspaceTicketViewer(props) {
                                       onBlur={tooltipProps.onBlur}
                                       onKeyDown={tooltipProps.onKeyDown}
                                     >
-                                      {date.label}
+                                      {date().label}
                                     </time>
                                   )}
                                 />
