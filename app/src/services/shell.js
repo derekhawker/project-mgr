@@ -252,7 +252,14 @@ export function cleanupTerminal(invoke, sessionId) {
   return invokeCommand(invoke, "opencode_terminal_cleanup", { sessionId });
 }
 
-export function createQuickRequest(invoke, prompt, model, repositoryId = null, directory = null, startingPrompt = undefined) {
+export function createQuickRequest(
+  invoke,
+  prompt,
+  model,
+  repositoryId = null,
+  directory = null,
+  startingPrompt = undefined,
+) {
   return invokeCommand(invoke, "quick_request_create", {
     prompt,
     ...(startingPrompt === undefined ? {} : { startingPrompt }),
@@ -396,7 +403,9 @@ export function getDefaultModel(invoke) {
 }
 
 export function setDefaultModel(invoke, model) {
-  return invokeCommand(invoke, "opencode_model_default_set", { request: model });
+  return invokeCommand(invoke, "opencode_model_default_set", {
+    request: model,
+  });
 }
 
 // This is the production model-loader seam used by the selector.  Keeping the
@@ -454,7 +463,8 @@ export function runNewWorkProposal(
   explicitDirectory = undefined,
 ) {
   const payload = { sessionId, originalPrompt, workType: "quick_request" };
-  if (explicitDirectory !== undefined) payload.explicitDirectory = explicitDirectory;
+  if (explicitDirectory !== undefined)
+    payload.explicitDirectory = explicitDirectory;
   return invokeCommand(invoke, "new_work_proposal_run", payload);
 }
 
@@ -713,7 +723,13 @@ export function proposeWorkspaceTicket(invoke, workspaceId, idea) {
   });
 }
 
-export function createWorkspaceTicket(invoke, workspaceId, title, body, startInvestigation = false) {
+export function createWorkspaceTicket(
+  invoke,
+  workspaceId,
+  title,
+  body,
+  startInvestigation = false,
+) {
   return invokeCommand(invoke, "workspace_ticket_create", {
     workspaceId,
     title,
@@ -723,7 +739,26 @@ export function createWorkspaceTicket(invoke, workspaceId, title, body, startInv
 }
 
 export function listWorkspaceTickets(invoke, workspaceId, archived = false) {
-  return invokeCommand(invoke, "workspace_tickets_list", { workspaceId, archived });
+  return invokeCommand(invoke, "workspace_tickets_list", {
+    workspaceId,
+    archived,
+  });
+}
+
+export function cancelWorkspaceTicket(invoke, workspaceId, filename, archived = false) {
+  return invokeCommand(invoke, "workspace_ticket_cancel", {
+    workspaceId,
+    filename,
+    archived,
+  });
+}
+
+export function uncancelWorkspaceTicket(invoke, workspaceId, filename, archived = true) {
+  return invokeCommand(invoke, "workspace_ticket_uncancel", {
+    workspaceId,
+    filename,
+    archived,
+  });
 }
 
 export function listWorkspaceTicketLabels(invoke) {
@@ -732,18 +767,35 @@ export function listWorkspaceTicketLabels(invoke) {
 
 export function setWorkspaceTicketLabel(invoke, workspaceId, filename, label) {
   return invokeCommand(invoke, "workspace_ticket_label_set", {
-    workspaceId, filename, label,
+    workspaceId,
+    filename,
+    label,
   });
 }
 
 export function workOnWorkspaceTicket(invoke, workspaceId, filename) {
-  return invokeCommand(invoke, "workspace_ticket_work", { workspaceId, filename });
+  return invokeCommand(invoke, "workspace_ticket_work", {
+    workspaceId,
+    filename,
+  });
 }
 
 export function createWorkspaceTicketSession(invoke, workspaceId, filename) {
-  return invokeCommand(invoke, "workspace_ticket_session_create", { workspaceId, filename });
+  return invokeCommand(invoke, "workspace_ticket_session_create", {
+    workspaceId,
+    filename,
+  });
 }
 
-export function closeWorkspaceTicketSession(invoke, workspaceId, filename, sessionId) {
-  return invokeCommand(invoke, "workspace_ticket_session_close", { workspaceId, filename, sessionId });
+export function closeWorkspaceTicketSession(
+  invoke,
+  workspaceId,
+  filename,
+  sessionId,
+) {
+  return invokeCommand(invoke, "workspace_ticket_session_close", {
+    workspaceId,
+    filename,
+    sessionId,
+  });
 }

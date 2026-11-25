@@ -163,6 +163,7 @@
 }
 .actionCell {
   display: flex;
+  gap: var(--ui-space-6);
   grid-column: 3;
   align-items: center;
   justify-content: flex-end;

@@ -166,6 +166,75 @@ test.after(async () => {
   await rm(temp, { recursive: true, force: true });
 });
 
+test("ticket actions follow archive location and block cancellation while a session is active", () => {
+  const calls = [];
+  const [archived, setArchived] = createSignal(false);
+  const [rows, setRows] = createSignal([
+    {
+      filename: "active.md",
+      title: "Active",
+      status: "in_progress",
+      hasWorkSession: true,
+      opencodeStatus: "running",
+      modifiedAt: 100,
+    },
+    {
+      filename: "cancelled.md",
+      title: "Cancelled",
+      status: "cancelled",
+      modifiedAt: 90,
+    },
+  ]);
+  const view = mount({
+    tickets: rows,
+    archived,
+    selectedFilename: () => null,
+    loading: () => false,
+    error: () => "",
+    onCancel: (filename) => calls.push(["cancel", filename]),
+    onUncancel: (filename) => calls.push(["uncancel", filename]),
+  });
+  try {
+    const actions = (title) =>
+      view.host.querySelector(`[aria-label="Ticket actions: ${title}"]`);
+    const active = actions("Active").querySelector("button");
+    assert.equal(active.disabled, true);
+    assert.match(active.textContent, /session active/i);
+    const misplaced = actions("Cancelled").querySelector("button");
+    assert.equal(misplaced.textContent.trim(), "Cancel ticket");
+    misplaced.click();
+    setArchived(true);
+    setRows([
+      {
+        filename: "done.md",
+        title: "Done",
+        status: "done",
+        modifiedAt: 100,
+        hasWorkSession: true,
+        opencodeStatus: "running",
+      },
+      {
+        filename: "cancelled.md",
+        title: "Cancelled",
+        status: "cancelled",
+        modifiedAt: 90,
+      },
+    ]);
+    const archivedDone = actions("Done").querySelector("button");
+    assert.equal(archivedDone.disabled, false);
+    assert.equal(archivedDone.textContent.trim(), "Cancel ticket");
+    archivedDone.click();
+    actions("Cancelled").querySelector("button").click();
+    assert.deepEqual(calls, [
+      ["cancel", "cancelled.md"],
+      ["cancel", "done.md"],
+      ["uncancel", "cancelled.md"],
+    ]);
+  } finally {
+    view.dispose();
+  }
+});
+
 test("ticket viewer exposes the remembered OpenCode default model selector", () => {
   const calls = [];
   const selection = JSON.stringify({ providerId: "fixture", id: "model" });

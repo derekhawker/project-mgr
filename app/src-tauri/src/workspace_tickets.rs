@@ -55,8 +55,9 @@ pub fn create_draft_with_investigation<R: TicketInvestigationRuntime>(
     start_investigation: bool,
     runtime: &mut R,
 ) -> Result<TicketCreationResult, String> {
+    let _guard = ticket_work_lock()?;
     let mut ticket =
-        create_draft_with_label(directory, repository, title, body, Some(workspace_name))?;
+        create_draft_with_label_locked(directory, repository, title, body, Some(workspace_name))?;
     let mut result = TicketCreationResult {
         ticket: ticket.clone(),
         investigation_session_id: None,
@@ -325,7 +326,7 @@ fn record_session_worktree<R: TicketWorkRuntime>(
     // OpenCode can assign a worktree when the session is created, before any
     // agent tool call exists to observe. Read its live session location after
     // attachment and persist it through the same ticket/Git validation path.
-    record_observed_worktree(
+    record_observed_worktree_locked(
         directory,
         &repository,
         filename,
@@ -668,6 +669,11 @@ fn replace_frontmatter_fields(
 ) -> Result<String, String> {
     let mut lines: Vec<String> = markdown.split_inclusive('\n').map(str::to_owned).collect();
     let end = frontmatter_bounds(&lines)?;
+    let newline = if lines[0].ends_with("\r\n") {
+        "\r\n"
+    } else {
+        "\n"
+    };
     let keys: Vec<_> = fields.iter().map(|(key, _)| *key).collect();
     let mut remove = vec![false; end];
     let mut list_block = false;
@@ -701,7 +707,7 @@ fn replace_frontmatter_fields(
             if value.starts_with('\n') {
                 additions.push(format!("{key}:{value}"));
             } else {
-                additions.push(format!("{key}: {value}\n"));
+                additions.push(format!("{key}: {value}{newline}"));
             }
         }
     }
@@ -841,6 +847,17 @@ fn same_git_repository(repository: &Path, candidate: &Path) -> Result<bool, Stri
 /// durably bound to this ticket. The plugin is an adapter; Rust validates Git
 /// identity and owns the Markdown update.
 pub fn record_observed_worktree(
+    directory: &Path,
+    repository: &Path,
+    filename: &str,
+    session_id: &str,
+    candidate_path: &Path,
+) -> Result<TicketWorktree, String> {
+    let _guard = ticket_work_lock()?;
+    record_observed_worktree_locked(directory, repository, filename, session_id, candidate_path)
+}
+
+fn record_observed_worktree_locked(
     directory: &Path,
     repository: &Path,
     filename: &str,
@@ -989,6 +1006,7 @@ fn write_ticket_markdown_safely(path: &Path, original: &str, updated: &str) -> R
 /// two writes in this process from racing; byte comparisons detect edits seen
 /// before replacement, but cannot exclude non-cooperating external writers.
 pub fn write_session_id_safely(path: &Path, original: &str, id: &str) -> Result<(), String> {
+    let _guard = ticket_work_lock()?;
     static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
     let _guard = LOCK
         .get_or_init(|| std::sync::Mutex::new(()))
@@ -1115,6 +1133,17 @@ pub fn create_draft(
 }
 
 pub fn create_draft_with_label(
+    directory: &Path,
+    repository: &Path,
+    title: &str,
+    body: &str,
+    label: Option<&str>,
+) -> Result<Ticket, String> {
+    let _guard = ticket_work_lock()?;
+    create_draft_with_label_locked(directory, repository, title, body, label)
+}
+
+fn create_draft_with_label_locked(
     directory: &Path,
     repository: &Path,
     title: &str,
@@ -1654,6 +1683,7 @@ pub fn list_project_labels(
 }
 
 pub fn set_ticket_label(directory: &Path, filename: &str, label: &str) -> Result<String, String> {
+    let _guard = ticket_work_lock()?;
     let label = normalize_project_label(label)?;
     let path = canonical_ticket(directory, filename)?;
     let original = fs::read_to_string(&path).map_err(|error| error.to_string())?;
@@ -1662,6 +1692,164 @@ pub fn set_ticket_label(directory: &Path, filename: &str, label: &str) -> Result
         write_ticket_markdown_safely(&path, &original, &updated)?;
     }
     Ok(label)
+}
+
+/// Without a runtime, fail closed for tickets with session bindings.
+pub fn cancel_ticket(directory: &Path, filename: &str, archived: bool) -> Result<(), String> {
+    cancel_ticket_with_session_check(directory, filename, archived, |_| {
+        Err("Cannot verify that the ticket session is idle.".into())
+    })
+}
+
+pub fn cancel_ticket_with_session_check(
+    directory: &Path,
+    filename: &str,
+    archived: bool,
+    check_idle: impl Fn(&str) -> Result<(), String>,
+) -> Result<(), String> {
+    let _guard = ticket_work_lock()?;
+    let archive = ticket_archive_directory(directory, !archived)?;
+    let source = canonical_ticket(if archived { &archive } else { directory }, filename)?;
+    let original = fs::read_to_string(&source).map_err(|e| e.to_string())?;
+    // Reject ambiguous front matter rather than silently discarding duplicate fields.
+    frontmatter_value(&original, "status")?;
+    frontmatter_value(&original, "archived_at")?;
+    check_ticket_sessions_idle(&original, &check_idle)?;
+    let timestamp = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
+    let unbound = record_ticket_session(&original, None)?;
+    let updated = replace_frontmatter_fields(
+        &unbound,
+        &[
+            ("status", Some("cancelled".into())),
+            ("archived_at", Some(yaml_string(&timestamp))),
+            ("opencode-status", None),
+        ],
+    )?;
+    if archived {
+        write_ticket_markdown_safely(&source, &original, &updated)
+    } else {
+        move_ticket_safely(&source, &archive.join(filename), &original, &updated)
+    }
+}
+
+/// Restore only cancelled tickets, restarting their workflow at draft.
+pub fn uncancel_ticket(directory: &Path, filename: &str) -> Result<(), String> {
+    uncancel_ticket_with_session_check(directory, filename, true, |_| {
+        Err("Cannot verify that the ticket session is idle.".into())
+    })
+}
+
+pub fn uncancel_ticket_with_session_check(
+    directory: &Path,
+    filename: &str,
+    archived: bool,
+    check_idle: impl Fn(&str) -> Result<(), String>,
+) -> Result<(), String> {
+    let _guard = ticket_work_lock()?;
+    let archive = if archived {
+        Some(ticket_archive_directory(directory, false)?)
+    } else {
+        None
+    };
+    let source = canonical_ticket(archive.as_deref().unwrap_or(directory), filename)?;
+    let original = fs::read_to_string(&source).map_err(|e| e.to_string())?;
+    if frontmatter_value(&original, "status")?.as_deref() != Some("cancelled") {
+        return Err("Only cancelled tickets can be uncancelled.".into());
+    }
+    frontmatter_value(&original, "archived_at")?;
+    check_ticket_sessions_idle(&original, &check_idle)?;
+    let unbound = record_ticket_session(&original, None)?;
+    let updated = replace_frontmatter_fields(
+        &unbound,
+        &[
+            ("status", Some("draft".into())),
+            ("archived_at", None),
+            ("opencode-status", None),
+        ],
+    )?;
+    if archived {
+        move_ticket_safely(&source, &directory.join(filename), &original, &updated)
+    } else {
+        write_ticket_markdown_safely(&source, &original, &updated)
+    }
+}
+
+fn check_ticket_sessions_idle(
+    markdown: &str,
+    check_idle: &impl Fn(&str) -> Result<(), String>,
+) -> Result<(), String> {
+    // Validate both modern and legacy fields before extracting all legacy IDs.
+    let active = ticket_session_id(markdown)?;
+    let lines: Vec<String> = markdown.split_inclusive('\n').map(str::to_owned).collect();
+    let end = frontmatter_bounds(&lines)?;
+    let mut ids = Vec::new();
+    if let Some(id) = active {
+        ids.push(id);
+    }
+    let mut in_list = false;
+    for line in lines.iter().take(end).skip(1) {
+        let line = line.trim_end_matches(['\r', '\n']);
+        if line == "work_session_ids:" {
+            in_list = true;
+            continue;
+        }
+        if in_list {
+            if let Some(id) = line.strip_prefix("  - ") {
+                let id = id.trim();
+                if !valid_ticket_session_id(id) {
+                    return Err("Invalid session ID in work_session_ids front matter".into());
+                }
+                if !ids.iter().any(|existing| existing == id) {
+                    ids.push(id.to_owned());
+                }
+            } else if !line.starts_with(' ') && !line.is_empty() {
+                in_list = false;
+            }
+        }
+    }
+    for id in ids {
+        check_idle(&id)?;
+    }
+    Ok(())
+}
+
+fn ticket_archive_directory(directory: &Path, create: bool) -> Result<PathBuf, String> {
+    let root = directory
+        .canonicalize()
+        .map_err(|e| format!("Ticket directory: {e}"))?;
+    let archive = root.join("archived");
+    if create {
+        fs::create_dir_all(&archive).map_err(|e| format!("Ticket archive: {e}"))?;
+    }
+    let canonical = archive
+        .canonicalize()
+        .map_err(|e| format!("Ticket archive: {e}"))?;
+    if canonical.parent() != Some(root.as_path()) || !canonical.is_dir() {
+        return Err("Ticket archive must be inside the Workspace ticket directory".into());
+    }
+    Ok(canonical)
+}
+
+fn move_ticket_safely(
+    source: &Path,
+    destination: &Path,
+    original: &str,
+    updated: &str,
+) -> Result<(), String> {
+    // A hard link reserves the destination without replacing an existing ticket.
+    // Both directories belong to the same ticket store/filesystem.
+    fs::hard_link(source, destination)
+        .map_err(|e| format!("Could not move ticket; destination may already exist: {e}"))?;
+    if let Err(error) = write_ticket_markdown_safely(destination, original, updated) {
+        let _ = fs::remove_file(destination);
+        return Err(error);
+    }
+    if fs::read_to_string(source).map_err(|e| e.to_string())? != original {
+        return Err("Ticket changed during move; both copies were retained for recovery.".into());
+    }
+    fs::remove_file(source)
+        .map_err(|e| format!("Could not remove original ticket; both copies were retained: {e}"))?;
+    Ok(())
 }
 
 fn archived_at(markdown: &str) -> Option<String> {
@@ -1677,6 +1865,7 @@ fn iso8601_from_file_mtime(path: &Path) -> Option<String> {
 /// Fill missing or malformed archive timestamps in the archived ticket folder.
 /// It is safe to call repeatedly and preserves all existing ticket content.
 fn backfill_archived_at(directory: &Path) -> Result<(), String> {
+    let _guard = ticket_work_lock()?;
     let archived_directory = directory.join("archived");
     if !archived_directory.exists() {
         return Ok(());
@@ -1781,6 +1970,17 @@ pub fn opencode_status(text: &str) -> Option<String> {
 /// Updates the app-owned frontmatter field only when its current in-memory
 /// value differs, preserving all other ticket bytes and refusing stale writes.
 pub fn record_opencode_status(path: &Path, status: &str) -> Result<bool, String> {
+    record_opencode_status_for_session(path, status, None)
+}
+
+/// Recheck the binding while holding the lifecycle lock: a status snapshot may
+/// have been taken before cancellation or before a session was replaced.
+pub fn record_opencode_status_for_session(
+    path: &Path,
+    status: &str,
+    expected_session: Option<&str>,
+) -> Result<bool, String> {
+    let _guard = ticket_work_lock()?;
     if !matches!(
         status,
         "starting"
@@ -1797,7 +1997,20 @@ pub fn record_opencode_status(path: &Path, status: &str) -> Result<bool, String>
     ) {
         return Err("Invalid OpenCode session status".into());
     }
-    let original = fs::read_to_string(path).map_err(|error| error.to_string())?;
+    let original = match fs::read_to_string(path) {
+        Ok(original) => original,
+        Err(error)
+            if expected_session.is_some() && error.kind() == std::io::ErrorKind::NotFound =>
+        {
+            return Ok(false)
+        }
+        Err(error) => return Err(error.to_string()),
+    };
+    if let Some(session_id) = expected_session {
+        if work_session_id(&original)?.as_deref() != Some(session_id) {
+            return Ok(false);
+        }
+    }
     if opencode_status(&original).as_deref() == Some(status) {
         return Ok(false);
     }
@@ -1824,7 +2037,12 @@ pub fn record_opencode_status(path: &Path, status: &str) -> Result<bool, String>
     if keys.len() > 1 {
         return Err("Ticket has duplicate opencode-status fields".into());
     }
-    let field = format!("opencode-status: {status}\n");
+    let newline = if lines[0].ends_with("\r\n") {
+        "\r\n"
+    } else {
+        "\n"
+    };
+    let field = format!("opencode-status: {status}{newline}");
     if let Some(index) = keys.first() {
         lines[*index] = field;
     } else {
@@ -1858,40 +2076,241 @@ pub fn record_opencode_status(path: &Path, status: &str) -> Result<bool, String>
 }
 
 pub fn work_session_id(text: &str) -> Result<Option<String>, String> {
-    if !text.starts_with("---\n") {
-        return Err("Ticket must begin with YAML front matter".into());
+    let value = frontmatter_value(text, "work_session_id")?;
+    match value {
+        Some(value) if !valid_ticket_session_id(&value) => {
+            Err("Invalid work_session_id in ticket front matter".into())
+        }
+        value => Ok(value),
     }
-    let end = text[4..]
-        .find("\n---")
-        .map(|i| i + 4)
-        .ok_or("Ticket YAML front matter is not closed")?;
-    let values: Vec<_> = text[4..end]
-        .lines()
-        .filter_map(|line| line.strip_prefix("work_session_id:").map(str::trim))
-        .collect();
-    if values.len() > 1 {
-        return Err("Ticket has duplicate work_session_id fields".into());
-    }
-    values
-        .first()
-        .map(|v| {
-            if v.is_empty()
-                || !v.starts_with("ses_")
-                || !v
-                    .chars()
-                    .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
-            {
-                Err("Invalid work_session_id in ticket front matter".into())
-            } else {
-                Ok((*v).to_owned())
-            }
-        })
-        .transpose()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn other_ticket_writers_wait_for_cancellation_and_do_not_recreate_source() {
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("ticket.md");
+        fs::write(
+            &source,
+            "---\ntitle: Example\nstatus: draft\nwork_session_id: ses_old\n---\nBody\n",
+        )
+        .unwrap();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let writers = std::cell::RefCell::new(Vec::new());
+        cancel_ticket_with_session_check(root.path(), "ticket.md", false, |_| {
+            let directory = root.path().to_owned();
+            let tx1 = tx.clone();
+            writers.borrow_mut().push(std::thread::spawn(move || {
+                tx1.send(()).unwrap();
+                set_ticket_label(&directory, "ticket.md", "Label").map(|_| ())
+            }));
+            let directory = root.path().to_owned();
+            let tx2 = tx.clone();
+            writers.borrow_mut().push(std::thread::spawn(move || {
+                tx2.send(()).unwrap();
+                record_observed_worktree(&directory, &directory, "ticket.md", "ses_old", &directory)
+                    .map(|_| ())
+            }));
+            rx.recv().unwrap();
+            rx.recv().unwrap();
+            Ok(())
+        })
+        .unwrap();
+        for writer in writers.into_inner() {
+            assert!(writer.join().unwrap().is_err());
+        }
+        assert!(!source.exists());
+        assert!(root.path().join("archived/ticket.md").exists());
+    }
+
+    #[test]
+    fn crlf_ticket_cancellation_and_restore_preserve_line_endings_and_body() {
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("ticket.md");
+        fs::write(&source, "---\r\ntitle: Example\r\nstatus: blocked\r\nwork_session_id: ses_old\r\ncustom: retained\r\n---\r\nBody\r\n").unwrap();
+        cancel_ticket_with_session_check(root.path(), "ticket.md", false, |_| Ok(())).unwrap();
+        let cancelled = fs::read_to_string(root.path().join("archived/ticket.md")).unwrap();
+        assert!(cancelled.contains("status: cancelled\r\n"));
+        assert!(!cancelled.replace("\r\n", "").contains('\n'));
+        uncancel_ticket(root.path(), "ticket.md").unwrap();
+        let restored = fs::read_to_string(&source).unwrap();
+        assert!(restored.contains("status: draft\r\n"));
+        assert!(restored.contains("custom: retained\r\n"));
+        assert!(restored.ends_with("---\r\nBody\r\n"));
+        assert!(!restored.replace("\r\n", "").contains('\n'));
+        assert!(!restored.contains("work_session_id:"));
+    }
+
+    #[test]
+    fn status_writer_waiting_for_cancellation_does_not_recreate_ticket() {
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("ticket.md");
+        fs::write(
+            &source,
+            "---\ntitle: Example\nstatus: draft\nwork_session_id: ses_old\n---\nBody\n",
+        )
+        .unwrap();
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let writer = std::cell::RefCell::new(None);
+        cancel_ticket_with_session_check(root.path(), "ticket.md", false, |_| {
+            let path = source.clone();
+            let started_tx = started_tx.clone();
+            *writer.borrow_mut() = Some(std::thread::spawn(move || {
+                started_tx.send(()).unwrap();
+                record_opencode_status_for_session(&path, "running", Some("ses_old"))
+            }));
+            started_rx.recv().unwrap();
+            Ok(())
+        })
+        .unwrap();
+        assert!(!writer.into_inner().unwrap().join().unwrap().unwrap());
+        assert!(!source.exists());
+        assert!(root.path().join("archived/ticket.md").exists());
+    }
+
+    #[test]
+    fn cancellation_round_trip_preserves_ticket_data_for_each_active_status() {
+        for status in ["draft", "ready", "in_progress", "blocked", "done"] {
+            let root = tempfile::tempdir().unwrap();
+            let source = root.path().join("ticket.md");
+            let original = format!("---\ntitle: Example\nstatus: {status}\nwork_session_id: ses_keep\nwork_session_ids:\n  - ses_keep\n  - ses_legacy\nworktree: /existing/tree\ncustom: retained\n---\n# Body\nKeep this text.\n");
+            fs::write(&source, &original).unwrap();
+            let checked = std::cell::RefCell::new(Vec::new());
+            cancel_ticket_with_session_check(root.path(), "ticket.md", false, |id| {
+                checked.borrow_mut().push(id.to_owned());
+                Ok(())
+            })
+            .unwrap();
+            assert_eq!(*checked.borrow(), vec!["ses_keep", "ses_legacy"]);
+            let archived = root.path().join("archived/ticket.md");
+            assert!(!source.exists());
+            let cancelled = fs::read_to_string(&archived).unwrap();
+            assert_eq!(
+                frontmatter_value(&cancelled, "status").unwrap().as_deref(),
+                Some("cancelled")
+            );
+            assert_eq!(ticket_session_id(&cancelled).unwrap(), None);
+            assert!(!cancelled.contains("work_session_ids:"));
+            assert!(!cancelled.contains("ses_legacy"));
+            assert!(archived_at(&cancelled).is_some());
+            assert!(list(root.path()).unwrap().is_empty());
+            assert_eq!(list_archived(root.path()).unwrap().len(), 1);
+            uncancel_ticket(root.path(), "ticket.md").unwrap();
+            assert!(!archived.exists());
+            let restored = fs::read_to_string(&source).unwrap();
+            assert_eq!(
+                frontmatter_value(&restored, "status").unwrap().as_deref(),
+                Some("draft")
+            );
+            assert_eq!(ticket_session_id(&restored).unwrap(), None);
+            assert!(!restored.contains("work_session_ids:"));
+            assert!(restored.contains("worktree: /existing/tree\ncustom: retained\n"));
+            assert!(restored.ends_with("# Body\nKeep this text.\n"));
+            assert!(list_archived(root.path()).unwrap().is_empty());
+        }
+    }
+
+    #[test]
+    fn cancellation_of_archived_ticket_and_restore_validation() {
+        let root = tempfile::tempdir().unwrap();
+        let archive = root.path().join("archived");
+        fs::create_dir(&archive).unwrap();
+        let path = archive.join("ticket.md");
+        let original = "---\ntitle: Complete\nstatus: done\narchived_at: \"2024-01-01T00:00:00Z\"\nwork_session_id: ses_old\n---\nBody\n";
+        fs::write(&path, original).unwrap();
+        assert!(uncancel_ticket(root.path(), "ticket.md").is_err());
+        assert_eq!(fs::read_to_string(&path).unwrap(), original);
+        cancel_ticket_with_session_check(root.path(), "ticket.md", true, |_| Ok(())).unwrap();
+        let cancelled = fs::read_to_string(&path).unwrap();
+        assert_eq!(
+            frontmatter_value(&cancelled, "status").unwrap().as_deref(),
+            Some("cancelled")
+        );
+        assert_eq!(ticket_session_id(&cancelled).unwrap(), None);
+        uncancel_ticket_with_session_check(root.path(), "ticket.md", true, |_| Ok(())).unwrap();
+        let restored = fs::read_to_string(root.path().join("ticket.md")).unwrap();
+        assert!(restored.contains("status: draft\n"));
+        assert!(!restored.contains("archived_at:"));
+        assert_eq!(ticket_session_id(&restored).unwrap(), None);
+        assert!(uncancel_ticket(root.path(), "ticket.md").is_err());
+        assert_eq!(
+            fs::read_to_string(root.path().join("ticket.md")).unwrap(),
+            restored
+        );
+    }
+
+    #[test]
+    fn cancellation_and_restoration_do_not_overwrite_colliding_tickets() {
+        let root = tempfile::tempdir().unwrap();
+        let archive = root.path().join("archived");
+        fs::create_dir(&archive).unwrap();
+        let active = root.path().join("ticket.md");
+        let archived = archive.join("ticket.md");
+        let active_content = "---\ntitle: Active\nstatus: in_progress\n---\nActive body\n";
+        let archived_content = "---\ntitle: Archived\nstatus: cancelled\n---\nArchived body\n";
+        fs::write(&active, active_content).unwrap();
+        fs::write(&archived, archived_content).unwrap();
+        assert!(cancel_ticket(root.path(), "ticket.md", false).is_err());
+        assert_eq!(fs::read_to_string(&active).unwrap(), active_content);
+        assert_eq!(fs::read_to_string(&archived).unwrap(), archived_content);
+        assert!(uncancel_ticket(root.path(), "ticket.md").is_err());
+        assert_eq!(fs::read_to_string(&active).unwrap(), active_content);
+        assert_eq!(fs::read_to_string(&archived).unwrap(), archived_content);
+    }
+
+    #[test]
+    fn cancellation_rejects_ambiguous_metadata_without_modifying_ticket() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("ticket.md");
+        let original = "---\ntitle: Ambiguous\nstatus: draft\nstatus: blocked\n---\nBody\n";
+        fs::write(&path, original).unwrap();
+        assert!(cancel_ticket(root.path(), "ticket.md", false).is_err());
+        assert_eq!(fs::read_to_string(&path).unwrap(), original);
+        assert!(!root.path().join("archived/ticket.md").exists());
+    }
+
+    #[test]
+    fn cancellation_rejects_busy_or_unavailable_sessions_without_mutation() {
+        for failure in ["session busy", "session status unavailable"] {
+            let root = tempfile::tempdir().unwrap();
+            let path = root.path().join("ticket.md");
+            let original = "---\ntitle: Protected\nstatus: in_progress\nwork_session_id: ses_active\nwork_session_ids:\n  - ses_active\n  - ses_legacy\n---\nBody\n";
+            fs::write(&path, original).unwrap();
+            let checked = std::cell::RefCell::new(Vec::new());
+            let result = cancel_ticket_with_session_check(root.path(), "ticket.md", false, |id| {
+                checked.borrow_mut().push(id.to_owned());
+                if id == "ses_legacy" {
+                    Err(failure.to_owned())
+                } else {
+                    Ok(())
+                }
+            });
+            assert!(result.is_err());
+            assert_eq!(*checked.borrow(), vec!["ses_active", "ses_legacy"]);
+            assert_eq!(fs::read_to_string(&path).unwrap(), original);
+            assert!(!root.path().join("archived/ticket.md").exists());
+        }
+    }
+
+    #[test]
+    fn cancellation_restoration_clears_legacy_bindings_on_preexisting_cancelled_ticket() {
+        let root = tempfile::tempdir().unwrap();
+        let archive = root.path().join("archived");
+        fs::create_dir(&archive).unwrap();
+        fs::write(archive.join("ticket.md"), "---\ntitle: Old cancellation\nstatus: cancelled\nwork_session_id: ses_old\nwork_session_ids:\n  - ses_old\n  - ses_previous\n---\nBody\n").unwrap();
+        uncancel_ticket_with_session_check(root.path(), "ticket.md", true, |_| Ok(())).unwrap();
+        let restored = fs::read_to_string(root.path().join("ticket.md")).unwrap();
+        assert_eq!(
+            frontmatter_value(&restored, "status").unwrap().as_deref(),
+            Some("draft")
+        );
+        assert_eq!(ticket_session_id(&restored).unwrap(), None);
+        assert!(!restored.contains("work_session_ids:"));
+        assert!(restored.ends_with("Body\n"));
+    }
 
     #[derive(Default)]
     struct FakeInvestigationRuntime {

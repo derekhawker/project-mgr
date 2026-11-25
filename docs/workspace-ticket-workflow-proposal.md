@@ -189,9 +189,12 @@ truth for ticket sessions.
   `<app_data_dir>/workspace-tickets/<workspace-slug>/`, outside the repository
   and therefore outside Git. Closed tickets use `archived/<slug>.md`, following
   the `rust-main` convention.
-- The main ticket list shows non-archived tickets by default. Provide a separate
-  way to browse archived tickets; the UI does not itself archive tickets or
-  change their status.
+- The main ticket list shows non-archived tickets by default, with a separate
+  archived view. A ticket action can cancel and archive a ticket regardless of
+  its prior status once its OpenCode session is idle; the archived view can
+  restore a cancelled ticket to draft. Cancellation clears the session binding
+  without stopping or deleting the OpenCode conversation; an uncancelled ticket
+  has no linked session. External writers can still race the move.
 - Start with a simple ticket list. Each entry shows ticket identity and
   Markdown-backed status, plus truncated ticket content; provide the explicit
   **Work** action for the selected ticket. A separate full-ticket detail layout
@@ -289,7 +292,7 @@ lifecycle.
 | `in_progress` | Approved ticket work is underway. | Move to `blocked` when an external blocker prevents progress; return from `blocked` when resolved; move back to `draft` when evidence requires renewed grooming/approval; move to `done` after approved work and verification complete; may move to `cancelled`. |
 | `blocked` | Work cannot proceed until a recorded blocker is resolved; preserve the last useful state and next step. | Return to `in_progress` when unblocked; may move to `cancelled`. |
 | `done` | Approved work and its required validation/verification are complete. | Terminal in the reference workflow; archived after closeout. |
-| `cancelled` | Work is abandoned, with reason and disposition of completed/remaining work recorded. | Terminal in the reference workflow; archived after closeout. |
+| `cancelled` | Work is abandoned. | Archived; may be restored to `draft` from the archived view. |
 
 The Markdown file is authoritative for the current status. Any derived list,
 badge, or filter in the UI must reflect that file and must not become a second

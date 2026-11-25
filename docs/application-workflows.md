@@ -131,6 +131,14 @@ Rust backfills missing or invalid timestamps from each ticket file's current
 modification time. Missing timestamps remain non-fatal if a file cannot be
 updated; the list falls back to modification time for display and ordering.
 
+The Workspace Tickets view offers cancellation regardless of the ticket's
+current status once its OpenCode session is idle. Cancellation archives the
+ticket, clears its session binding, and removes it from left navigation without
+stopping or deleting the OpenCode conversation. The archived view offers
+uncancellation, which restores the ticket to the active list as a draft without
+a linked session. Moves reject destination collisions; external writers can still
+race the idle check and move.
+
 For tickets with a `work_session_id`, Rust subscribes to OpenCode's volatile
 `GET /api/event` stream and reconciles the exact session after connecting, after
 each reconnect. A periodic pass snapshots `/api/session/active` once every 30

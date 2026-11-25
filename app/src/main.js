@@ -9,6 +9,8 @@ import {
   proposeWorkspaceTicket,
   createWorkspaceTicket,
   listWorkspaceTickets,
+  cancelWorkspaceTicket,
+  uncancelWorkspaceTicket,
   listWorkspaceTicketLabels,
   setWorkspaceTicketLabel,
   workOnWorkspaceTicket,
@@ -390,6 +392,38 @@ async function workWorkspaceTicket(workspaceId, filename) {
     setTicketWorking(false);
   }
 }
+async function changeTicketCancellation(filename, restore) {
+  const workspaceId = selectedWorkspace?.id;
+  const archived = ticketArchived();
+  if (!workspaceId || ticketWorking()) return;
+  setTicketWorking(true);
+  setTicketError("");
+  try {
+    await (restore ? uncancelWorkspaceTicket : cancelWorkspaceTicket)(
+      invoke,
+      workspaceId,
+      filename,
+      archived,
+    );
+    workspaceTicketCache.invalidate();
+    await refreshNavigation();
+    if (selectedWorkspace?.id === workspaceId) {
+      if (selectedTicketFilename() === filename)
+        setSelectedTicketFilename(null);
+      await refreshTicketList();
+    }
+  } catch (error) {
+    if (selectedWorkspace?.id === workspaceId)
+      setTicketError(
+        formatWorkspaceError(
+          restore ? "Uncancel ticket" : "Cancel ticket",
+          error,
+        ),
+      );
+  } finally {
+    setTicketWorking(false);
+  }
+}
 async function saveTicketDefaultModel(value) {
   if (!value || ticketModelBusy()) return;
   const model = JSON.parse(value);
@@ -489,6 +523,8 @@ const workspaceTicketViewerProps = {
   },
   onRefresh: () => void refreshTicketList(),
   onWork: (filename) => workWorkspaceTicket(selectedWorkspace?.id, filename),
+  onCancel: (filename) => void changeTicketCancellation(filename, false),
+  onUncancel: (filename) => void changeTicketCancellation(filename, true),
   onProposeTicket: async (idea) => {
     const workspaceId = selectedWorkspace?.id;
     if (!workspaceId) throw new Error("Select a Workspace first.");

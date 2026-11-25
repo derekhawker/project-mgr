@@ -234,7 +234,7 @@ test("workspace tickets group, collapse, mark blocked, and flatten newest first"
           { filename: "draft-session.md", title: "Draft with session", status: "draft", hasWorkSession: true, opencodeStatus: "ready_for_review", modifiedAt: 20 },
           { filename: "draft.md", title: "Draft ticket", status: "draft", hasWorkSession: false, modifiedAt: 15 },
           { filename: "done.md", title: "Done ticket", status: "done", modifiedAt: 5 },
-          { filename: "cancelled.md", title: "Cancelled ticket", status: "cancelled", modifiedAt: 4 },
+          { filename: "cancelled.md", title: "Cancelled ticket", status: "cancelled", hasWorkSession: true, opencodeStatus: "busy", modifiedAt: 4 },
         ],
         b: [{ filename: "newest.md", title: "Newest ticket", status: "in_progress", hasWorkSession: true, opencodeStatus: "busy", modifiedAt: 40 }],
       },
@@ -280,6 +280,7 @@ test("workspace tickets group, collapse, mark blocked, and flatten newest first"
     false,
     "a new draft without a saved work session stays out of navigation",
   );
+  assert.doesNotMatch(view.host.textContent, /Cancelled ticket/, "cancellation hides even a running session from grouped navigation");
   assertDecorativeIcon(blockedRow);
   assert.match(blockedRow.firstElementChild.querySelector("path").getAttribute("d"), /M8 1\.5.*l5 5/);
   assert.ok(cautionIcon, "an in-progress ticket without a session keeps its caution icon");
@@ -305,6 +306,7 @@ test("workspace tickets group, collapse, mark blocked, and flatten newest first"
   );
 
   setViewMode("flat");
+  assert.doesNotMatch(view.host.textContent, /Cancelled ticket/, "cancellation also hides the ticket from flat navigation");
   assert.equal(view.host.querySelectorAll('button[aria-label$="tickets"]').length, 0);
   assert.deepEqual(
     [...view.host.querySelectorAll("li")].map((item) => item.textContent.trim()),

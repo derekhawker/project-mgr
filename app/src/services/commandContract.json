@@ -852,6 +852,46 @@
       "additionalProperties": false
     }
   },
+  "workspace_ticket_cancel": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "request": {
+          "type": "object",
+          "properties": {
+            "workspaceId": { "type": "string" },
+            "filename": { "type": "string" },
+            "archived": { "type": "boolean" }
+          },
+          "required": ["workspaceId", "filename", "archived"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["request"],
+      "additionalProperties": false
+    },
+    "result": { "type": "null" }
+  },
+  "workspace_ticket_uncancel": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "request": {
+          "type": "object",
+          "properties": {
+            "workspaceId": { "type": "string" },
+            "filename": { "type": "string" },
+            "archived": { "type": "boolean" }
+          },
+          "required": ["workspaceId", "filename", "archived"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["request"],
+      "additionalProperties": false
+    },
+    "result": { "type": "null" }
+  },
   "workspace_ticket_session_close": {
     "payload": {
       "type": "object",

@@ -22,6 +22,7 @@ import { TicketStatusBadge } from "./TicketStatusBadge.jsx";
 import { CreateTicketIdeaModal } from "./CreateTicketIdeaModal.jsx";
 import { recordUiDiagnostic } from "../../../lib/uiDiagnostics.js";
 import { WorkspaceTicketContent } from "./WorkspaceTicketContent.jsx";
+import { TicketActionsMenu } from "./TicketActionsMenu.jsx";
 import styles from "./WorkspaceTicketViewer.module.css";
 import repositoryToolsStyles from "../repository-tools/RepositoryToolsMenu.module.css";
 
@@ -300,6 +301,13 @@ export function WorkspaceTicketViewer(props) {
                                 </Show>
                               </Button>
                             </Show>
+                            <TicketActionsMenu
+                              ticket={ticket}
+                              archived={archived()}
+                              disabled={props.working?.()}
+                              onCancel={props.onCancel}
+                              onUncancel={props.onUncancel}
+                            />
                           </div>
                         </li>
                       );

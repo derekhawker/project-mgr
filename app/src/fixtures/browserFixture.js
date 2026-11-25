@@ -7,6 +7,7 @@ const viewedReviewFiles = new Map();
 let defaultModel = { providerId: "fixture", id: "model" };
 let createdWorkspaceTickets = [];
 const ticketLabelOverrides = new Map();
+const ticketStatusOverrides = new Map();
 let ticketSessionSequence = 0;
 let portSelection =
   "3000-3010,4200,4321,5000-5010,5173-5180,5432,6379,8000-8010,8080-8090,9229,27017";
@@ -288,70 +289,99 @@ export async function invokeBrowserFixture(name, payload = {}) {
       };
       break;
     case "workspace_tickets_list":
-      result = request.archived
-        ? [
-            {
-              filename: "archived-example.md",
-              title:
-                "Investigate inability to submit a large Markdown document in the create-ticket prompt",
-              status: "done",
-              hasWorkSession: false,
-              projectLabel: example.name,
-              modifiedAt: 1_762_400_000_000,
-              archivedAt: "2025-11-14T00:00:00.000Z",
-              content:
-                '---\ntitle: Investigate inability to submit a large Markdown document in the create-ticket prompt\nstatus: done\narchived_at: "2025-11-14T00:00:00.000Z"\n---\n# Investigate inability to submit a large Markdown document in the create-ticket prompt\n\nThis archived ticket remains readable.',
-            },
-          ]
-        : [
-            {
-              filename: "blocked-example.md",
-              title: "Blocked example ticket",
-              status: "blocked",
-              hasWorkSession: false,
-              projectLabel: example.name,
-              modifiedAt: 1_793_500_000_000,
-              archivedAt: null,
-              content:
-                "---\ntitle: Blocked example ticket\nstatus: blocked\nowner: Browser fixture\n---\n# Blocked ticket\n\nThis entry verifies blocked-status priority and formatted frontmatter.\n\n- First check\n- Second check",
-            },
-            {
-              filename: "in-progress-example.md",
-              title: "In-progress example ticket",
-              status: "in_progress",
-              hasWorkSession: false,
-              projectLabel: example.name,
-              modifiedAt: 1_793_600_000_000,
-              archivedAt: null,
-              content:
-                "---\ntitle: In-progress example ticket\nstatus: in_progress\n---\n# In progress\n\nThis entry verifies the in-progress status position.",
-            },
-            {
-              filename: "example.md",
-              title: "Example ticket",
-              status: "draft",
-              hasWorkSession: true,
-              projectLabel: example.name,
-              modifiedAt: 1_793_700_000_000,
-              archivedAt: null,
-              content: `---\ntitle: Example ticket\nstatus: draft\nwork_session_id: fixture-session\n---\n# Example ticket\n\nA fixture ticket for the Workspace with readable **Markdown**.\n\n${"This long paragraph checks reader scrolling and keeps the full ticket body available. ".repeat(28)}\n\n## Acceptance checks\n\n- List and reader scroll independently\n- Metadata follows the body\n\n\`\`\`js\nconsole.log("safe fixture Markdown");\n\`\`\``,
-            },
-            {
-              filename: "other-example.md",
-              title: "Other-status example",
-              status: "review",
-              hasWorkSession: false,
-              projectLabel: example.name,
-              modifiedAt: 1_793_650_000_000,
-              archivedAt: null,
-              content:
-                "---\ntitle: Other-status example\nstatus: review\n---\nAn unknown status follows draft.",
-            },
-          ].concat(
-            createdWorkspaceTickets
-              .filter((ticket) => ticket.workspaceId === request.workspaceId)
-              .map(({ workspaceId, ...ticket }) => ticket),
+      result = [
+        {
+          filename: "archived-example.md",
+          title:
+            "Investigate inability to submit a large Markdown document in the create-ticket prompt",
+          status: "done",
+          hasWorkSession: false,
+          projectLabel: example.name,
+          modifiedAt: 1_762_400_000_000,
+          archivedAt: "2025-11-14T00:00:00.000Z",
+          content:
+            '---\ntitle: Investigate inability to submit a large Markdown document in the create-ticket prompt\nstatus: done\narchived_at: "2025-11-14T00:00:00.000Z"\n---\n# Investigate inability to submit a large Markdown document in the create-ticket prompt\n\nThis archived ticket remains readable.',
+        },
+      ]
+        .concat([
+          {
+            filename: "blocked-example.md",
+            title: "Blocked example ticket",
+            status: "blocked",
+            hasWorkSession: false,
+            projectLabel: example.name,
+            modifiedAt: 1_793_500_000_000,
+            archivedAt: null,
+            content:
+              "---\ntitle: Blocked example ticket\nstatus: blocked\nowner: Browser fixture\n---\n# Blocked ticket\n\nThis entry verifies blocked-status priority and formatted frontmatter.\n\n- First check\n- Second check",
+          },
+          {
+            filename: "in-progress-example.md",
+            title: "In-progress example ticket",
+            status: "in_progress",
+            hasWorkSession: false,
+            projectLabel: example.name,
+            modifiedAt: 1_793_600_000_000,
+            archivedAt: null,
+            content:
+              "---\ntitle: In-progress example ticket\nstatus: in_progress\n---\n# In progress\n\nThis entry verifies the in-progress status position.",
+          },
+          {
+            filename: "example.md",
+            title: "Example ticket",
+            status: "draft",
+            hasWorkSession: true,
+            projectLabel: example.name,
+            modifiedAt: 1_793_700_000_000,
+            archivedAt: null,
+            content: `---\ntitle: Example ticket\nstatus: draft\nwork_session_id: fixture-session\n---\n# Example ticket\n\nA fixture ticket for the Workspace with readable **Markdown**.\n\n${"This long paragraph checks reader scrolling and keeps the full ticket body available. ".repeat(28)}\n\n## Acceptance checks\n\n- List and reader scroll independently\n- Metadata follows the body\n\n\`\`\`js\nconsole.log("safe fixture Markdown");\n\`\`\``,
+          },
+          {
+            filename: "other-example.md",
+            title: "Other-status example",
+            status: "review",
+            hasWorkSession: false,
+            projectLabel: example.name,
+            modifiedAt: 1_793_650_000_000,
+            archivedAt: null,
+            content:
+              "---\ntitle: Other-status example\nstatus: review\n---\nAn unknown status follows draft.",
+          },
+        ])
+        .concat(
+          createdWorkspaceTickets
+            .filter((ticket) => ticket.workspaceId === request.workspaceId)
+            .map(({ workspaceId, ...ticket }) => ticket),
+        )
+        .map((ticket) => {
+          const override = ticketStatusOverrides.get(
+            `${request.workspaceId}:${ticket.filename}`,
           );
+          if (!override) return ticket;
+          return {
+            ...ticket,
+            status: override.status,
+            archivedAt: override.archivedAt,
+            content: ticket.content.replace(
+              /^status: .*$/m,
+              `status: ${override.status}`,
+            ),
+          };
+        })
+        .filter(
+          (ticket) =>
+            (ticket.status === "done" || ticket.status === "cancelled") ===
+            Boolean(request.archived),
+        );
+      break;
+    case "workspace_ticket_cancel":
+    case "workspace_ticket_uncancel":
+      ticketStatusOverrides.set(`${request.workspaceId}:${request.filename}`, {
+        status: name === "workspace_ticket_cancel" ? "cancelled" : "draft",
+        archivedAt:
+          name === "workspace_ticket_cancel" ? new Date().toISOString() : null,
+      });
+      result = null;
       break;
     case "workspace_ticket_labels": {
       const labels = new Map();

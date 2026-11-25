@@ -290,6 +290,8 @@ pub fn run() {
             workspace_tickets_list,
             workspace_ticket_labels,
             workspace_ticket_label_set,
+            workspace_ticket_cancel,
+            workspace_ticket_uncancel,
             workspace_ticket_proposal,
             workspace_ticket_create,
             workspace_ticket_work,
@@ -875,6 +877,93 @@ async fn workspace_ticket_label_set(
         workspace_tickets::set_ticket_label(&directory, &request.filename, &request.label)
     })
     .await
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct WorkspaceTicketLifecycleCommand {
+    workspace_id: String,
+    filename: String,
+    #[serde(default)]
+    archived: bool,
+}
+
+#[tauri::command]
+async fn workspace_ticket_cancel(
+    app: AppHandle,
+    request: WorkspaceTicketLifecycleCommand,
+) -> Result<(), String> {
+    run_ports_work(move || {
+        let store = app.state::<ManagementStore>();
+        let workspace = store
+            .get_workspace(&request.workspace_id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| "Workspace was not found".to_owned())?;
+        let app_data = app.path().app_data_dir().map_err(|e| e.to_string())?;
+        let directory = workspace_tickets::workspace_ticket_dir(&app_data, &workspace.slug)?;
+        let runtime = app.state::<opencode::Runtime>();
+        workspace_tickets::cancel_ticket_with_session_check(
+            &directory,
+            &request.filename,
+            request.archived,
+            |id| ensure_ticket_session_idle(&runtime, id),
+        )
+    })
+    .await
+}
+
+#[tauri::command]
+async fn workspace_ticket_uncancel(
+    app: AppHandle,
+    request: WorkspaceTicketLifecycleCommand,
+) -> Result<(), String> {
+    run_ports_work(move || {
+        let store = app.state::<ManagementStore>();
+        let workspace = store
+            .get_workspace(&request.workspace_id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| "Workspace was not found".to_owned())?;
+        let app_data = app.path().app_data_dir().map_err(|e| e.to_string())?;
+        let directory = workspace_tickets::workspace_ticket_dir(&app_data, &workspace.slug)?;
+        let runtime = app.state::<opencode::Runtime>();
+        workspace_tickets::uncancel_ticket_with_session_check(
+            &directory,
+            &request.filename,
+            request.archived,
+            |id| ensure_ticket_session_idle(&runtime, id),
+        )
+    })
+    .await
+}
+
+fn ensure_ticket_session_idle(runtime: &opencode::Runtime, id: &str) -> Result<(), String> {
+    let snapshot = runtime.reconcile_session(id, None).map_err(|_| {
+        "Cannot verify that the ticket session is idle. Try again when OpenCode is available."
+            .to_owned()
+    })?;
+    if !ticket_session_settled(&snapshot)
+        || runtime
+            .active_sessions()
+            .map_err(|_| "Cannot verify that the ticket session is idle.".to_owned())?
+            .contains_key(id)
+    {
+        return Err(
+            "The ticket session is active or its state is uncertain. Try again when it is idle."
+                .into(),
+        );
+    }
+    Ok(())
+}
+
+fn ticket_session_settled(snapshot: &opencode::SessionReconciliation) -> bool {
+    matches!(
+        snapshot.status,
+        opencode::SessionApplicationStatus::Idle
+            | opencode::SessionApplicationStatus::ReadyForReview
+            | opencode::SessionApplicationStatus::Failed
+    ) && snapshot.active.is_none()
+        && snapshot.permissions.is_empty()
+        && snapshot.forms.is_empty()
 }
 
 #[derive(Debug, Deserialize)]
@@ -1886,7 +1975,11 @@ fn apply_ticket_session_status_with_diagnostics(
                 }
                 continue;
             }
-            if let Err(error) = workspace_tickets::record_opencode_status(&path, status) {
+            if let Err(error) = workspace_tickets::record_opencode_status_for_session(
+                &path,
+                status,
+                Some(session_id),
+            ) {
                 eprintln!("Could not persist ticket OpenCode status: {error}");
                 if is_diagnostic_ticket {
                     log_ticket_status_diagnostic(
@@ -2166,7 +2259,11 @@ fn reconcile_ticket_status_snapshot(
                 "unchanged"
             };
             if previous_status.as_deref() != Some(status) {
-                match workspace_tickets::record_opencode_status(&path, status) {
+                match workspace_tickets::record_opencode_status_for_session(
+                    &path,
+                    status,
+                    Some(&session_id),
+                ) {
                     Ok(true) => result = "written",
                     Ok(false) => result = "unchanged",
                     Err(error) => {
@@ -4685,6 +4782,39 @@ async fn opencode_pending_inputs_all(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn failed_session_is_settled_only_without_active_or_pending_work() {
+        use opencode::SessionApplicationStatus as Status;
+        let mut snapshot = opencode::SessionReconciliation {
+            session_id: "ses_test".into(),
+            cursor: None,
+            history: opencode::SessionHistory {
+                session_id: "ses_test".into(),
+                data: vec![],
+                cursor: Default::default(),
+            },
+            active: None,
+            permissions: vec![],
+            forms: vec![],
+            durable_events: vec![],
+            status: Status::Failed,
+        };
+        assert!(ticket_session_settled(&snapshot));
+        snapshot.active = Some(opencode::ActiveSession {
+            kind: "running".into(),
+        });
+        assert!(!ticket_session_settled(&snapshot));
+        snapshot.active = None;
+        snapshot.permissions.push(serde_json::json!({}));
+        assert!(!ticket_session_settled(&snapshot));
+        snapshot.permissions.clear();
+        snapshot.forms.push(serde_json::json!({}));
+        assert!(!ticket_session_settled(&snapshot));
+        snapshot.forms.clear();
+        snapshot.status = Status::Unknown;
+        assert!(!ticket_session_settled(&snapshot));
+    }
     use serde_json::json;
 
     #[test]
