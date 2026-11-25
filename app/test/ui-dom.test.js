@@ -510,7 +510,7 @@ test("Workspace creation presents direct repository choices in the native dialog
       quickRequestRecoveryBusy: () => false,
     }),
   );
-  assert.equal(recovery.host.querySelector("#proposal-cancel"), null);
+  assert.ok(recovery.host.querySelector("#proposal-cancel"));
   assert.equal(recovery.host.querySelector("#quick-request-directory"), null);
   assert.ok(recovery.host.querySelector("#quick-request-retry-startup"));
   assert.match(recovery.host.textContent, /\/saved\/working-directory/);
