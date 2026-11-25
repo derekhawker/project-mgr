@@ -131,8 +131,8 @@ Rust backfills missing or invalid timestamps from each ticket file's current
 modification time. Missing timestamps remain non-fatal if a file cannot be
 updated; the list falls back to modification time for display and ordering.
 
-The Workspace Tickets view offers cancellation regardless of the ticket's
-current status once its OpenCode session is idle. Cancellation archives the
+The Workspace Tickets view offers cancellation for tickets not marked done
+once their OpenCode session is idle. Done tickets have disabled actions. Cancellation archives the
 ticket, clears its session binding, and removes it from left navigation without
 stopping or deleting the OpenCode conversation. The archived view offers
 uncancellation, which restores the ticket to the active list as a draft without

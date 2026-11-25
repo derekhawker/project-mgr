@@ -190,8 +190,8 @@ truth for ticket sessions.
   and therefore outside Git. Closed tickets use `archived/<slug>.md`, following
   the `rust-main` convention.
 - The main ticket list shows non-archived tickets by default, with a separate
-  archived view. A ticket action can cancel and archive a ticket regardless of
-  its prior status once its OpenCode session is idle; the archived view can
+  archived view. A ticket action can cancel and archive a ticket that is not
+  done once its OpenCode session is idle; done tickets have disabled actions. The archived view can
   restore a cancelled ticket to draft. Cancellation clears the session binding
   without stopping or deleting the OpenCode conversation; an uncancelled ticket
   has no linked session. External writers can still race the move.

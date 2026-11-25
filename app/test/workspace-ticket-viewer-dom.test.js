@@ -481,14 +481,14 @@ test("ticket actions follow archive location and block cancellation while a sess
       },
     ]);
     await Promise.resolve();
-    const archivedDone = actions("Done").querySelector("button");
-    assert.equal(archivedDone.disabled, false);
-    assert.equal(archivedDone.textContent.trim(), "Cancel ticket");
-    archivedDone.click();
+    const archivedDone = view.host.querySelector('summary[aria-label="Actions for ticket: Done"]');
+    assert.equal(archivedDone.getAttribute("aria-disabled"), "true");
+    const click = new MouseEvent("click", { bubbles: true, cancelable: true });
+    archivedDone.dispatchEvent(click);
+    assert.equal(click.defaultPrevented, true);
     actions("Cancelled").querySelector("button").click();
     assert.deepEqual(calls, [
       ["cancel", "cancelled.md"],
-      ["cancel", "done.md"],
       ["uncancel", "cancelled.md"],
     ]);
   } finally {

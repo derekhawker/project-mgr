@@ -16,7 +16,7 @@ export function TicketActionsMenu(props) {
       actionsLabel={`Ticket actions: ${props.ticket.title}`}
       triggerVariant="compact"
       portal
-      disabled={props.disabled}
+      disabled={props.disabled || props.ticket.status === "done"}
     >
       <ActionMenuItem
         disabled={!cancelled() && activeSession()}
