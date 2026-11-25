@@ -227,6 +227,9 @@ test("multiple portaled menus honor earlier Tab handling without skipping a trig
   try {
     await new Promise((resolve) => setTimeout(resolve, 0));
     const [trigger, nextTrigger] = host.querySelectorAll("summary");
+    // Happy DOM does not give native summary elements their browser tab index.
+    trigger.tabIndex = 0;
+    nextTrigger.tabIndex = 0;
     trigger.click();
     nextTrigger.click();
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -234,7 +237,7 @@ test("multiple portaled menus honor earlier Tab handling without skipping a trig
     const event = new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true });
     document.activeElement.dispatchEvent(event);
     assert.equal(event.defaultPrevented, true);
-    assert.equal(document.activeElement, nextTrigger, "second menu does not move focus past its trigger");
+    assert.ok(document.activeElement === nextTrigger, `second menu does not move focus past its trigger; focused ${document.activeElement?.outerHTML.slice(0, 250)}`);
   } finally {
     window.HTMLElement.prototype.getClientRects = originalRects;
     dispose();
