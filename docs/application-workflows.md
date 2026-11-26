@@ -364,10 +364,11 @@ project-label groups appear first as plain headings with ticket rows beneath and
 the owning Workspace inline; Workspace groups then show their existing count,
 selection action, and independent disclosure. Tickets matching another
 Workspace's name group beneath that Workspace; otherwise tickets stay beneath
-their owner. Preserve the existing ticket visibility rules: show `in_progress`
-and `blocked` tickets, plus `draft` tickets with a `work_session_id`; do not add
-done or cancelled tickets to these sidebar groups. Keep the existing grouped
-presentation and spacing. Label editing remains available from both tabs. Keep
+their owner. Require a `work_session_id` for every ticket in either tab. In
+Workspaces, preserve the existing status rules too: show `in_progress`,
+`blocked`, and `draft` tickets with a session; do not add done or cancelled
+tickets to Workspace groups. Keep the existing grouped presentation and
+spacing. Label editing remains available from both tabs. Keep
 the Ticket Sidebar as its own scroll area; Ports, Repositories, and New work
 remain pinned in navigation.
 

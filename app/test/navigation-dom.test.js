@@ -238,6 +238,13 @@ test("Workspaces applies existing visibility rules; Tickets sorts session ticket
         modifiedAt: 30,
       },
       {
+        filename: "blocked-no-session.md",
+        title: "Blocked without session",
+        status: "blocked",
+        hasWorkSession: false,
+        modifiedAt: 45,
+      },
+      {
         filename: "old.md",
         title: "Older",
         status: "in_progress",
@@ -278,6 +285,7 @@ test("Workspaces applies existing visibility rules; Tickets sorts session ticket
     ),
     ["CancelledAlpha", "NewestBeta", "BlockedAlpha", "OlderAlpha"],
   );
+  assert.doesNotMatch(view.host.textContent, /Blocked without session/);
   setViewMode("workspaces");
   assert.equal(
     view.host
@@ -286,6 +294,7 @@ test("Workspaces applies existing visibility rules; Tickets sorts session ticket
     "ticket-sidebar-workspaces",
   );
   assert.doesNotMatch(view.host.textContent, /Cancelled/);
+  assert.doesNotMatch(view.host.textContent, /Blocked without session/);
   assert.ok(
     [...view.host.querySelectorAll("button")].some((button) =>
       button.textContent.includes("Newest"),
@@ -314,6 +323,7 @@ test("Workspaces retains the existing owner groups for singly used labels", () =
             filename: "active.md",
             title: "Visible ticket",
             status: "in_progress",
+            hasWorkSession: true,
             projectLabel: "Rollout",
           },
         ],
@@ -352,6 +362,7 @@ test("Workspaces renders shared labels as headings above owner-identifying rows"
             filename: "a.md",
             title: "Alpha ticket",
             status: "in_progress",
+            hasWorkSession: true,
             projectLabel: "Shared label",
           },
         ],
@@ -360,6 +371,7 @@ test("Workspaces renders shared labels as headings above owner-identifying rows"
             filename: "b.md",
             title: "Beta ticket",
             status: "blocked",
+            hasWorkSession: true,
             projectLabel: "Shared label",
           },
         ],
@@ -394,6 +406,7 @@ test("ticket context menu is limited to ticket rows and invokes label editing", 
     filename: "one.md",
     title: "First",
     status: "in_progress",
+    hasWorkSession: true,
     projectLabel: "Launch",
   };
   let edited;
@@ -635,7 +648,7 @@ test("Tickets shows a static label before the title; Workspaces keeps existing g
   view.dispose();
 });
 
-test("Workspaces includes done and archived tickets and routes them to the matching browser list", () => {
+test("Workspaces hides tickets without a session and keeps its status visibility rules", () => {
   const workspace = {
     id: "one",
     name: "Alpha",
@@ -647,6 +660,7 @@ test("Workspaces includes done and archived tickets and routes them to the match
       filename: "done.md",
       title: "Done ticket",
       status: "done",
+      hasWorkSession: true,
       archived: false,
       projectLabel: "Launch",
     },
@@ -654,6 +668,7 @@ test("Workspaces includes done and archived tickets and routes them to the match
       filename: "cancelled.md",
       title: "Cancelled ticket",
       status: "cancelled",
+      hasWorkSession: true,
       archived: true,
       projectLabel: "Launch",
     },
@@ -661,11 +676,11 @@ test("Workspaces includes done and archived tickets and routes them to the match
       filename: "active.md",
       title: "Active ticket",
       status: "in_progress",
+      hasWorkSession: true,
       archived: false,
       projectLabel: "Launch",
     },
   ];
-  const opened = [];
   const [viewMode] = createSignal("workspaces");
   const view = mount(WorkspaceNavigation, {
     data: () => ({
@@ -676,22 +691,16 @@ test("Workspaces includes done and archived tickets and routes them to the match
     selected: () => null,
     viewMode,
     onSelect: () => {},
-    onSelectTicket: (...args) => opened.push(args),
-    onWork: () =>
-      assert.fail("Workspaces historical tickets must open the browser"),
+    onSelectTicket: () => {},
+    onWork: () => {},
   });
   const ticketButton = (title) =>
     [...view.host.querySelectorAll("button")].find((button) =>
       button.textContent.includes(title),
     );
-  assert.match(view.host.textContent, /Done ticket/);
-  assert.match(view.host.textContent, /Cancelled ticket/);
-  ticketButton("Done ticket").click();
-  ticketButton("Cancelled ticket").click();
-  assert.deepEqual(opened, [
-    [workspace, tickets[0]],
-    [workspace, tickets[1]],
-  ]);
+  assert.doesNotMatch(view.host.textContent, /Done ticket/);
+  assert.doesNotMatch(view.host.textContent, /Cancelled ticket/);
+  assert.ok(ticketButton("Active ticket"));
   view.dispose();
 });
 
@@ -711,7 +720,8 @@ test("Workspaces includes tickets owned by completed regular Workspaces", () => 
           {
             filename: "old.md",
             title: "Retained historical ticket",
-            status: "done",
+            status: "in_progress",
+            hasWorkSession: true,
             modifiedAt: 1,
             archived: false,
           },

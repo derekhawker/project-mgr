@@ -55,14 +55,15 @@ export function WorkspaceNavigation(props) {
   const displayedWorkspaceTickets = (workspaceId) =>
     workspaceTickets(workspaceId).filter(
       (ticket) =>
-        ticket.status === "in_progress" ||
-        ticket.status === "blocked" ||
-        (ticket.status === "draft" && ticket.hasWorkSession),
+        ticket.hasWorkSession &&
+        (ticket.status === "in_progress" ||
+          ticket.status === "blocked" ||
+          ticket.status === "draft"),
     );
   const sharedLabelKeys = () => {
     const owners = new Map();
     for (const workspace of regularWorkspaces()) {
-      for (const ticket of workspaceTickets(workspace.id)) {
+      for (const ticket of displayedWorkspaceTickets(workspace.id)) {
         const key = ticket.projectLabel
           ? ticket.projectLabel.trim().replace(/\s+/gu, " ").toLowerCase()
           : "";

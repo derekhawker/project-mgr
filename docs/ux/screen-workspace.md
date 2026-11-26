@@ -86,9 +86,10 @@ show their existing count, selection action, and independent disclosure control.
 Tickets that share another Workspace's name group under that Workspace; other
 tickets remain under their owning Workspace. Keep the existing grouping and row
 spacing rather than replacing it with a new label-group hierarchy. Preserve the
-existing visibility rules: show `in_progress` and `blocked` tickets, plus `draft`
-tickets with a `work_session_id`; done and cancelled tickets remain available in
-the Workspace ticket browser, not these groups. Label editing remains in the
+existing visibility rules, and require a `work_session_id` for every row: show
+`in_progress`, `blocked`, and `draft` tickets with a session. Done and cancelled
+tickets remain available in the Workspace ticket browser, not these groups.
+Label editing remains in the
 ticket context menu in both tabs. The selected tab is session-local and resets to
 Tickets on launch.
 
