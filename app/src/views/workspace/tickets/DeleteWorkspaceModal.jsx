@@ -127,9 +127,9 @@ export function DeleteWorkspaceModal(props) {
                   steps={[
                     {
                       label: "Archive tickets",
-                      skipped: () => ticketsLoaded() && tickets().length === 0,
+                      disabled: () => ticketsLoaded() && tickets().length === 0,
                     },
-                    { label: "Delete Workspace" },
+                    { label: "Delete" },
                   ]}
                 />
                 <ErrorMessage message={error()} />
@@ -139,10 +139,7 @@ export function DeleteWorkspaceModal(props) {
                     that are not done will be marked cancelled. Done tickets
                     will remain unchanged. No ticket files will be deleted.
                   </p>
-                  <Show
-                    when={tickets().length > 0}
-                    fallback={<p>No active tickets to archive.</p>}
-                  >
+                  <Show when={tickets().length > 0}>
                     <ul
                       class={styles.ticketList}
                       aria-label="Tickets to archive"
@@ -160,17 +157,10 @@ export function DeleteWorkspaceModal(props) {
                   <p>Continue to the Workspace deletion confirmation?</p>
                 </Show>
                 <Show when={step() === 2}>
-                  <Show when={ticketsLoaded() && tickets().length === 0}>
-                    <p>
-                      No active tickets to archive; the archive step was
-                      skipped.
-                    </p>
-                  </Show>
                   <p>
-                    Permanently remove <strong>{workspaceName()}</strong> from
-                    the app? Its linked repository, ticket files, and OpenCode
-                    conversations will be retained. App-side session links will
-                    be removed; conversations remain in OpenCode.
+                    Delete <strong>{workspaceName()}</strong>? Linked
+                    repository, ticket files, and OpenCode conversations will
+                    not be removed.
                   </p>
                 </Show>
               </div>

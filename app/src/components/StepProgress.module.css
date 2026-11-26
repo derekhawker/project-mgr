@@ -58,12 +58,9 @@
 .stepLabel {
   color: var(--ui-text);
   font-weight: 400;
+  white-space: nowrap;
 }
 
 .steps [aria-disabled="true"] {
   opacity: 0.65;
-}
-
-.skipped {
-  color: var(--ui-muted);
 }

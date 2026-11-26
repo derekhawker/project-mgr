@@ -880,14 +880,17 @@ test("workspace deletion always warns, archives active tickets, and recovers fro
     await flush();
     assert.equal(
       dialog.querySelector('[aria-current="step"]').textContent,
-      "2Delete Workspace",
+      "2Delete",
     );
     const deleteButton = [...dialog.querySelectorAll("button")].find((button) =>
       button.textContent.includes("Delete workspace"),
     );
     assert.ok(deleteButton.className.includes("danger"));
     assert.ok(deleteButton.querySelector('svg[aria-hidden="true"]'));
-    assert.match(dialog.textContent, /retained/);
+    assert.match(
+      dialog.textContent,
+      /Delete Example Workspace\? Linked repository, ticket files, and OpenCode conversations will not be removed\./,
+    );
     deleteButton.click();
     await flush();
     assert.equal(
@@ -925,20 +928,24 @@ test("workspace deletion with no active tickets skips archiving and opens delete
     view.host.querySelector("button").click();
     await flush();
     const dialog = view.host.querySelector("dialog");
-    assert.match(dialog.textContent, /No active tickets to archive/);
+    assert.doesNotMatch(dialog.textContent, /No active tickets to archive/);
     assert.equal(
       dialog.querySelector('[aria-current="step"]').textContent,
-      "2Delete Workspace",
+      "2Delete",
     );
     assert.equal(
       dialog.querySelector('[aria-disabled="true"]').textContent,
-      "1Archive tickets (skipped)",
+      "1Archive tickets",
     );
     assert.deepEqual(calls, []);
     assert.ok(
       [...dialog.querySelectorAll("button")].some((button) =>
         button.textContent.includes("Delete workspace"),
       ),
+    );
+    assert.match(
+      dialog.textContent,
+      /Delete this Workspace\? Linked repository, ticket files, and OpenCode conversations will not be removed\./,
     );
   } finally {
     view.dispose();

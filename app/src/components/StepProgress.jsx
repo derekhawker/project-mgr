@@ -1,4 +1,4 @@
-import { For, Show } from "solid-js";
+import { For } from "solid-js";
 import styles from "./StepProgress.module.css";
 
 /** Shared numbered progress display for short, modal-owned workflows. */
@@ -7,8 +7,10 @@ export function StepProgress(props) {
     typeof props.activeStep === "function"
       ? props.activeStep()
       : props.activeStep;
-  const isSkipped = (step) =>
-    typeof step.skipped === "function" ? step.skipped() : Boolean(step.skipped);
+  const isDisabled = (step) =>
+    typeof step.disabled === "function"
+      ? step.disabled()
+      : Boolean(step.disabled);
 
   return (
     <div class={styles.progress}>
@@ -17,16 +19,11 @@ export function StepProgress(props) {
           {(step, index) => (
             <li
               aria-current={activeStep() === index() + 1 ? "step" : undefined}
-              aria-disabled={isSkipped(step) ? "true" : undefined}
+              aria-disabled={isDisabled(step) ? "true" : undefined}
               classList={{ [styles.current]: activeStep() === index() + 1 }}
             >
               <span class={styles.stepNumber}>{index() + 1}</span>
-              <span class={styles.stepLabel}>
-                {step.label}
-                <Show when={isSkipped(step)}>
-                  <span class={styles.skipped}> (skipped)</span>
-                </Show>
-              </span>
+              <span class={styles.stepLabel}>{step.label}</span>
             </li>
           )}
         </For>
