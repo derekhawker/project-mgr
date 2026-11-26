@@ -66,9 +66,34 @@ conversation history.
 ## Purpose and layout
 
 The workspace screen is the main application surface for a Workspace and its
-Workspace-owned interactive sessions. The persistent left navigation lists
-Workspaces directly; legacy Task rows are not shown as work destinations.
-Quick Requests remain a separate tracked flow above the Workspace list.
+Workspace-owned interactive sessions. The persistent left navigation contains
+the Ticket Sidebar below Quick Requests.
+
+The **Tickets** tab is selected by default and shows an uncapped flat list of
+tickets with a `work_session_id` across active Workspaces, newest modification
+first. Each row shows the noninteractive tag first, inline before the title. It
+uses the ticket's `project_label`, falling back to the owning Workspace name.
+The title row starts Work; neither the tag nor Workspace context is a navigation
+control. Long tags truncate visually and retain their full text as the tooltip.
+Tag colors use a fixed palette of 20 app colors; a deterministic normalized-label
+hash chooses a palette slot, so equal labels share a color and collisions are
+allowed. Keep row padding compact and avoid adding left indentation to Tickets.
+
+The **Workspaces** tab preserves the grouped layout already used by the main
+branch. Shared project-label groups appear first as plain headings with ticket
+rows beneath; those rows show the owning Workspace inline. Workspace groups then
+show their existing count, selection action, and independent disclosure control.
+Tickets that share another Workspace's name group under that Workspace; other
+tickets remain under their owning Workspace. Keep the existing grouping and row
+spacing rather than replacing it with a new label-group hierarchy. Preserve the
+existing visibility rules, and require a `work_session_id` for every row: show
+`in_progress`, `blocked`, and `draft` tickets with a session. Done and cancelled
+tickets remain available in the Workspace ticket browser, not these groups.
+Label editing remains in the
+ticket context menu in both tabs. The selected tab is session-local and resets to
+Tickets on launch.
+
+Tickets includes any ticket with a linked work session, regardless of status.
 
 Keep the app shell anchored to the window. Only the selected main pane scrolls.
 The post-Work shell starts with the shared masthead, showing the Workspace name
@@ -137,19 +162,9 @@ their own destination masthead instead.
 
 ## Workspace behavior
 
-The persistent left navigation offers an icon-only control beside **Workspaces**
-to switch between grouped Workspace → ticket rows and a flat ticket list.
-Grouped mode starts each Workspace expanded; only Workspaces with `in_progress`
-or `blocked` tickets show a right-side disclosure control. The Workspace name
-continues to select that Workspace; the separate disclosure changes only ticket
-visibility. Ticket rows show the title, clamped to two lines, and a left circle-X
-only for blocked tickets. Selecting a row runs that ticket's existing **Work**
-action. Flat mode keeps Workspace rows first, shows a divider, then lists matching
-tickets across Workspaces by newest filesystem modification time; ticket rows do
-not show Workspace names or timestamps, and Workspace disclosures are hidden.
 Rust watches ticket Markdown files and refreshes the navigation data when they
-change. The visual controls, truncation and native Wayland appearance remain
-manual acceptance.
+change. The visual controls, compact Recent spacing, tag density, truncation,
+palette contrast and native Wayland appearance remain manual acceptance.
 
 - The New work menu offers Workspace and Quick Request. Workspace confirmation
   selects the new Workspace and opens every required session, even when the

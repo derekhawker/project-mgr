@@ -54,6 +54,11 @@ discussions. For workflow behavior beyond the UX vocabulary, see
 
 ## Screens and controls
 
+- **Ticket Sidebar:** The persistent left-hand navigation for tickets. Its
+  **Tickets** tab is a flat modification-sorted list of session-backed tickets;
+  **Workspaces** preserves the
+  existing Workspace-group layout, including its shared-label headings. This is
+  distinct from the Workspace screen and its full ticket browser.
 - **New Work menu:** The dropdown at the bottom of the left navigation that
   offers Workspace and Quick Request. Selecting either opens the New Work modal.
 - **New Work modal:** The dialog over the current destination used to capture
@@ -68,7 +73,7 @@ discussions. For workflow behavior beyond the UX vocabulary, see
   Markdown or text files by source-relative paths. The ticket is a special
   read-only item outside the repository; Docs is not a general file browser or
   editor.
- - **Tools menu:** The menu opened by **Tools** in the Workspace Tickets view or
+- **Tools menu:** The menu opened by **Tools** in the Workspace Tickets view or
   ticket-workbench toolbar. The Tickets-view menu works without a selected
   ticket, offers external terminal/IntelliJ/folder actions only, and targets the
   Workspace repository checkout. The ticket-workbench menu includes project

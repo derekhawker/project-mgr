@@ -198,7 +198,7 @@ test("application composes, saves new ticket labels through the Rust boundary, a
     globalThis.__workspaceCreateCalls = [];
 
     await waitFor(
-      () => $("#workspace-list").getAttribute("aria-busy") === "false",
+      () => $("#ticket-sidebar-list").getAttribute("aria-busy") === "false",
     );
 
     // Exercise the complete UI-to-Rust-boundary flow: right-click a ticket,
@@ -598,7 +598,11 @@ test("application composes, saves new ticket labels through the Rust boundary, a
         },
       },
     ]);
-    assert.match($("#workspace-list").textContent, /Composition Workspace/);
+    assert.ok($("#ticket-sidebar-list"));
+    assert.doesNotMatch(
+      $("#workspace-list").textContent,
+      /Composition Workspace/,
+    );
     assert.equal($("#workspace-shell").hidden, true);
     assert.equal($("#workspace-shell h1"), workspaceHeading);
     assert.equal(

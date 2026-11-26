@@ -56,12 +56,12 @@ It offers external-terminal, IntelliJ, and folder actions only, all targeting th
 Workspace's verified repository checkout; it has no app-managed terminal or
 project-command actions. In the ticket workbench, tools,
 Change Review, and repository documents in Docs use the selected ticket's
-  verified worktree when one is recorded, falling back to the Workspace checkout
-  only when the ticket has no worktree. Docs also lists the selected ticket as a
-  special read-only item above repository documents and reads its canonical
-  Markdown from Workspace-owned ticket storage outside the repository, using the
-  same application ticket-content component as the Workspace ticket reader.
-  Nested project commands run from and show the directory containing their `package.json`
+verified worktree when one is recorded, falling back to the Workspace checkout
+only when the ticket has no worktree. Docs also lists the selected ticket as a
+special read-only item above repository documents and reads its canonical
+Markdown from Workspace-owned ticket storage outside the repository, using the
+same application ticket-content component as the Workspace ticket reader.
+Nested project commands run from and show the directory containing their `package.json`
 or Makefile.
 
 The Workspace Tickets toolbar places **Create ticket…** and neutral
@@ -207,19 +207,19 @@ provision application-managed repositories or worktrees.
 
 ## 2. Actors
 
-| Actor | Responsibility | Does not own |
-|---|---|---|
-| User | Chooses work, supplies prompts, reviews results, answers requests, and changes lifecycle state. | Direct database, process, or Git bookkeeping. |
-| GUI | Renders navigation, forms, status, terminal views, history, and lifecycle controls. Sends explicit commands to Rust. | OpenCode history, authoritative associations, or filesystem validation. |
-| Tauri/Rust core | Owns application commands, validation, SQLite writes, attached TUI/PTY child processes, OpenCode API calls, event forwarding, recovery, and cleanup scheduling. | Shared OpenCode service lifecycle, conversation content, or model decisions. |
-| SQLite management store | Persists workspaces, tasks, repositories, associations, sessions, settings, lifecycle state, and cleanup state. | Notes, resources, Git history, or duplicate conversation transcripts. |
-| Filesystem | Stores workspace/task home folders, notes, resources, and the default Quick Request directory. | Lifecycle truth for records; SQLite remains authoritative for management state. |
-| Git | Identifies repositories and branches and reports worktree cleanliness and usage. | Workspace/task lifecycle or OpenCode conversation history. |
-| OpenCode server | Creates sessions, accepts prompts, owns conversation history, exposes history/status/events, and performs model-backed work. | GUI management state and the application's authoritative repository associations. |
-| OpenCode TUI | Provides the interactive terminal experience, including follow-ups, approvals, and user-input requests. | Application navigation, lifecycle records, and cleanup decisions. |
-| PTY/runtime | Runs one attached OpenCode TUI per session and carries terminal bytes, input, resize, and exit events. | Session identity resolution. |
-| Recovery/cleanup worker | Reconciles sessions and schedules or performs eligible worktree cleanup while the app remains alive. | User decisions and conversation history. |
-| OS/tray | Keeps the Tauri process available while its window is hidden and exposes show/quit actions. | Application state and cleanup policy. |
+| Actor                   | Responsibility                                                                                                                                                  | Does not own                                                                      |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| User                    | Chooses work, supplies prompts, reviews results, answers requests, and changes lifecycle state.                                                                 | Direct database, process, or Git bookkeeping.                                     |
+| GUI                     | Renders navigation, forms, status, terminal views, history, and lifecycle controls. Sends explicit commands to Rust.                                            | OpenCode history, authoritative associations, or filesystem validation.           |
+| Tauri/Rust core         | Owns application commands, validation, SQLite writes, attached TUI/PTY child processes, OpenCode API calls, event forwarding, recovery, and cleanup scheduling. | Shared OpenCode service lifecycle, conversation content, or model decisions.      |
+| SQLite management store | Persists workspaces, tasks, repositories, associations, sessions, settings, lifecycle state, and cleanup state.                                                 | Notes, resources, Git history, or duplicate conversation transcripts.             |
+| Filesystem              | Stores workspace/task home folders, notes, resources, and the default Quick Request directory.                                                                  | Lifecycle truth for records; SQLite remains authoritative for management state.   |
+| Git                     | Identifies repositories and branches and reports worktree cleanliness and usage.                                                                                | Workspace/task lifecycle or OpenCode conversation history.                        |
+| OpenCode server         | Creates sessions, accepts prompts, owns conversation history, exposes history/status/events, and performs model-backed work.                                    | GUI management state and the application's authoritative repository associations. |
+| OpenCode TUI            | Provides the interactive terminal experience, including follow-ups, approvals, and user-input requests.                                                         | Application navigation, lifecycle records, and cleanup decisions.                 |
+| PTY/runtime             | Runs one attached OpenCode TUI per session and carries terminal bytes, input, resize, and exit events.                                                          | Session identity resolution.                                                      |
+| Recovery/cleanup worker | Reconciles sessions and schedules or performs eligible worktree cleanup while the app remains alive.                                                            | User decisions and conversation history.                                          |
+| OS/tray                 | Keeps the Tauri process available while its window is hidden and exposes show/quit actions.                                                                     | Application state and cleanup policy.                                             |
 
 The GUI never infers a regular session from the newest session in a directory.
 The owning workspace, task, or Quick Request record stores the exact OpenCode
@@ -349,16 +349,28 @@ The selected workspace and its tasks show the verified workspace repository
 bindings, including checkout path, branch, and verification state; the catalog
 and attachment controls are available at workspace scope.
 Show the Quick Requests heading above the recent requests list with a separate
-chevron-only button that opens the complete Quick Requests destination. Show one
-ticket-count tag beside each Workspace name in both navigation modes, counting
-`draft`, `in_progress`, and `blocked` tickets but not `done` or `cancelled`
-tickets. Show `in_progress` and `blocked` ticket rows, plus `draft` ticket rows
-only when their frontmatter has a `work_session_id`; new drafts without a session
-stay out of navigation rows. Grouped ticket rows are indented and marked with a
-small chevron; flat ticket rows are slightly indented beneath the **Tickets**
-heading. Both retain their existing blocked and in-progress attention markers. Keep the
-workspace/ticket list as its own scroll area; Ports, Repositories, and New work
-remain pinned in the navigation.
+chevron-only button that opens the complete Quick Requests destination. Below it,
+the **Ticket Sidebar** has **Tickets** and **Workspaces** tabs; Tickets is the
+default and is session-local. Tickets is an uncapped flat list of tickets with a
+`work_session_id` across active Workspaces, ordered by file modification time,
+newest first. The title row starts Work; a noninteractive tag shows
+`project_label` or, when absent, the owning Workspace name, inline before the
+title. Neither tag nor Workspace context navigates. Tags use a deterministic
+20-color palette keyed by normalized label; long tags truncate with a full
+tooltip. Keep Tickets rows compact and without added left indentation.
+
+Workspaces preserves the existing main-branch grouped layout: shared
+project-label groups appear first as plain headings with ticket rows beneath and
+the owning Workspace inline; Workspace groups then show their existing count,
+selection action, and independent disclosure. Tickets matching another
+Workspace's name group beneath that Workspace; otherwise tickets stay beneath
+their owner. Require a `work_session_id` for every ticket in either tab. In
+Workspaces, preserve the existing status rules too: show `in_progress`,
+`blocked`, and `draft` tickets with a session; do not add done or cancelled
+tickets to Workspace groups. Keep the existing grouped presentation and
+spacing. Label editing remains available from both tabs. Keep
+the Ticket Sidebar as its own scroll area; Ports, Repositories, and New work
+remain pinned in navigation.
 
 ## 4. Core Invariants
 
@@ -380,7 +392,7 @@ remain pinned in the navigation.
    and selected starting prompts in `quick_request_prompts`, linked to its task,
    while OpenCode continues to own the conversation history.
 10. A new session means a new OpenCode conversation in the same owner context;
-   it does not create a child task.
+    it does not create a child task.
 11. Completed tasks cannot be reopened. Further work starts as a new task.
 12. Completing a task does not commit, merge, or discard code.
 13. A workspace cannot be completed while it has active tasks.
@@ -390,7 +402,7 @@ remain pinned in the navigation.
 17. Hiding a terminal view or the main window does not stop OpenCode work.
 18. Full application quit stops app-owned TUI/PTY children but leaves the shared OpenCode service running for other clients.
 19. A failed event subscription, session creation, PTY attachment, or required
-   validation stops the affected flow with a visible error.
+    validation stops the affected flow with a visible error.
 
 ## 5. Common Session Flow
 
@@ -432,34 +444,34 @@ the initial prompt with `POST /api/session/{sessionID}/prompt` and a
 OpenCode's private registration and owns the API client. It passes the password
 only to TUI child processes that need it and never exposes it to the WebView.
 
-| Step | Actor | Action | Result |
-|---:|---|---|---|
-| 1 | User | Chooses an available model and submits a workspace, task, or Quick Request prompt. | The GUI disables duplicate submission and shows session startup. |
-| 2 | GUI | Sends a typed command to Rust containing the owner ID, prompt, selected model, and relevant preferences. | Rust receives explicit owner and model choices, not a foreground-session or OpenCode-default guess. |
-| 3 | Rust | Validates the owner, prompt, selected model, working directory, and repository/worktree context. Creates the directory if the flow requires it. | Invalid input fails before a model prompt is sent. |
-| 4 | Rust | Connects to OpenCode's registered shared service, starting it through the OpenCode CLI only when no service is registered; validates authenticated API health. | The shared server is ready before session creation, with no duplicate app-owned server. |
-| 5 | Rust | Calls authenticated OpenCode `POST /api/session` with the exact `location.directory` and selected `model`. | OpenCode returns an exact session ID in the `data` response wrapper. |
-| 6 | Rust | Writes the session association to SQLite before starting generation. | The owner can recover the exact session after a restart. |
-| 7 | Rust | Allocates a PTY and launches the root TUI as `opencode --server <url> --session <id> <directory>`. | One TUI process is attached to the exact session and directory. |
-| 8 | Rust | Starts reading PTY output immediately and emits ordered output and exit events. | Output cannot be lost because the GUI is still constructing its terminal. |
-| 9 | GUI | Registers terminal event listeners, creates xterm, registers the XTGETTCAP handler, opens the terminal, and replays buffered output. | The user can see the TUI before generation begins. |
-| 10 | Rust | Confirms the attached TUI is alive and the output path is ready. | The initial prompt is not sent to a missing terminal. |
-| 11 | Rust | Revalidates and sets the selected model through `POST /api/session/{sessionID}/model`. | The exact user choice is active on the session; OpenCode's default is not consulted. |
-| 12 | Rust | Calls authenticated `POST /api/session/{sessionID}/prompt` with the initial prompt as `text`. | Generation begins in the already visible TUI. |
-| 13 | OpenCode | Generates, runs tools, requests approval/input when necessary, and updates the session. | The TUI streams the real interactive response. |
-| 14 | Rust/GUI | Forwards output, status events, PTY exit, and errors to the matching session view. | The user sees the session's current state without an app transcript. |
+| Step | Actor    | Action                                                                                                                                                         | Result                                                                                              |
+| ---: | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+|    1 | User     | Chooses an available model and submits a workspace, task, or Quick Request prompt.                                                                             | The GUI disables duplicate submission and shows session startup.                                    |
+|    2 | GUI      | Sends a typed command to Rust containing the owner ID, prompt, selected model, and relevant preferences.                                                       | Rust receives explicit owner and model choices, not a foreground-session or OpenCode-default guess. |
+|    3 | Rust     | Validates the owner, prompt, selected model, working directory, and repository/worktree context. Creates the directory if the flow requires it.                | Invalid input fails before a model prompt is sent.                                                  |
+|    4 | Rust     | Connects to OpenCode's registered shared service, starting it through the OpenCode CLI only when no service is registered; validates authenticated API health. | The shared server is ready before session creation, with no duplicate app-owned server.             |
+|    5 | Rust     | Calls authenticated OpenCode `POST /api/session` with the exact `location.directory` and selected `model`.                                                     | OpenCode returns an exact session ID in the `data` response wrapper.                                |
+|    6 | Rust     | Writes the session association to SQLite before starting generation.                                                                                           | The owner can recover the exact session after a restart.                                            |
+|    7 | Rust     | Allocates a PTY and launches the root TUI as `opencode --server <url> --session <id> <directory>`.                                                             | One TUI process is attached to the exact session and directory.                                     |
+|    8 | Rust     | Starts reading PTY output immediately and emits ordered output and exit events.                                                                                | Output cannot be lost because the GUI is still constructing its terminal.                           |
+|    9 | GUI      | Registers terminal event listeners, creates xterm, registers the XTGETTCAP handler, opens the terminal, and replays buffered output.                           | The user can see the TUI before generation begins.                                                  |
+|   10 | Rust     | Confirms the attached TUI is alive and the output path is ready.                                                                                               | The initial prompt is not sent to a missing terminal.                                               |
+|   11 | Rust     | Revalidates and sets the selected model through `POST /api/session/{sessionID}/model`.                                                                         | The exact user choice is active on the session; OpenCode's default is not consulted.                |
+|   12 | Rust     | Calls authenticated `POST /api/session/{sessionID}/prompt` with the initial prompt as `text`.                                                                  | Generation begins in the already visible TUI.                                                       |
+|   13 | OpenCode | Generates, runs tools, requests approval/input when necessary, and updates the session.                                                                        | The TUI streams the real interactive response.                                                      |
+|   14 | Rust/GUI | Forwards output, status events, PTY exit, and errors to the matching session view.                                                                             | The user sees the session's current state without an app transcript.                                |
 
 ### 5.2 Resume an existing session
 
-| Step | Actor | Action | Result |
-|---:|---|---|---|
-| 1 | User | Selects a workspace, task, or Quick Request session to restore. | The GUI asks Rust for that owner's stored session. |
-| 2 | Rust | Reads the exact session ID and working directory from SQLite. | No newest-session heuristic is used for regular work. |
-| 3 | Rust | Checks whether the session's TUI/PTY is already owned by the app. | Existing runtime is reused when possible. |
-| 4 | Rust | Otherwise allocates a PTY and launches the root TUI with `--server`, `--session`, and the exact directory. | The same OpenCode conversation is reopened. |
-| 5 | GUI | Creates the terminal, registers protocol handlers, and replays any buffered output. | Existing TUI history is visible. |
-| 6 | Rust/GUI | Reconciles current OpenCode status, pending input, and event cursor. | The GUI reports running, waiting, ready, failed, or uncertain state. |
-| 7 | Rust | Does not call the initial-prompt endpoint. | Restore never generates a duplicate response. |
+| Step | Actor    | Action                                                                                                     | Result                                                               |
+| ---: | -------- | ---------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+|    1 | User     | Selects a workspace, task, or Quick Request session to restore.                                            | The GUI asks Rust for that owner's stored session.                   |
+|    2 | Rust     | Reads the exact session ID and working directory from SQLite.                                              | No newest-session heuristic is used for regular work.                |
+|    3 | Rust     | Checks whether the session's TUI/PTY is already owned by the app.                                          | Existing runtime is reused when possible.                            |
+|    4 | Rust     | Otherwise allocates a PTY and launches the root TUI with `--server`, `--session`, and the exact directory. | The same OpenCode conversation is reopened.                          |
+|    5 | GUI      | Creates the terminal, registers protocol handlers, and replays any buffered output.                        | Existing TUI history is visible.                                     |
+|    6 | Rust/GUI | Reconciles current OpenCode status, pending input, and event cursor.                                       | The GUI reports running, waiting, ready, failed, or uncertain state. |
+|    7 | Rust     | Does not call the initial-prompt endpoint.                                                                 | Restore never generates a duplicate response.                        |
 
 If OpenCode's authenticated session lookup returns HTTP 404, Rust creates a new
 empty session in the same owner directory using the configured app default
@@ -472,28 +484,28 @@ session and remain visible errors. Replacement never submits a prompt.
 
 ### 5.3 Follow-up, approval, or user input
 
-| Step | Actor | Action | Result |
-|---:|---|---|---|
-| 1 | User | Types into the focused xterm session. | Input is associated with the selected exact session ID. |
-| 2 | GUI | Sends terminal bytes to Rust. | Rust receives raw TUI input, including control sequences. |
-| 3 | Rust | Writes and flushes bytes to that session's PTY. | OpenCode's TUI receives the follow-up or selection. |
-| 4 | OpenCode TUI | Submits the follow-up or answers an approval/question flow. | OpenCode continues the same conversation. |
-| 5 | OpenCode | Produces output or opens another input request. | The same terminal streams the next state. |
-| 6 | Rust/GUI | Updates status and preserves the OpenCode-owned history. | No new Quick Request, task, or duplicate transcript is created. |
+| Step | Actor        | Action                                                      | Result                                                          |
+| ---: | ------------ | ----------------------------------------------------------- | --------------------------------------------------------------- |
+|    1 | User         | Types into the focused xterm session.                       | Input is associated with the selected exact session ID.         |
+|    2 | GUI          | Sends terminal bytes to Rust.                               | Rust receives raw TUI input, including control sequences.       |
+|    3 | Rust         | Writes and flushes bytes to that session's PTY.             | OpenCode's TUI receives the follow-up or selection.             |
+|    4 | OpenCode TUI | Submits the follow-up or answers an approval/question flow. | OpenCode continues the same conversation.                       |
+|    5 | OpenCode     | Produces output or opens another input request.             | The same terminal streams the next state.                       |
+|    6 | Rust/GUI     | Updates status and preserves the OpenCode-owned history.    | No new Quick Request, task, or duplicate transcript is created. |
 
 ### 5.4 Session status and event recovery
 
 The GUI exposes these application-level states:
 
-| State | Meaning | Entry evidence |
-|---|---|---|
-| Starting | The app is creating or attaching the session. | Rust command is in progress. |
-| Running | OpenCode is actively executing the session. | A current status/event indicates active execution. |
-| Waiting for input | OpenCode needs an approval, permission, form, or terminal response. | A pending request or TUI input state is present. |
-| Ready for review | The current turn has ended and the session has usable output. | Completion/idle evidence plus no pending request. |
-| Reconnecting | The event stream or PTY is temporarily unavailable. | Connection or child recovery is underway. |
-| Unknown | The app has insufficient evidence to classify the session. | Events were lost and reconciliation is incomplete. |
-| Failed | The session or its runtime ended with a known failure. | API, process, or execution failure is confirmed. |
+| State             | Meaning                                                             | Entry evidence                                     |
+| ----------------- | ------------------------------------------------------------------- | -------------------------------------------------- |
+| Starting          | The app is creating or attaching the session.                       | Rust command is in progress.                       |
+| Running           | OpenCode is actively executing the session.                         | A current status/event indicates active execution. |
+| Waiting for input | OpenCode needs an approval, permission, form, or terminal response. | A pending request or TUI input state is present.   |
+| Ready for review  | The current turn has ended and the session has usable output.       | Completion/idle evidence plus no pending request.  |
+| Reconnecting      | The event stream or PTY is temporarily unavailable.                 | Connection or child recovery is underway.          |
+| Unknown           | The app has insufficient evidence to classify the session.          | Events were lost and reconciliation is incomplete. |
+| Failed            | The session or its runtime ended with a known failure.              | API, process, or execution failure is confirmed.   |
 
 `inactive` alone is never treated as completed. On an event disconnect, Rust
 reconnects and reconciles API status, pending requests, session history, and
@@ -509,17 +521,17 @@ notices.
 
 ## 6. Application Startup and Recovery
 
-| Step | Actor | Action | Result |
-|---:|---|---|---|
-| 1 | OS/Tauri | Starts the application process. | One application instance owns management state and child processes. |
-| 2 | Rust | Opens SQLite and validates the schema. | The app knows the owners and associations before rendering them. |
-| 3 | Rust | Loads the user project-home setting and ensures the default `~/OpenCode Projects/` root exists when needed. | Regular work has a stable location. |
-| 4 | Rust | Checks the installed OpenCode version and its matching CLI/API contract. For v2.0.27 this is authenticated `/api/info`, `/api/session`, and the root TUI `--server`/`--session` contract. | Unsupported installation fails visibly at the integration boundary. |
-| 5 | Rust | Discovers the registered shared OpenCode service, or starts it through the OpenCode CLI when absent. | Startup reconnects to one shared service instead of creating an app-owned duplicate. |
-| 6 | Rust | Inspects active sessions, cleanup jobs, and previously uncertain runtime records. | Recovery work is scheduled before normal actions are enabled. |
-| 7 | GUI | Registers event listeners before enabling session actions. | PTY output cannot be silently dropped due to missing capability. |
-| 8 | Rust/GUI | Reattaches visible or requested sessions and reconciles their state. | The GUI displays current work and uncertainty explicitly. |
-| 9 | Cleanup worker | Resumes eligible cleanup jobs without deleting dirty or in-use worktrees. | Interrupted cleanup is safe to retry. |
+| Step | Actor          | Action                                                                                                                                                                                    | Result                                                                               |
+| ---: | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+|    1 | OS/Tauri       | Starts the application process.                                                                                                                                                           | One application instance owns management state and child processes.                  |
+|    2 | Rust           | Opens SQLite and validates the schema.                                                                                                                                                    | The app knows the owners and associations before rendering them.                     |
+|    3 | Rust           | Loads the user project-home setting and ensures the default `~/OpenCode Projects/` root exists when needed.                                                                               | Regular work has a stable location.                                                  |
+|    4 | Rust           | Checks the installed OpenCode version and its matching CLI/API contract. For v2.0.27 this is authenticated `/api/info`, `/api/session`, and the root TUI `--server`/`--session` contract. | Unsupported installation fails visibly at the integration boundary.                  |
+|    5 | Rust           | Discovers the registered shared OpenCode service, or starts it through the OpenCode CLI when absent.                                                                                      | Startup reconnects to one shared service instead of creating an app-owned duplicate. |
+|    6 | Rust           | Inspects active sessions, cleanup jobs, and previously uncertain runtime records.                                                                                                         | Recovery work is scheduled before normal actions are enabled.                        |
+|    7 | GUI            | Registers event listeners before enabling session actions.                                                                                                                                | PTY output cannot be silently dropped due to missing capability.                     |
+|    8 | Rust/GUI       | Reattaches visible or requested sessions and reconciles their state.                                                                                                                      | The GUI displays current work and uncertainty explicitly.                            |
+|    9 | Cleanup worker | Resumes eligible cleanup jobs without deleting dirty or in-use worktrees.                                                                                                                 | Interrupted cleanup is safe to retry.                                                |
 
 If a previous app process still owns children, the recovery flow must not create
 a second owner for the same session. It should either reconnect to the existing
@@ -553,15 +565,15 @@ inferred.
 
 ### 7.1 Add user-selected repository directories
 
-| Step | Actor | Action | Result |
-|---:|---|---|---|
-| 1 | User | Opens **Repositories** from top navigation and uses **Add directories** to select one or more folders with the native folder picker. | The GUI sends only those explicit paths to Rust. |
-| 2 | Rust | Runs traversal and Git discovery on a bounded blocking worker; canonicalizes selected roots, but does not follow child directory symlinks. | The UI/startup thread remains available while filesystem work runs. |
-| 3 | Rust/Git | Prunes common dependency, generated-output, and build directory names during broad traversal; stops at Git markers and verifies candidates with one `git rev-parse --show-toplevel --git-common-dir` process. | The managed project and repository-library trees are excluded; invalid or ambiguous/non-UTF-8 Git output is not cataloged; linked worktrees and submodules are excluded, while independent separate-Git-dir checkouts are eligible. |
-| 4 | Rust | De-duplicates by canonical repository path and retires absent active entries only after a complete scan; incomplete roots do not trigger cleanup. | A move creates a path-keyed entry at the new location; old catalog history and workspace bindings remain attached to the old entry. Repository files are never deleted. |
-| 5 | OpenCode | Generates a concise purpose description from repository content or metadata when requested by the discovery flow. | The description is proposed content, not repository identity. |
-| 6 | User | Reviews or edits the purpose description. | The catalog stores the accepted concise purpose. |
-| 7 | Rust | Writes the repository catalog entry and discovery result to SQLite. | The shared catalog is additional context to any New-work proposal; discovery alone does not attach a repo to a workspace. |
+| Step | Actor    | Action                                                                                                                                                                                                        | Result                                                                                                                                                                                                                              |
+| ---: | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+|    1 | User     | Opens **Repositories** from top navigation and uses **Add directories** to select one or more folders with the native folder picker.                                                                          | The GUI sends only those explicit paths to Rust.                                                                                                                                                                                    |
+|    2 | Rust     | Runs traversal and Git discovery on a bounded blocking worker; canonicalizes selected roots, but does not follow child directory symlinks.                                                                    | The UI/startup thread remains available while filesystem work runs.                                                                                                                                                                 |
+|    3 | Rust/Git | Prunes common dependency, generated-output, and build directory names during broad traversal; stops at Git markers and verifies candidates with one `git rev-parse --show-toplevel --git-common-dir` process. | The managed project and repository-library trees are excluded; invalid or ambiguous/non-UTF-8 Git output is not cataloged; linked worktrees and submodules are excluded, while independent separate-Git-dir checkouts are eligible. |
+|    4 | Rust     | De-duplicates by canonical repository path and retires absent active entries only after a complete scan; incomplete roots do not trigger cleanup.                                                             | A move creates a path-keyed entry at the new location; old catalog history and workspace bindings remain attached to the old entry. Repository files are never deleted.                                                             |
+|    5 | OpenCode | Generates a concise purpose description from repository content or metadata when requested by the discovery flow.                                                                                             | The description is proposed content, not repository identity.                                                                                                                                                                       |
+|    6 | User     | Reviews or edits the purpose description.                                                                                                                                                                     | The catalog stores the accepted concise purpose.                                                                                                                                                                                    |
+|    7 | Rust     | Writes the repository catalog entry and discovery result to SQLite.                                                                                                                                           | The shared catalog is additional context to any New-work proposal; discovery alone does not attach a repo to a workspace.                                                                                                           |
 
 Saved scan roots persist and startup rescans each root asynchronously on the
 bounded blocking worker pool; startup does not wait for scan completion. Broad
@@ -605,13 +617,13 @@ replace Rust's verified path or repository identity.
 
 ### 7.2 Attach a repository to a workspace
 
-| Step | Actor | Action | Result |
-|---:|---|---|---|
-| 1 | User | Confirms a catalog repository in a new-work proposal. | Rust receives its verified catalog ID, not an arbitrary path or Git command. |
-| 2 | Rust | Revalidates source identity, reviewed commits, default branch, and configured upstream fetch URL. Default branch resolution prefers valid `origin/HEAD`, then a local `main` or `master`, then the currently checked-out local branch. | Dirty source working trees are allowed; only committed Git state is cloned. Stale repository facts or repositories with no resolvable branch are rejected before provisioning with an actionable error. |
-| 3 | Rust/Git | Creates or reuses a managed base clone in the repository library, then creates the Workspace-specific branch and worktree and symlinks the Workspace `repos/` entry to that worktree. | The source remains unchanged; dirty working-tree files are not copied. |
-| 4 | Rust | Persists source and base/worktree identities, exact paths, branch, alias, and setup outcome. | Future operations use recorded paths and validated identities. |
-| 5 | Rust | Sets the managed base clone's `origin` to the source's configured upstream fetch URL, or removes the local-path origin when none exists. | The managed clone does not retain the source checkout as its parent remote. |
+| Step | Actor    | Action                                                                                                                                                                                                                                 | Result                                                                                                                                                                                                  |
+| ---: | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+|    1 | User     | Confirms a catalog repository in a new-work proposal.                                                                                                                                                                                  | Rust receives its verified catalog ID, not an arbitrary path or Git command.                                                                                                                            |
+|    2 | Rust     | Revalidates source identity, reviewed commits, default branch, and configured upstream fetch URL. Default branch resolution prefers valid `origin/HEAD`, then a local `main` or `master`, then the currently checked-out local branch. | Dirty source working trees are allowed; only committed Git state is cloned. Stale repository facts or repositories with no resolvable branch are rejected before provisioning with an actionable error. |
+|    3 | Rust/Git | Creates or reuses a managed base clone in the repository library, then creates the Workspace-specific branch and worktree and symlinks the Workspace `repos/` entry to that worktree.                                                  | The source remains unchanged; dirty working-tree files are not copied.                                                                                                                                  |
+|    4 | Rust     | Persists source and base/worktree identities, exact paths, branch, alias, and setup outcome.                                                                                                                                           | Future operations use recorded paths and validated identities.                                                                                                                                          |
+|    5 | Rust     | Sets the managed base clone's `origin` to the source's configured upstream fetch URL, or removes the local-path origin when none exists.                                                                                               | The managed clone does not retain the source checkout as its parent remote.                                                                                                                             |
 
 Cloning uses `git clone --no-hardlinks --recurse-submodules`. Git's standard
 relative submodule URL resolution is used. Recursive submodule failure leaves
@@ -702,14 +714,14 @@ documents return errors rather than falling back to arbitrary directories.
 
 ### 8.2 Create a workspace through New
 
-| Step | Actor | Action | Result |
-|---:|---|---|---|
-| 1 | User | Chooses **New** and enters a prompt describing the workspace. | The GUI preserves the original prompt and disables duplicate submission. |
-| 2 | GUI | Sends the creation command to Rust. | Rust owns the transaction. |
-| 3 | Rust | Normalizes the name into a safe display name and filesystem slug, checking collisions. | The chosen workspace has stable identity and path. |
-| 4 | Rust | Creates the workspace row in SQLite and its home, `notes/`, `repos/`, and `tasks/` directories. | Filesystem and management record are created together or the operation fails visibly. |
-| 5 | Rust | Initializes the workspace as active with no tasks and no repository bindings. | The workspace appears in the persistent workspace navigation, even with no tasks. |
-| 6 | Rust/GUI | Provisions selected clones; creates one workspace-home session for zero repos, one clone-rooted session for one repo, or one empty clone-rooted session per repo for multiple repos. | Each workspace terminal has the correct repository context; multi-repo setup opens one tab per repo and sends no prompt automatically. |
+| Step | Actor    | Action                                                                                                                                                                               | Result                                                                                                                                 |
+| ---: | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+|    1 | User     | Chooses **New** and enters a prompt describing the workspace.                                                                                                                        | The GUI preserves the original prompt and disables duplicate submission.                                                               |
+|    2 | GUI      | Sends the creation command to Rust.                                                                                                                                                  | Rust owns the transaction.                                                                                                             |
+|    3 | Rust     | Normalizes the name into a safe display name and filesystem slug, checking collisions.                                                                                               | The chosen workspace has stable identity and path.                                                                                     |
+|    4 | Rust     | Creates the workspace row in SQLite and its home, `notes/`, `repos/`, and `tasks/` directories.                                                                                      | Filesystem and management record are created together or the operation fails visibly.                                                  |
+|    5 | Rust     | Initializes the workspace as active with no tasks and no repository bindings.                                                                                                        | The workspace appears in the persistent workspace navigation, even with no tasks.                                                      |
+|    6 | Rust/GUI | Provisions selected clones; creates one workspace-home session for zero repos, one clone-rooted session for one repo, or one empty clone-rooted session per repo for multiple repos. | Each workspace terminal has the correct repository context; multi-repo setup opens one tab per repo and sends no prompt automatically. |
 
 A workspace may have no repositories or tasks. Creating it through New starts
 its workspace session(s) automatically; a multi-repository workspace starts
@@ -718,26 +730,26 @@ not create a task.
 
 ### 8.3 Start or restore a workspace planning session
 
-| Step | Actor | Action | Result |
-|---:|---|---|---|
-| 1 | User | Selects a workspace. | The GUI resolves the workspace's exact stored session. |
-| 2 | Rust | Resolves the workspace-home directory for zero bindings, one clone for one binding, or each clone for multiple bindings. | OpenCode receives stable workspace/repository context, not a task worktree. |
-| 3 | Rust | Creates or restores every tracked workspace session at its exact directory. | Each repository tab belongs to the workspace and its exact repository. |
-| 4 | OpenCode | Inspects workspace context and edits workspace notes or requirements when requested. | Planning work stays at workspace scope. |
-| 5 | User | Follows up in the selected terminal. | The workspace session remains tracked; repository tabs remain independent. |
+| Step | Actor    | Action                                                                                                                   | Result                                                                      |
+| ---: | -------- | ------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------- |
+|    1 | User     | Selects a workspace.                                                                                                     | The GUI resolves the workspace's exact stored session.                      |
+|    2 | Rust     | Resolves the workspace-home directory for zero bindings, one clone for one binding, or each clone for multiple bindings. | OpenCode receives stable workspace/repository context, not a task worktree. |
+|    3 | Rust     | Creates or restores every tracked workspace session at its exact directory.                                              | Each repository tab belongs to the workspace and its exact repository.      |
+|    4 | OpenCode | Inspects workspace context and edits workspace notes or requirements when requested.                                     | Planning work stays at workspace scope.                                     |
+|    5 | User     | Follows up in the selected terminal.                                                                                     | The workspace session remains tracked; repository tabs remain independent.  |
 
 Workspace sessions do not implement task changes in task worktrees. A request
 for implementation becomes a task-creation decision.
 
 ### 8.4 Complete a workspace
 
-| Step | Actor | Action | Result |
-|---:|---|---|---|
-| 1 | User | Chooses **Complete workspace**. | Rust checks the workspace lifecycle preconditions. |
-| 2 | Rust | Queries SQLite for active tasks owned by the workspace. | Any active task blocks completion. |
-| 3 | GUI | If active tasks exist, shows the blocking tasks and does not change state. | The user must complete or otherwise resolve those tasks first. |
-| 4 | Rust | If no active tasks exist, marks the workspace completed and records the timestamp. | The workspace leaves the active list but remains in history. |
-| 5 | GUI | Hides the completed workspace from the active navigation and keeps it available through history. | Completion is a visibility/lifecycle change, not deletion. |
+| Step | Actor | Action                                                                                           | Result                                                         |
+| ---: | ----- | ------------------------------------------------------------------------------------------------ | -------------------------------------------------------------- |
+|    1 | User  | Chooses **Complete workspace**.                                                                  | Rust checks the workspace lifecycle preconditions.             |
+|    2 | Rust  | Queries SQLite for active tasks owned by the workspace.                                          | Any active task blocks completion.                             |
+|    3 | GUI   | If active tasks exist, shows the blocking tasks and does not change state.                       | The user must complete or otherwise resolve those tasks first. |
+|    4 | Rust  | If no active tasks exist, marks the workspace completed and records the timestamp.               | The workspace leaves the active list but remains in history.   |
+|    5 | GUI   | Hides the completed workspace from the active navigation and keeps it available through history. | Completion is a visibility/lifecycle change, not deletion.     |
 
 Completing a workspace does not delete its home folder, notes, repositories,
 branches, sessions, or task history. The behavior of active workspace-level
@@ -749,41 +761,41 @@ before a new task or workspace session can be created.
 
 ### 9.1 Create a task from a workspace
 
-| Step | Actor | Action | Result |
-|---:|---|---|---|
-| 1 | User | Chooses **Task** from the navigation's **New work** dropdown while a workspace is selected and enters the original task prompt. | The workspace context is passed separately; the prompt is preserved exactly. |
-| 2 | Rust/OpenCode | Interprets the prompt in a transient proposal step using the workspace clones. | A task proposal and repository selection are returned without creating a task or terminal. |
-| 3 | User | Reviews the proposed task, repository selection, and expected effects. | The user can go back and submit a different original prompt; no task starting prompt is generated. |
-| 4 | User | Confirms the proposal. | Rust receives the exact confirmed task context. |
-| 5 | Rust | Verifies the workspace is active and creates the task row and task home, `notes/`, and `worktrees/` directories. | The task has a stable owner and working directory. |
-| 6 | Rust | Persists the exact confirmed repository selection with the task. | Retry cannot silently widen or replace its context. |
-| 7 | Rust/Git | Creates each deterministic task branch/worktree from its workspace clone and recursively initializes pinned submodules. | Task worktrees are independent, validated Git roots. |
-| 8 | Rust | Persists each setup result, then creates one empty session per selected repository at its task worktree and associates it with that repository and task. | Every terminal is rooted in exactly one repo worktree; no original or generated prompt is submitted. |
-| 9 | Rust/GUI | Opens the repo sessions as separate interactive terminals and reports any partial startup failure. | Successful sessions remain usable and failed items remain visible/recoverable. |
-| 10 | User/OpenCode | Coordinates across terminals and manually enters work prompts. | Each conversation and repository's changes remain independently scoped. |
+| Step | Actor         | Action                                                                                                                                                   | Result                                                                                               |
+| ---: | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+|    1 | User          | Chooses **Task** from the navigation's **New work** dropdown while a workspace is selected and enters the original task prompt.                          | The workspace context is passed separately; the prompt is preserved exactly.                         |
+|    2 | Rust/OpenCode | Interprets the prompt in a transient proposal step using the workspace clones.                                                                           | A task proposal and repository selection are returned without creating a task or terminal.           |
+|    3 | User          | Reviews the proposed task, repository selection, and expected effects.                                                                                   | The user can go back and submit a different original prompt; no task starting prompt is generated.   |
+|    4 | User          | Confirms the proposal.                                                                                                                                   | Rust receives the exact confirmed task context.                                                      |
+|    5 | Rust          | Verifies the workspace is active and creates the task row and task home, `notes/`, and `worktrees/` directories.                                         | The task has a stable owner and working directory.                                                   |
+|    6 | Rust          | Persists the exact confirmed repository selection with the task.                                                                                         | Retry cannot silently widen or replace its context.                                                  |
+|    7 | Rust/Git      | Creates each deterministic task branch/worktree from its workspace clone and recursively initializes pinned submodules.                                  | Task worktrees are independent, validated Git roots.                                                 |
+|    8 | Rust          | Persists each setup result, then creates one empty session per selected repository at its task worktree and associates it with that repository and task. | Every terminal is rooted in exactly one repo worktree; no original or generated prompt is submitted. |
+|    9 | Rust/GUI      | Opens the repo sessions as separate interactive terminals and reports any partial startup failure.                                                       | Successful sessions remain usable and failed items remain visible/recoverable.                       |
+|   10 | User/OpenCode | Coordinates across terminals and manually enters work prompts.                                                                                           | Each conversation and repository's changes remain independently scoped.                              |
 
 Rust owns task branch, worktree, and session setup. OpenCode performs requested
 implementation work only after the user enters it in the matching repo session.
 
 ### 9.2 Task setup with multiple repositories
 
-| Step | Actor | Action | Result |
-|---:|---|---|---|
-| 1 | Rust/Git | Sets up each selected repository independently from its workspace clone. | A failure in one repository does not erase successful results for others. |
-| 2 | Rust | Checks branch collisions, existing worktrees, repository identity, path containment, and task ownership. | Unsafe or ambiguous worktrees are rejected. |
-| 3 | Rust | Stores successful associations and an itemized failure record for each unsuccessful repository. | The task has an explicit setup report. |
-| 4 | Rust/OpenCode | Creates one empty repo-rooted session for each successfully set-up repository and records its repository association. | Partial session startup does not discard other usable sessions. |
-| 5 | GUI | Shows ready, failed, and pending repositories/sessions separately. | The user can retry or adjust only affected items. |
+| Step | Actor         | Action                                                                                                                | Result                                                                    |
+| ---: | ------------- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+|    1 | Rust/Git      | Sets up each selected repository independently from its workspace clone.                                              | A failure in one repository does not erase successful results for others. |
+|    2 | Rust          | Checks branch collisions, existing worktrees, repository identity, path containment, and task ownership.              | Unsafe or ambiguous worktrees are rejected.                               |
+|    3 | Rust          | Stores successful associations and an itemized failure record for each unsuccessful repository.                       | The task has an explicit setup report.                                    |
+|    4 | Rust/OpenCode | Creates one empty repo-rooted session for each successfully set-up repository and records its repository association. | Partial session startup does not discard other usable sessions.           |
+|    5 | GUI           | Shows ready, failed, and pending repositories/sessions separately.                                                    | The user can retry or adjust only affected items.                         |
 
 ### 9.3 Partial task setup failure
 
-| Step | Actor | Action | Result |
-|---:|---|---|---|
-| 1 | Git/OpenCode | A clone, submodule, branch, worktree, or session startup operation fails. | The failure includes the repository and attempted operation. |
-| 2 | Rust | Verifies whether any filesystem or Git side effect occurred. | Partial side effects are not hidden. |
-| 3 | Rust | Persists the task as setup-incomplete and records successful and failed items. | The task remains recoverable without pretending to be ready. |
-| 4 | GUI | Shows the reason and offers retry, correction, or cancellation according to the failure. | The user can make the next decision with full context. |
-| 5 | User | Retries or changes repository selection. | The retry uses the recorded state and avoids duplicate branches/worktrees. |
+| Step | Actor        | Action                                                                                   | Result                                                                     |
+| ---: | ------------ | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+|    1 | Git/OpenCode | A clone, submodule, branch, worktree, or session startup operation fails.                | The failure includes the repository and attempted operation.               |
+|    2 | Rust         | Verifies whether any filesystem or Git side effect occurred.                             | Partial side effects are not hidden.                                       |
+|    3 | Rust         | Persists the task as setup-incomplete and records successful and failed items.           | The task remains recoverable without pretending to be ready.               |
+|    4 | GUI          | Shows the reason and offers retry, correction, or cancellation according to the failure. | The user can make the next decision with full context.                     |
+|    5 | User         | Retries or changes repository selection.                                                 | The retry uses the recorded state and avoids duplicate branches/worktrees. |
 
 The app must not silently create a second task when setup fails. A failed task
 creation that has already created a task record remains an explicit task
@@ -791,39 +803,39 @@ record until the user cancels or resolves it.
 
 ### 9.4 Start another task session
 
-| Step | Actor | Action | Result |
-|---:|---|---|---|
-| 1 | User | Chooses **New session** from an active task. | The GUI keeps the same task owner. |
-| 2 | User | Chooses a repository associated with the task. | The new session is assigned to that repository's task worktree. |
-| 3 | Rust | Creates a new OpenCode conversation at the exact worktree and records task, repo, session ID, and directory. | Existing session history remains separate and intact. |
-| 4 | OpenCode/TUI | Opens the new repo-rooted interactive terminal without an initial prompt. | The user can coordinate it with other repo sessions. |
+| Step | Actor        | Action                                                                                                       | Result                                                          |
+| ---: | ------------ | ------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------- |
+|    1 | User         | Chooses **New session** from an active task.                                                                 | The GUI keeps the same task owner.                              |
+|    2 | User         | Chooses a repository associated with the task.                                                               | The new session is assigned to that repository's task worktree. |
+|    3 | Rust         | Creates a new OpenCode conversation at the exact worktree and records task, repo, session ID, and directory. | Existing session history remains separate and intact.           |
+|    4 | OpenCode/TUI | Opens the new repo-rooted interactive terminal without an initial prompt.                                    | The user can coordinate it with other repo sessions.            |
 
 Starting a new task session never reopens a completed task. The user must
 create a new task for further work.
 
 ### 9.5 Complete a task
 
-| Step | Actor | Action | Result |
-|---:|---|---|---|
-| 1 | User | Chooses **Complete task**. | The GUI explains that completion does not commit or merge code. |
-| 2 | Rust | Records the completion request and checks the task exists and is active. | A completed task cannot be completed twice. |
-| 3 | Rust | Marks the task completed and records the timestamp without changing Git content. | The task leaves active task lists. |
-| 4 | Rust | Marks associated sessions as completed or requiring reconciliation according to their actual state. | Session history remains associated with the completed task. |
-| 5 | Rust | Queues cleanup checks for each task worktree. | Cleanup can run after completion without blocking the lifecycle change. |
-| 6 | GUI | Hides the task from active work and keeps it available in history. | Completion is reversible only as a data-history view, not as reopening. |
-| 7 | User | Needs more work later. Creates a new task in the same workspace. | The new task gets a new identity and new session associations. |
+| Step | Actor | Action                                                                                              | Result                                                                  |
+| ---: | ----- | --------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+|    1 | User  | Chooses **Complete task**.                                                                          | The GUI explains that completion does not commit or merge code.         |
+|    2 | Rust  | Records the completion request and checks the task exists and is active.                            | A completed task cannot be completed twice.                             |
+|    3 | Rust  | Marks the task completed and records the timestamp without changing Git content.                    | The task leaves active task lists.                                      |
+|    4 | Rust  | Marks associated sessions as completed or requiring reconciliation according to their actual state. | Session history remains associated with the completed task.             |
+|    5 | Rust  | Queues cleanup checks for each task worktree.                                                       | Cleanup can run after completion without blocking the lifecycle change. |
+|    6 | GUI   | Hides the task from active work and keeps it available in history.                                  | Completion is reversible only as a data-history view, not as reopening. |
+|    7 | User  | Needs more work later. Creates a new task in the same workspace.                                    | The new task gets a new identity and new session associations.          |
 
 ### 9.6 Cleanup a completed task's worktrees
 
-| Step | Actor | Action | Result |
-|---:|---|---|---|
-| 1 | Cleanup worker | Loads a completed task's cleanup job. | The job has itemized worktree targets. |
-| 2 | Cleanup worker | Checks whether any session currently uses the worktree. | In-use worktrees are deferred and remain associated. |
-| 3 | Git | Reports cleanliness, including uncommitted changes and new files. | The worker has evidence for the cleanup decision. |
-| 4 | Cleanup worker | If clean and unused, removes the worktree but retains its branch. | Storage is reclaimed without losing the branch. |
-| 5 | Cleanup worker | If dirty or containing new files, leaves it in place and records the reason. | User work is not discarded. |
-| 6 | Cleanup worker | If the worktree is in use, records a deferred retry. | A later retry can clean it after sessions stop using it. |
-| 7 | GUI | Shows cleanup state and any retained worktree reason in task history. | Cleanup is observable rather than silently destructive. |
+| Step | Actor          | Action                                                                       | Result                                                   |
+| ---: | -------------- | ---------------------------------------------------------------------------- | -------------------------------------------------------- |
+|    1 | Cleanup worker | Loads a completed task's cleanup job.                                        | The job has itemized worktree targets.                   |
+|    2 | Cleanup worker | Checks whether any session currently uses the worktree.                      | In-use worktrees are deferred and remain associated.     |
+|    3 | Git            | Reports cleanliness, including uncommitted changes and new files.            | The worker has evidence for the cleanup decision.        |
+|    4 | Cleanup worker | If clean and unused, removes the worktree but retains its branch.            | Storage is reclaimed without losing the branch.          |
+|    5 | Cleanup worker | If dirty or containing new files, leaves it in place and records the reason. | User work is not discarded.                              |
+|    6 | Cleanup worker | If the worktree is in use, records a deferred retry.                         | A later retry can clean it after sessions stop using it. |
+|    7 | GUI            | Shows cleanup state and any retained worktree reason in task history.        | Cleanup is observable rather than silently destructive.  |
 
 No cleanup action deletes uncommitted files, removes a retained branch, or
 recreates a missing worktree automatically.
@@ -832,18 +844,18 @@ recreates a missing worktree automatically.
 
 ### 10.1 Create a Quick Request
 
-| Step | Actor | Action | Result |
-|---:|---|---|---|
-| 1 | User | Chooses **Quick Request**, reviews the prefilled default directory, optionally types or chooses another existing directory, and enters an original prompt. | The directory choice applies only to this request; the shared New-work modal preserves the current destination. |
-| 2 | GUI/Rust/OpenCode | Runs an internal proposal that lightly rewrites the prompt and resolves a directory. An explicit directory must be returned unchanged, without supplying the repository catalog; otherwise the proposal may choose an enabled repository. | Rust validates the exact path or repository; no record or terminal is created. |
-| 3 | User | Reviews the original and suggested prompts and directory; chooses which prompt to send, may edit the directory, then confirms. If no directory was explicitly chosen and no repository is identified, the default is `<configured OpenCode Projects root>/Quick Requests/`. | The suggested prompt is selected by default; the original remains available and unchanged. |
-| 4 | Rust | Ensures the special Quick Requests workspace and resolved directory, then connects to the shared OpenCode service (starting it only if absent). | The working directory is the identified repository or shared default. |
-| 5 | Rust | Creates the Quick Request task, stores its original and selected starting prompts in `quick_request_prompts`, and records the OpenCode session ID, working directory, and creation time in one transaction. | The request, original, selected prompt, and exact session association are durable; the task's generic description remains unused. |
-| 6 | Rust/GUI | Attaches the exact session in a PTY without revealing its terminal or reconciling owner evidence yet. | The saved request/session remains associated while startup is incomplete. |
-| 7 | Rust | Sends the selected starting prompt through the session. | Prompt acceptance must succeed before the terminal is revealed; retry uses that same selected text. |
-| 8 | GUI | Reveals the attached session and reconciles its evidence only after prompt acceptance. | The dedicated page fills the available main work area; navigation remains visible and no session tabs or workspace/task controls are shown. |
-| 9 | OpenCode/TUI and Rust/GUI | Streams output, handles tools and input, and stores status without copying transcript content into SQLite. | The user interacts in the same session. |
-| 10 | Rust/GUI | Applies the 24-hour creation-time cutoff to recent navigation; follow-ups do not reset it. | Older requests remain in the full Quick Requests list. |
+| Step | Actor                     | Action                                                                                                                                                                                                                                                                      | Result                                                                                                                                      |
+| ---: | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+|    1 | User                      | Chooses **Quick Request**, reviews the prefilled default directory, optionally types or chooses another existing directory, and enters an original prompt.                                                                                                                  | The directory choice applies only to this request; the shared New-work modal preserves the current destination.                             |
+|    2 | GUI/Rust/OpenCode         | Runs an internal proposal that lightly rewrites the prompt and resolves a directory. An explicit directory must be returned unchanged, without supplying the repository catalog; otherwise the proposal may choose an enabled repository.                                   | Rust validates the exact path or repository; no record or terminal is created.                                                              |
+|    3 | User                      | Reviews the original and suggested prompts and directory; chooses which prompt to send, may edit the directory, then confirms. If no directory was explicitly chosen and no repository is identified, the default is `<configured OpenCode Projects root>/Quick Requests/`. | The suggested prompt is selected by default; the original remains available and unchanged.                                                  |
+|    4 | Rust                      | Ensures the special Quick Requests workspace and resolved directory, then connects to the shared OpenCode service (starting it only if absent).                                                                                                                             | The working directory is the identified repository or shared default.                                                                       |
+|    5 | Rust                      | Creates the Quick Request task, stores its original and selected starting prompts in `quick_request_prompts`, and records the OpenCode session ID, working directory, and creation time in one transaction.                                                                 | The request, original, selected prompt, and exact session association are durable; the task's generic description remains unused.           |
+|    6 | Rust/GUI                  | Attaches the exact session in a PTY without revealing its terminal or reconciling owner evidence yet.                                                                                                                                                                       | The saved request/session remains associated while startup is incomplete.                                                                   |
+|    7 | Rust                      | Sends the selected starting prompt through the session.                                                                                                                                                                                                                     | Prompt acceptance must succeed before the terminal is revealed; retry uses that same selected text.                                         |
+|    8 | GUI                       | Reveals the attached session and reconciles its evidence only after prompt acceptance.                                                                                                                                                                                      | The dedicated page fills the available main work area; navigation remains visible and no session tabs or workspace/task controls are shown. |
+|    9 | OpenCode/TUI and Rust/GUI | Streams output, handles tools and input, and stores status without copying transcript content into SQLite.                                                                                                                                                                  | The user interacts in the same session.                                                                                                     |
+|   10 | Rust/GUI                  | Applies the 24-hour creation-time cutoff to recent navigation; follow-ups do not reset it.                                                                                                                                                                                  | Older requests remain in the full Quick Requests list.                                                                                      |
 
 The proposal is transient: cancellation or proposal failure creates no Quick
 Request. If attachment or prompt delivery fails after durable creation, keep the
@@ -864,21 +876,21 @@ new Quick Request or call the initial-prompt endpoint again.
 
 ### 10.3 Delete a Quick Request
 
-| Step | Actor | Action | Result |
-|---:|---|---|---|
-| 1 | User | Chooses **Delete** beside a Quick Request. | The GUI asks for confirmation before making changes. |
-| 2 | User | Confirms deletion. | The GUI removes the Quick Request from its current list. |
-| 3 | Rust | Closes its attached terminal, then transactionally removes its app record, prompt, and session association. | The request is no longer retained by the app; OpenCode's conversation remains. |
+| Step | Actor | Action                                                                                                      | Result                                                                         |
+| ---: | ----- | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+|    1 | User  | Chooses **Delete** beside a Quick Request.                                                                  | The GUI asks for confirmation before making changes.                           |
+|    2 | User  | Confirms deletion.                                                                                          | The GUI removes the Quick Request from its current list.                       |
+|    3 | Rust  | Closes its attached terminal, then transactionally removes its app record, prompt, and session association. | The request is no longer retained by the app; OpenCode's conversation remains. |
 
 The application requires explicit confirmation. Cancel leaves the request
 untouched. Search is deferred to Deliverable 3.
 
 ### 10.4 Quick Request recent-list cutoff
 
-| Step | Actor | Action | Result |
-|---:|---|---|---|
-| 1 | Rust/GUI | Selects recent navigation items by creation time within the last 24 hours. Follow-ups do not reset the age. | Older items are not in recent navigation. |
-| 2 | Rust/GUI | Shows every retained Quick Request in the full list regardless of age. | Older requests remain discoverable without a separate History destination. |
+| Step | Actor    | Action                                                                                                      | Result                                                                     |
+| ---: | -------- | ----------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+|    1 | Rust/GUI | Selects recent navigation items by creation time within the last 24 hours. Follow-ups do not reset the age. | Older items are not in recent navigation.                                  |
+|    2 | Rust/GUI | Shows every retained Quick Request in the full list regardless of age.                                      | Older requests remain discoverable without a separate History destination. |
 
 The 24-hour cutoff is a presentation filter. It does not terminate a process,
 change the request's execution status, or delete data.
@@ -887,34 +899,34 @@ change the request's execution status, or delete data.
 
 ### 11.1 Hide and reopen a terminal view
 
-| Step | Actor | Action | Result |
-|---:|---|---|---|
-| 1 | User | Chooses **Hide view** or switches away from a terminal. | The GUI hides presentation only. |
-| 2 | GUI | Removes the terminal surface from the visible layout but retains the session tab/record. | The PTY and TUI continue running. |
-| 3 | Rust | Continues forwarding or buffering output for that session. | Work is not stopped by a view change. |
-| 4 | User | Selects the session again. | The GUI reuses or reconnects to the exact PTY/session. |
-| 5 | GUI | Replays buffered output and refits/focuses xterm. | The same terminal remains usable. |
+| Step | Actor | Action                                                                                   | Result                                                 |
+| ---: | ----- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+|    1 | User  | Chooses **Hide view** or switches away from a terminal.                                  | The GUI hides presentation only.                       |
+|    2 | GUI   | Removes the terminal surface from the visible layout but retains the session tab/record. | The PTY and TUI continue running.                      |
+|    3 | Rust  | Continues forwarding or buffering output for that session.                               | Work is not stopped by a view change.                  |
+|    4 | User  | Selects the session again.                                                               | The GUI reuses or reconnects to the exact PTY/session. |
+|    5 | GUI   | Replays buffered output and refits/focuses xterm.                                        | The same terminal remains usable.                      |
 
 ### 11.2 Close and reopen the application window
 
-| Step | Actor | Action | Result |
-|---:|---|---|---|
-| 1 | User | Closes the main window. | Tauri prevents process exit and hides the window. |
-| 2 | Rust | Keeps OpenCode server, TUI processes, PTYs, SQLite state, and cleanup worker alive. | Active work continues. |
-| 3 | OS/tray | Keeps a single tray presence with a show action. | The user can return to the same app process. |
-| 4 | User | Chooses **Show** from the tray. | The existing window is shown and focused. |
-| 5 | GUI/Rust | Reconnects visible sessions and reconciles status. | Existing work remains associated and interactive. |
+| Step | Actor    | Action                                                                              | Result                                            |
+| ---: | -------- | ----------------------------------------------------------------------------------- | ------------------------------------------------- |
+|    1 | User     | Closes the main window.                                                             | Tauri prevents process exit and hides the window. |
+|    2 | Rust     | Keeps OpenCode server, TUI processes, PTYs, SQLite state, and cleanup worker alive. | Active work continues.                            |
+|    3 | OS/tray  | Keeps a single tray presence with a show action.                                    | The user can return to the same app process.      |
+|    4 | User     | Chooses **Show** from the tray.                                                     | The existing window is shown and focused.         |
+|    5 | GUI/Rust | Reconnects visible sessions and reconciles status.                                  | Existing work remains associated and interactive. |
 
 ### 11.3 Full application quit
 
-| Step | Actor | Action | Result |
-|---:|---|---|---|
-| 1 | User | Chooses **Quit** from the tray or application menu. | Rust begins an intentional shutdown. |
-| 2 | Rust | Stops accepting new management commands and marks shutdown in progress. | No new child process races with teardown. |
-| 3 | Rust | Stops or closes attached TUI/PTY children and waits for them. | No attached terminal is left orphaned. |
-| 4 | Rust | Leaves the shared OpenCode service running; OpenCode owns its lifecycle. | Other OpenCode clients remain connected and can continue using the service. |
-| 5 | Rust | Flushes SQLite state and cleanup job state. | Recovery can distinguish completed shutdown from interruption. |
-| 6 | OS/Tauri | Exits the process. | The tray icon and application are gone. |
+| Step | Actor    | Action                                                                   | Result                                                                      |
+| ---: | -------- | ------------------------------------------------------------------------ | --------------------------------------------------------------------------- |
+|    1 | User     | Chooses **Quit** from the tray or application menu.                      | Rust begins an intentional shutdown.                                        |
+|    2 | Rust     | Stops accepting new management commands and marks shutdown in progress.  | No new child process races with teardown.                                   |
+|    3 | Rust     | Stops or closes attached TUI/PTY children and waits for them.            | No attached terminal is left orphaned.                                      |
+|    4 | Rust     | Leaves the shared OpenCode service running; OpenCode owns its lifecycle. | Other OpenCode clients remain connected and can continue using the service. |
+|    5 | Rust     | Flushes SQLite state and cleanup job state.                              | Recovery can distinguish completed shutdown from interruption.              |
+|    6 | OS/Tauri | Exits the process.                                                       | The tray icon and application are gone.                                     |
 
 An immediate process exit that skips child cleanup is not acceptable.
 
@@ -933,9 +945,9 @@ An immediate process exit that skips child cleanup is not acceptable.
 ### 12.2 OpenCode server or CLI incompatibility
 
 1. Rust checks the installed CLI version and the exact version-matched server,
-API, and TUI options required by this specification. The v2.0.27 contract uses
-authenticated `/api/...` routes and root TUI `--server`/`--session` options;
-the v1 `attach` contract is historical only.
+   API, and TUI options required by this specification. The v2.0.27 contract uses
+   authenticated `/api/...` routes and root TUI `--server`/`--session` options;
+   the v1 `attach` contract is historical only.
 2. If the check fails, the GUI shows the detected incompatibility and does not
    create sessions.
 3. The error includes the required contract and the detected command output.
@@ -959,7 +971,7 @@ the v1 `attach` contract is historical only.
 
 1. Rust detects a disconnected or stale event stream.
 2. The GUI changes the session to `Reconnecting` or `Unknown`, not `Ready for
-   review`.
+review`.
 3. Rust reconnects and reconciles current API status, pending input, history,
    and the event cursor.
 4. Rust updates the state only after reconciliation provides sufficient
@@ -1030,24 +1042,24 @@ records.
 
 ## 13. Ownership and Operation Map
 
-| Operation | Initiator | Authority | Mechanism |
-|---|---|---|---|
-| Create workspace | User/GUI | Rust + SQLite + filesystem | Tauri command |
-| Attach or scan repository | User/GUI | Rust + Git + SQLite | Tauri command |
-| Generate repository purpose | Rust/OpenCode flow | Rust stores the generated catalog field | OpenCode discovery session/API |
-| Create or restore workspace session | User/GUI | Rust for association; OpenCode for conversation | Common session runtime |
-| Create task record and home | User/GUI | Rust + SQLite + filesystem | Tauri command |
-| Select task repositories | User/GUI | Rust validates selected workspace bindings | Task proposal/confirmation command |
-| Create branch/worktree | Rust | Rust + Git + SQLite | Validated deterministic Git operations |
-| Create repo-rooted task session | Rust | Rust + OpenCode + SQLite | Common session runtime with exact worktree directory |
-| Complete task | User/GUI | Rust + SQLite | Tauri command |
-| Clean completed worktree | Cleanup worker | Rust + Git | Background app operation |
-| Complete workspace | User/GUI | Rust + SQLite | Tauri command |
-| Follow up or answer input | User/TUI | OpenCode | PTY input |
-| Report running/waiting/completed | OpenCode events/API | Rust reconciler | Server events and status API |
-| Delete Quick Request | User/GUI | Rust + terminal runtime + SQLite | Confirmed Tauri command |
-| Load Change Review | User/GUI | Rust + Git, scoped to the selected Workspace/Task associations | Read-only Tauri command |
-| Discover and run repository tools | User/GUI | Rust + verified owner bindings + filesystem + PTY | Typed Tauri commands; targets/scripts run as argv in a new interactive terminal |
+| Operation                           | Initiator           | Authority                                                      | Mechanism                                                                       |
+| ----------------------------------- | ------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| Create workspace                    | User/GUI            | Rust + SQLite + filesystem                                     | Tauri command                                                                   |
+| Attach or scan repository           | User/GUI            | Rust + Git + SQLite                                            | Tauri command                                                                   |
+| Generate repository purpose         | Rust/OpenCode flow  | Rust stores the generated catalog field                        | OpenCode discovery session/API                                                  |
+| Create or restore workspace session | User/GUI            | Rust for association; OpenCode for conversation                | Common session runtime                                                          |
+| Create task record and home         | User/GUI            | Rust + SQLite + filesystem                                     | Tauri command                                                                   |
+| Select task repositories            | User/GUI            | Rust validates selected workspace bindings                     | Task proposal/confirmation command                                              |
+| Create branch/worktree              | Rust                | Rust + Git + SQLite                                            | Validated deterministic Git operations                                          |
+| Create repo-rooted task session     | Rust                | Rust + OpenCode + SQLite                                       | Common session runtime with exact worktree directory                            |
+| Complete task                       | User/GUI            | Rust + SQLite                                                  | Tauri command                                                                   |
+| Clean completed worktree            | Cleanup worker      | Rust + Git                                                     | Background app operation                                                        |
+| Complete workspace                  | User/GUI            | Rust + SQLite                                                  | Tauri command                                                                   |
+| Follow up or answer input           | User/TUI            | OpenCode                                                       | PTY input                                                                       |
+| Report running/waiting/completed    | OpenCode events/API | Rust reconciler                                                | Server events and status API                                                    |
+| Delete Quick Request                | User/GUI            | Rust + terminal runtime + SQLite                               | Confirmed Tauri command                                                         |
+| Load Change Review                  | User/GUI            | Rust + Git, scoped to the selected Workspace/Task associations | Read-only Tauri command                                                         |
+| Discover and run repository tools   | User/GUI            | Rust + verified owner bindings + filesystem + PTY              | Typed Tauri commands; targets/scripts run as argv in a new interactive terminal |
 
 ### 13.1 Legacy registration tool contract
 

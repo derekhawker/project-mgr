@@ -1,6 +1,7 @@
 import { createComponent, createSignal } from "solid-js";
 import styles from "./navigation.module.css";
 import { WorkspaceNavigation } from "../views/workspace/navigation/WorkspaceNavigation.jsx";
+import { TicketSidebarTabs } from "../views/workspace/navigation/TicketSidebarTabs.jsx";
 import { RightContentShell } from "./RightContentShell.jsx";
 import { TicketLabelEditor } from "../components/TicketLabelEditor.jsx";
 import { TicketWorkWarningModal } from "../components/TicketWorkWarningModal.jsx";
@@ -22,10 +23,10 @@ export function ApplicationRoot(props) {
                 {props.quickRequestList()}
               </ul>
             </section>
-            <div class="navigation-heading">
-              <h2>Workspaces</h2>
-              {props.workspaceViewToggle?.()}
-            </div>
+            <TicketSidebarTabs
+              value={props.workspaceNavigation.viewMode}
+              onChange={props.workspaceNavigation.onViewChange}
+            />
             <div class="navigation-scroll">
               <WorkspaceNavigation
                 {...props.workspaceNavigation}

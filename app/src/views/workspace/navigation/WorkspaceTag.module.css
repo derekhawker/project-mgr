@@ -1,0 +1,16 @@
+.tag {
+  display: inline-block;
+  max-width: 45%;
+  margin: 0 var(--ui-space-4) 0 0;
+  padding: 1px var(--ui-space-6);
+  overflow: hidden;
+  border: 1px solid
+    color-mix(in srgb, var(--ticket-label-color) 45%, var(--ui-text));
+  border-radius: 2px;
+  color: var(--ui-text);
+  background: transparent;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}

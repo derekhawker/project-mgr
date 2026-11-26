@@ -31,10 +31,6 @@
   padding-inline-end: var(--ui-space-32);
 }
 
-.flatWorkspaceButton {
-  white-space: nowrap;
-}
-
 .ticketChildren {
   margin: 0;
   padding: 0;
@@ -61,24 +57,20 @@
 }
 
 :global(.navigation li) .flatTicketButton {
-  position: relative;
-  padding-inline-start: var(--ui-space-24);
+  padding-inline-start: var(--ui-space-8);
   border-radius: 0;
 }
 
 :global(.navigation li) .groupedTicketButton::before {
   position: absolute;
   top: 50%;
+  left: var(--ui-space-12);
   color: var(--ui-muted);
   content: "›";
   font-size: 1.1rem;
   line-height: 1;
   transform: translateY(-55%);
   pointer-events: none;
-}
-
-:global(.navigation li) .groupedTicketButton::before {
-  left: var(--ui-space-12);
 }
 
 .ticketTitle {
@@ -113,7 +105,6 @@
   color: var(--ui-muted);
 }
 
-.ticketContextMenu { position: fixed; z-index: 999; min-width: 12rem; padding: var(--ui-space-4); border: 1px solid var(--ui-border); border-radius: 5px; background: var(--ui-surface); box-shadow: 0 4px 16px rgb(0 0 0 / 24%); }
 .ticketHeading {
   margin: var(--ui-space-8) 0 var(--ui-space-4);
   padding-inline: var(--ui-space-8);
@@ -125,6 +116,17 @@
   color: var(--ui-text);
   font-size: 1rem;
   font-weight: 600;
+}
+
+.ticketContextMenu {
+  position: fixed;
+  z-index: 999;
+  min-width: 12rem;
+  padding: var(--ui-space-4);
+  border: 1px solid var(--ui-border);
+  border-radius: 5px;
+  background: var(--ui-surface);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 24%);
 }
 
 .emptyState {

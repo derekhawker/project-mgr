@@ -219,6 +219,7 @@ test("workspace navigation accepts the persisted OpenCode status on ticket rows"
       opencodeStatus: "idle",
       projectLabel: null,
       modifiedAt: 1,
+      archived: false,
     },
   ];
   await assert.doesNotReject(
@@ -742,7 +743,7 @@ test("New-work progress is composed by Solid with shared rows, not a reparented 
   );
 });
 
-test("Workspace navigation owns its list and busy attribute through Solid", () => {
+test("Workspace navigation exposes busy state on its current tab panel", () => {
   const main = readFileSync(join(process.cwd(), "src", "main.js"), "utf8");
   const applicationRoot = readFileSync(
     join(process.cwd(), "src/application/ApplicationRoot.jsx"),
@@ -759,7 +760,7 @@ test("Workspace navigation owns its list and busy attribute through Solid", () =
   assert.doesNotMatch(html, /id="workspace-list"/);
   assert.match(
     navigation,
-    /<ul id="workspace-list" aria-busy=\{String\(props\.busy\(\)\)\}>/,
+    /<div\s+id="ticket-sidebar-list"[\s\S]*?role="tabpanel"[\s\S]*?aria-busy=\{String\(props\.busy\(\)\)\}/,
   );
   assert.match(
     main,

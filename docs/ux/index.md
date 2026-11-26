@@ -16,7 +16,7 @@ Application shell (fixed to the window)
 │   ├── Quick Requests (top section)
 │   │   ├── Quick Requests heading and chevron button open the full list
 │   │   └── Recent Quick Requests (created in the last 24 hours)
-│   ├── Workspaces (grouped or flat Workspace-ticket navigation)
+│   ├── Ticket Sidebar (Tickets or existing Workspace groups)
 │   ├── Ports (immediately above Repositories)
 │   ├── Repositories
 │   └── New work (Workspace or Quick Request; primary action pinned to bottom)
@@ -39,16 +39,16 @@ Separate navigation destination: full Quick Requests list (all retained items)
 Use the terms defined in [UX Glossary](glossary.md). This index maps the
 experience; the glossary is the vocabulary reference.
 
-| Screen | Purpose | Specification |
-|---|---|---|
-| New | The navigation dropdown starts a Workspace or Quick Request. Workspace creation reviews an editable proposal and optional starting prompt; Quick Request resolves a directory and starts with the original prompt. | [screen-new-work.md](screen-new-work.md) |
-| Workspace screen | Work in Workspace-owned interactive sessions; multi-repository workspaces have an orchestrator and repo workers. | [screen-workspace.md](screen-workspace.md) |
-| Quick Requests | Keep the last 24 hours in navigation and browse all retained requests in a separate destination; open each in a dedicated terminal page. | [screen-quick-requests.md](screen-quick-requests.md) |
-| Repositories | Manage saved scan roots and individually enabled repositories; deduplicate overlaps and scan saved roots at startup. | [screen-directories.md](screen-directories.md) |
-| Ports | Inspect accessible TCP listeners, filter by saved port/range preferences, and stop a selected process. | [screen-ports.md](screen-ports.md) |
-| Change Review | Review committed and working-tree changes in a conventional file list against remote or local `main`/`master` refs. | [screen-change-review.md](screen-change-review.md) |
-| Docs | Browse found Markdown and text files by source-relative path beside the selected file. | [screen-docs.md](screen-docs.md) |
-| No selection | A rare, simple prompt to select work or start something new. | [screen-no-selection.md](screen-no-selection.md) |
+| Screen           | Purpose                                                                                                                                                                                                            | Specification                                        |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------- |
+| New              | The navigation dropdown starts a Workspace or Quick Request. Workspace creation reviews an editable proposal and optional starting prompt; Quick Request resolves a directory and starts with the original prompt. | [screen-new-work.md](screen-new-work.md)             |
+| Workspace screen | Work in Workspace-owned interactive sessions; multi-repository workspaces have an orchestrator and repo workers.                                                                                                   | [screen-workspace.md](screen-workspace.md)           |
+| Quick Requests   | Keep the last 24 hours in navigation and browse all retained requests in a separate destination; open each in a dedicated terminal page.                                                                           | [screen-quick-requests.md](screen-quick-requests.md) |
+| Repositories     | Manage saved scan roots and individually enabled repositories; deduplicate overlaps and scan saved roots at startup.                                                                                               | [screen-directories.md](screen-directories.md)       |
+| Ports            | Inspect accessible TCP listeners, filter by saved port/range preferences, and stop a selected process.                                                                                                             | [screen-ports.md](screen-ports.md)                   |
+| Change Review    | Review committed and working-tree changes in a conventional file list against remote or local `main`/`master` refs.                                                                                                | [screen-change-review.md](screen-change-review.md)   |
+| Docs             | Browse found Markdown and text files by source-relative path beside the selected file.                                                                                                                             | [screen-docs.md](screen-docs.md)                     |
+| No selection     | A rare, simple prompt to select work or start something new.                                                                                                                                                       | [screen-no-selection.md](screen-no-selection.md)     |
 
 For a source-grounded description of current frontend features, navigation,
 interactions, and implementation imports, see the
@@ -131,14 +131,14 @@ use browser-fixture data and are not native-app acceptance evidence.
   session in that terminal.
 - **Terminal behavior belongs to the terminal.** Interactive terminals own
   process controls and lifecycle. Closing a terminal stops its process and
-   closes its tab. Workspace terminals share a compact tab strip with Docs and
-   Change Review. Each closeable session has its own ×; Docs and Change Review
-   are not closeable. Restart acts on the selected terminal beside the strip.
+  closes its tab. Workspace terminals share a compact tab strip with Docs and
+  Change Review. Each closeable session has its own ×; Docs and Change Review
+  are not closeable. Restart acts on the selected terminal beside the strip.
   Quick Requests fill the available work area without tabs or that bar. If a TUI
   exits, offer restart in the same tab using the exact same OpenCode session.
   Do not show fullscreen controls.
 - **Keep navigation visible.** Quick Requests come first in the left navigation;
-  Workspaces follow. Legacy Task rows remain stored but are not shown as
+  the Ticket Sidebar follows with Tickets and Workspaces tabs. Legacy Task rows remain stored but are not shown as
   navigation destinations. Navigation stays visible on
   Quick Request terminal pages. Workspace toolbar rows wrap rather than hiding
   tabs behind overflow.
@@ -148,6 +148,7 @@ use browser-fixture data and are not native-app acceptance evidence.
   proposed starting prompt and destination for review. Only Workspace has an
   editable starting prompt; clearing it skips prompt submission but never skips
   session startup. New work has no Task creation path.
+
 ## Not in scope for these screens
 
 - Regular work history is deferred. Keep a History menu option disabled.
