@@ -151,17 +151,24 @@ export function resultForCommand(name) {
     case "workspace_ticket_session_create":
       return { ...session, openCodeSessionId: "ses-ticket-new" };
     case "workspace_ticket_session_close":
+    case "workspace_tickets_archive_for_removal":
+    case "workspace_delete":
       return null;
+    case "workspace_tickets_removal_preview":
+      return [];
     case "workspace_tickets_list":
-      return [{
-        filename: "example.md",
-        title: "Example ticket",
-        status: "draft",
-        hasWorkSession: false,
-        content: "---\ntitle: Example ticket\nstatus: draft\n---\nExample body",
-        modifiedAt: 1_793_700_000_000,
-        archivedAt: null,
-      }];
+      return [
+        {
+          filename: "example.md",
+          title: "Example ticket",
+          status: "draft",
+          hasWorkSession: false,
+          content:
+            "---\ntitle: Example ticket\nstatus: draft\n---\nExample body",
+          modifiedAt: 1_793_700_000_000,
+          archivedAt: null,
+        },
+      ];
     case "repository_directory_page":
       return repositoryDirectoryPage;
     case "repository_soft_delete_many":
@@ -216,7 +223,10 @@ export function resultForCommand(name) {
     case "opencode_model_default_set":
       return { providerId: "openai", id: "gpt-6-luna" };
     case "workspace_ticket_proposal":
-      return { title: "Fixture proposal", body: "# Fixture proposal\n\n## Idea\n\nFixture body." };
+      return {
+        title: "Fixture proposal",
+        body: "# Fixture proposal\n\n## Idea\n\nFixture body.",
+      };
     case "workspace_ticket_create":
       return {
         ticket: {
@@ -226,7 +236,8 @@ export function resultForCommand(name) {
           hasWorkSession: false,
           opencodeStatus: null,
           projectLabel: "Fixture Workspace",
-          content: "---\ntitle: Fixture proposal\nstatus: draft\nproject_label: Fixture Workspace\n---\n\nFixture body.\n",
+          content:
+            "---\ntitle: Fixture proposal\nstatus: draft\nproject_label: Fixture Workspace\n---\n\nFixture body.\n",
           modifiedAt: 1,
           archivedAt: null,
         },

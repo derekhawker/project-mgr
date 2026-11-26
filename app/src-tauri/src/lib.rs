@@ -292,6 +292,8 @@ pub fn run() {
             workspace_ticket_label_set,
             workspace_ticket_cancel,
             workspace_ticket_uncancel,
+            workspace_tickets_removal_preview,
+            workspace_tickets_archive_for_removal,
             workspace_ticket_proposal,
             workspace_ticket_create,
             workspace_ticket_work,
@@ -320,6 +322,7 @@ pub fn run() {
             workspace_create,
             workspace_complete,
             workspace_reactivate,
+            workspace_delete,
             task_create,
             task_complete,
             task_cleanup_jobs,
@@ -898,6 +901,42 @@ struct WorkspaceTicketLifecycleCommand {
     archived: bool,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkspaceTicketRemovalPreview {
+    title: String,
+    status: String,
+}
+
+#[tauri::command]
+async fn workspace_tickets_removal_preview(
+    app: AppHandle,
+    workspace_id: String,
+) -> Result<Vec<WorkspaceTicketRemovalPreview>, String> {
+    run_ports_work(move || {
+        let store = app.state::<ManagementStore>();
+        let workspace = store
+            .get_workspace(&workspace_id)
+            .map_err(|error| error.to_string())?
+            .ok_or_else(|| "Workspace was not found".to_owned())?;
+        let app_data = app
+            .path()
+            .app_data_dir()
+            .map_err(|error| error.to_string())?;
+        let directory = workspace_tickets::workspace_ticket_dir(&app_data, &workspace.slug)?;
+        workspace_tickets::list(&directory).map(|tickets| {
+            tickets
+                .into_iter()
+                .map(|ticket| WorkspaceTicketRemovalPreview {
+                    title: ticket.title,
+                    status: ticket.status,
+                })
+                .collect()
+        })
+    })
+    .await
+}
+
 #[tauri::command]
 async fn workspace_ticket_cancel(
     app: AppHandle,
@@ -942,6 +981,30 @@ async fn workspace_ticket_uncancel(
             request.archived,
             |id| ensure_ticket_session_idle(&runtime, id),
         )
+    })
+    .await
+}
+
+#[tauri::command]
+async fn workspace_tickets_archive_for_removal(
+    app: AppHandle,
+    workspace_id: String,
+) -> Result<(), String> {
+    run_ports_work(move || {
+        let store = app.state::<ManagementStore>();
+        let workspace = store
+            .get_workspace(&workspace_id)
+            .map_err(|error| error.to_string())?
+            .ok_or_else(|| "Workspace was not found".to_owned())?;
+        let app_data = app
+            .path()
+            .app_data_dir()
+            .map_err(|error| error.to_string())?;
+        let directory = workspace_tickets::workspace_ticket_dir(&app_data, &workspace.slug)?;
+        let runtime = app.state::<opencode::Runtime>();
+        workspace_tickets::archive_active_for_workspace_removal(&directory, |id| {
+            ensure_ticket_session_idle(&runtime, id)
+        })
     })
     .await
 }
@@ -3030,6 +3093,16 @@ fn workspace_reactivate(
     store
         .reactivate_workspace(&request.workspace_id)
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn workspace_delete(app: AppHandle, request: WorkspaceIdCommand) -> Result<(), String> {
+    run_ports_work(move || {
+        app.state::<ManagementStore>()
+            .delete_regular_workspace_record(&request.workspace_id)
+            .map_err(|error| error.to_string())
+    })
+    .await
 }
 
 #[derive(Debug, Serialize)]

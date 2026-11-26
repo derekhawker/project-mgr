@@ -549,6 +549,10 @@ export function reactivateWorkspace(invoke, workspaceId) {
   return invokeCommand(invoke, "workspace_reactivate", { workspaceId });
 }
 
+export function deleteWorkspace(invoke, workspaceId) {
+  return invokeCommand(invoke, "workspace_delete", { workspaceId });
+}
+
 export function promoteQuickRequest(
   invoke,
   requestId,
@@ -745,7 +749,12 @@ export function listWorkspaceTickets(invoke, workspaceId, archived = false) {
   });
 }
 
-export function cancelWorkspaceTicket(invoke, workspaceId, filename, archived = false) {
+export function cancelWorkspaceTicket(
+  invoke,
+  workspaceId,
+  filename,
+  archived = false,
+) {
   return invokeCommand(invoke, "workspace_ticket_cancel", {
     workspaceId,
     filename,
@@ -753,11 +762,28 @@ export function cancelWorkspaceTicket(invoke, workspaceId, filename, archived = 
   });
 }
 
-export function uncancelWorkspaceTicket(invoke, workspaceId, filename, archived = true) {
+export function uncancelWorkspaceTicket(
+  invoke,
+  workspaceId,
+  filename,
+  archived = true,
+) {
   return invokeCommand(invoke, "workspace_ticket_uncancel", {
     workspaceId,
     filename,
     archived,
+  });
+}
+
+export function archiveWorkspaceTicketsForRemoval(invoke, workspaceId) {
+  return invokeCommand(invoke, "workspace_tickets_archive_for_removal", {
+    workspaceId,
+  });
+}
+
+export function previewWorkspaceTicketsForRemoval(invoke, workspaceId) {
+  return invokeCommand(invoke, "workspace_tickets_removal_preview", {
+    workspaceId,
   });
 }
 

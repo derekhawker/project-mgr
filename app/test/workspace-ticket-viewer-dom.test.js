@@ -19,6 +19,7 @@ await writeFile(
   export { createComponent, createSignal } from ${JSON.stringify(resolve(root, "node_modules/solid-js/dist/solid.js"))};
   export { WorkspaceTicketViewer } from ${JSON.stringify(resolve(root, "src/views/workspace/tickets/WorkspaceTicketViewer.jsx"))};
   export { CreateTicketIdeaModal } from ${JSON.stringify(resolve(root, "src/views/workspace/tickets/CreateTicketIdeaModal.jsx"))};
+  export { DeleteWorkspaceModal } from ${JSON.stringify(resolve(root, "src/views/workspace/tickets/DeleteWorkspaceModal.jsx"))};
   export { ActionMenu } from ${JSON.stringify(resolve(root, "packages/ui-lib/ActionMenu.jsx"))};
 `,
 );
@@ -64,6 +65,7 @@ const {
   createSignal,
   WorkspaceTicketViewer,
   CreateTicketIdeaModal,
+  DeleteWorkspaceModal,
   ActionMenu,
 } = await import(pathToFileURL(join(temp, "out/test.js")));
 
@@ -88,6 +90,22 @@ function mountIdeaModal(props) {
   document.body.append(host);
   const dispose = render(
     () => createComponent(CreateTicketIdeaModal, props),
+    host,
+  );
+  return {
+    host,
+    dispose: () => {
+      dispose();
+      host.remove();
+    },
+  };
+}
+
+function mountDeleteWorkspaceModal(props) {
+  const host = document.createElement("div");
+  document.body.append(host);
+  const dispose = render(
+    () => createComponent(DeleteWorkspaceModal, props),
     host,
   );
   return {
@@ -179,7 +197,13 @@ test("portaled menus expose unique controls and support reverse tab from the nex
     for (let i = 0; i < 2; i++) {
       const action = document.createElement("button");
       action.textContent = `Action ${i}`;
-      container.append(createComponent(ActionMenu, { portal: true, label: `Menu ${i}`, children: action }));
+      container.append(
+        createComponent(ActionMenu, {
+          portal: true,
+          label: `Menu ${i}`,
+          children: action,
+        }),
+      );
       const next = document.createElement("button");
       next.textContent = `Next ${i}`;
       container.append(next);
@@ -191,15 +215,24 @@ test("portaled menus expose unique controls and support reverse tab from the nex
   try {
     await new Promise((resolve) => setTimeout(resolve, 0));
     const triggers = [...host.querySelectorAll("summary")];
-    const ids = triggers.map((trigger) => trigger.getAttribute("aria-controls"));
+    const ids = triggers.map((trigger) =>
+      trigger.getAttribute("aria-controls"),
+    );
     assert.ok(ids.every(Boolean));
     assert.notEqual(ids[0], ids[1]);
     assert.ok(ids.every((id) => document.getElementById(id)));
     triggers[0].click();
     await new Promise((resolve) => setTimeout(resolve, 0));
-    const next = [...host.querySelectorAll("button")].find((button) => button.textContent === "Next 0");
+    const next = [...host.querySelectorAll("button")].find(
+      (button) => button.textContent === "Next 0",
+    );
     next.focus();
-    const event = new KeyboardEvent("keydown", { key: "Tab", shiftKey: true, bubbles: true, cancelable: true });
+    const event = new KeyboardEvent("keydown", {
+      key: "Tab",
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
     next.dispatchEvent(event);
     assert.equal(event.defaultPrevented, true);
     assert.equal(document.activeElement.textContent, "Action 0");
@@ -218,7 +251,13 @@ test("multiple portaled menus honor earlier Tab handling without skipping a trig
     for (let index = 0; index < 2; index++) {
       const action = document.createElement("button");
       action.textContent = `Action ${index}`;
-      container.append(createComponent(ActionMenu, { portal: true, label: `Menu ${index}`, children: action }));
+      container.append(
+        createComponent(ActionMenu, {
+          portal: true,
+          label: `Menu ${index}`,
+          children: action,
+        }),
+      );
     }
     return container;
   }, host);
@@ -233,11 +272,20 @@ test("multiple portaled menus honor earlier Tab handling without skipping a trig
     trigger.click();
     nextTrigger.click();
     await new Promise((resolve) => setTimeout(resolve, 0));
-    document.querySelector(`#${trigger.getAttribute("aria-controls")} button`).focus();
-    const event = new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true });
+    document
+      .querySelector(`#${trigger.getAttribute("aria-controls")} button`)
+      .focus();
+    const event = new KeyboardEvent("keydown", {
+      key: "Tab",
+      bubbles: true,
+      cancelable: true,
+    });
     document.activeElement.dispatchEvent(event);
     assert.equal(event.defaultPrevented, true);
-    assert.ok(document.activeElement === nextTrigger, `second menu does not move focus past its trigger; focused ${document.activeElement?.outerHTML.slice(0, 250)}`);
+    assert.ok(
+      document.activeElement === nextTrigger,
+      `second menu does not move focus past its trigger; focused ${document.activeElement?.outerHTML.slice(0, 250)}`,
+    );
   } finally {
     window.HTMLElement.prototype.getClientRects = originalRects;
     dispose();
@@ -258,7 +306,11 @@ test("selecting a focused portaled action restores its trigger unless the action
     action.onclick = () => {
       if (moveFocus()) elsewhere.focus();
     };
-    return createComponent(ActionMenu, { portal: true, label: "Menu", children: action });
+    return createComponent(ActionMenu, {
+      portal: true,
+      label: "Menu",
+      children: action,
+    });
   }, host);
   try {
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -277,7 +329,11 @@ test("selecting a focused portaled action restores its trigger unless the action
     setMoveFocus(true);
     action.click();
     await Promise.resolve();
-    assert.equal(document.activeElement, elsewhere, "menu does not steal focus moved by the action");
+    assert.equal(
+      document.activeElement,
+      elsewhere,
+      "menu does not steal focus moved by the action",
+    );
   } finally {
     dispose();
     host.remove();
@@ -295,17 +351,29 @@ test("ticket actions stay open after clicking the trigger and allow cancellation
     onCancel: (filename) => calls.push(filename),
   });
   try {
-    const trigger = view.host.querySelector('summary[aria-label="Actions for ticket: First"]');
+    const trigger = view.host.querySelector(
+      'summary[aria-label="Actions for ticket: First"]',
+    );
     const disclosure = trigger.closest("details");
     trigger.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
     trigger.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
     trigger.click();
     await new Promise((resolve) => setTimeout(resolve, 0));
-    assert.equal(disclosure.open, true, "clicking Actions leaves the menu open");
-    const cancel = document.querySelector('[aria-label="Ticket actions: First"] button');
+    assert.equal(
+      disclosure.open,
+      true,
+      "clicking Actions leaves the menu open",
+    );
+    const cancel = document.querySelector(
+      '[aria-label="Ticket actions: First"] button',
+    );
     assert.equal(cancel.textContent.trim(), "Cancel ticket");
     cancel.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
-    assert.equal(disclosure.open, true, "pressing an action does not dismiss its menu");
+    assert.equal(
+      disclosure.open,
+      true,
+      "pressing an action does not dismiss its menu",
+    );
     cancel.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
     cancel.click();
     assert.deepEqual(calls, ["one.md"]);
@@ -326,14 +394,24 @@ test("ticket actions remain open and use refreshed ticket data after a list refr
     onCancel: (filename) => calls.push(filename),
   });
   try {
-    view.host.querySelector('summary[aria-label="Actions for ticket: First"]').click();
+    view.host
+      .querySelector('summary[aria-label="Actions for ticket: First"]')
+      .click();
     await new Promise((resolve) => setTimeout(resolve, 0));
     setRows([{ ...tickets[0], title: "Updated title" }]);
     await new Promise((resolve) => setTimeout(resolve, 0));
-    const trigger = view.host.querySelector('summary[aria-label="Actions for ticket: Updated title"]');
+    const trigger = view.host.querySelector(
+      'summary[aria-label="Actions for ticket: Updated title"]',
+    );
     assert.ok(trigger, "the refreshed title is displayed");
-    assert.equal(trigger.closest("details").open, true, "refresh does not close the open menu");
-    document.querySelector('[aria-label="Ticket actions: Updated title"] button').click();
+    assert.equal(
+      trigger.closest("details").open,
+      true,
+      "refresh does not close the open menu",
+    );
+    document
+      .querySelector('[aria-label="Ticket actions: Updated title"] button')
+      .click();
     assert.deepEqual(calls, ["one.md"]);
     assert.equal(trigger.closest("details").open, false);
   } finally {
@@ -353,16 +431,26 @@ test("ticket actions survive an explicit refresh with a loading transition", asy
     onCancel: (filename) => calls.push(filename),
   });
   try {
-    view.host.querySelector('summary[aria-label="Actions for ticket: First"]').click();
+    view.host
+      .querySelector('summary[aria-label="Actions for ticket: First"]')
+      .click();
     await new Promise((resolve) => setTimeout(resolve, 0));
     setLoading(true);
     setRows([{ ...tickets[0], title: "Refreshed title" }]);
     setLoading(false);
     await new Promise((resolve) => setTimeout(resolve, 0));
-    const trigger = view.host.querySelector('summary[aria-label="Actions for ticket: Refreshed title"]');
+    const trigger = view.host.querySelector(
+      'summary[aria-label="Actions for ticket: Refreshed title"]',
+    );
     assert.ok(trigger);
-    assert.equal(trigger.closest("details").open, true, "explicit refresh keeps the menu open");
-    document.querySelector('[aria-label="Ticket actions: Refreshed title"] button').click();
+    assert.equal(
+      trigger.closest("details").open,
+      true,
+      "explicit refresh keeps the menu open",
+    );
+    document
+      .querySelector('[aria-label="Ticket actions: Refreshed title"] button')
+      .click();
     assert.deepEqual(calls, ["one.md"]);
   } finally {
     view.dispose();
@@ -378,13 +466,23 @@ test("Escape dismisses portaled ticket actions and returns focus to the trigger"
     onCancel: () => {},
   });
   try {
-    const trigger = view.host.querySelector('summary[aria-label="Actions for ticket: First"]');
+    const trigger = view.host.querySelector(
+      'summary[aria-label="Actions for ticket: First"]',
+    );
     trigger.click();
     await new Promise((resolve) => setTimeout(resolve, 0));
-    const action = document.querySelector('[aria-label="Ticket actions: First"] button');
+    const action = document.querySelector(
+      '[aria-label="Ticket actions: First"] button',
+    );
     action.focus();
     assert.equal(document.activeElement, action);
-    action.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+    action.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "Escape",
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
     assert.equal(trigger.closest("details").open, false);
     assert.equal(document.activeElement, trigger);
   } finally {
@@ -402,7 +500,10 @@ test("sort and model menus remain operable when ticket rows refresh", async () =
     error: () => "",
     selectedModel: () => "one",
     modelBusy: () => false,
-    modelOptions: () => [{ value: "one", label: "Model one" }, { value: "two", label: "Model two" }],
+    modelOptions: () => [
+      { value: "one", label: "Model one" },
+      { value: "two", label: "Model two" },
+    ],
     onModelChange: (value) => changes.push(value),
   });
   try {
@@ -413,7 +514,8 @@ test("sort and model menus remain operable when ticket rows refresh", async () =
     refresh();
     assert.equal(sort.closest("details").open, true);
     [...view.host.querySelectorAll('[aria-label="Sort tickets"] button')]
-      .find((button) => button.textContent.trim() === "Title").click();
+      .find((button) => button.textContent.trim() === "Title")
+      .click();
     assert.ok(view.host.querySelector('summary[aria-label="Sort: Title"]'));
     const model = view.host.querySelector('summary[aria-label="Model one"]');
     model.click();
@@ -421,7 +523,8 @@ test("sort and model menus remain operable when ticket rows refresh", async () =
     refresh();
     assert.equal(model.closest("details").open, true);
     [...view.host.querySelectorAll('[aria-label="Default Model"] button')]
-      .find((button) => button.textContent.trim() === "Model two").click();
+      .find((button) => button.textContent.trim() === "Model two")
+      .click();
     assert.deepEqual(changes, ["two"]);
   } finally {
     view.dispose();
@@ -430,9 +533,16 @@ test("sort and model menus remain operable when ticket rows refresh", async () =
 
 test("an open ticket menu closes when the ticket becomes done", async () => {
   const [rows, setRows] = createSignal([{ ...tickets[0] }]);
-  const view = mount({ tickets: rows, selectedFilename: () => null, loading: () => false, error: () => "" });
+  const view = mount({
+    tickets: rows,
+    selectedFilename: () => null,
+    loading: () => false,
+    error: () => "",
+  });
   try {
-    const trigger = view.host.querySelector('summary[aria-label="Actions for ticket: First"]');
+    const trigger = view.host.querySelector(
+      'summary[aria-label="Actions for ticket: First"]',
+    );
     trigger.click();
     await new Promise((resolve) => setTimeout(resolve, 0));
     assert.equal(trigger.closest("details").open, true);
@@ -501,7 +611,9 @@ test("ticket actions follow archive location and block cancellation while a sess
       },
     ]);
     await Promise.resolve();
-    const archivedDone = view.host.querySelector('summary[aria-label="Actions for ticket: Done"]');
+    const archivedDone = view.host.querySelector(
+      'summary[aria-label="Actions for ticket: Done"]',
+    );
     assert.equal(archivedDone.getAttribute("aria-disabled"), "true");
     const click = new MouseEvent("click", { bubbles: true, cancelable: true });
     archivedDone.dispatchEvent(click);
@@ -581,6 +693,18 @@ test("ticket viewer keeps workspace tools available with no selected ticket", ()
         (button) => button.textContent === "Tools",
       ),
     );
+    const deleteTrigger = [...view.host.querySelectorAll("button")].find(
+      (button) => button.textContent.trim() === "Delete workspace…",
+    );
+    assert.ok(
+      deleteTrigger,
+      "the neutral delete trigger is in the ticket toolbar",
+    );
+    assert.equal(
+      deleteTrigger.closest("header")?.contains(deleteTrigger),
+      true,
+    );
+    assert.doesNotMatch(deleteTrigger.className, /danger/);
   } finally {
     view.dispose();
   }
@@ -688,6 +812,128 @@ test("ticket idea modal marks both current steps, keeps failed edits open, and c
     assert.equal(view.host.querySelector("dialog").open, false);
     assert.equal(creations.length, 2, "cancel does not create a ticket");
     assert.equal(proposals.length, 1, "cancel does not start another proposal");
+  } finally {
+    view.dispose();
+  }
+});
+
+test("workspace deletion always warns, archives active tickets, and recovers from failures", async () => {
+  let archiveFailures = 1;
+  let deleteFailures = 1;
+  const calls = [];
+  const view = mountDeleteWorkspaceModal({
+    workspaceName: () => "Example Workspace",
+    onLoadTickets: async () => [
+      { title: "Active work", status: "in_progress" },
+      { title: "Finished work", status: "done" },
+    ],
+    onArchiveTickets: async () => {
+      calls.push("archive");
+      if (archiveFailures-- > 0) throw new Error("archive unavailable");
+    },
+    onDeleteWorkspace: async () => {
+      calls.push("delete");
+      if (deleteFailures-- > 0) throw new Error("delete unavailable");
+    },
+    onDeleted: () => calls.push("deleted"),
+  });
+  const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+  try {
+    const trigger = view.host.querySelector("button");
+    assert.equal(trigger.textContent.trim(), "Delete workspace…");
+    trigger.click();
+    await flush();
+    let dialog = view.host.querySelector("dialog");
+    assert.equal(dialog.open, true);
+    assert.match(dialog.textContent, /Active work[\s\S]*in_progress/);
+    assert.match(dialog.textContent, /Finished work[\s\S]*done/);
+    assert.match(dialog.textContent, /Done tickets will remain unchanged/);
+    assert.match(dialog.textContent, /No ticket files will be deleted/);
+    const firstConfirm = [...dialog.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Archive tickets"),
+    );
+    firstConfirm.click();
+    await flush();
+    assert.equal(
+      dialog.open,
+      true,
+      "archive failure leaves the warning recoverable",
+    );
+    assert.match(dialog.textContent, /Could not archive the tickets/);
+    assert.equal(
+      dialog.querySelector('[aria-current="step"]').textContent,
+      "1. Archive tickets",
+    );
+    [...dialog.querySelectorAll("button")]
+      .find((button) => button.textContent.includes("Archive tickets"))
+      .click();
+    await flush();
+    assert.equal(
+      dialog.querySelector('[aria-current="step"]').textContent,
+      "2. Delete Workspace",
+    );
+    const deleteButton = [...dialog.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Delete workspace"),
+    );
+    assert.ok(deleteButton.className.includes("danger"));
+    assert.ok(deleteButton.querySelector('svg[aria-hidden="true"]'));
+    assert.match(dialog.textContent, /retained/);
+    deleteButton.click();
+    await flush();
+    assert.equal(
+      dialog.open,
+      true,
+      "delete failure leaves confirmation recoverable",
+    );
+    assert.match(dialog.textContent, /Could not delete the Workspace/);
+    [...dialog.querySelectorAll("button")]
+      .find((button) => button.textContent.includes("Delete workspace"))
+      .click();
+    await flush();
+    assert.equal(dialog.open, false);
+    assert.deepEqual(calls, [
+      "archive",
+      "archive",
+      "delete",
+      "delete",
+      "deleted",
+    ]);
+  } finally {
+    view.dispose();
+  }
+});
+
+test("workspace deletion with no active tickets still requires both confirmations", async () => {
+  const calls = [];
+  const view = mountDeleteWorkspaceModal({
+    onLoadTickets: async () => [],
+    onArchiveTickets: async () => calls.push("archive"),
+    onDeleteWorkspace: async () => calls.push("delete"),
+  });
+  const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+  try {
+    view.host.querySelector("button").click();
+    await flush();
+    const dialog = view.host.querySelector("dialog");
+    assert.match(dialog.textContent, /No active tickets to archive/);
+    assert.equal(
+      dialog.querySelector('[aria-current="step"]').textContent,
+      "1. Archive tickets",
+    );
+    [...dialog.querySelectorAll("button")]
+      .find((button) => button.textContent.trim() === "Continue")
+      .click();
+    await flush();
+    assert.equal(
+      dialog.querySelector('[aria-current="step"]').textContent,
+      "2. Delete Workspace",
+    );
+    assert.deepEqual(calls, ["archive"]);
+    assert.ok(
+      [...dialog.querySelectorAll("button")].some((button) =>
+        button.textContent.includes("Delete workspace"),
+      ),
+    );
   } finally {
     view.dispose();
   }

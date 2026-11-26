@@ -3172,6 +3172,22 @@
       "additionalProperties": false
     }
   },
+  "workspace_delete": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "request": {
+          "type": "object",
+          "properties": { "workspaceId": { "type": "string" } },
+          "required": ["workspaceId"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["request"],
+      "additionalProperties": false
+    },
+    "result": { "type": "null" }
+  },
   "task_create": {
     "payload": {
       "type": "object",
@@ -5729,6 +5745,35 @@
         "additionalProperties": false
       }
     }
+  },
+  "workspace_tickets_removal_preview": {
+    "payload": {
+      "type": "object",
+      "properties": { "workspaceId": { "type": "string" } },
+      "required": ["workspaceId"],
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "string" },
+          "status": { "type": "string" }
+        },
+        "required": ["title", "status"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "workspace_tickets_archive_for_removal": {
+    "payload": {
+      "type": "object",
+      "properties": { "workspaceId": { "type": "string" } },
+      "required": ["workspaceId"],
+      "additionalProperties": false
+    },
+    "result": { "type": "null" }
   },
   "workspace_ticket_labels": {
     "payload": "none",

@@ -1,0 +1,64 @@
+.content {
+  display: grid;
+  gap: var(--ui-space-8);
+  max-height: min(65vh, 42rem);
+  overflow: auto;
+}
+
+.content p {
+  margin: 0;
+}
+
+.steps {
+  display: flex;
+  gap: var(--ui-space-16);
+  margin: 0;
+  padding: 0;
+  color: var(--ui-muted);
+  list-style: none;
+}
+
+.steps [aria-current="step"] {
+  color: var(--ui-text);
+  font-weight: 600;
+}
+
+.ticketList {
+  display: grid;
+  gap: var(--ui-space-4);
+  max-height: 16rem;
+  overflow: auto;
+  margin: 0;
+  padding: var(--ui-space-4) var(--ui-space-8);
+  border: 1px solid var(--ui-border);
+  list-style: none;
+}
+
+.ticketList li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--ui-space-12);
+  padding-block: var(--ui-space-4);
+  border-bottom: 1px solid var(--ui-border-light);
+}
+
+.ticketList li:last-child {
+  border-bottom: 0;
+}
+
+.ticketList li span:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ticketList li span:last-child {
+  flex: 0 0 auto;
+  color: var(--ui-muted);
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--ui-space-8);
+}

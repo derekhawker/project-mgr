@@ -1933,6 +1933,40 @@ pub fn cancel_ticket_with_session_check(
     }
 }
 
+/// Cancel every non-done ticket in the active directory and move all active
+/// ticket files, including done tickets, into `archived/`. Done ticket contents
+/// are preserved byte-for-byte. This is used only after explicit Workspace
+/// deletion confirmation.
+pub fn archive_active_for_workspace_removal(
+    directory: &Path,
+    check_idle: impl Fn(&str) -> Result<(), String>,
+) -> Result<(), String> {
+    let tickets = list(directory)?;
+    for ticket in tickets {
+        if ticket.status == "done" {
+            let coordination = ticket_coordination(directory, &ticket.filename)?;
+            let _ticket_guard = try_ticket_guard(&coordination)?;
+            let _guard = ticket_work_lock()?;
+            let source = canonical_ticket(directory, &ticket.filename)?;
+            let content = fs::read_to_string(&source).map_err(|error| error.to_string())?;
+            if frontmatter_value(&content, "status")?.as_deref() != Some("done") {
+                return Err(format!(
+                    "Ticket {} changed during Workspace removal; retry the confirmation.",
+                    ticket.filename
+                ));
+            }
+            move_ticket_unchanged(
+                &source,
+                &ticket_archive_directory(directory, true)?.join(&ticket.filename),
+                &content,
+            )?;
+        } else {
+            cancel_ticket_with_session_check(directory, &ticket.filename, false, &check_idle)?;
+        }
+    }
+    Ok(())
+}
+
 /// Restore only cancelled tickets, restarting their workflow at draft.
 pub fn uncancel_ticket(directory: &Path, filename: &str) -> Result<(), String> {
     uncancel_ticket_with_session_check(directory, filename, true, |_| {
@@ -2057,6 +2091,19 @@ fn move_ticket_safely(
     Ok(())
 }
 
+fn move_ticket_unchanged(source: &Path, destination: &Path, original: &str) -> Result<(), String> {
+    fs::hard_link(source, destination).map_err(|error| {
+        format!("Could not move ticket; destination may already exist: {error}")
+    })?;
+    if fs::read_to_string(source).map_err(|error| error.to_string())? != original {
+        let _ = fs::remove_file(destination);
+        return Err("Ticket changed during move; original was retained for recovery.".into());
+    }
+    fs::remove_file(source)
+        .map_err(|error| format!("Could not move ticket; both copies were retained: {error}"))?;
+    Ok(())
+}
+
 fn archived_at(markdown: &str) -> Option<String> {
     let value = frontmatter_value(markdown, "archived_at").ok().flatten()?;
     DateTime::parse_from_rfc3339(&value).ok().map(|_| value)
@@ -2084,6 +2131,9 @@ fn backfill_archived_at(directory: &Path) -> Result<(), String> {
         }
         let original =
             fs::read_to_string(&path).map_err(|error| format!("{}: {error}", path.display()))?;
+        if frontmatter_value(&original, "status")?.as_deref() == Some("done") {
+            continue;
+        }
         if archived_at(&original).is_some() {
             continue;
         }
@@ -2487,6 +2537,37 @@ mod tests {
             assert!(edit.unwrap().is_ok());
             assert!(result.is_ok());
         }
+    }
+
+    #[test]
+    fn workspace_removal_archives_active_tickets_without_changing_done_content() {
+        let root = tempfile::tempdir().unwrap();
+        let directory = root.path();
+        fs::write(
+            directory.join("draft.md"),
+            "---\ntitle: Draft ticket\nstatus: draft\n---\nDraft body\n",
+        )
+        .unwrap();
+        let done = "---\ntitle: Done ticket\nstatus: done\n---\nDone body\n";
+        fs::write(directory.join("done.md"), done).unwrap();
+
+        archive_active_for_workspace_removal(directory, |_| Ok(())).unwrap();
+
+        assert!(!directory.join("draft.md").exists());
+        assert!(!directory.join("done.md").exists());
+        let archived_draft = fs::read_to_string(directory.join("archived/draft.md")).unwrap();
+        assert!(archived_draft.contains("status: cancelled"));
+        assert!(archived_draft.contains("Draft body"));
+        assert_eq!(
+            fs::read_to_string(directory.join("archived/done.md")).unwrap(),
+            done
+        );
+        let _ = list_archived(directory).unwrap();
+        assert_eq!(
+            fs::read_to_string(directory.join("archived/done.md")).unwrap(),
+            done,
+            "loading the archived list must not edit a done ticket"
+        );
     }
 
     #[test]
@@ -4237,7 +4318,7 @@ mod tests {
         let archived_dir = root.path().join("archived");
         fs::create_dir(&archived_dir).unwrap();
         let legacy = archived_dir.join("legacy.md");
-        let original = "---\ntitle: Legacy\nstatus: done\n---\n\nBody stays intact.\n";
+        let original = "---\ntitle: Legacy\nstatus: cancelled\n---\n\nBody stays intact.\n";
         fs::write(&legacy, original).unwrap();
         fs::File::open(&legacy)
             .unwrap()
@@ -4277,7 +4358,7 @@ mod tests {
         fs::create_dir(&archived_dir).unwrap();
         fs::write(
             archived_dir.join("invalid.md"),
-            "---\ntitle: Invalid\nstatus: done\narchived_at: not-a-date\n---\nBody\n",
+            "---\ntitle: Invalid\nstatus: cancelled\narchived_at: not-a-date\n---\nBody\n",
         )
         .unwrap();
 
@@ -4285,6 +4366,21 @@ mod tests {
         assert_eq!(listed.len(), 1);
         assert!(listed[0].archived_at.is_some());
         assert!(DateTime::parse_from_rfc3339(listed[0].archived_at.as_deref().unwrap()).is_ok());
+    }
+
+    #[test]
+    fn archived_done_ticket_is_never_modified_to_backfill_archive_time() {
+        let root = tempfile::tempdir().unwrap();
+        let archived_dir = root.path().join("archived");
+        fs::create_dir(&archived_dir).unwrap();
+        let path = archived_dir.join("done.md");
+        let original = "---\ntitle: Done\nstatus: done\n---\nBody\n";
+        fs::write(&path, original).unwrap();
+
+        let listed = list_archived(root.path()).unwrap();
+
+        assert_eq!(listed[0].archived_at, None);
+        assert_eq!(fs::read_to_string(path).unwrap(), original);
     }
 
     #[test]

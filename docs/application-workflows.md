@@ -64,6 +64,18 @@ Change Review, and repository documents in Docs use the selected ticket's
   Nested project commands run from and show the directory containing their `package.json`
 or Makefile.
 
+The Workspace Tickets toolbar places **Create ticket** on the left and a neutral
+**Delete workspace…** action at the far right. The delete action always opens a
+warning flow. Its first step lists every ticket Markdown file in the active
+ticket directory by title and status. Confirming moves those files to
+`archived/`; non-done tickets are cancelled using the normal ticket lifecycle,
+while done ticket contents and status remain unchanged. Ticket files are never
+deleted. A second confirmation permanently removes the Workspace's SQL record
+and app-side SQL associations only. The linked repository checkout and
+OpenCode-owned conversations are retained. The final destructive button uses
+the shared trash SVG icon and destructive styling; the toolbar trigger remains
+neutral.
+
 Creating a ticket uses a two-step dialog. The first step captures the user's
 idea and asks OpenCode for a proposal in the Workspace's sole verified
 repository. The request explicitly invokes the ticket-management skill's
@@ -127,9 +139,10 @@ tickets. Active tickets retain the **Status**, **Recently modified**, and
 changing one list's sort does not change the other. Archived rows show the
 archive date in the third column. Rust reads `archived_at` from ticket YAML
 front matter as an ISO 8601 date-time string. When an archived list is loaded,
-Rust backfills missing or invalid timestamps from each ticket file's current
-modification time. Missing timestamps remain non-fatal if a file cannot be
-updated; the list falls back to modification time for display and ordering.
+Rust backfills missing or invalid timestamps from each non-done ticket file's
+current modification time. Done ticket Markdown is never modified; if its
+archive timestamp is missing or invalid, the list falls back to modification
+time for display and ordering.
 
 The Workspace Tickets view offers cancellation for tickets not marked done
 once their OpenCode session is idle. Done tickets have disabled actions. Cancellation archives the

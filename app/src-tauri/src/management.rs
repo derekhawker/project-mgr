@@ -1793,6 +1793,61 @@ impl ManagementStore {
         Ok(())
     }
 
+    /// Removes a regular Workspace and its SQL-owned associations only. Its
+    /// repository checkout, ticket files, and OpenCode conversations are not
+    /// touched. Legacy Task records prevent deletion rather than being discarded.
+    pub fn delete_regular_workspace_record(&self, id: &str) -> StoreResult<()> {
+        let mut connection = self.lock()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let workspace = Self::get_workspace_from(&transaction, id)?
+            .ok_or_else(|| ManagementStoreError::NotFound(format!("workspace {id}")))?;
+        if workspace.kind != WorkspaceKind::Regular {
+            return Err(ManagementStoreError::InvalidTransition(
+                "only regular workspaces can be deleted".into(),
+            ));
+        }
+        let task_count: i64 = transaction.query_row(
+            "SELECT COUNT(*) FROM tasks WHERE workspace_id = ?1",
+            [id],
+            |row| row.get(0),
+        )?;
+        if task_count != 0 {
+            return Err(ManagementStoreError::InvalidTransition(
+                "workspace has legacy tasks and cannot be deleted".into(),
+            ));
+        }
+
+        transaction.execute(
+            "DELETE FROM setup_operation_state WHERE workspace_id = ?1",
+            [id],
+        )?;
+        transaction.execute("DELETE FROM setup_operations WHERE workspace_id = ?1", [id])?;
+        transaction.execute(
+            "DELETE FROM legacy_task_archives WHERE workspace_id = ?1",
+            [id],
+        )?;
+        transaction.execute(
+            "DELETE FROM workspace_session_context WHERE workspace_id = ?1",
+            [id],
+        )?;
+        transaction.execute("DELETE FROM sessions WHERE owner_workspace_id = ?1", [id])?;
+        transaction.execute(
+            "DELETE FROM workspace_repository_worktrees WHERE workspace_id = ?1",
+            [id],
+        )?;
+        transaction.execute(
+            "DELETE FROM workspace_repository_setup WHERE workspace_id = ?1",
+            [id],
+        )?;
+        transaction.execute(
+            "DELETE FROM workspace_repositories WHERE workspace_id = ?1",
+            [id],
+        )?;
+        transaction.execute("DELETE FROM workspaces WHERE id = ?1", [id])?;
+        transaction.commit()?;
+        Ok(())
+    }
+
     /// Removes the session association created by a failed workspace
     /// initialization attempt. This is intentionally narrow: it is only valid
     /// while the workspace has no tasks or repository bindings.
@@ -7404,6 +7459,74 @@ mod tests {
             .is_none());
         assert!(store.get_repository(&repository.id).unwrap().is_some());
         assert!(!Path::new(&workspace.home_path).exists());
+    }
+
+    #[test]
+    fn permanent_workspace_removal_deletes_sql_links_but_keeps_workspace_files_and_repository() {
+        let fixture = tempdir().unwrap();
+        let home = fixture.path().join("home");
+        fs::create_dir_all(&home).unwrap();
+        let store = ManagementStore::in_memory_with_paths(&home, fixture.path()).unwrap();
+        let workspace = store
+            .create_workspace(&workspace("w-permanent-delete", "delete-permanently"))
+            .unwrap();
+        fs::create_dir_all(&workspace.home_path).unwrap();
+        let repository_path = fixture.path().join("linked-repository");
+        fs::create_dir_all(&repository_path).unwrap();
+        let mut repository = repository("linked-repository");
+        repository.repository_path = repository_path.to_string_lossy().into();
+        store.create_repository(&repository).unwrap();
+        store
+            .save_workspace_repository_binding(&WorkspaceRepositoryBinding {
+                workspace_id: workspace.id.clone(),
+                repository_id: repository.id.clone(),
+                checkout_path: repository.repository_path.clone(),
+                checkout_mode: CheckoutMode::Existing,
+                branch: "main".into(),
+                verification_status: VerificationStatus::Verified,
+                created_at: CREATED,
+            })
+            .unwrap();
+        store
+            .create_session(&NewSession {
+                open_code_session_id: "ses-retained-outside-app".into(),
+                owner: SessionOwner::Workspace(workspace.id.clone()),
+                directory: repository.repository_path.clone(),
+                last_known_status: "running".into(),
+                created_at: CREATED,
+            })
+            .unwrap();
+        store
+            .lock()
+            .unwrap()
+            .execute(
+                "INSERT INTO legacy_task_archives(task_id, workspace_id, archived_at, snapshot_json) VALUES (?1, ?2, ?3, ?4)",
+                params!["archived-task", workspace.id, CREATED, "{}"],
+            )
+            .unwrap();
+
+        store
+            .delete_regular_workspace_record(&workspace.id)
+            .unwrap();
+
+        assert!(store.get_workspace(&workspace.id).unwrap().is_none());
+        assert!(store
+            .get_session("ses-retained-outside-app")
+            .unwrap()
+            .is_none());
+        let archive_count: i64 = store
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT COUNT(*) FROM legacy_task_archives WHERE workspace_id = ?1",
+                [&workspace.id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(archive_count, 0);
+        assert!(store.get_repository(&repository.id).unwrap().is_some());
+        assert!(Path::new(&workspace.home_path).exists());
+        assert!(repository_path.exists());
     }
 
     #[test]

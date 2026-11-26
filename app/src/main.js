@@ -11,6 +11,9 @@ import {
   listWorkspaceTickets,
   cancelWorkspaceTicket,
   uncancelWorkspaceTicket,
+  archiveWorkspaceTicketsForRemoval,
+  previewWorkspaceTicketsForRemoval,
+  deleteWorkspace,
   listWorkspaceTicketLabels,
   setWorkspaceTicketLabel,
   workOnWorkspaceTicket,
@@ -330,7 +333,9 @@ async function preloadWorkspaceTicketLists(workspaces) {
 async function refreshTicketList(archived = ticketArchived()) {
   const workspaceId = selectedWorkspace?.id;
   if (!workspaceId) return;
-  const hasCachedList = Boolean(workspaceTicketCache.get(workspaceId, archived));
+  const hasCachedList = Boolean(
+    workspaceTicketCache.get(workspaceId, archived),
+  );
   if (hasCachedList || !ticketLoading()) setTicketRefreshing(true);
   else setTicketLoading(true);
   setTicketError("");
@@ -533,6 +538,31 @@ const workspaceTicketViewerProps = {
   onWork: (filename) => workWorkspaceTicket(selectedWorkspace?.id, filename),
   onCancel: (filename) => void changeTicketCancellation(filename, false),
   onUncancel: (filename) => void changeTicketCancellation(filename, true),
+  onLoadDeletionTickets: () => {
+    const workspaceId = selectedWorkspace?.id;
+    if (!workspaceId) throw new Error("Select a Workspace first.");
+    return previewWorkspaceTicketsForRemoval(invoke, workspaceId);
+  },
+  onArchiveTicketsForDeletion: () => {
+    const workspaceId = selectedWorkspace?.id;
+    if (!workspaceId) throw new Error("Select a Workspace first.");
+    return archiveWorkspaceTicketsForRemoval(invoke, workspaceId);
+  },
+  onDeleteWorkspace: () => {
+    const workspaceId = selectedWorkspace?.id;
+    if (!workspaceId) throw new Error("Select a Workspace first.");
+    return deleteWorkspace(invoke, workspaceId);
+  },
+  onWorkspaceDeleted: async () => {
+    workspaceTicketCache.invalidate();
+    selectedWorkspace = null;
+    clearActiveNavigationItems();
+    setTicketViewerVisible(false);
+    setWorkspaceShellVisible(false);
+    setWorkspaceSelected(false);
+    setNoSelectionVisible(true);
+    await refreshNavigation();
+  },
   onProposeTicket: async (idea) => {
     const workspaceId = selectedWorkspace?.id;
     if (!workspaceId) throw new Error("Select a Workspace first.");

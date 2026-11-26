@@ -77,6 +77,10 @@ import {
   retryTaskCleanup,
   completeWorkspace,
   reactivateWorkspace,
+  deleteWorkspace,
+  archiveWorkspaceTicketsForRemoval,
+  previewWorkspaceTicketsForRemoval,
+  listWorkspaceTickets,
   promoteQuickRequest,
   retryQuickRequestPrompt,
   sessionTabAttributes,
@@ -531,8 +535,14 @@ test("workspace adapters preserve navigation and setup command boundaries", asyn
   });
   assert.deepEqual(calls, [
     ["workspace_navigation"],
-    ["workspace_create", { name: "Todo", description: "Plan", repositoryId: null }],
-    ["workspace_create", { name: "Ready", description: "Plan", repositoryId: "repo-1" }],
+    [
+      "workspace_create",
+      { name: "Todo", description: "Plan", repositoryId: null },
+    ],
+    [
+      "workspace_create",
+      { name: "Ready", description: "Plan", repositoryId: "repo-1" },
+    ],
     [
       "task_create",
       {
@@ -660,10 +670,7 @@ test("directory page, repository enabled, and soft-delete adapters preserve expl
   assert.deepEqual(calls, [
     ["repository_directory_page", undefined],
     ["repository_enabled_set", { repositoryId: "repo-1", enabled: false }],
-    [
-      "repository_soft_delete_many",
-      { repositoryIds: ["repo-1", "repo-2"] },
-    ],
+    ["repository_soft_delete_many", { repositoryIds: ["repo-1", "repo-2"] }],
   ]);
   await assert.rejects(
     setRepositoryEnabled(
@@ -708,11 +715,7 @@ test("New-work proposal adapters preserve exact session and prompt boundary", as
   };
   const model = { providerId: "openai", id: "gpt-6-luna" };
   await startNewWorkProposal(invoke, model);
-  await runNewWorkProposal(
-    invoke,
-    "proposal-session-1",
-    "Original prompt",
-  );
+  await runNewWorkProposal(invoke, "proposal-session-1", "Original prompt");
   await closeNewWorkProposal(invoke, "proposal-session-1");
   assert.deepEqual(calls, [
     ["new_work_proposal_start", { model }],
@@ -767,6 +770,22 @@ test("workspace lifecycle and Quick Request promotion adapters preserve explicit
         targetSlug: "task-slug",
       },
     ],
+  ]);
+});
+
+test("Workspace removal adapters preview tickets, archive them, then delete only by explicit ID", async () => {
+  const calls = [];
+  const invoke = (...args) => {
+    calls.push(args);
+    return Promise.resolve(resultForCommand(args[0]));
+  };
+  await previewWorkspaceTicketsForRemoval(invoke, "w1");
+  await archiveWorkspaceTicketsForRemoval(invoke, "w1");
+  await deleteWorkspace(invoke, "w1");
+  assert.deepEqual(calls, [
+    ["workspace_tickets_removal_preview", { workspaceId: "w1" }],
+    ["workspace_tickets_archive_for_removal", { workspaceId: "w1" }],
+    ["workspace_delete", { workspaceId: "w1" }],
   ]);
 });
 
@@ -931,7 +950,10 @@ test("workspace command failures remain visible and identify the failed action",
     "Attach failed: Error: identity mismatch",
   );
   assert.equal(
-    formatWorkspaceError("Refresh", { message: "ticket read failed", code: "io" }),
+    formatWorkspaceError("Refresh", {
+      message: "ticket read failed",
+      code: "io",
+    }),
     "Refresh failed: ticket read failed",
   );
   assert.equal(
@@ -1182,7 +1204,15 @@ test("Quick Request adapters preserve command names, explicit payloads, results,
       "quick_request_create",
       { prompt: "check this", model, repositoryId: "repo-1" },
     ],
-    ["quick_request_create", { prompt: "check this", model, repositoryId: null, directory: "/chosen folder" }],
+    [
+      "quick_request_create",
+      {
+        prompt: "check this",
+        model,
+        repositoryId: null,
+        directory: "/chosen folder",
+      },
+    ],
     ["quick_request_resolve_directory", { repositoryId: "repo-1" }],
     ["quick_request_follow_up", { requestId: "quick-1", data: "hello\r" }],
     ["quick_request_restore", { requestId: "quick-1" }],
@@ -1242,13 +1272,34 @@ test("Workspace ticket proposal and confirmation adapters preserve their explici
     calls.push(args);
     return Promise.resolve(resultForCommand(args[0]));
   };
-  const proposal = await proposeWorkspaceTicket(invoke, "workspace-1", "An idea");
-  const ticket = await createWorkspaceTicket(invoke, "workspace-1", "Fixture proposal", "Edited body", true);
+  const proposal = await proposeWorkspaceTicket(
+    invoke,
+    "workspace-1",
+    "An idea",
+  );
+  const ticket = await createWorkspaceTicket(
+    invoke,
+    "workspace-1",
+    "Fixture proposal",
+    "Edited body",
+    true,
+  );
   assert.equal(proposal.title, "Fixture proposal");
   assert.equal(ticket.ticket.status, "draft");
   assert.deepEqual(calls, [
-    ["workspace_ticket_proposal", { workspaceId: "workspace-1", idea: "An idea" }],
-    ["workspace_ticket_create", { workspaceId: "workspace-1", title: "Fixture proposal", body: "Edited body", startInvestigation: true }],
+    [
+      "workspace_ticket_proposal",
+      { workspaceId: "workspace-1", idea: "An idea" },
+    ],
+    [
+      "workspace_ticket_create",
+      {
+        workspaceId: "workspace-1",
+        title: "Fixture proposal",
+        body: "Edited body",
+        startInvestigation: true,
+      },
+    ],
   ]);
 });
 
@@ -1269,17 +1320,33 @@ test("ticket-label updates send a required, non-null label to Rust", async () =>
     return Promise.resolve(args[1].label);
   };
   assert.equal(
-    await setWorkspaceTicketLabel(invoke, "workspace-1", "ticket.md", "Initiative"),
+    await setWorkspaceTicketLabel(
+      invoke,
+      "workspace-1",
+      "ticket.md",
+      "Initiative",
+    ),
     "Initiative",
   );
-  assert.deepEqual(calls, [["workspace_ticket_label_set", {
-    workspaceId: "workspace-1", filename: "ticket.md", label: "Initiative",
-  }]]);
+  assert.deepEqual(calls, [
+    [
+      "workspace_ticket_label_set",
+      {
+        workspaceId: "workspace-1",
+        filename: "ticket.md",
+        label: "Initiative",
+      },
+    ],
+  ]);
   await assert.rejects(
     setWorkspaceTicketLabel(invoke, "workspace-1", "ticket.md", null),
     /must not be null/,
   );
-  assert.equal(calls.length, 1, "null labels fail before crossing the Rust boundary");
+  assert.equal(
+    calls.length,
+    1,
+    "null labels fail before crossing the Rust boundary",
+  );
 });
 
 test("Quick Request submit preserves surrounding UI state and clears only the prompt after full success", async () => {

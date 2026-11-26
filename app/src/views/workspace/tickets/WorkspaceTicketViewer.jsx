@@ -25,6 +25,7 @@ import { CreateTicketIdeaModal } from "./CreateTicketIdeaModal.jsx";
 import { recordUiDiagnostic } from "../../../lib/uiDiagnostics.js";
 import { WorkspaceTicketContent } from "./WorkspaceTicketContent.jsx";
 import { TicketActionsMenu } from "./TicketActionsMenu.jsx";
+import { DeleteWorkspaceModal } from "./DeleteWorkspaceModal.jsx";
 import styles from "./WorkspaceTicketViewer.module.css";
 import repositoryToolsStyles from "../repository-tools/RepositoryToolsMenu.module.css";
 
@@ -101,7 +102,10 @@ export function WorkspaceTicketViewer(props) {
   // focus survive updates while its fields still reflect the latest snapshot.
   const [ticketList, setTicketList] = createStore({ ordered: [] });
   createEffect(() => {
-    setTicketList("ordered", reconcile(sortedTickets(props.tickets(), sort()), { key: "filename" }));
+    setTicketList(
+      "ordered",
+      reconcile(sortedTickets(props.tickets(), sort()), { key: "filename" }),
+    );
   });
   const selected = createMemo(() =>
     props
@@ -121,37 +125,6 @@ export function WorkspaceTicketViewer(props) {
     >
       <section aria-label="Workspace tickets" class={styles.viewer}>
         <header class={styles.header}>
-          <div class={styles.modelControl}>
-            <span>Default Model</span>
-            <ActionMenu
-              label={selectedModelLabel()}
-              actionsLabel="Default Model"
-              triggerVariant="compact"
-              surfaceVariant="neutral"
-              disabled={props.modelBusy?.() ?? true}
-            >
-              <Show when={!props.selectedModel?.()}>
-                <ActionMenuItem disabled>
-                  Choose an available model
-                </ActionMenuItem>
-              </Show>
-              <For each={props.modelOptions?.() ?? []}>
-                {(option) => (
-                  <ActionMenuItem
-                    class={styles.menuOption}
-                    aria-pressed={props.selectedModel?.() === option.value}
-                    onClick={() => props.onModelChange(option.value)}
-                  >
-                    {option.label}
-                    <Show when={props.selectedModel?.() === option.value}>
-                      <Icon name="check" />
-                    </Show>
-                  </ActionMenuItem>
-                )}
-              </For>
-            </ActionMenu>
-          </div>
-          <div class={repositoryToolsStyles.control}>{props.toolsMenu?.()}</div>
           <CreateTicketIdeaModal
             disabled={() =>
               Boolean(props.modelBusy?.() || !props.selectedModel?.())
@@ -159,6 +132,48 @@ export function WorkspaceTicketViewer(props) {
             onPropose={props.onProposeTicket}
             onCreate={props.onCreateTicket}
           />
+          <div class={styles.headerActions}>
+            <div class={styles.modelControl}>
+              <span>Default Model</span>
+              <ActionMenu
+                label={selectedModelLabel()}
+                actionsLabel="Default Model"
+                triggerVariant="compact"
+                surfaceVariant="neutral"
+                disabled={props.modelBusy?.() ?? true}
+              >
+                <Show when={!props.selectedModel?.()}>
+                  <ActionMenuItem disabled>
+                    Choose an available model
+                  </ActionMenuItem>
+                </Show>
+                <For each={props.modelOptions?.() ?? []}>
+                  {(option) => (
+                    <ActionMenuItem
+                      class={styles.menuOption}
+                      aria-pressed={props.selectedModel?.() === option.value}
+                      onClick={() => props.onModelChange(option.value)}
+                    >
+                      {option.label}
+                      <Show when={props.selectedModel?.() === option.value}>
+                        <Icon name="check" />
+                      </Show>
+                    </ActionMenuItem>
+                  )}
+                </For>
+              </ActionMenu>
+            </div>
+            <div class={repositoryToolsStyles.control}>
+              {props.toolsMenu?.()}
+            </div>
+            <DeleteWorkspaceModal
+              workspaceName={props.workspaceName}
+              onLoadTickets={props.onLoadDeletionTickets}
+              onArchiveTickets={props.onArchiveTicketsForDeletion}
+              onDeleteWorkspace={props.onDeleteWorkspace}
+              onDeleted={props.onWorkspaceDeleted}
+            />
+          </div>
         </header>
         <ErrorMessage message={props.modelError?.()} />
         <ErrorMessage message={props.error()} />
@@ -185,7 +200,11 @@ export function WorkspaceTicketViewer(props) {
                   <IconButton
                     label="Refresh tickets"
                     title="Refresh tickets"
-                    disabled={props.loading() || props.refreshing?.() || props.working?.()}
+                    disabled={
+                      props.loading() ||
+                      props.refreshing?.() ||
+                      props.working?.()
+                    }
                     onClick={props.onRefresh}
                   >
                     <Icon name="refresh" />
