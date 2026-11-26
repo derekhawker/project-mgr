@@ -350,26 +350,26 @@ bindings, including checkout path, branch, and verification state; the catalog
 and attachment controls are available at workspace scope.
 Show the Quick Requests heading above the recent requests list with a separate
 chevron-only button that opens the complete Quick Requests destination. Below it,
-the **Ticket Sidebar** has **Recent** and **Workspaces** tabs; Recent is the
-default and is session-local. Recent is an uncapped flat list ordered by ticket
-file modification time, newest first. It retains current eligibility rules:
-`in_progress`, `blocked`, and `draft` tickets with a `work_session_id`. The title
-row starts Work; a noninteractive tag shows `project_label` or, when absent, the
-owning Workspace name, inline before the title. Neither tag nor Workspace context
-navigates. Tags use a deterministic 20-color palette keyed by normalized label;
-long tags truncate with a full tooltip. Keep Recent rows compact and without
-added left indentation.
+the **Ticket Sidebar** has **Tickets** and **Workspaces** tabs; Tickets is the
+default and is session-local. Tickets is an uncapped flat list of tickets with a
+`work_session_id` across active Workspaces, ordered by file modification time,
+newest first. The title row starts Work; a noninteractive tag shows
+`project_label` or, when absent, the owning Workspace name, inline before the
+title. Neither tag nor Workspace context navigates. Tags use a deterministic
+20-color palette keyed by normalized label; long tags truncate with a full
+tooltip. Keep Tickets rows compact and without added left indentation.
 
 Workspaces preserves the existing main-branch grouped layout: shared
 project-label groups appear first as plain headings with ticket rows beneath and
 the owning Workspace inline; Workspace groups then show their existing count,
 selection action, and independent disclosure. Tickets matching another
 Workspace's name group beneath that Workspace; otherwise tickets stay beneath
-their owner. Include active and archived ticket files without changing the
-grouped presentation or its spacing. Active ticket rows start Work; done or
-archived rows open the owning Workspace browser with that ticket selected. Label
-editing remains available from both tabs. Keep the Ticket Sidebar as its own
-scroll area; Ports, Repositories, and New work remain pinned in navigation.
+their owner. Preserve the existing ticket visibility rules: show `in_progress`
+and `blocked` tickets, plus `draft` tickets with a `work_session_id`; do not add
+done or cancelled tickets to these sidebar groups. Keep the existing grouped
+presentation and spacing. Label editing remains available from both tabs. Keep
+the Ticket Sidebar as its own scroll area; Ports, Repositories, and New work
+remain pinned in navigation.
 
 ## 4. Core Invariants
 

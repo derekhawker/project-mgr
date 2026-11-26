@@ -276,7 +276,7 @@ const [selectedTicketFilename, setSelectedTicketFilename] = createSignal(null);
 const [ticketSessionScope, setTicketSessionScope] = createSignal(null);
 const [ticketArchived, setTicketArchived] = createSignal(false);
 const [ticketWorkbenchActive, setTicketWorkbenchActive] = createSignal(false);
-const [workspaceTicketView, setWorkspaceTicketView] = createSignal("recent");
+const [workspaceTicketView, setWorkspaceTicketView] = createSignal("tickets");
 const workspaceTicketCache = createWorkspaceTicketCache(
   async (workspaceId, archived) => {
     recordUiDiagnostic("WorkspaceTicketList", "load-start");

@@ -12,11 +12,11 @@ export function TicketSidebarTabs(props) {
         onChange={props.onChange}
       >
         <Tab
-          id="ticket-sidebar-recent"
-          value="recent"
+          id="ticket-sidebar-tickets"
+          value="tickets"
           controls="ticket-sidebar-list"
         >
-          Recent
+          Tickets
         </Tab>
         <Tab
           id="ticket-sidebar-workspaces"

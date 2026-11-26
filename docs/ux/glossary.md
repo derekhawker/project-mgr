@@ -55,7 +55,8 @@ discussions. For workflow behavior beyond the UX vocabulary, see
 ## Screens and controls
 
 - **Ticket Sidebar:** The persistent left-hand navigation for tickets. Its
-  **Recent** tab is a flat activity-sorted list; **Workspaces** preserves the
+  **Tickets** tab is a flat modification-sorted list of session-backed tickets;
+  **Workspaces** preserves the
   existing Workspace-group layout, including its shared-label headings. This is
   distinct from the Workspace screen and its full ticket browser.
 - **New Work menu:** The dropdown at the bottom of the left navigation that

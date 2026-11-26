@@ -16,7 +16,7 @@ Application shell (fixed to the window)
 │   ├── Quick Requests (top section)
 │   │   ├── Quick Requests heading and chevron button open the full list
 │   │   └── Recent Quick Requests (created in the last 24 hours)
-│   ├── Ticket Sidebar (Recent or existing Workspace groups)
+│   ├── Ticket Sidebar (Tickets or existing Workspace groups)
 │   ├── Ports (immediately above Repositories)
 │   ├── Repositories
 │   └── New work (Workspace or Quick Request; primary action pinned to bottom)
@@ -138,7 +138,7 @@ use browser-fixture data and are not native-app acceptance evidence.
   exits, offer restart in the same tab using the exact same OpenCode session.
   Do not show fullscreen controls.
 - **Keep navigation visible.** Quick Requests come first in the left navigation;
-  the Ticket Sidebar follows with Recent and Workspaces tabs. Legacy Task rows remain stored but are not shown as
+  the Ticket Sidebar follows with Tickets and Workspaces tabs. Legacy Task rows remain stored but are not shown as
   navigation destinations. Navigation stays visible on
   Quick Request terminal pages. Workspace toolbar rows wrap rather than hiding
   tabs behind overflow.

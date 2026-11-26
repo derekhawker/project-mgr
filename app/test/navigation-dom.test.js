@@ -168,18 +168,18 @@ test("workspace navigation filters out inactive Workspaces and exposes the curre
     busy: () => true,
     selected,
     onSelect: () => {},
-    viewMode: () => "recent",
+    viewMode: () => "tickets",
     onWork: () => {},
   });
   assert.equal(
     view.host.querySelector('[role="tabpanel"]').getAttribute("aria-busy"),
     "true",
   );
-  assert.match(view.host.textContent, /No recent tickets/);
+  assert.match(view.host.textContent, /No tickets with sessions/);
   view.dispose();
 });
 
-test("workspace ticket updates render in Recent without retaining old grouped/flat controls", () => {
+test("session-backed ticket updates render in Tickets without grouped controls", () => {
   const workspace = {
     id: "stable-id",
     name: "Alpha",
@@ -195,7 +195,7 @@ test("workspace ticket updates render in Recent without retaining old grouped/fl
     busy: () => false,
     selected: () => null,
     onSelect: () => {},
-    viewMode: () => "recent",
+    viewMode: () => "tickets",
     onWork: () => {},
   });
   setData({
@@ -223,7 +223,7 @@ test("workspace ticket updates render in Recent without retaining old grouped/fl
   view.dispose();
 });
 
-test("Workspaces view groups visible tickets and Recent view sorts tickets newest first", () => {
+test("Workspaces applies existing visibility rules; Tickets sorts session tickets newest first", () => {
   const workspaces = [
     { id: "a", name: "Alpha", kind: "regular", status: "active" },
     { id: "b", name: "Beta", kind: "regular", status: "active" },
@@ -234,12 +234,14 @@ test("Workspaces view groups visible tickets and Recent view sorts tickets newes
         filename: "blocked.md",
         title: "Blocked",
         status: "blocked",
+        hasWorkSession: true,
         modifiedAt: 30,
       },
       {
         filename: "old.md",
         title: "Older",
         status: "in_progress",
+        hasWorkSession: true,
         modifiedAt: 10,
       },
       {
@@ -255,11 +257,12 @@ test("Workspaces view groups visible tickets and Recent view sorts tickets newes
         filename: "new.md",
         title: "Newest",
         status: "in_progress",
+        hasWorkSession: true,
         modifiedAt: 40,
       },
     ],
   };
-  const [viewMode, setViewMode] = createSignal("recent");
+  const [viewMode, setViewMode] = createSignal("tickets");
   const worked = [];
   const view = mount(WorkspaceNavigation, {
     data: () => ({ workspaces, workspaceTickets: tickets }),
@@ -273,9 +276,8 @@ test("Workspaces view groups visible tickets and Recent view sorts tickets newes
     [...view.host.querySelectorAll("li")].map((item) =>
       item.textContent.trim(),
     ),
-    ["NewestBeta", "BlockedAlpha", "OlderAlpha"],
+    ["CancelledAlpha", "NewestBeta", "BlockedAlpha", "OlderAlpha"],
   );
-  assert.doesNotMatch(view.host.textContent, /Cancelled/);
   setViewMode("workspaces");
   assert.equal(
     view.host
@@ -283,6 +285,7 @@ test("Workspaces view groups visible tickets and Recent view sorts tickets newes
       .getAttribute("aria-labelledby"),
     "ticket-sidebar-workspaces",
   );
+  assert.doesNotMatch(view.host.textContent, /Cancelled/);
   assert.ok(
     [...view.host.querySelectorAll("button")].some((button) =>
       button.textContent.includes("Newest"),
@@ -487,14 +490,14 @@ test("label colors use a stable 20-color palette and normalize case and whitespa
 });
 
 test("Ticket Sidebar tabs render accessible selection and report selected view", () => {
-  const [value, setValue] = createSignal("recent");
+  const [value, setValue] = createSignal("tickets");
   const view = mount(TicketSidebarTabs, { value, onChange: setValue });
   const tablist = view.host.querySelector('[role="tablist"]');
   const tabs = [...view.host.querySelectorAll('[role="tab"]')];
   assert.equal(tablist.getAttribute("aria-label"), "Ticket Sidebar views");
   assert.deepEqual(
     tabs.map((tab) => tab.textContent.trim()),
-    ["Recent", "Workspaces"],
+    ["Tickets", "Workspaces"],
   );
   assert.equal(tabs[0].getAttribute("aria-selected"), "true");
   assert.equal(tabs[1].getAttribute("aria-selected"), "false");
@@ -505,7 +508,7 @@ test("Ticket Sidebar tabs render accessible selection and report selected view",
   view.dispose();
 });
 
-test("Recent shows a static label before the title; Workspaces keeps existing groups", () => {
+test("Tickets shows a static label before the title; Workspaces keeps existing groups", () => {
   const workspaces = [
     { id: "one", name: "Alpha", kind: "regular", status: "active" },
     { id: "two", name: "Beta", kind: "regular", status: "active" },
@@ -516,15 +519,22 @@ test("Recent shows a static label before the title; Workspaces keeps existing gr
         filename: "ticket.md",
         title: "Ship feature",
         status: "in_progress",
+        hasWorkSession: true,
         projectLabel: "Launch",
       },
       {
         filename: "other.md",
         title: "Other work",
         status: "blocked",
+        hasWorkSession: true,
         projectLabel: "Launch",
       },
-      { filename: "unlabelled.md", title: "No label", status: "in_progress" },
+      {
+        filename: "unlabelled.md",
+        title: "No label",
+        status: "in_progress",
+        hasWorkSession: true,
+      },
       {
         filename: "private.md",
         title: "Private work",
@@ -537,11 +547,12 @@ test("Recent shows a static label before the title; Workspaces keeps existing gr
         filename: "beta.md",
         title: "Beta work",
         status: "in_progress",
+        hasWorkSession: true,
         projectLabel: "Launch",
       },
     ],
   };
-  const [viewMode, setViewMode] = createSignal("recent");
+  const [viewMode, setViewMode] = createSignal("tickets");
   const worked = [];
   const view = mount(WorkspaceNavigation, {
     data: () => ({
@@ -558,7 +569,7 @@ test("Recent shows a static label before the title; Workspaces keeps existing gr
     view.host
       .querySelector('[role="tabpanel"]')
       .getAttribute("aria-labelledby"),
-    "ticket-sidebar-recent",
+    "ticket-sidebar-tickets",
   );
   assert.match(view.host.textContent, /Ship feature/);
   assert.match(view.host.textContent, /Launch/);
@@ -576,7 +587,7 @@ test("Recent shows a static label before the title; Workspaces keeps existing gr
     (element) =>
       element.textContent.trim() === "Alpha" && element.hasAttribute("title"),
   );
-  assert.ok(recentWorkspaceContext, "Recent identifies the owning Workspace");
+  assert.ok(recentWorkspaceContext, "Tickets identifies the owning Workspace");
   assert.equal(recentWorkspaceContext.closest("button"), null);
   assert.equal(recentTag.getAttribute("title"), "Launch");
   assert.equal(

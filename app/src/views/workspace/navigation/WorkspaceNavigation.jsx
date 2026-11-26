@@ -48,17 +48,16 @@ export function WorkspaceNavigation(props) {
     (props.data()?.workspaces || []).filter(
       (workspace) => workspace.kind === "regular",
     );
-  const recentWorkspaces = () =>
+  const activeWorkspaces = () =>
     regularWorkspaces().filter((workspace) => workspace.status === "active");
   const workspaceTickets = (workspaceId) =>
     props.data()?.workspaceTickets?.[workspaceId] || [];
-  const recentWorkspaceTickets = (workspaceId) =>
+  const displayedWorkspaceTickets = (workspaceId) =>
     workspaceTickets(workspaceId).filter(
       (ticket) =>
-        !ticket.archived &&
-        (ticket.status === "in_progress" ||
-          ticket.status === "blocked" ||
-          (ticket.status === "draft" && ticket.hasWorkSession)),
+        ticket.status === "in_progress" ||
+        ticket.status === "blocked" ||
+        (ticket.status === "draft" && ticket.hasWorkSession),
     );
   const sharedLabelKeys = () => {
     const owners = new Map();
@@ -87,7 +86,7 @@ export function WorkspaceNavigation(props) {
     const shared = sharedLabelKeys();
     const groups = new Map();
     for (const workspace of regularWorkspaces()) {
-      for (const ticket of workspaceTickets(workspace.id)) {
+      for (const ticket of displayedWorkspaceTickets(workspace.id)) {
         const key = ticket.projectLabel
           ? ticket.projectLabel.trim().replace(/\s+/gu, " ").toLowerCase()
           : "";
@@ -111,7 +110,7 @@ export function WorkspaceNavigation(props) {
   const ticketsForWorkspaceGroup = (destination) => {
     const shared = sharedLabelKeys();
     return regularWorkspaces().flatMap((owner) =>
-      workspaceTickets(owner.id)
+      displayedWorkspaceTickets(owner.id)
         .filter((ticket) => {
           const key = ticket.projectLabel
             ? ticket.projectLabel.trim().replace(/\s+/gu, " ").toLowerCase()
@@ -129,16 +128,15 @@ export function WorkspaceNavigation(props) {
     ).length;
   const workspaceIsCurrent = (workspace) =>
     props.selected()?.id === workspace.id &&
-    !workspaceTickets(workspace.id).some((ticket) =>
+    !displayedWorkspaceTickets(workspace.id).some((ticket) =>
       props.isTicketCurrent?.(workspace, ticket),
     );
   const flatTickets = () =>
-    recentWorkspaces()
+    activeWorkspaces()
       .flatMap((workspace) =>
-        recentWorkspaceTickets(workspace.id).map((ticket) => ({
-          ...ticket,
-          workspace,
-        })),
+        workspaceTickets(workspace.id)
+          .filter((ticket) => ticket.hasWorkSession)
+          .map((ticket) => ({ ...ticket, workspace })),
       )
       .sort(
         (a, b) =>
@@ -219,7 +217,7 @@ export function WorkspaceNavigation(props) {
         aria-labelledby={
           props.viewMode() === "workspaces"
             ? "ticket-sidebar-workspaces"
-            : "ticket-sidebar-recent"
+            : "ticket-sidebar-tickets"
         }
         aria-busy={String(props.busy())}
       >
@@ -238,7 +236,7 @@ export function WorkspaceNavigation(props) {
                 <Show
                   when={flatTickets().length > 0}
                   fallback={
-                    <li class={styles.emptyState}>No recent tickets.</li>
+                    <li class={styles.emptyState}>No tickets with sessions.</li>
                   }
                 >
                   <Index each={flatTickets()}>
