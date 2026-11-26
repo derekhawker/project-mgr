@@ -9,24 +9,6 @@
   margin: 0;
 }
 
-.steps {
-  display: flex;
-  gap: var(--ui-space-16);
-  margin: 0;
-  padding: 0;
-  color: var(--ui-muted);
-  list-style: none;
-}
-
-.steps [aria-current="step"] {
-  color: var(--ui-text);
-  font-weight: 600;
-}
-
-.steps [aria-disabled="true"] {
-  opacity: 0.65;
-}
-
 .ticketList {
   display: grid;
   gap: var(--ui-space-4);

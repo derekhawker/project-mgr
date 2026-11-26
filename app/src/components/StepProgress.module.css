@@ -1,0 +1,69 @@
+.progress {
+  display: grid;
+  justify-items: center;
+  margin-block-end: 32px;
+}
+
+.steps {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 14rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.steps::before {
+  position: absolute;
+  top: 1.125rem;
+  right: 3rem;
+  left: 3rem;
+  height: 1px;
+  background: var(--ui-border-light);
+  content: "";
+  transform: translateY(-50%);
+}
+
+.steps li {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  width: 6rem;
+  gap: var(--ui-space-2);
+  color: var(--ui-muted);
+}
+
+.stepNumber {
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: var(--ui-space-4);
+  border: 1px solid var(--ui-surface-pressed);
+  border-radius: 50%;
+  color: var(--ui-text);
+  background: var(--ui-surface-pressed);
+  font-weight: 700;
+}
+
+.steps .current .stepNumber {
+  border-color: var(--ui-primary);
+  color: var(--ui-primary-text);
+  background: var(--ui-primary);
+}
+
+.stepLabel {
+  color: var(--ui-text);
+  font-weight: 400;
+}
+
+.steps [aria-disabled="true"] {
+  opacity: 0.65;
+}
+
+.skipped {
+  color: var(--ui-muted);
+}

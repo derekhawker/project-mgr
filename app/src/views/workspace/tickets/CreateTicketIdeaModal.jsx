@@ -7,6 +7,7 @@ import {
   Modal,
   TextArea,
 } from "@ui-lib";
+import { StepProgress } from "../../../components/StepProgress.jsx";
 import styles from "./CreateTicketIdeaModal.module.css";
 
 /** Captures an idea, reviews generated content, then asks the owner to save it. */
@@ -153,24 +154,11 @@ export function CreateTicketIdeaModal(props) {
           return {
             body: (
               <>
-                <div class={styles.progress}>
-                  <ol aria-label="Ticket creation steps" class={styles.steps}>
-                    <li
-                      aria-current={step() === 1 ? "step" : undefined}
-                      classList={{ [styles.current]: step() === 1 }}
-                    >
-                      <span class={styles.stepNumber}>1</span>
-                      <span class={styles.stepLabel}>Description</span>
-                    </li>
-                    <li
-                      aria-current={step() === 2 ? "step" : undefined}
-                      classList={{ [styles.current]: step() === 2 }}
-                    >
-                      <span class={styles.stepNumber}>2</span>
-                      <span class={styles.stepLabel}>Review</span>
-                    </li>
-                  </ol>
-                </div>
+                <StepProgress
+                  label="Ticket creation steps"
+                  activeStep={step}
+                  steps={[{ label: "Description" }, { label: "Review" }]}
+                />
                 <ErrorMessage message={error} />
                 <Show when={step() === 1}>
                   <form

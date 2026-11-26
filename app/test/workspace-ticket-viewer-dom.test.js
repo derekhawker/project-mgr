@@ -872,7 +872,7 @@ test("workspace deletion always warns, archives active tickets, and recovers fro
     assert.match(dialog.textContent, /Could not archive the tickets/);
     assert.equal(
       dialog.querySelector('[aria-current="step"]').textContent,
-      "1. Archive tickets",
+      "1Archive tickets",
     );
     [...dialog.querySelectorAll("button")]
       .find((button) => button.textContent.includes("Archive tickets"))
@@ -880,7 +880,7 @@ test("workspace deletion always warns, archives active tickets, and recovers fro
     await flush();
     assert.equal(
       dialog.querySelector('[aria-current="step"]').textContent,
-      "2. Delete Workspace",
+      "2Delete Workspace",
     );
     const deleteButton = [...dialog.querySelectorAll("button")].find((button) =>
       button.textContent.includes("Delete workspace"),
@@ -928,11 +928,11 @@ test("workspace deletion with no active tickets skips archiving and opens delete
     assert.match(dialog.textContent, /No active tickets to archive/);
     assert.equal(
       dialog.querySelector('[aria-current="step"]').textContent,
-      "2. Delete Workspace",
+      "2Delete Workspace",
     );
     assert.equal(
       dialog.querySelector('[aria-disabled="true"]').textContent,
-      "1. Archive tickets (skipped)",
+      "1Archive tickets (skipped)",
     );
     assert.deepEqual(calls, []);
     assert.ok(

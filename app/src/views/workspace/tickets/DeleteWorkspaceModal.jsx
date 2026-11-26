@@ -1,5 +1,6 @@
 import { createSignal, For, Show } from "solid-js";
 import { Button, ErrorMessage, Icon, Modal } from "@ui-lib";
+import { StepProgress } from "../../../components/StepProgress.jsx";
 import styles from "./DeleteWorkspaceModal.module.css";
 
 /** Confirms ticket archiving first, then Workspace record removal. */
@@ -120,23 +121,17 @@ export function DeleteWorkspaceModal(props) {
           return {
             body: (
               <div class={styles.content}>
-                <ol class={styles.steps} aria-label="Workspace deletion steps">
-                  <li
-                    aria-current={step() === 1 ? "step" : undefined}
-                    aria-disabled={
-                      ticketsLoaded() && tickets().length === 0
-                        ? "true"
-                        : undefined
-                    }
-                  >
-                    {ticketsLoaded() && tickets().length === 0
-                      ? "1. Archive tickets (skipped)"
-                      : "1. Archive tickets"}
-                  </li>
-                  <li aria-current={step() === 2 ? "step" : undefined}>
-                    2. Delete Workspace
-                  </li>
-                </ol>
+                <StepProgress
+                  label="Workspace deletion steps"
+                  activeStep={step}
+                  steps={[
+                    {
+                      label: "Archive tickets",
+                      skipped: () => ticketsLoaded() && tickets().length === 0,
+                    },
+                    { label: "Delete Workspace" },
+                  ]}
+                />
                 <ErrorMessage message={error()} />
                 <Show when={step() === 1}>
                   <p>
