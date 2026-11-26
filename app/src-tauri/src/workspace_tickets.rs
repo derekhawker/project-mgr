@@ -1380,6 +1380,7 @@ pub struct NavigationTicket {
     pub opencode_status: Option<String>,
     pub project_label: Option<String>,
     pub modified_at: u128,
+    pub archived: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -1786,6 +1787,52 @@ pub fn list_for_navigation_with_default_label(
             project_label: project_label
                 .or_else(|| (!default_label.is_empty()).then(|| default_label.to_owned())),
             modified_at,
+            archived: false,
+        });
+    }
+    tickets.sort_by(|a, b| {
+        b.modified_at
+            .cmp(&a.modified_at)
+            .then_with(|| a.filename.cmp(&b.filename))
+    });
+    Ok(tickets)
+}
+
+/// Lists every ticket file in one Workspace ticket directory for the
+/// label-grouped Ticket Sidebar view, including terminal statuses and archived
+/// files. Bodies are not loaded; only frontmatter metadata is read.
+pub fn list_all_for_navigation_with_default_label(
+    directory: &Path,
+    default_label: &str,
+    archived: bool,
+) -> Result<Vec<NavigationTicket>, String> {
+    if !directory.exists() {
+        return Ok(Vec::new());
+    }
+    let mut tickets = Vec::new();
+    for entry in fs::read_dir(directory).map_err(|error| error.to_string())? {
+        let path = entry.map_err(|error| error.to_string())?.path();
+        if path.extension().and_then(|value| value.to_str()) != Some("md") || !path.is_file() {
+            continue;
+        }
+        let fallback = path
+            .file_stem()
+            .and_then(|value| value.to_str())
+            .unwrap_or("Ticket");
+        let file = fs::File::open(&path).map_err(|error| format!("{}: {error}", path.display()))?;
+        let (title, status, has_work_session, opencode_status, project_label) =
+            navigation_metadata(file, fallback)
+                .map_err(|error| format!("{}: {error}", path.display()))?;
+        tickets.push(NavigationTicket {
+            filename: path.file_name().unwrap().to_string_lossy().into_owned(),
+            title,
+            status,
+            has_work_session,
+            opencode_status,
+            project_label: project_label
+                .or_else(|| (!default_label.is_empty()).then(|| default_label.to_owned())),
+            modified_at: ticket_modified_at(&path),
+            archived,
         });
     }
     tickets.sort_by(|a, b| {
@@ -1995,7 +2042,8 @@ pub fn list_project_labels(
 pub fn set_ticket_label(directory: &Path, filename: &str, label: &str) -> Result<String, String> {
     let _guard = ticket_work_lock()?;
     let label = normalize_project_label(label)?;
-    let path = canonical_ticket(directory, filename)?;
+    let path = canonical_ticket(directory, filename)
+        .or_else(|_| canonical_ticket(&directory.join("archived"), filename))?;
     let original = fs::read_to_string(&path).map_err(|error| error.to_string())?;
     let updated = set_project_label(&original, Some(&label))?;
     if original != updated {
@@ -4416,6 +4464,58 @@ mod tests {
         assert!(fs::read_to_string(directory.join("open.md"))
             .unwrap()
             .contains("project_label: \"Initiative\""));
+    }
+
+    #[test]
+    fn complete_navigation_ticket_lists_include_terminal_and_archived_rows() {
+        let root = tempfile::tempdir().unwrap();
+        let active = root.path().join("tickets");
+        let archived = active.join("archived");
+        fs::create_dir_all(&archived).unwrap();
+        fs::write(
+            active.join("done.md"),
+            "---\ntitle: Done\nstatus: done\nproject_label: Shared\n---\nBody\n",
+        )
+        .unwrap();
+        fs::write(
+            archived.join("cancelled.md"),
+            "---\ntitle: Cancelled\nstatus: cancelled\n---\nBody\n",
+        )
+        .unwrap();
+
+        let active_rows =
+            list_all_for_navigation_with_default_label(&active, "Fallback", false).unwrap();
+        let archived_rows =
+            list_all_for_navigation_with_default_label(&archived, "Fallback", true).unwrap();
+
+        assert_eq!(active_rows.len(), 1);
+        assert_eq!(active_rows[0].status, "done");
+        assert_eq!(active_rows[0].project_label.as_deref(), Some("Shared"));
+        assert!(!active_rows[0].archived);
+        assert_eq!(archived_rows.len(), 1);
+        assert_eq!(archived_rows[0].status, "cancelled");
+        assert_eq!(archived_rows[0].project_label.as_deref(), Some("Fallback"));
+        assert!(archived_rows[0].archived);
+    }
+
+    #[test]
+    fn archived_ticket_labels_can_be_changed_without_moving_the_ticket() {
+        let root = tempfile::tempdir().unwrap();
+        let directory = root.path().join("tickets");
+        let archived = directory.join("archived");
+        fs::create_dir_all(&archived).unwrap();
+        let source = "---\ntitle: Closed\nstatus: cancelled\n---\nKeep body\n";
+        let path = archived.join("closed.md");
+        fs::write(&path, source).unwrap();
+
+        assert_eq!(
+            set_ticket_label(&directory, "closed.md", "Shared").unwrap(),
+            "Shared"
+        );
+        let updated = fs::read_to_string(&path).unwrap();
+        assert!(updated.contains("project_label: \"Shared\""));
+        assert!(updated.ends_with("Keep body\n"));
+        assert!(!directory.join("closed.md").exists());
     }
 
     #[test]

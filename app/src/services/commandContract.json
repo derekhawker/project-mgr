@@ -2942,6 +2942,9 @@
                 },
                 "modifiedAt": {
                   "type": "number"
+                },
+                "archived": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -2950,7 +2953,8 @@
                 "status",
                 "hasWorkSession",
                 "projectLabel",
-                "modifiedAt"
+                "modifiedAt",
+                "archived"
               ],
               "additionalProperties": false
             }

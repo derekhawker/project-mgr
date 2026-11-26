@@ -1,0 +1,24 @@
+.tag {
+  display: block;
+  max-width: calc(100% - var(--ui-space-32));
+  margin: 0 0 var(--ui-space-4) var(--ui-space-32);
+  padding: 0 var(--ui-space-6);
+  overflow: hidden;
+  border: 0;
+  border-radius: 2px;
+  color: #242423;
+  background: var(--ticket-label-color);
+  font-size: 0.68rem;
+  line-height: 1.5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tag:hover:not(:disabled) {
+  filter: brightness(0.94);
+}
+
+.tag:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 1px;
+}

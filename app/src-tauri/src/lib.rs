@@ -805,10 +805,24 @@ fn workspace_navigation_inner(app: &AppHandle) -> Result<WorkspaceNavigation, St
     let mut workspace_tickets = HashMap::new();
     for workspace in &workspaces {
         let directory = workspace_tickets::workspace_ticket_dir(&app_data, &workspace.slug)?;
-        workspace_tickets.insert(
-            workspace.id.clone(),
-            workspace_tickets::list_for_navigation_with_default_label(&directory, &workspace.name)?,
+        let mut tickets = workspace_tickets::list_all_for_navigation_with_default_label(
+            &directory,
+            &workspace.name,
+            false,
+        )?;
+        tickets.extend(
+            workspace_tickets::list_all_for_navigation_with_default_label(
+                &directory.join("archived"),
+                &workspace.name,
+                true,
+            )?,
         );
+        tickets.sort_by(|a, b| {
+            b.modified_at
+                .cmp(&a.modified_at)
+                .then_with(|| a.filename.cmp(&b.filename))
+        });
+        workspace_tickets.insert(workspace.id.clone(), tickets);
     }
     Ok(WorkspaceNavigation {
         workspaces,

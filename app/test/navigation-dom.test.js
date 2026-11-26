@@ -19,7 +19,8 @@ await writeFile(
   export { createComponent, createSignal } from ${JSON.stringify(resolve(root, "node_modules/solid-js/dist/solid.js"))};
   export { NewWorkMenu } from ${JSON.stringify(resolve(root, "src/features/new-work/NewWorkMenu.jsx"))};
   export { WorkspaceNavigation } from ${JSON.stringify(resolve(root, "src/views/workspace/navigation/WorkspaceNavigation.jsx"))};
-  export { WorkspaceTicketViewToggle } from ${JSON.stringify(resolve(root, "src/views/workspace/navigation/WorkspaceTicketViewToggle.jsx"))};
+  export { TicketSidebarTabs } from ${JSON.stringify(resolve(root, "src/views/workspace/navigation/TicketSidebarTabs.jsx"))};
+  export { groupTicketsByLabel, labelColorIndex, LABEL_COLOR_COUNT } from ${JSON.stringify(resolve(root, "src/views/workspace/navigation/ticketSidebarGroups.js"))};
   export { QuickRequestList } from ${JSON.stringify(resolve(root, "src/views/quick-requests/QuickRequestList.jsx"))};
   export { DirectoriesNavigationButton } from ${JSON.stringify(resolve(root, "src/views/directories/DirectoriesNavigationButton.jsx"))};
   export { QuickRequestHistoryButton } from ${JSON.stringify(resolve(root, "src/views/quick-requests/QuickRequestHistoryButton.jsx"))};
@@ -65,7 +66,10 @@ const {
   createSignal,
   NewWorkMenu,
   WorkspaceNavigation,
-  WorkspaceTicketViewToggle,
+  TicketSidebarTabs,
+  groupTicketsByLabel,
+  labelColorIndex,
+  LABEL_COLOR_COUNT,
   QuickRequestList,
   DirectoriesNavigationButton,
   QuickRequestHistoryButton,
@@ -148,334 +152,237 @@ test("Quick Requests uses a separate chevron button to open the full list", () =
   view.dispose();
 });
 
-test("workspace navigation filters and selects active regular workspaces", () => {
-  const active = { id: "a", name: "Active", kind: "regular", status: "active" };
-  const [selected, setSelected] = createSignal(null);
+test("workspace navigation filters out inactive Workspaces and exposes the current list busy state", () => {
+  const [selected] = createSignal(null);
   const view = mount(WorkspaceNavigation, {
     data: () => ({
       workspaces: [
-        active,
-        { id: "b", name: "Done", kind: "regular", status: "completed" },
-        { id: "c", name: "Quick Requests", kind: "quick_request", status: "active" },
-      ],
-      workspaceRepositories: [
-        { workspaceId: "a", verificationStatus: "verified" },
+        { id: "done", name: "Done", kind: "regular", status: "completed" },
+        {
+          id: "quick",
+          name: "Quick Requests",
+          kind: "quick_request",
+          status: "active",
+        },
       ],
     }),
-    busy: () => false,
+    busy: () => true,
     selected,
-    onSelect: setSelected,
-    viewMode: () => "grouped",
+    onSelect: () => {},
+    viewMode: () => "recent",
     onWork: () => {},
   });
-  const buttons = view.host.querySelectorAll("button");
-  assert.equal(buttons.length, 1);
-  assert.equal(buttons[0].textContent.trim(), "Active0");
-  assert.equal(buttons[0].lastElementChild.textContent, "0");
-  assert.equal(buttons[0].lastElementChild.getAttribute("aria-label"), "0 outstanding tickets");
-  assert.equal(buttons[0].getAttribute("aria-current"), null);
-  buttons[0].click();
-  assert.equal(selected(), active);
-  assert.equal(buttons[0].getAttribute("aria-current"), "page");
+  assert.equal(
+    view.host.querySelector('[role="tabpanel"]').getAttribute("aria-busy"),
+    "true",
+  );
+  assert.match(view.host.textContent, /No recent tickets/);
   view.dispose();
 });
 
-test("workspace refreshes update row data without replacing the hovered DOM node", () => {
-  const workspace = (name) => ({
+test("workspace ticket updates render in Recent without retaining old grouped/flat controls", () => {
+  const workspace = {
     id: "stable-id",
-    name,
+    name: "Alpha",
     kind: "regular",
     status: "active",
+  };
+  const [data, setData] = createSignal({
+    workspaces: [workspace],
+    workspaceTickets: { "stable-id": [] },
   });
-  const initialData = { workspaces: [workspace("Before refresh")] };
-  const [data, setData] = createSignal(initialData);
-  const [selected, setSelected] = createSignal(null);
   const view = mount(WorkspaceNavigation, {
     data,
     busy: () => false,
-    selected,
-    onSelect: setSelected,
-    viewMode: () => "grouped",
+    selected: () => null,
+    onSelect: () => {},
+    viewMode: () => "recent",
     onWork: () => {},
   });
-  const row = view.host.querySelector("button");
-
-  const refreshedWorkspace = workspace("After refresh");
   setData({
-    workspaces: [refreshedWorkspace],
+    workspaces: [workspace],
     workspaceTickets: {
       "stable-id": [
-        { filename: "draft.md", title: "Draft", status: "draft" },
+        {
+          filename: "draft.md",
+          title: "Draft with session",
+          status: "draft",
+          hasWorkSession: true,
+        },
+        {
+          filename: "draft-no-session.md",
+          title: "New draft",
+          status: "draft",
+          hasWorkSession: false,
+        },
       ],
     },
   });
-
-  assert.strictEqual(view.host.querySelector("button"), row);
-  assert.equal(row.textContent.trim(), "After refresh1");
-  row.click();
-  assert.equal(selected(), refreshedWorkspace);
+  assert.match(view.host.textContent, /Draft with session/);
+  assert.doesNotMatch(view.host.textContent, /New draft/);
+  assert.equal(view.host.querySelectorAll('[aria-label$="tickets"]').length, 0);
   view.dispose();
 });
 
-test("workspace tickets group, collapse, mark blocked, and flatten newest first", () => {
-  const first = { id: "a", name: "Alpha", kind: "regular", status: "active" };
-  const second = { id: "b", name: "Beta", kind: "regular", status: "active" };
-  const [selected, setSelected] = createSignal(null);
-  const [viewMode, setViewMode] = createSignal("grouped");
-  const [currentTicket, setCurrentTicket] = createSignal(null);
+test("Workspaces view groups visible tickets and Recent view sorts tickets newest first", () => {
+  const workspaces = [
+    { id: "a", name: "Alpha", kind: "regular", status: "active" },
+    { id: "b", name: "Beta", kind: "regular", status: "active" },
+  ];
+  const tickets = {
+    a: [
+      {
+        filename: "blocked.md",
+        title: "Blocked",
+        status: "blocked",
+        modifiedAt: 30,
+      },
+      {
+        filename: "old.md",
+        title: "Older",
+        status: "in_progress",
+        modifiedAt: 10,
+      },
+      {
+        filename: "cancelled.md",
+        title: "Cancelled",
+        status: "cancelled",
+        hasWorkSession: true,
+        modifiedAt: 50,
+      },
+    ],
+    b: [
+      {
+        filename: "new.md",
+        title: "Newest",
+        status: "in_progress",
+        modifiedAt: 40,
+      },
+    ],
+  };
+  const [viewMode, setViewMode] = createSignal("recent");
   const worked = [];
   const view = mount(WorkspaceNavigation, {
-    data: () => ({
-      workspaces: [first, second],
-      workspaceTickets: {
-        a: [
-          { filename: "blocked.md", title: "Blocked ticket", status: "blocked", opencodeStatus: "waiting_for_input", modifiedAt: 30 },
-          { filename: "active.md", title: "Active ticket", status: "in_progress", hasWorkSession: false, modifiedAt: 10 },
-          { filename: "draft-session.md", title: "Draft with session", status: "draft", hasWorkSession: true, opencodeStatus: "ready_for_review", modifiedAt: 20 },
-          { filename: "draft.md", title: "Draft ticket", status: "draft", hasWorkSession: false, modifiedAt: 15 },
-          { filename: "done.md", title: "Done ticket", status: "done", modifiedAt: 5 },
-          { filename: "cancelled.md", title: "Cancelled ticket", status: "cancelled", hasWorkSession: true, opencodeStatus: "busy", modifiedAt: 4 },
-        ],
-        b: [{ filename: "newest.md", title: "Newest ticket", status: "in_progress", hasWorkSession: true, opencodeStatus: "busy", modifiedAt: 40 }],
-      },
-    }),
+    data: () => ({ workspaces, workspaceTickets: tickets }),
     busy: () => false,
-    selected,
-    onSelect: setSelected,
+    selected: () => null,
+    onSelect: () => {},
     viewMode,
-    isTicketCurrent: (_workspace, ticket) => currentTicket() === ticket.filename,
-    onWork: (workspace, filename) => {
-      setSelected(workspace);
-      setCurrentTicket(filename);
-      worked.push([workspace.id, filename]);
-    },
+    onWork: (...args) => worked.push(args),
   });
-
-  const workspaceRows = [...view.host.querySelectorAll("button")].filter(
-    (button) => button.firstElementChild?.tagName === "SPAN" &&
-      (button.textContent.includes("Alpha") || button.textContent.includes("Beta")),
-  );
-  assert.equal(workspaceRows[0].lastElementChild.textContent, "4");
-  assert.equal(workspaceRows[1].lastElementChild.textContent, "1");
-  assert.equal(workspaceRows[0].lastElementChild.getAttribute("aria-label"), "4 outstanding tickets");
-
-  assert.equal(view.host.querySelectorAll('[aria-expanded="true"]').length, 2);
-  assert.equal(view.host.querySelectorAll('button[aria-label$="tickets"]').length, 2);
-  assert.match(
-    view.host.querySelector('button[aria-label="Collapse Alpha tickets"] svg').className,
-    /muted/,
-    "Workspace disclosure icon uses the shared muted icon style",
-  );
-  const idleIcon = view.host.querySelector('[aria-label="OpenCode session is paused"]');
-  const waitingIcon = view.host.querySelector('[aria-label="OpenCode is waiting for your input"]');
-  const cautionIcon = view.host.querySelector('[aria-label="Ticket has no work session"]');
-  const blockedRow = [...view.host.querySelectorAll("button")].find((button) => button.textContent.includes("Blocked ticket"));
-  const runningRow = [...view.host.querySelectorAll("button")].find((button) => button.textContent.includes("Newest ticket"));
-  assert.ok(
-    [...view.host.querySelectorAll("button")].some((button) => button.textContent.includes("Draft with session")),
-    "a draft with a saved work session appears in navigation",
-  );
-  assert.equal(
-    [...view.host.querySelectorAll("button")].some((button) => button.textContent.includes("Draft ticket")),
-    false,
-    "a new draft without a saved work session stays out of navigation",
-  );
-  assert.doesNotMatch(view.host.textContent, /Cancelled ticket/, "cancellation hides even a running session from grouped navigation");
-  assertDecorativeIcon(blockedRow);
-  assert.match(blockedRow.firstElementChild.querySelector("path").getAttribute("d"), /M8 1\.5.*l5 5/);
-  assert.ok(cautionIcon, "an in-progress ticket without a session keeps its caution icon");
-  assert.ok(idleIcon, "a completed session on a draft gets the pause icon");
-  assert.ok(waitingIcon, "waiting for input is shown independently of ticket workflow status");
-  assert.equal(waitingIcon.parentElement.firstElementChild, waitingIcon);
-  assert.ok(waitingIcon.querySelector("svg path").getAttribute("d"));
-  assert.equal(idleIcon.parentElement.firstElementChild, idleIcon);
-  assert.match(idleIcon.querySelector("svg path").getAttribute("d"), /a6\.5 6\.5.*v5m4-5v5$/);
-  assert.match(idleIcon.parentElement.textContent, /Draft with session/);
-  assert.equal(runningRow.querySelectorAll("svg").length, 0, "running sessions have no attention icon");
-  assert.equal(view.host.querySelectorAll("svg").length, 6);
-  view.host.querySelector('button[aria-label="Collapse Alpha tickets"]').click();
-  assert.doesNotMatch(view.host.textContent, /Blocked ticket|Active ticket|Draft with session|Draft ticket|Done ticket|Cancelled ticket/);
-  assert.match(view.host.textContent, /Beta1Newest ticket/);
-  assert.equal(selected(), null, "disclosure does not select a Workspace");
-  assert.deepEqual(worked, [], "disclosure does not activate a ticket");
-  [...view.host.querySelectorAll("button")].find((button) => button.textContent.includes("Alpha")).click();
-  assert.equal(selected(), first);
-  assert.equal(
-    view.host.querySelector('button[aria-current="page"]')?.textContent.trim(),
-    "Alpha4",
-  );
-
-  setViewMode("flat");
-  assert.doesNotMatch(view.host.textContent, /Cancelled ticket/, "cancellation also hides the ticket from flat navigation");
-  assert.equal(view.host.querySelectorAll('button[aria-label$="tickets"]').length, 0);
   assert.deepEqual(
-    [...view.host.querySelectorAll("li")].map((item) => item.textContent.trim()),
-    ["Alpha4", "Beta1", "Tickets", "Newest ticket", "Blocked ticket", "Draft with session", "Active ticket"],
+    [...view.host.querySelectorAll("li")].map((item) =>
+      item.textContent.trim(),
+    ),
+    ["NewestBeta", "BlockedAlpha", "OlderAlpha"],
   );
+  assert.doesNotMatch(view.host.textContent, /Cancelled/);
+  setViewMode("workspaces");
   assert.equal(
-    [...view.host.querySelectorAll("h3")].find((heading) => heading.textContent === "Tickets")?.textContent,
-    "Tickets",
+    view.host
+      .querySelector('[role="tabpanel"]')
+      .getAttribute("aria-labelledby"),
+    "ticket-sidebar-workspaces",
   );
-  assert.equal(view.host.textContent.includes("Alpha ·"), false);
-  assert.equal(view.host.querySelectorAll("svg").length, 4);
-  [...view.host.querySelectorAll("button")].find((button) => button.textContent.includes("Newest ticket")).click();
-  assert.deepEqual(worked, [["b", "newest.md"]]);
-  assert.equal(
-    view.host.querySelector('button[aria-current="page"]')?.textContent.trim(),
-    "Newest ticket",
+  assert.ok(
+    [...view.host.querySelectorAll("button")].some((button) =>
+      button.textContent.includes("Newest"),
+    ),
   );
-  assert.equal(
-    [...view.host.querySelectorAll("button[aria-current='page']")].some((button) => button.textContent.includes("Beta")),
-    false,
-    "the owning Workspace is not active while its ticket is active",
+  assert.ok(
+    view.host.querySelector('[aria-label="Alpha; open Alpha ticket browser"]'),
   );
+  [...view.host.querySelectorAll("button")]
+    .find((button) => button.textContent.includes("Newest"))
+    .click();
+  assert.deepEqual(worked, [[workspaces[1], "new.md"]]);
   view.dispose();
 });
 
-test("labels shared with archived or completed tickets retain shared grouping", async () => {
-  const workspace = { id: "active-owner", name: "Active Owner", kind: "regular", status: "active" };
+test("label display groups do not depend on archived-label discovery", () => {
+  const workspace = {
+    id: "active-owner",
+    name: "Active Owner",
+    kind: "regular",
+    status: "active",
+  };
   const view = mount(WorkspaceNavigation, {
     data: () => ({
       workspaces: [workspace],
       workspaceTickets: {
-        "active-owner": [{ filename: "active.md", title: "Visible ticket", status: "in_progress", projectLabel: "Rollout" }],
+        "active-owner": [
+          {
+            filename: "active.md",
+            title: "Visible ticket",
+            status: "in_progress",
+            projectLabel: "Rollout",
+          },
+        ],
       },
     }),
     busy: () => false,
     selected: () => null,
-    viewMode: () => "grouped",
+    viewMode: () => "workspaces",
     onSelect: () => {},
     onWork: () => {},
-    onLoadLabels: async () => [{ label: "Rollout", ticketCount: 2, workspaceCount: 2 }],
   });
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  assert.ok([...view.host.querySelectorAll("h3")].some((heading) => heading.textContent === "Rollout"));
-  assert.ok(view.host.querySelector('[title="Active Owner"]'));
-  assert.ok([...view.host.querySelectorAll("button")].some((button) => button.textContent.includes("Visible ticket")));
+  assert.ok(
+    [...view.host.querySelectorAll("button")].some((button) =>
+      button.textContent.includes("Visible ticket"),
+    ),
+  );
+  assert.ok(
+    [...view.host.querySelectorAll("button")].some((button) =>
+      button.textContent.includes("Rollout"),
+    ),
+  );
   view.dispose();
 });
 
-test("a label matching a Workspace name uses that Workspace as the group", () => {
-  const source = { id: "source", name: "Source", kind: "regular", status: "active" };
-  const target = { id: "target", name: "Target", kind: "regular", status: "active" };
+test("ticket context menu is limited to ticket rows and invokes label editing", async () => {
+  const workspace = {
+    id: "a",
+    name: "Alpha Repo",
+    kind: "regular",
+    status: "active",
+  };
+  const ticket = {
+    filename: "one.md",
+    title: "First",
+    status: "in_progress",
+    projectLabel: "Launch",
+  };
+  let edited;
   const view = mount(WorkspaceNavigation, {
     data: () => ({
-      workspaces: [source, target],
-      workspaceTickets: {
-        source: [{ filename: "shared.md", title: "Shared ticket", status: "in_progress", projectLabel: " target " }],
-        target: [{ filename: "native.md", title: "Target ticket", status: "blocked", projectLabel: "Target" }],
-      },
+      workspaces: [workspace],
+      workspaceTickets: { a: [ticket] },
     }),
     busy: () => false,
     selected: () => null,
-    viewMode: () => "grouped",
+    viewMode: () => "workspaces",
     onSelect: () => {},
     onWork: () => {},
+    onChangeLabel: (...args) => {
+      edited = args;
+    },
   });
-
-  const targetRow = [...view.host.querySelectorAll("button")].find((button) =>
-    button.textContent.trim().startsWith("Target"),
+  const row = [...view.host.querySelectorAll("button")].find((button) =>
+    button.textContent.includes("First"),
   );
-  const targetGroup = targetRow?.closest("li");
-  assert.ok(targetGroup);
-  assert.match(targetGroup.textContent, /Shared ticket/);
-  assert.match(targetGroup.textContent, /Target ticket/);
-  assert.equal(
-    [...view.host.querySelectorAll("h3")].some((heading) => heading.textContent.trim() === "Target"),
-    false,
-    "a Workspace-matching label does not create a duplicate label heading",
-  );
-  assert.equal(
-    targetGroup.querySelector('[title="Source"]')?.textContent,
-    "Source",
-    "tickets retain a badge for their owning Workspace when grouped elsewhere",
-  );
-  view.dispose();
-});
-
-test("ticket context menu permits outside right-clicks and opens the app-level label editor", async () => {
-  const workspaces = [
-    { id: "a", name: "Alpha Repo", kind: "regular", status: "active" },
-    { id: "b", name: "Beta Repo", kind: "regular", status: "active" },
-  ];
-  let applied;
-  const workspaceNavigation = {
-    data: () => ({ workspaces, workspaceTickets: {
-      a: [{ filename: "one.md", title: "First", status: "in_progress", projectLabel: "Launch" }],
-      b: [{ filename: "two.md", title: "Second", status: "blocked", projectLabel: "launch" }],
-    } }),
-    busy: () => false,
-    selected: () => null,
-    viewMode: () => "grouped",
-    onSelect: () => {},
-    onWork: () => {},
-    onLoadLabels: async () => [{ label: "Launch", ticketCount: 2, workspaceCount: 2 }],
-    onSetTicketLabel: async (...args) => { applied = args; },
-  };
-  const view = mount(ApplicationRoot, {
-    quickRequestHistoryButton: () => null,
-    quickRequestList: () => null,
-    workspaceNavigation,
-    workspaceViewToggle: () => null,
-    directoriesNavigationButton: () => null,
-    portsNavigationButton: () => null,
-    newWorkMenu: () => null,
-    workspaceShell: () => null,
-    rightContent: () => null,
-    applicationStatus: () => null,
-    appNotice: () => null,
-    newWorkModal: () => null,
+  const contextMenu = new Event("contextmenu", {
+    bubbles: true,
+    cancelable: true,
   });
-  assert.ok([...view.host.querySelectorAll("h3")].some((heading) => heading.textContent === "Launch"));
-  assert.equal(view.host.querySelectorAll('[title="Alpha Repo"], [title="Beta Repo"]').length, 2);
-  const row = [...view.host.querySelectorAll("button")].find((button) => button.textContent.includes("First"));
-  const ticketWorkspaceBadge = row.querySelector('[title="Alpha Repo"]');
-  const ticketStatusIcon = row.querySelector('[role="img"]');
-  assert.ok(ticketStatusIcon.compareDocumentPosition(ticketWorkspaceBadge) & Node.DOCUMENT_POSITION_FOLLOWING);
+  row.dispatchEvent(contextMenu);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(contextMenu.defaultPrevented, true);
   assert.equal(
-    ticketWorkspaceBadge.parentElement.textContent
-      .slice(ticketWorkspaceBadge.textContent.length)
-      .trim(),
-    "·First",
-    "the Workspace name is plain inline text before the ticket title",
+    view.host.querySelector('[role="menu"] [role="menuitem"]').textContent,
+    "Change label…",
   );
-  row.dispatchEvent(new Event("contextmenu", { bubbles: true, cancelable: true }));
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  assert.equal(view.host.querySelector('[role="menu"] [role="menuitem"]').textContent, "Change label…");
-  const outsideContextMenu = new Event("contextmenu", { bubbles: true, cancelable: true });
-  view.host.querySelector(".quick-view").dispatchEvent(outsideContextMenu);
-  assert.equal(outsideContextMenu.defaultPrevented, false);
-  assert.equal(view.host.querySelector('[role="menu"]'), null);
-  row.dispatchEvent(new Event("contextmenu", { bubbles: true, cancelable: true }));
-  const secondRow = [...view.host.querySelectorAll("button")].find((button) => button.textContent.includes("Second"));
-  const secondContextMenu = new Event("contextmenu", { bubbles: true, cancelable: true });
-  secondRow.dispatchEvent(secondContextMenu);
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  assert.equal(secondContextMenu.defaultPrevented, true);
-  assert.equal(view.host.querySelectorAll('[role="menu"]').length, 1);
   view.host.querySelector('[role="menuitem"]').click();
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  const dialog = view.host.querySelector("dialog");
-  assert.ok(dialog?.open);
-  assert.equal(dialog.closest(".navigation"), null);
-  const currentLabel = dialog.querySelector('input[aria-label="Current label"]');
-  assert.equal(currentLabel.readOnly, true);
-  assert.equal(currentLabel.value, "launch");
-  assert.equal([...dialog.querySelectorAll("button")].some((button) => button.textContent.trim() === "No label"), false);
-  assert.equal(dialog.querySelector("[role='listbox']"), null);
-  const input = dialog.querySelector('input[aria-label="Search labels"]');
-  input.value = "Launch";
-  input.dispatchEvent(new Event("input", { bubbles: true }));
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  assert.ok(dialog.querySelector('[role="listbox"]'));
-  [...dialog.querySelectorAll('[role="option"]')].find((option) => option.textContent.includes("Launch")).click();
-  assert.equal(dialog.querySelector('[role="listbox"]'), null);
-  assert.equal(input.value, "Launch");
-  [...dialog.querySelectorAll("button")].find((button) => button.textContent.trim() === "Apply label").click();
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  assert.equal(applied[0].id, "b");
-  assert.equal(applied[1], "two.md");
-  assert.equal(applied[2], "Launch");
+  assert.deepEqual(edited, [workspace, ticket]);
   view.dispose();
 });
 
@@ -525,19 +432,232 @@ test("Quick Request refreshes preserve the positional row and update click data"
   view.dispose();
 });
 
-test("Workspace view toggle is icon-only and names the available mode", () => {
-  const [viewMode, setViewMode] = createSignal("grouped");
-  const view = mount(WorkspaceTicketViewToggle, {
+test("label colors use a stable 20-color palette and normalize case and whitespace", () => {
+  assert.equal(LABEL_COLOR_COUNT, 20);
+  assert.ok(Number.isInteger(labelColorIndex("Launch")));
+  assert.ok(labelColorIndex("Launch") >= 0 && labelColorIndex("Launch") < 20);
+  assert.equal(labelColorIndex("  Launch  "), labelColorIndex("launch"));
+  assert.equal(
+    labelColorIndex("Multiple   Words"),
+    labelColorIndex(" multiple\nwords "),
+  );
+  assert.equal(labelColorIndex(null), labelColorIndex(""));
+  assert.equal(labelColorIndex("Release"), labelColorIndex("release"));
+});
+
+test("label groups merge normalized labels and keep deterministic group and ticket ordering", () => {
+  const workspaces = [
+    { id: "b", name: "Beta" },
+    { id: "a", name: "Alpha" },
+  ];
+  const tickets = {
+    b: [
+      { title: "Later", projectLabel: " launch   plan ", modifiedAt: 3 },
+      { title: "Shared", projectLabel: "RELEASE", modifiedAt: 2 },
+    ],
+    a: [
+      { title: "Earlier", projectLabel: "Launch Plan", modifiedAt: 1 },
+      { title: "Shared", projectLabel: "release", modifiedAt: 2 },
+      { title: "Fallback", modifiedAt: 4 },
+    ],
+  };
+  const groups = groupTicketsByLabel(workspaces, (id) => tickets[id]);
+  assert.deepEqual(
+    groups.map(({ label }) => label),
+    ["Alpha", "launch plan", "RELEASE"],
+  );
+  assert.deepEqual(
+    groups
+      .find(({ key }) => key === "launch plan")
+      .tickets.map(({ ticket }) => ticket.title),
+    ["Later", "Earlier"],
+  );
+  assert.deepEqual(
+    groups
+      .find(({ key }) => key === "release")
+      .tickets.map(({ ticket }) => ticket.title),
+    ["Shared", "Shared"],
+  );
+  assert.deepEqual(
+    groups
+      .find(({ key }) => key === "release")
+      .tickets.map(({ workspace }) => workspace.id),
+    ["a", "b"],
+  );
+});
+
+test("Ticket Sidebar tabs render accessible selection and report selected view", () => {
+  const [value, setValue] = createSignal("recent");
+  const view = mount(TicketSidebarTabs, { value, onChange: setValue });
+  const tablist = view.host.querySelector('[role="tablist"]');
+  const tabs = [...view.host.querySelectorAll('[role="tab"]')];
+  assert.equal(tablist.getAttribute("aria-label"), "Ticket Sidebar views");
+  assert.deepEqual(
+    tabs.map((tab) => tab.textContent.trim()),
+    ["Recent", "Workspaces"],
+  );
+  assert.equal(tabs[0].getAttribute("aria-selected"), "true");
+  assert.equal(tabs[1].getAttribute("aria-selected"), "false");
+  assert.equal(tabs[1].getAttribute("aria-controls"), "ticket-sidebar-list");
+  tabs[1].click();
+  assert.equal(value(), "workspaces");
+  assert.equal(tabs[1].getAttribute("aria-selected"), "true");
+  view.dispose();
+});
+
+test("Recent and Workspaces render their respective lists; workspace tags select without starting Work", () => {
+  const workspace = {
+    id: "one",
+    name: "Alpha",
+    kind: "regular",
+    status: "active",
+  };
+  const ticket = {
+    filename: "ticket.md",
+    title: "Ship feature",
+    status: "in_progress",
+    projectLabel: "Launch",
+  };
+  const [viewMode, setViewMode] = createSignal("recent");
+  const selected = [];
+  const worked = [];
+  const view = mount(WorkspaceNavigation, {
+    data: () => ({
+      workspaces: [workspace],
+      workspaceTickets: { one: [ticket] },
+    }),
+    busy: () => false,
+    selected: () => null,
+    onSelect: (value) => selected.push(value),
     viewMode,
-    onToggle: () => setViewMode(viewMode() === "grouped" ? "flat" : "grouped"),
+    onWork: (...args) => worked.push(args),
   });
-  const button = view.host.querySelector("button");
-  assert.equal(button.textContent.trim(), "");
-  assert.equal(button.getAttribute("aria-label"), "Show flat ticket list");
-  assert.equal(button.getAttribute("aria-pressed"), "false");
-  assertDecorativeIcon(button);
-  button.click();
-  assert.equal(button.getAttribute("aria-label"), "Group tickets by Workspace");
-  assert.equal(button.getAttribute("aria-pressed"), "true");
+  assert.equal(
+    view.host
+      .querySelector('[role="tabpanel"]')
+      .getAttribute("aria-labelledby"),
+    "ticket-sidebar-recent",
+  );
+  assert.match(view.host.textContent, /Ship feature/);
+  assert.doesNotMatch(view.host.textContent, /Alpha/);
+  setViewMode("workspaces");
+  assert.equal(
+    view.host
+      .querySelector('[role="tabpanel"]')
+      .getAttribute("aria-labelledby"),
+    "ticket-sidebar-workspaces",
+  );
+  assert.equal(view.host.querySelectorAll("h3").length, 0);
+  assert.match(view.host.textContent, /Launch/);
+  const ticketRow = [...view.host.querySelectorAll("button")].find((button) =>
+    button.textContent.includes("Ship feature"),
+  );
+  ticketRow.click();
+  assert.deepEqual(worked, [[workspace, "ticket.md"]]);
+  const tag = view.host.querySelector(
+    '[aria-label="Alpha; open Alpha ticket browser"]',
+  );
+  tag.click();
+  assert.deepEqual(selected, [workspace]);
+  assert.equal(
+    worked.length,
+    1,
+    "clicking the Workspace tag does not activate its ticket",
+  );
+  view.dispose();
+});
+
+test("Workspaces includes done and archived tickets and routes them to the matching browser list", () => {
+  const workspace = {
+    id: "one",
+    name: "Alpha",
+    kind: "regular",
+    status: "active",
+  };
+  const tickets = [
+    {
+      filename: "done.md",
+      title: "Done ticket",
+      status: "done",
+      archived: false,
+      projectLabel: "Launch",
+    },
+    {
+      filename: "cancelled.md",
+      title: "Cancelled ticket",
+      status: "cancelled",
+      archived: true,
+      projectLabel: "Launch",
+    },
+    {
+      filename: "active.md",
+      title: "Active ticket",
+      status: "in_progress",
+      archived: false,
+      projectLabel: "Launch",
+    },
+  ];
+  const opened = [];
+  const [viewMode] = createSignal("workspaces");
+  const view = mount(WorkspaceNavigation, {
+    data: () => ({
+      workspaces: [workspace],
+      workspaceTickets: { one: tickets },
+    }),
+    busy: () => false,
+    selected: () => null,
+    viewMode,
+    onSelect: () => {},
+    onSelectTicket: (...args) => opened.push(args),
+    onWork: () =>
+      assert.fail("Workspaces historical tickets must open the browser"),
+  });
+  const ticketButton = (title) =>
+    [...view.host.querySelectorAll("button")].find((button) =>
+      button.textContent.includes(title),
+    );
+  assert.match(view.host.textContent, /Done ticket/);
+  assert.match(view.host.textContent, /Cancelled ticket/);
+  ticketButton("Done ticket").click();
+  ticketButton("Cancelled ticket").click();
+  assert.deepEqual(opened, [
+    [workspace, tickets[0]],
+    [workspace, tickets[1]],
+  ]);
+  view.dispose();
+});
+
+test("Workspaces includes tickets owned by completed regular Workspaces", () => {
+  const workspace = {
+    id: "completed-owner",
+    name: "Completed owner",
+    kind: "regular",
+    status: "completed",
+  };
+  const [viewMode] = createSignal("workspaces");
+  const view = mount(WorkspaceNavigation, {
+    data: () => ({
+      workspaces: [workspace],
+      workspaceTickets: {
+        "completed-owner": [
+          {
+            filename: "old.md",
+            title: "Retained historical ticket",
+            status: "done",
+            modifiedAt: 1,
+            archived: false,
+          },
+        ],
+      },
+    }),
+    busy: () => false,
+    selected: () => null,
+    viewMode,
+    onSelect: () => {},
+    onSelectTicket: () => {},
+    onWork: () => {},
+  });
+
+  assert.match(view.host.textContent, /Retained historical ticket/);
   view.dispose();
 });

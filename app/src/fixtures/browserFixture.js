@@ -251,6 +251,7 @@ export async function invokeBrowserFixture(name, payload = {}) {
                 ticketLabelOverrides.get(`${example.id}:example-active.md`) ??
                 example.name,
               modifiedAt: timestamp,
+              archived: false,
             },
             {
               filename: "example-blocked.md",
@@ -261,6 +262,7 @@ export async function invokeBrowserFixture(name, payload = {}) {
                 ticketLabelOverrides.get(`${example.id}:example-blocked.md`) ??
                 example.name,
               modifiedAt: timestamp - 1,
+              archived: false,
             },
             {
               filename: "example-draft-session.md",
@@ -272,6 +274,7 @@ export async function invokeBrowserFixture(name, payload = {}) {
                   `${example.id}:example-draft-session.md`,
                 ) ?? example.name,
               modifiedAt: timestamp - 2,
+              archived: false,
             },
             {
               filename: "example-new-draft.md",
@@ -283,6 +286,7 @@ export async function invokeBrowserFixture(name, payload = {}) {
                   `${example.id}:example-new-draft.md`,
                 ) ?? example.name,
               modifiedAt: timestamp - 3,
+              archived: false,
             },
           ],
         },

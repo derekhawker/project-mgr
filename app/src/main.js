@@ -63,7 +63,6 @@ import { attachReplacementBeforeClosingPrevious } from "./views/workspace/sessio
 import { createApplicationLifetime } from "./application/applicationLifetime.js";
 import { createWorkspaceTicketCache } from "./views/workspace/tickets/workspaceTicketCache.js";
 import { recordUiDiagnostic } from "./lib/uiDiagnostics.js";
-import { WorkspaceTicketViewToggle } from "./views/workspace/navigation/WorkspaceTicketViewToggle.jsx";
 import { ChangeReviewPanel } from "./views/workspace/change-review/ChangeReviewPanel.jsx";
 import { DocsPane } from "./views/workspace/docs/DocsPane.jsx";
 import { RepositoryToolsMenu } from "./views/workspace/repository-tools/RepositoryToolsMenu.jsx";
@@ -277,7 +276,7 @@ const [selectedTicketFilename, setSelectedTicketFilename] = createSignal(null);
 const [ticketSessionScope, setTicketSessionScope] = createSignal(null);
 const [ticketArchived, setTicketArchived] = createSignal(false);
 const [ticketWorkbenchActive, setTicketWorkbenchActive] = createSignal(false);
-const [workspaceTicketView, setWorkspaceTicketView] = createSignal("grouped");
+const [workspaceTicketView, setWorkspaceTicketView] = createSignal("recent");
 const workspaceTicketCache = createWorkspaceTicketCache(
   async (workspaceId, archived) => {
     recordUiDiagnostic("WorkspaceTicketList", "load-start");
@@ -638,21 +637,16 @@ const [workspaceNavigation, setWorkspaceNavigation] = createSignal({
   data: navigationData,
   selected: null,
 });
-const workspaceViewToggle = () =>
-  WorkspaceTicketViewToggle({
-    viewMode: workspaceTicketView,
-    onToggle: () =>
-      setWorkspaceTicketView(
-        workspaceTicketView() === "grouped" ? "flat" : "grouped",
-      ),
-  });
 const [navigationBusy, setNavigationBusy] = createSignal(true);
 const workspaceNavigationProps = {
   data: () => workspaceNavigation().data,
   selected: () => workspaceNavigation().selected,
   busy: navigationBusy,
   viewMode: workspaceTicketView,
+  onViewChange: setWorkspaceTicketView,
   onSelect: (workspace) => selectWorkspace(workspace, navigationData),
+  onSelectTicket: (workspace, ticket) =>
+    selectWorkspaceTicket(workspace, ticket),
   onWork: (workspace, filename) => workWorkspaceTicket(workspace.id, filename),
   isTicketCurrent: (workspace, ticket) =>
     selectedWorkspace?.id === workspace.id &&
@@ -1162,6 +1156,23 @@ function selectWorkspace(workspace, data = navigationData) {
   }, 0);
 }
 
+function selectWorkspaceTicket(workspace, ticket) {
+  selectWorkspace(workspace, navigationData);
+  const archived = Boolean(ticket.archived);
+  setTicketArchived(archived);
+  setSelectedTicketFilename(ticket.filename);
+  showCachedTicketList(archived);
+  void workspaceTicketCache.load(workspace.id, archived).catch((error) => {
+    if (
+      selectedWorkspace?.id === workspace.id &&
+      ticketArchived() === archived
+    ) {
+      setTicketError(formatWorkspaceError("Load Workspace tickets", error));
+      setTicketLoading(false);
+    }
+  });
+}
+
 function selectQuickRequest(
   task,
   workspace,
@@ -1399,7 +1410,6 @@ appLifetime.mount(
       quickRequestHistoryButton: quickRequests.historyButton,
       quickRequestList: quickRequests.recentList,
       workspaceNavigation: workspaceNavigationProps,
-      workspaceViewToggle,
       directoriesNavigationButton: directories.navigationButton,
       portsNavigationButton: () =>
         PortsNavigationButton({ onOpen: () => void ports.open() }),
