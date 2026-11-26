@@ -137,6 +137,7 @@ export function WorkspaceNavigation(props) {
       .flatMap((workspace) =>
         workspaceTickets(workspace.id)
           .filter((ticket) => ticket.hasWorkSession)
+          .filter((ticket)=> ticket.status !== "done" && ticket.status !== "cancelled")
           .map((ticket) => ({ ...ticket, workspace })),
       )
       .sort(
