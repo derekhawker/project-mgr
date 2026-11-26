@@ -12,6 +12,22 @@ import { presentationAliases } from "../vite.config.js";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const temp = await mkdtemp(join(tmpdir(), "work-area-test-"));
 const entry = join(temp, "entry.js");
+const diffViewerStub = join(temp, "pierre-diffs-stub.js");
+await writeFile(
+  diffViewerStub,
+  `
+  export class CodeView {
+    setup(root) { this.root = root; }
+    setItems(items) { this.items = items; }
+    setOptions(options) { this.options = options; }
+    scrollTo() {}
+    cleanUp() { this.root = undefined; }
+  }
+  export function parsePatchFiles() {
+    return [{ files: [{ name: "test.txt", cacheKey: "test-diff" }] }];
+  }
+`,
+);
 await writeFile(
   entry,
   `
@@ -28,7 +44,12 @@ await writeFile(
 try {
   await build({
     configFile: false,
-    resolve: { alias: presentationAliases },
+    resolve: {
+      alias: {
+        ...presentationAliases,
+        "@pierre/diffs": diffViewerStub,
+      },
+    },
     root,
     plugins: [solid()],
     build: {
@@ -530,7 +551,7 @@ test("Docs puts the special ticket first with its icon and omits the repository 
   );
   assert.equal(rows[0].closest("ul").nextElementSibling, divider);
   assert.ok(divider.nextElementSibling.contains(rows[1]));
-  assert.equal(view.host.querySelector(".docs-content h2"), null);
+  assert.equal(view.host.querySelector(".docs-content > h2"), null);
   const ticketContent = view.host.querySelector(
     '[aria-label="Selected ticket: Sample ticket"]',
   );
@@ -549,10 +570,11 @@ test("Docs puts the special ticket first with its icon and omits the repository 
     "Sample ticket",
   );
   assert.match(ticketHeading.textContent, /Initiative\s*-\s*Sample ticket/);
-  assert.equal(
-    ticketContent.querySelector(".markdown h1")?.textContent,
-    "Ticket body",
-    "the body does not repeat its title heading",
+  const markdown = ticketContent.querySelector(":scope > div");
+  assert.doesNotMatch(
+    markdown.textContent,
+    /Sample ticket/,
+    "the Markdown body does not repeat its title",
   );
   const workspaceView = mount(WorkspaceTicketContent, {
     content: () =>
@@ -568,11 +590,10 @@ test("Docs puts the special ticket first with its icon and omits the repository 
     ticketHeading.className,
     workspaceTicketContent.querySelector(":scope > header > h2").className,
   );
-  const markdown = ticketContent.querySelector(":scope > .markdown");
   assert.equal(ticketContent.className, workspaceTicketContent.className);
   assert.equal(
     markdown.className,
-    workspaceTicketContent.querySelector(":scope > .markdown").className,
+    workspaceTicketContent.querySelector(":scope > div").className,
   );
   assert.match(markdown.textContent, /Ticket body/);
   assert.ok(
@@ -592,7 +613,7 @@ test("Docs puts the special ticket first with its icon and omits the repository 
     [
       ...ticketContent.querySelectorAll('[aria-label="Ticket metadata"] dt'),
     ].map((field) => field.textContent),
-    ["title", "status", "owner"],
+    ["title", "status", "project_label", "owner"],
   );
   workspaceView.dispose();
   view.dispose();

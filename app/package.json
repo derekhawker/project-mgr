@@ -10,6 +10,7 @@
     "dev": "vite --host 127.0.0.1 --port 1420 --strictPort",
     "build": "vite build",
     "test": "node scripts/test-safe.js default",
+    "test:memory": "node scripts/test-memory.js default",
     "test:browser": "node scripts/test-safe.js browser",
     "tauri:dev": "npm run dev",
     "tauri:build": "tauri build",

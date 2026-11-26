@@ -23,6 +23,12 @@ a fixed timestamp and treats its requests as recent for the lifetime of the page
 OpenCode test. It still runs Node, Vite and Rust test harness processes and uses
 isolated temporary files. `npm run test:all --prefix app` also runs the
 installed-OpenCode model-loader integration and starts a real OpenCode server.
+`npm run test:memory --prefix app` runs the default test files one at a time and
+reports sampled process-tree peak RSS per file. On Linux with `systemd-run`, each
+file gets a 1 GiB hard memory limit with swap disabled; change it with
+`npm run test:memory --prefix app -- --limit-mb=768`. RSS is approximate and can
+overcount shared memory, so use the results to compare tests rather than as exact
+cgroup measurements.
 
 `npm run test:browser --prefix app` uses isolated agent-browser sessions and
 temporary Vite mock servers to check icons, control typography, and New Work
