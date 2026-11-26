@@ -2,15 +2,14 @@
   display: inline-block;
   max-width: 45%;
   margin: 0 var(--ui-space-4) 0 0;
-  padding: 0 var(--ui-space-6);
+  padding: 1px var(--ui-space-6);
   overflow: hidden;
-  border: 0;
+  border: 1px solid var(--ticket-label-color);
   border-radius: 2px;
-  color: #242423;
-  background: var(--ticket-label-color);
-  font-size: 0.68rem;
-  line-height: 1.5;
+  color: var(--ui-text);
+  background: transparent;
+  line-height: 1;
   text-overflow: ellipsis;
   white-space: nowrap;
-  vertical-align: baseline;
+  vertical-align: middle;
 }
