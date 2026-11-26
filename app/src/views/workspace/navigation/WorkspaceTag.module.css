@@ -1,7 +1,7 @@
 .tag {
-  display: table;
-  max-width: 100%;
-  margin: 0 0 var(--ui-space-2) var(--ui-space-12);
+  display: inline-block;
+  max-width: 45%;
+  margin: 0 var(--ui-space-4) 0 0;
   padding: 0 var(--ui-space-6);
   overflow: hidden;
   border: 0;
@@ -12,4 +12,5 @@
   line-height: 1.5;
   text-overflow: ellipsis;
   white-space: nowrap;
+  vertical-align: baseline;
 }

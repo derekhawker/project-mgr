@@ -354,11 +354,11 @@ the **Ticket Sidebar** has **Recent** and **Workspaces** tabs; Recent is the
 default and is session-local. Recent is an uncapped flat list ordered by ticket
 file modification time, newest first. It retains current eligibility rules:
 `in_progress`, `blocked`, and `draft` tickets with a `work_session_id`. The title
-row starts Work; a separate, noninteractive tag shows `project_label` or, when
-absent, the owning Workspace name. Neither tag nor Workspace context navigates.
-Tags use a deterministic 20-color palette keyed by normalized label; long tags
-truncate with a full tooltip. Keep Recent rows compact and without added left
-indentation.
+row starts Work; a noninteractive tag shows `project_label` or, when absent, the
+owning Workspace name, inline before the title. Neither tag nor Workspace context
+navigates. Tags use a deterministic 20-color palette keyed by normalized label;
+long tags truncate with a full tooltip. Keep Recent rows compact and without
+added left indentation.
 
 Workspaces preserves the existing main-branch grouped layout: shared
 project-label groups appear first as plain headings with ticket rows beneath and

@@ -188,6 +188,14 @@ export function WorkspaceNavigation(props) {
             opencodeStatus={ticket().opencodeStatus}
           />
           <span class={styles.ticketTitle}>
+            <Show when={mode === "flat"}>
+              <WorkspaceTag
+                label={ticket().projectLabel || workspace().name}
+                colorIndex={labelColorIndex(
+                  ticket().projectLabel || workspace().name,
+                )}
+              />
+            </Show>
             <Show when={showWorkspace}>
               <span class={styles.workspaceBadge} title={workspace().name}>
                 {workspace().name}
@@ -200,14 +208,6 @@ export function WorkspaceNavigation(props) {
           </span>
         </span>
       </NavigationItem>
-      <Show when={mode === "flat"}>
-        <WorkspaceTag
-          label={ticket().projectLabel || workspace().name}
-          colorIndex={labelColorIndex(
-            ticket().projectLabel || workspace().name,
-          )}
-        />
-      </Show>
     </li>
   );
 

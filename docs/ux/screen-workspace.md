@@ -71,11 +71,11 @@ the Ticket Sidebar below Quick Requests.
 
 The **Recent** tab is selected by default and shows a flat, uncapped list of
 eligible tickets across active Workspaces, newest modification first. Status does
-not affect position. Each row shows the title and a separate-line, noninteractive
-tag using the ticket's `project_label`, falling back to the owning Workspace
-name. The title row starts Work; neither the tag nor Workspace context is a
-navigation control. Long tags truncate visually and retain their full text as the
-tooltip. Tag colors use a fixed palette of 20 app colors; a deterministic
+not affect position. Each row shows the noninteractive tag first, inline before
+the title. It uses the ticket's `project_label`, falling back to the owning
+Workspace name. The title row starts Work; neither the tag nor Workspace context
+is a navigation control. Long tags truncate visually and retain their full text
+as the tooltip. Tag colors use a fixed palette of 20 app colors; a deterministic
 normalized-label hash chooses a palette slot, so equal labels share a color and
 collisions are allowed. Keep row padding compact and avoid adding left indentation
 to the Recent list.

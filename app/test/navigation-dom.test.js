@@ -505,7 +505,7 @@ test("Ticket Sidebar tabs render accessible selection and report selected view",
   view.dispose();
 });
 
-test("Recent context is static; Workspaces keeps shared-label headings and Workspace rows", () => {
+test("Recent shows a static label before the title; Workspaces keeps existing groups", () => {
   const workspaces = [
     { id: "one", name: "Alpha", kind: "regular", status: "active" },
     { id: "two", name: "Beta", kind: "regular", status: "active" },
@@ -562,11 +562,16 @@ test("Recent context is static; Workspaces keeps shared-label headings and Works
   );
   assert.match(view.host.textContent, /Ship feature/);
   assert.match(view.host.textContent, /Launch/);
-  const recentTag = [...view.host.querySelectorAll("span")].find(
-    (element) => element.textContent.trim() === "Launch",
+  const recentRow = [...view.host.querySelectorAll("button")].find((button) =>
+    button.textContent.includes("Ship feature"),
   );
+  const recentTag = recentRow.querySelector('[title="Launch"]');
   assert.ok(recentTag);
-  assert.equal(recentTag.closest("button"), null);
+  assert.ok(
+    recentTag.parentElement.textContent.indexOf("Launch") <
+      recentTag.parentElement.textContent.indexOf("Ship feature"),
+    "the static label appears before the ticket title",
+  );
   const recentWorkspaceContext = [...view.host.querySelectorAll("span")].find(
     (element) =>
       element.textContent.trim() === "Alpha" && element.hasAttribute("title"),
