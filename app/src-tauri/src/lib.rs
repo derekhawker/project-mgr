@@ -2218,6 +2218,38 @@ fn ticket_has_session(ticket_root: &std::path::Path, session_id: &str) -> bool {
 }
 
 const TICKET_STATUS_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(30);
+const TICKET_STATUS_RECONNECT_INITIAL_DELAY: std::time::Duration =
+    std::time::Duration::from_secs(1);
+const TICKET_STATUS_RECONNECT_MAX_DELAY: std::time::Duration = std::time::Duration::from_secs(30);
+const TICKET_STATUS_RECONNECT_STABLE_CONNECTION: std::time::Duration =
+    std::time::Duration::from_secs(30);
+
+#[derive(Debug)]
+struct TicketStatusReconnectBackoff {
+    next_delay: std::time::Duration,
+}
+
+impl TicketStatusReconnectBackoff {
+    fn new() -> Self {
+        Self {
+            next_delay: TICKET_STATUS_RECONNECT_INITIAL_DELAY,
+        }
+    }
+
+    fn after_attempt(&mut self, connection_was_stable: bool) -> std::time::Duration {
+        if connection_was_stable {
+            self.next_delay = TICKET_STATUS_RECONNECT_INITIAL_DELAY;
+        }
+        let delay = self.next_delay;
+        if !connection_was_stable {
+            self.next_delay = self
+                .next_delay
+                .saturating_mul(2)
+                .min(TICKET_STATUS_RECONNECT_MAX_DELAY);
+        }
+        delay
+    }
+}
 
 fn reconcile_ticket_status_snapshot(
     ticket_root: &std::path::Path,
@@ -2373,6 +2405,7 @@ fn start_ticket_status_worker(app: AppHandle, app_data: PathBuf) {
         .name("ticket-opencode-status".into())
         .spawn(move || {
             let ticket_root = app_data.join("workspace-tickets");
+            let mut reconnect_backoff = TicketStatusReconnectBackoff::new();
             loop {
                 let Some(runtime) = app.try_state::<opencode::Runtime>() else {
                     break;
@@ -2382,6 +2415,7 @@ fn start_ticket_status_worker(app: AppHandle, app_data: PathBuf) {
                 }
                 let diagnostic_session_id = diagnostic_ticket_session_id(&ticket_root);
                 let stream = runtime.connect_event_stream();
+                let mut connected_at = None;
                 log_ticket_status_diagnostic(
                     log_directory.as_deref(),
                     "stream_connect",
@@ -2403,6 +2437,7 @@ fn start_ticket_status_worker(app: AppHandle, app_data: PathBuf) {
                         &runtime,
                         log_directory.as_deref(),
                     );
+                    connected_at = Some(std::time::Instant::now());
                     let mut reader = BufReader::new(response);
                     let mut line = String::new();
                     let mut data = String::new();
@@ -2458,8 +2493,12 @@ fn start_ticket_status_worker(app: AppHandle, app_data: PathBuf) {
                         "skipped_stream_connect_failed",
                     );
                 }
+                let connection_was_stable = connected_at.is_some_and(|connected_at| {
+                    connected_at.elapsed() >= TICKET_STATUS_RECONNECT_STABLE_CONNECTION
+                });
+                let reconnect_delay = reconnect_backoff.after_attempt(connection_was_stable);
                 drop(runtime);
-                thread::sleep(std::time::Duration::from_secs(1));
+                thread::sleep(reconnect_delay);
             }
         })
         .ok();
@@ -4792,6 +4831,21 @@ async fn opencode_pending_inputs_all(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ticket_status_reconnect_backoff_grows_caps_and_resets_after_stable_connection() {
+        use std::time::Duration;
+
+        let mut backoff = TicketStatusReconnectBackoff::new();
+        let failed_attempt_delays = [1, 2, 4, 8, 16, 30, 30];
+        for seconds in failed_attempt_delays {
+            assert_eq!(backoff.after_attempt(false), Duration::from_secs(seconds));
+        }
+
+        assert_eq!(backoff.after_attempt(true), Duration::from_secs(1));
+        assert_eq!(backoff.after_attempt(false), Duration::from_secs(1));
+        assert_eq!(backoff.after_attempt(false), Duration::from_secs(2));
+    }
 
     #[test]
     fn failed_session_is_settled_only_without_active_or_pending_work() {
