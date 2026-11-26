@@ -271,6 +271,7 @@ const [ticketItems, setTicketItems] = createSignal([]);
 const [ticketLoading, setTicketLoading] = createSignal(false);
 const [ticketRefreshing, setTicketRefreshing] = createSignal(false);
 const [ticketWorking, setTicketWorking] = createSignal(false);
+const [ticketWorkWarning, setTicketWorkWarning] = createSignal(null);
 const [ticketError, setTicketError] = createSignal("");
 const [selectedTicketFilename, setSelectedTicketFilename] = createSignal(null);
 const [ticketSessionScope, setTicketSessionScope] = createSignal(null);
@@ -354,7 +355,11 @@ async function refreshTicketList(archived = ticketArchived()) {
       setTicketRefreshing(false);
   }
 }
-async function workWorkspaceTicket(workspaceId, filename) {
+async function workWorkspaceTicket(
+  workspaceId,
+  filename,
+  acknowledgeUnavailableWorktree = false,
+) {
   if (ticketWorking() || !workspaceId) return;
   const workspace = navigationData.workspaces.find(
     (item) =>
@@ -384,9 +389,26 @@ async function workWorkspaceTicket(workspaceId, filename) {
   setTicketError("");
   try {
     recordUiDiagnostic("WorkspaceTicketWork", "command-start");
-    const result = await workOnWorkspaceTicket(invoke, workspaceId, filename);
+    const result = await workOnWorkspaceTicket(
+      invoke,
+      workspaceId,
+      filename,
+      acknowledgeUnavailableWorktree,
+    );
     recordUiDiagnostic("WorkspaceTicketWork", "command-success");
     if (!isCurrent()) return;
+    if (result.warning) {
+      setTicketWorkbenchActive(false);
+      setTicketViewerVisible(true);
+      setWorkspaceShellVisible(false);
+      setTicketWorkWarning({
+        workspaceId,
+        filename,
+        message: result.warning.message,
+      });
+      return;
+    }
+    setTicketWorkWarning(null);
     rememberWorkspaceSession(result.session);
     setTicketSessionScope(filename);
     setTicketWorkbenchActive(true);
@@ -1387,6 +1409,15 @@ appLifetime.mount(
       applicationStatus,
       appNotice,
       newWorkModal: newWork.modal,
+      ticketWorkWarning: () => ticketWorkWarning()?.message,
+      ticketWorkBusy: ticketWorking,
+      onTicketWorkWarningCancel: () => setTicketWorkWarning(null),
+      onTicketWorkWarningContinue: () => {
+        const warning = ticketWorkWarning();
+        if (!warning) return;
+        setTicketWorkWarning(null);
+        void workWorkspaceTicket(warning.workspaceId, warning.filename, true);
+      },
     }),
   document.getElementById("app-root"),
 );

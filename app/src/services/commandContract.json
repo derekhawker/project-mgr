@@ -5604,82 +5604,77 @@
         },
         "filename": {
           "type": "string"
+        },
+        "acknowledgeUnavailableWorktree": {
+          "type": "boolean"
         }
       },
-      "required": ["workspaceId", "filename"],
+      "required": ["workspaceId", "filename", "acknowledgeUnavailableWorktree"],
       "additionalProperties": false
     },
     "result": {
-      "type": "object",
-      "properties": {
-        "session": {
+      "oneOf": [
+        {
           "type": "object",
           "properties": {
-            "openCodeSessionId": {
-              "type": "string"
-            },
-            "owner": {
+            "session": {
               "type": "object",
               "properties": {
-                "owner_type": {
-                  "type": "string"
+                "openCodeSessionId": { "type": "string" },
+                "owner": {
+                  "type": "object",
+                  "properties": {
+                    "owner_type": { "type": "string" },
+                    "owner_id": { "type": "string" }
+                  },
+                  "required": ["owner_type", "owner_id"],
+                  "additionalProperties": false
                 },
-                "owner_id": {
-                  "type": "string"
-                }
+                "directory": { "type": "string" },
+                "lastKnownStatus": { "type": "string" },
+                "createdAt": { "type": "number" },
+                "updatedAt": { "type": "number" },
+                "eventCursor": { "type": "string", "nullable": true },
+                "reconciliationStatus": { "type": "string" },
+                "reconciliationUncertain": { "type": "boolean" },
+                "pendingInputJson": { "type": "string", "nullable": true },
+                "selectedModel": { "type": "string", "nullable": true }
               },
-              "required": ["owner_type", "owner_id"],
+              "required": [
+                "openCodeSessionId",
+                "owner",
+                "directory",
+                "lastKnownStatus",
+                "createdAt",
+                "updatedAt",
+                "eventCursor",
+                "reconciliationStatus",
+                "reconciliationUncertain",
+                "pendingInputJson",
+                "selectedModel"
+              ],
               "additionalProperties": false
-            },
-            "directory": {
-              "type": "string"
-            },
-            "lastKnownStatus": {
-              "type": "string"
-            },
-            "createdAt": {
-              "type": "number"
-            },
-            "updatedAt": {
-              "type": "number"
-            },
-            "eventCursor": {
-              "type": "string",
-              "nullable": true
-            },
-            "reconciliationStatus": {
-              "type": "string"
-            },
-            "reconciliationUncertain": {
-              "type": "boolean"
-            },
-            "pendingInputJson": {
-              "type": "string",
-              "nullable": true
-            },
-            "selectedModel": {
-              "type": "string",
-              "nullable": true
             }
           },
-          "required": [
-            "openCodeSessionId",
-            "owner",
-            "directory",
-            "lastKnownStatus",
-            "createdAt",
-            "updatedAt",
-            "eventCursor",
-            "reconciliationStatus",
-            "reconciliationUncertain",
-            "pendingInputJson",
-            "selectedModel"
-          ],
+          "required": ["session"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "warning": {
+              "type": "object",
+              "properties": {
+                "message": { "type": "string" }
+              },
+              "required": ["message"],
+              "additionalProperties": false
+            }
+          },
+          "required": ["warning"],
           "additionalProperties": false
         }
-      },
-      "required": ["session"],
-      "additionalProperties": false
+      ]
     }
   },
   "workspace_tickets_list": {

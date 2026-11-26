@@ -799,10 +799,16 @@ export function setWorkspaceTicketLabel(invoke, workspaceId, filename, label) {
   });
 }
 
-export function workOnWorkspaceTicket(invoke, workspaceId, filename) {
+export function workOnWorkspaceTicket(
+  invoke,
+  workspaceId,
+  filename,
+  acknowledgeUnavailableWorktree = false,
+) {
   return invokeCommand(invoke, "workspace_ticket_work", {
     workspaceId,
     filename,
+    acknowledgeUnavailableWorktree,
   });
 }
 

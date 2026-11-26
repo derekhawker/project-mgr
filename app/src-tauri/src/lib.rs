@@ -359,7 +359,8 @@ async fn workspace_ticket_work(
     app: AppHandle,
     workspace_id: String,
     filename: String,
-) -> Result<workspace_tickets::TicketWorkResult<management::SessionRecord>, String> {
+    acknowledge_unavailable_worktree: bool,
+) -> Result<workspace_tickets::TicketWorkOutcome<management::SessionRecord>, String> {
     run_ports_work(move || {
         let store = app.state::<ManagementStore>();
         let runtime = app.state::<opencode::Runtime>();
@@ -384,11 +385,12 @@ async fn workspace_ticket_work(
             workspace_id: &workspace.id,
             investigation_model: None,
         };
-        workspace_tickets::work(
+        workspace_tickets::work_with_acknowledgement(
             &directory,
             std::path::Path::new(&bindings[0].checkout_path),
             &workspace.name,
             &filename,
+            acknowledge_unavailable_worktree,
             &mut adapter,
         )
     })

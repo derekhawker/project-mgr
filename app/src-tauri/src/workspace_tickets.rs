@@ -211,6 +211,25 @@ pub struct TicketWorkResult<S> {
     pub session: S,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TicketWorkWarning {
+    pub warning: TicketWorkWarningMessage,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TicketWorkWarningMessage {
+    pub message: String,
+}
+
+#[derive(Serialize)]
+#[serde(untagged)]
+pub enum TicketWorkOutcome<S> {
+    Opened(TicketWorkResult<S>),
+    Warning(TicketWorkWarning),
+}
+
 fn ticket_work_lock() -> Result<std::sync::MutexGuard<'static, ()>, String> {
     static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
     LOCK.get_or_init(|| std::sync::Mutex::new(()))
@@ -288,6 +307,27 @@ pub fn work<R: TicketWorkRuntime>(
     filename: &str,
     runtime: &mut R,
 ) -> Result<TicketWorkResult<R::Session>, String> {
+    match work_with_acknowledgement(
+        directory,
+        repository,
+        workspace_name,
+        filename,
+        false,
+        runtime,
+    )? {
+        TicketWorkOutcome::Opened(result) => Ok(result),
+        TicketWorkOutcome::Warning(warning) => Err(warning.warning.message),
+    }
+}
+
+pub fn work_with_acknowledgement<R: TicketWorkRuntime>(
+    directory: &Path,
+    repository: &Path,
+    workspace_name: &str,
+    filename: &str,
+    acknowledge_unavailable_worktree: bool,
+    runtime: &mut R,
+) -> Result<TicketWorkOutcome<R::Session>, String> {
     let coordination = ticket_coordination(directory, filename)?;
     let _ticket_guard = try_ticket_guard(&coordination)?;
     let _guard = ticket_work_lock()?;
@@ -312,13 +352,48 @@ pub fn work<R: TicketWorkRuntime>(
         Some(id) if runtime.exists(&id)? => Some(id),
         _ => None,
     };
+    let mut retained_session_directory = None;
+    let mut skip_session_worktree_record = false;
+    if let Some(active_id) = active.as_deref() {
+        match runtime.session_directory(active_id) {
+            Ok(session_directory) => {
+                if let Some(candidate) =
+                    session_worktree_to_record(&repository, session_directory.as_deref())
+                {
+                    match candidate {
+                        Ok(()) => retained_session_directory = Some(session_directory),
+                        Err(message) if !acknowledge_unavailable_worktree => {
+                            return Ok(TicketWorkOutcome::Warning(TicketWorkWarning {
+                                warning: TicketWorkWarningMessage { message },
+                            }));
+                        }
+                        Err(_) => {
+                            retained_session_directory = Some(session_directory);
+                            skip_session_worktree_record = true;
+                        }
+                    }
+                } else {
+                    retained_session_directory = Some(session_directory);
+                }
+            }
+            Err(error) if !acknowledge_unavailable_worktree => {
+                return Ok(TicketWorkOutcome::Warning(TicketWorkWarning {
+                    warning: TicketWorkWarningMessage { message: error },
+                }));
+            }
+            Err(_) => {
+                retained_session_directory = Some(None);
+                skip_session_worktree_record = true;
+            }
+        }
+    }
     let recorded_worktree = ticket_worktree(&markdown)?;
     let removed_worktree = active.is_some()
         && recorded_worktree.as_ref().is_some_and(|worktree| {
             fs::symlink_metadata(&worktree.path)
                 .is_err_and(|error| error.kind() == std::io::ErrorKind::NotFound)
         });
-    let target = if removed_worktree {
+    let target = if removed_worktree || skip_session_worktree_record {
         None
     } else {
         Some(resolve_ticket_directory(
@@ -349,7 +424,11 @@ pub fn work<R: TicketWorkRuntime>(
         &active_id,
         target.as_deref().unwrap_or(repository.as_path()),
     )?;
-    let session_directory = match runtime.session_directory(&active_id) {
+    let session_directory = match retained_session_directory {
+        Some(directory) => Ok(directory),
+        None => runtime.session_directory(&active_id),
+    };
+    let session_directory = match session_directory {
         Ok(directory) => directory,
         Err(error) if created => {
             let cleanup = runtime.cleanup_failed_attach(&active_id);
@@ -377,8 +456,9 @@ pub fn work<R: TicketWorkRuntime>(
                 &current,
                 &updated,
                 session_directory.as_deref(),
+                !skip_session_worktree_record,
             )?;
-        } else {
+        } else if !skip_session_worktree_record {
             record_session_worktree(
                 directory,
                 &repository,
@@ -402,7 +482,7 @@ pub fn work<R: TicketWorkRuntime>(
         }
         return Err(error);
     }
-    Ok(TicketWorkResult { session })
+    Ok(TicketWorkOutcome::Opened(TicketWorkResult { session }))
 }
 
 pub fn new_session<R: TicketWorkRuntime>(
@@ -468,6 +548,7 @@ pub fn new_session<R: TicketWorkRuntime>(
             &current,
             &updated,
             session_directory.as_deref(),
+            true,
         )
     })();
     if let Err(error) = result {
@@ -525,6 +606,21 @@ fn record_session_worktree(
     Ok(())
 }
 
+fn session_worktree_to_record(
+    repository: &Path,
+    session_directory: Option<&Path>,
+) -> Option<Result<(), String>> {
+    let session_directory = session_directory?;
+    let repository = match repository.canonicalize() {
+        Ok(repository) => repository,
+        Err(error) => return Some(Err(format!("Workspace repository unavailable: {error}"))),
+    };
+    if session_directory.canonicalize().ok().as_deref() == Some(repository.as_path()) {
+        return None;
+    }
+    Some(validate_observed_worktree(&repository, session_directory).map(|_| ()))
+}
+
 fn record_attached_session(
     ticket: &Path,
     directory: &Path,
@@ -534,8 +630,12 @@ fn record_attached_session(
     original: &str,
     updated: &str,
     session_directory: Option<&Path>,
+    record_worktree: bool,
 ) -> Result<(), String> {
     write_ticket_markdown_safely(ticket, original, updated)?;
+    if !record_worktree {
+        return Ok(());
+    }
     if let Err(error) = record_session_worktree(
         directory,
         repository,
@@ -1074,30 +1174,45 @@ fn record_observed_worktree_locked(
     if ticket_session_id(&original)?.as_deref() != Some(session_id) {
         return Err("OpenCode session is not associated with this ticket".into());
     }
-    let path = candidate_path
-        .canonicalize()
-        .map_err(|error| format!("Observed worktree is unavailable: {error}"))?;
-    if !same_git_repository(&repository, &path)? {
-        return Err("Observed worktree belongs to a different Git repository".into());
-    }
-    let root = git_text(&path, ["rev-parse", "--show-toplevel"])?;
-    if PathBuf::from(root)
-        .canonicalize()
-        .map_err(|error| error.to_string())?
-        != path
-    {
-        return Err("Observed worktree path is not its Git worktree root".into());
-    }
-    let branch = git_text(&path, ["branch", "--show-current"])?;
-    let worktree = TicketWorktree {
-        path: path.to_string_lossy().into_owned(),
-        branch: (!branch.is_empty()).then_some(branch),
-    };
+    let worktree = validate_observed_worktree(&repository, candidate_path)?;
     let updated = record_ticket_worktree(&original, Some(&worktree))?;
     if updated != original {
         write_ticket_markdown_safely(&ticket, &original, &updated)?;
     }
     Ok(worktree)
+}
+
+fn validate_observed_worktree(
+    repository: &Path,
+    candidate_path: &Path,
+) -> Result<TicketWorktree, String> {
+    let validation = (|| {
+        let path = candidate_path
+            .canonicalize()
+            .map_err(|error| error.to_string())?;
+        if !same_git_repository(repository, &path)? {
+            return Err("belongs to a different Git repository".to_owned());
+        }
+        let root = git_text(&path, ["rev-parse", "--show-toplevel"])?;
+        if PathBuf::from(root)
+            .canonicalize()
+            .map_err(|error| error.to_string())?
+            != path
+        {
+            return Err("is not its Git worktree root".to_owned());
+        }
+        let branch = git_text(&path, ["branch", "--show-current"])?;
+        Ok(TicketWorktree {
+            path: path.to_string_lossy().into_owned(),
+            branch: (!branch.is_empty()).then_some(branch),
+        })
+    })();
+    validation.map_err(|error| {
+        format!(
+            "Could not verify observed worktree {}: {error}",
+            candidate_path.display()
+        )
+    })
 }
 
 /// Resolve a binding from the durable ticket Markdown and SQLite session owner.
@@ -3100,6 +3215,108 @@ mod tests {
             runtime.attached,
             [("ses_existing".into(), repository.canonicalize().unwrap())]
         );
+    }
+
+    #[test]
+    fn unavailable_session_worktree_warns_before_side_effects_then_acknowledgement_opens_normally()
+    {
+        let root = tempfile::tempdir().unwrap();
+        let tickets = root.path().join("tickets");
+        let repository = root.path().join("repository");
+        fs::create_dir(&tickets).unwrap();
+        fs::create_dir(&repository).unwrap();
+        let git = |directory: &Path, args: &[&str]| {
+            let output = std::process::Command::new("git")
+                .args(args)
+                .current_dir(directory)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "git {args:?} failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        };
+        git(&repository, &["init", "-b", "main"]);
+        git(&repository, &["config", "user.name", "Test User"]);
+        git(
+            &repository,
+            &["config", "user.email", "test@example.invalid"],
+        );
+        fs::write(repository.join("tracked.txt"), "test\n").unwrap();
+        git(&repository, &["add", "."]);
+        git(&repository, &["commit", "-m", "initial"]);
+        let ticket_worktree = root.path().join("ticket-worktree");
+        git(
+            &repository,
+            &[
+                "worktree",
+                "add",
+                "-b",
+                "ticket/session-context",
+                ticket_worktree.to_str().unwrap(),
+                "HEAD",
+            ],
+        );
+        let ticket = tickets.join("stale-session-worktree.md");
+        let original = format!(
+            "---\ntitle: Stale session worktree\nstatus: blocked\nwork_session_id: ses_existing\nworktree_path: {}\nworktree_branch: ticket/session-context\n---\nBody\n",
+            yaml_string(&ticket_worktree.to_string_lossy())
+        );
+        fs::write(&ticket, &original).unwrap();
+        let missing_worktree = root.path().join("removed-worktree");
+        let mut runtime = FakeRuntime {
+            session_directory: Some(missing_worktree.clone()),
+            ..FakeRuntime::default()
+        };
+        runtime.known_sessions.insert("ses_existing".into());
+
+        let warning = work_with_acknowledgement(
+            &tickets,
+            &repository,
+            "Workspace",
+            "stale-session-worktree.md",
+            false,
+            &mut runtime,
+        )
+        .unwrap();
+
+        match warning {
+            TicketWorkOutcome::Warning(warning) => {
+                assert!(warning
+                    .warning
+                    .message
+                    .contains(&missing_worktree.display().to_string()));
+            }
+            TicketWorkOutcome::Opened(_) => panic!("expected unavailable-worktree warning"),
+        }
+        assert!(runtime.prepared.is_empty());
+        assert!(runtime.attached.is_empty());
+        assert_eq!(runtime.creates, 0);
+        assert_eq!(fs::read_to_string(&ticket).unwrap(), original);
+
+        let opened = work_with_acknowledgement(
+            &tickets,
+            &repository,
+            "Workspace",
+            "stale-session-worktree.md",
+            true,
+            &mut runtime,
+        )
+        .unwrap();
+
+        match opened {
+            TicketWorkOutcome::Opened(result) => assert_eq!(result.session, "ses_existing"),
+            TicketWorkOutcome::Warning(_) => panic!("acknowledged work should open"),
+        }
+        assert_eq!(runtime.creates, 0);
+        assert_eq!(runtime.prepared.len(), 1);
+        assert_eq!(
+            runtime.attached,
+            [("ses_existing".into(), repository.canonicalize().unwrap())],
+            "Continue opens at the Workspace checkout, not the ticket worktree"
+        );
+        assert_eq!(fs::read_to_string(&ticket).unwrap(), original);
     }
 
     #[test]

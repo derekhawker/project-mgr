@@ -34,6 +34,8 @@ test("application composes, saves new ticket labels through the Rust boundary, a
     "__deferWorkspaceTicketWork",
     "__resolveWorkspaceTicketWork",
     "__workspaceTicketWorkSettled",
+    "__ticketWorkWarningCalls",
+    "__ticketWorkWarningEnabled",
     "__ticketLabelSetCalls",
     "__workspaceCreateCalls",
   ];
@@ -80,6 +82,13 @@ test("application composes, saves new ticket labels through the Rust boundary, a
         }
         if (name === "workspace_ticket_label_set") {
           globalThis.__ticketLabelSetCalls.push(structuredClone(payload));
+        }
+        if (name === "workspace_ticket_work" && globalThis.__ticketWorkWarningEnabled) {
+          globalThis.__ticketWorkWarningCalls.push(structuredClone(payload));
+          if (!payload.acknowledgeUnavailableWorktree) {
+            return { warning: { message: "The ticket worktree is unavailable. Continue anyway?" } };
+          }
+          return invoke(name, payload);
         }
         if (name === "workspace_ticket_work" && globalThis.__deferWorkspaceTicketWork) {
           return new Promise((resolve, reject) => {
@@ -183,6 +192,8 @@ test("application composes, saves new ticket labels through the Rust boundary, a
     globalThis.__quickRequestCreatePrompts = [];
     globalThis.__deferWorkspaceTicketWork = false;
     globalThis.__workspaceTicketWorkSettled = false;
+    globalThis.__ticketWorkWarningCalls = [];
+    globalThis.__ticketWorkWarningEnabled = true;
     globalThis.__ticketLabelSetCalls = [];
     globalThis.__workspaceCreateCalls = [];
 
@@ -299,6 +310,57 @@ test("application composes, saves new ticket labels through the Rust boundary, a
     await waitFor(activeTicket);
     assert.equal(window.document.getElementById(ticketTerminalId), null);
     activeTicket().click();
+    const workWarningMessage =
+      "The ticket worktree is unavailable. Continue anyway?";
+    await waitFor(() =>
+      window.document.querySelector('dialog[open] [role="alert"]'),
+    );
+    assert.equal(
+      $('dialog[open] [role="alert"]').textContent,
+      workWarningMessage,
+    );
+    assert.equal(globalThis.__ticketWorkWarningCalls.length, 1);
+    [...$("dialog[open]").querySelectorAll("button")]
+      .find((button) => button.textContent.trim() === "Cancel")
+      .click();
+    await waitFor(() => !window.document.querySelector("dialog[open]"));
+    assert.equal(
+      globalThis.__ticketWorkWarningCalls.length,
+      1,
+      "Cancel does not retry Work",
+    );
+    assert.equal(window.document.getElementById(ticketTerminalId), null);
+
+    activeTicket().click();
+    await waitFor(() =>
+      window.document.querySelector('dialog[open] [role="alert"]'),
+    );
+    assert.equal(
+      $('dialog[open] [role="alert"]').textContent,
+      workWarningMessage,
+    );
+    [...$("dialog[open]").querySelectorAll("button")]
+      .find((button) => button.textContent.trim() === "Continue")
+      .click();
+    await waitFor(() => window.document.getElementById(ticketTerminalId));
+    assert.deepEqual(globalThis.__ticketWorkWarningCalls, [
+      {
+        workspaceId: "fixture-workspace",
+        filename: "example-active.md",
+        acknowledgeUnavailableWorktree: false,
+      },
+      {
+        workspaceId: "fixture-workspace",
+        filename: "example-active.md",
+        acknowledgeUnavailableWorktree: false,
+      },
+      {
+        workspaceId: "fixture-workspace",
+        filename: "example-active.md",
+        acknowledgeUnavailableWorktree: true,
+      },
+    ]);
+    globalThis.__ticketWorkWarningEnabled = false;
     await waitFor(() => window.document.getElementById(ticketTerminalId));
     const host = $("#terminal-views");
     const workspaceTerminal = window.document.getElementById(ticketTerminalId);

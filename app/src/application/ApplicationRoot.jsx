@@ -3,6 +3,7 @@ import styles from "./navigation.module.css";
 import { WorkspaceNavigation } from "../views/workspace/navigation/WorkspaceNavigation.jsx";
 import { RightContentShell } from "./RightContentShell.jsx";
 import { TicketLabelEditor } from "../components/TicketLabelEditor.jsx";
+import { TicketWorkWarningModal } from "../components/TicketWorkWarningModal.jsx";
 
 export function ApplicationRoot(props) {
   const [ticketLabelSelection, setTicketLabelSelection] = createSignal(null);
@@ -64,6 +65,12 @@ export function ApplicationRoot(props) {
             label,
           )
         }
+      />
+      <TicketWorkWarningModal
+        warning={props.ticketWorkWarning}
+        busy={props.ticketWorkBusy}
+        onCancel={props.onTicketWorkWarningCancel}
+        onContinue={props.onTicketWorkWarningContinue}
       />
     </>
   );
