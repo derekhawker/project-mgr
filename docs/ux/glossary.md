@@ -55,9 +55,9 @@ discussions. For workflow behavior beyond the UX vocabulary, see
 ## Screens and controls
 
 - **Ticket Sidebar:** The persistent left-hand navigation for tickets. Its
-  **Recent** tab is a flat activity-sorted list; **Workspaces** groups tickets
-  by their single `project_label` value, falling back to the owning Workspace
-  name. This is distinct from the Workspace screen and its full ticket browser.
+  **Recent** tab is a flat activity-sorted list; **Workspaces** preserves the
+  existing Workspace-group layout, including its shared-label headings. This is
+  distinct from the Workspace screen and its full ticket browser.
 - **New Work menu:** The dropdown at the bottom of the left navigation that
   offers Workspace and Quick Request. Selecting either opens the New Work modal.
 - **New Work modal:** The dialog over the current destination used to capture

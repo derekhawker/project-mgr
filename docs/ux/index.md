@@ -16,7 +16,7 @@ Application shell (fixed to the window)
 │   ├── Quick Requests (top section)
 │   │   ├── Quick Requests heading and chevron button open the full list
 │   │   └── Recent Quick Requests (created in the last 24 hours)
-│   ├── Ticket Sidebar (Recent or label-grouped Workspaces)
+│   ├── Ticket Sidebar (Recent or existing Workspace groups)
 │   ├── Ports (immediately above Repositories)
 │   ├── Repositories
 │   └── New work (Workspace or Quick Request; primary action pinned to bottom)

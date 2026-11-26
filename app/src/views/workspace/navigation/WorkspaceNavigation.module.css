@@ -1,59 +1,48 @@
-.ticketCount {
-  flex: 0 0 auto;
-  margin-inline-start: auto;
-  padding: var(--ui-space-2) var(--ui-space-6);
-  border-radius: 3px;
-  color: var(--ui-text);
-  background: color-mix(
-    in srgb,
-    var(--ticket-label-color) 72%,
-    var(--ui-surface)
-  );
-  font-size: 0.75rem;
-  line-height: 1.2;
-  font-variant-numeric: tabular-nums;
-}
-
-.labelGroup {
-  list-style: none;
-}
-
-.labelGroupRow {
-  position: relative;
-  min-width: 0;
-}
-
-:global(.navigation li) .labelGroupButton {
-  margin-top: var(--ui-space-4);
-  padding-inline-end: var(--ui-space-32);
-  color: var(--ui-text);
-  font-weight: 600;
-  box-shadow: inset 3px 0 var(--ticket-label-color);
-}
-
-.labelText {
+.workspaceName {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.labelDisclosure {
-  position: absolute;
-  z-index: 1;
-  top: 50%;
-  right: var(--ui-space-2);
-  transform: translateY(-50%);
+.ticketCount {
+  flex: 0 0 auto;
+  margin-inline-start: auto;
+  padding: var(--ui-space-2) var(--ui-space-6);
+  border: 0;
+  border-radius: 3px;
+  color: var(--ui-blue-deep);
+  background: color-mix(in srgb, var(--ui-lavender) 22%, var(--ui-surface));
+  font-size: 0.75rem;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
 }
 
-.labelDisclosure[aria-expanded="true"] :global(svg) {
-  transform: rotate(90deg);
+.workspaceGroup {
+  list-style: none;
+}
+
+.workspaceRow {
+  position: relative;
+  min-width: 0;
+}
+
+:global(.navigation li) .workspaceButton {
+  padding-inline-end: var(--ui-space-32);
 }
 
 .ticketChildren {
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+.workspaceDisclosure {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  right: var(--ui-space-2);
+  transform: translateY(-50%);
 }
 
 :global(.navigation li) .groupedTicketButton,
@@ -63,12 +52,25 @@
 }
 
 :global(.navigation li) .groupedTicketButton {
+  position: relative;
   padding-inline-start: var(--ui-space-32);
 }
 
 :global(.navigation li) .flatTicketButton {
-  padding-inline-start: var(--ui-space-24);
+  padding-inline-start: var(--ui-space-8);
   border-radius: 0;
+}
+
+:global(.navigation li) .groupedTicketButton::before {
+  position: absolute;
+  top: 50%;
+  left: var(--ui-space-12);
+  color: var(--ui-muted);
+  content: "›";
+  font-size: 1.1rem;
+  line-height: 1;
+  transform: translateY(-55%);
+  pointer-events: none;
 }
 
 .ticketTitle {
@@ -88,6 +90,32 @@
   gap: var(--ui-space-4);
   flex: 1 1 auto;
   min-width: 0;
+}
+
+.workspaceBadge {
+  padding-inline: 0.35em;
+  border-radius: 2px;
+  color: var(--ui-blue-deep);
+  background: color-mix(in srgb, var(--ui-lavender) 16%, var(--ui-surface));
+  font-weight: 500;
+}
+
+.workspaceBadgeSeparator {
+  margin-inline: 0.3em;
+  color: var(--ui-muted);
+}
+
+.ticketHeading {
+  margin: var(--ui-space-8) 0 var(--ui-space-4);
+  padding-inline: var(--ui-space-8);
+  list-style: none;
+}
+
+.ticketHeading h3 {
+  margin: 0;
+  color: var(--ui-text);
+  font-size: 1rem;
+  font-weight: 600;
 }
 
 .ticketContextMenu {

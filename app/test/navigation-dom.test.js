@@ -20,7 +20,7 @@ await writeFile(
   export { NewWorkMenu } from ${JSON.stringify(resolve(root, "src/features/new-work/NewWorkMenu.jsx"))};
   export { WorkspaceNavigation } from ${JSON.stringify(resolve(root, "src/views/workspace/navigation/WorkspaceNavigation.jsx"))};
   export { TicketSidebarTabs } from ${JSON.stringify(resolve(root, "src/views/workspace/navigation/TicketSidebarTabs.jsx"))};
-  export { groupTicketsByLabel, labelColorIndex, LABEL_COLOR_COUNT } from ${JSON.stringify(resolve(root, "src/views/workspace/navigation/ticketSidebarGroups.js"))};
+  export { labelColorIndex, LABEL_COLOR_COUNT } from ${JSON.stringify(resolve(root, "src/views/workspace/navigation/ticketLabelColors.js"))};
   export { QuickRequestList } from ${JSON.stringify(resolve(root, "src/views/quick-requests/QuickRequestList.jsx"))};
   export { DirectoriesNavigationButton } from ${JSON.stringify(resolve(root, "src/views/directories/DirectoriesNavigationButton.jsx"))};
   export { QuickRequestHistoryButton } from ${JSON.stringify(resolve(root, "src/views/quick-requests/QuickRequestHistoryButton.jsx"))};
@@ -67,7 +67,6 @@ const {
   NewWorkMenu,
   WorkspaceNavigation,
   TicketSidebarTabs,
-  groupTicketsByLabel,
   labelColorIndex,
   LABEL_COLOR_COUNT,
   QuickRequestList,
@@ -289,9 +288,6 @@ test("Workspaces view groups visible tickets and Recent view sorts tickets newes
       button.textContent.includes("Newest"),
     ),
   );
-  assert.ok(
-    view.host.querySelector('[aria-label="Alpha; open Alpha ticket browser"]'),
-  );
   [...view.host.querySelectorAll("button")]
     .find((button) => button.textContent.includes("Newest"))
     .click();
@@ -299,7 +295,7 @@ test("Workspaces view groups visible tickets and Recent view sorts tickets newes
   view.dispose();
 });
 
-test("label display groups do not depend on archived-label discovery", () => {
+test("Workspaces retains the existing owner groups for singly used labels", () => {
   const workspace = {
     id: "active-owner",
     name: "Active Owner",
@@ -333,8 +329,53 @@ test("label display groups do not depend on archived-label discovery", () => {
   );
   assert.ok(
     [...view.host.querySelectorAll("button")].some((button) =>
-      button.textContent.includes("Rollout"),
+      button.textContent.includes("Active Owner"),
     ),
+  );
+  view.dispose();
+});
+
+test("Workspaces renders shared labels as headings above owner-identifying rows", () => {
+  const workspaces = [
+    { id: "a", name: "Alpha", kind: "regular", status: "active" },
+    { id: "b", name: "Beta", kind: "regular", status: "active" },
+  ];
+  const view = mount(WorkspaceNavigation, {
+    data: () => ({
+      workspaces,
+      workspaceTickets: {
+        a: [
+          {
+            filename: "a.md",
+            title: "Alpha ticket",
+            status: "in_progress",
+            projectLabel: "Shared label",
+          },
+        ],
+        b: [
+          {
+            filename: "b.md",
+            title: "Beta ticket",
+            status: "blocked",
+            projectLabel: "Shared label",
+          },
+        ],
+      },
+    }),
+    busy: () => false,
+    selected: () => null,
+    viewMode: () => "workspaces",
+    onSelect: () => {},
+    onWork: () => {},
+  });
+
+  assert.equal(view.host.querySelector("h3")?.textContent, "Shared label");
+  assert.match(view.host.textContent, /Alpha.*Alpha ticket/);
+  assert.match(view.host.textContent, /Beta.*Beta ticket/);
+  assert.equal(
+    view.host.querySelector("h3").closest("button"),
+    null,
+    "shared label heading is presentation, not a navigation control",
   );
   view.dispose();
 });
@@ -445,47 +486,6 @@ test("label colors use a stable 20-color palette and normalize case and whitespa
   assert.equal(labelColorIndex("Release"), labelColorIndex("release"));
 });
 
-test("label groups merge normalized labels and keep deterministic group and ticket ordering", () => {
-  const workspaces = [
-    { id: "b", name: "Beta" },
-    { id: "a", name: "Alpha" },
-  ];
-  const tickets = {
-    b: [
-      { title: "Later", projectLabel: " launch   plan ", modifiedAt: 3 },
-      { title: "Shared", projectLabel: "RELEASE", modifiedAt: 2 },
-    ],
-    a: [
-      { title: "Earlier", projectLabel: "Launch Plan", modifiedAt: 1 },
-      { title: "Shared", projectLabel: "release", modifiedAt: 2 },
-      { title: "Fallback", modifiedAt: 4 },
-    ],
-  };
-  const groups = groupTicketsByLabel(workspaces, (id) => tickets[id]);
-  assert.deepEqual(
-    groups.map(({ label }) => label),
-    ["Alpha", "launch plan", "RELEASE"],
-  );
-  assert.deepEqual(
-    groups
-      .find(({ key }) => key === "launch plan")
-      .tickets.map(({ ticket }) => ticket.title),
-    ["Later", "Earlier"],
-  );
-  assert.deepEqual(
-    groups
-      .find(({ key }) => key === "release")
-      .tickets.map(({ ticket }) => ticket.title),
-    ["Shared", "Shared"],
-  );
-  assert.deepEqual(
-    groups
-      .find(({ key }) => key === "release")
-      .tickets.map(({ workspace }) => workspace.id),
-    ["a", "b"],
-  );
-});
-
 test("Ticket Sidebar tabs render accessible selection and report selected view", () => {
   const [value, setValue] = createSignal("recent");
   const view = mount(TicketSidebarTabs, { value, onChange: setValue });
@@ -505,30 +505,52 @@ test("Ticket Sidebar tabs render accessible selection and report selected view",
   view.dispose();
 });
 
-test("Recent and Workspaces render their respective lists; workspace tags select without starting Work", () => {
-  const workspace = {
-    id: "one",
-    name: "Alpha",
-    kind: "regular",
-    status: "active",
-  };
-  const ticket = {
-    filename: "ticket.md",
-    title: "Ship feature",
-    status: "in_progress",
-    projectLabel: "Launch",
+test("Recent context is static; Workspaces keeps shared-label headings and Workspace rows", () => {
+  const workspaces = [
+    { id: "one", name: "Alpha", kind: "regular", status: "active" },
+    { id: "two", name: "Beta", kind: "regular", status: "active" },
+  ];
+  const tickets = {
+    one: [
+      {
+        filename: "ticket.md",
+        title: "Ship feature",
+        status: "in_progress",
+        projectLabel: "Launch",
+      },
+      {
+        filename: "other.md",
+        title: "Other work",
+        status: "blocked",
+        projectLabel: "Launch",
+      },
+      { filename: "unlabelled.md", title: "No label", status: "in_progress" },
+      {
+        filename: "private.md",
+        title: "Private work",
+        status: "draft",
+        hasWorkSession: true,
+      },
+    ],
+    two: [
+      {
+        filename: "beta.md",
+        title: "Beta work",
+        status: "in_progress",
+        projectLabel: "Launch",
+      },
+    ],
   };
   const [viewMode, setViewMode] = createSignal("recent");
-  const selected = [];
   const worked = [];
   const view = mount(WorkspaceNavigation, {
     data: () => ({
-      workspaces: [workspace],
-      workspaceTickets: { one: [ticket] },
+      workspaces,
+      workspaceTickets: tickets,
     }),
     busy: () => false,
     selected: () => null,
-    onSelect: (value) => selected.push(value),
+    onSelect: () => {},
     viewMode,
     onWork: (...args) => worked.push(args),
   });
@@ -539,7 +561,24 @@ test("Recent and Workspaces render their respective lists; workspace tags select
     "ticket-sidebar-recent",
   );
   assert.match(view.host.textContent, /Ship feature/);
-  assert.doesNotMatch(view.host.textContent, /Alpha/);
+  assert.match(view.host.textContent, /Launch/);
+  const recentTag = [...view.host.querySelectorAll("span")].find(
+    (element) => element.textContent.trim() === "Launch",
+  );
+  assert.ok(recentTag);
+  assert.equal(recentTag.closest("button"), null);
+  const recentWorkspaceContext = [...view.host.querySelectorAll("span")].find(
+    (element) =>
+      element.textContent.trim() === "Alpha" && element.hasAttribute("title"),
+  );
+  assert.ok(recentWorkspaceContext, "Recent identifies the owning Workspace");
+  assert.equal(recentWorkspaceContext.closest("button"), null);
+  assert.equal(recentTag.getAttribute("title"), "Launch");
+  assert.equal(
+    recentTag.getAttribute("role"),
+    null,
+    "the label is not an interactive control",
+  );
   setViewMode("workspaces");
   assert.equal(
     view.host
@@ -547,23 +586,36 @@ test("Recent and Workspaces render their respective lists; workspace tags select
       .getAttribute("aria-labelledby"),
     "ticket-sidebar-workspaces",
   );
-  assert.equal(view.host.querySelectorAll("h3").length, 0);
-  assert.match(view.host.textContent, /Launch/);
-  const ticketRow = [...view.host.querySelectorAll("button")].find((button) =>
-    button.textContent.includes("Ship feature"),
+  assert.equal(view.host.querySelector("h3")?.textContent, "Launch");
+  assert.equal(view.host.querySelectorAll("h3").length, 1);
+  const workspaceRow = [...view.host.querySelectorAll("button")].find(
+    (button) =>
+      button.textContent.includes("Alpha") &&
+      button.querySelector('[aria-label="4 outstanding tickets"]'),
   );
-  ticketRow.click();
-  assert.deepEqual(worked, [[workspace, "ticket.md"]]);
-  const tag = view.host.querySelector(
-    '[aria-label="Alpha; open Alpha ticket browser"]',
-  );
-  tag.click();
-  assert.deepEqual(selected, [workspace]);
+  assert.ok(workspaceRow, "the established Workspace row remains available");
   assert.equal(
-    worked.length,
-    1,
-    "clicking the Workspace tag does not activate its ticket",
+    workspaceRow.querySelector('[aria-label="4 outstanding tickets"]')
+      ?.textContent,
+    "4",
   );
+  const disclosure = view.host.querySelector(
+    '[aria-label="Collapse Alpha tickets"]',
+  );
+  assert.ok(
+    disclosure,
+    "ticket-bearing Workspace rows retain their disclosure",
+  );
+  disclosure.click();
+  assert.equal(
+    view.host
+      .querySelector('[aria-label="Expand Alpha tickets"]')
+      ?.getAttribute("aria-expanded"),
+    "false",
+  );
+  assert.doesNotMatch(view.host.textContent, /Private work/);
+  workspaceRow.click();
+  assert.deepEqual(worked, []);
   view.dispose();
 });
 

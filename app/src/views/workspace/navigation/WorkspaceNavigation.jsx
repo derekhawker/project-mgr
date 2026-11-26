@@ -11,7 +11,7 @@ import { ActionMenuItem, Icon, IconButton } from "@ui-lib";
 import { NavigationItem } from "../../../components/NavigationItem.jsx";
 import { TicketSessionIndicator } from "../../../components/TicketSessionIndicator.jsx";
 import { recordUiDiagnostic } from "../../../lib/uiDiagnostics.js";
-import { groupTicketsByLabel, labelColorIndex } from "./ticketSidebarGroups.js";
+import { labelColorIndex } from "./ticketLabelColors.js";
 import { WorkspaceTag } from "./WorkspaceTag.jsx";
 import styles from "./WorkspaceNavigation.module.css";
 
@@ -38,11 +38,11 @@ export function WorkspaceNavigation(props) {
       document.removeEventListener("contextmenu", dismissOutside, true);
     });
   });
-  const expansionFor = (labelKey) => {
-    if (!expandedByLabel.has(labelKey)) {
-      expandedByLabel.set(labelKey, createSignal(true));
+  const expansionFor = (workspaceId) => {
+    if (!expandedByLabel.has(workspaceId)) {
+      expandedByLabel.set(workspaceId, createSignal(true));
     }
-    return expandedByLabel.get(labelKey);
+    return expandedByLabel.get(workspaceId);
   };
   const regularWorkspaces = () =>
     (props.data()?.workspaces || []).filter(
@@ -60,8 +60,78 @@ export function WorkspaceNavigation(props) {
           ticket.status === "blocked" ||
           (ticket.status === "draft" && ticket.hasWorkSession)),
     );
-  const labelGroups = () =>
-    groupTicketsByLabel(regularWorkspaces(), workspaceTickets);
+  const sharedLabelKeys = () => {
+    const owners = new Map();
+    for (const workspace of regularWorkspaces()) {
+      for (const ticket of workspaceTickets(workspace.id)) {
+        const key = ticket.projectLabel
+          ? ticket.projectLabel.trim().replace(/\s+/gu, " ").toLowerCase()
+          : "";
+        if (!key) continue;
+        if (!owners.has(key)) owners.set(key, new Set());
+        owners.get(key).add(workspace.id);
+      }
+    }
+    return new Set(
+      [...owners]
+        .filter(([, workspaceIds]) => workspaceIds.size > 1)
+        .map(([key]) => key),
+    );
+  };
+  const workspaceForLabel = (key) =>
+    regularWorkspaces().find(
+      (workspace) =>
+        workspace.name.trim().replace(/\s+/gu, " ").toLowerCase() === key,
+    ) ?? null;
+  const sharedLabelGroups = () => {
+    const shared = sharedLabelKeys();
+    const groups = new Map();
+    for (const workspace of regularWorkspaces()) {
+      for (const ticket of workspaceTickets(workspace.id)) {
+        const key = ticket.projectLabel
+          ? ticket.projectLabel.trim().replace(/\s+/gu, " ").toLowerCase()
+          : "";
+        if (!key || workspaceForLabel(key) || !shared.has(key)) continue;
+        if (!groups.has(key))
+          groups.set(key, {
+            key,
+            label: ticket.projectLabel.trim(),
+            tickets: [],
+          });
+        groups.get(key).tickets.push({ ...ticket, workspace });
+      }
+    }
+    return [...groups.values()]
+      .map((group) => ({
+        ...group,
+        tickets: group.tickets.sort((a, b) => a.title.localeCompare(b.title)),
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  };
+  const ticketsForWorkspaceGroup = (destination) => {
+    const shared = sharedLabelKeys();
+    return regularWorkspaces().flatMap((owner) =>
+      workspaceTickets(owner.id)
+        .filter((ticket) => {
+          const key = ticket.projectLabel
+            ? ticket.projectLabel.trim().replace(/\s+/gu, " ").toLowerCase()
+            : "";
+          const labelWorkspace = workspaceForLabel(key);
+          if (labelWorkspace) return labelWorkspace.id === destination.id;
+          return owner.id === destination.id && (!key || !shared.has(key));
+        })
+        .map((ticket) => ({ ticket, owner })),
+    );
+  };
+  const outstandingTicketCount = (workspaceId) =>
+    workspaceTickets(workspaceId).filter((ticket) =>
+      ["draft", "in_progress", "blocked"].includes(ticket.status),
+    ).length;
+  const workspaceIsCurrent = (workspace) =>
+    props.selected()?.id === workspace.id &&
+    !workspaceTickets(workspace.id).some((ticket) =>
+      props.isTicketCurrent?.(workspace, ticket),
+    );
   const flatTickets = () =>
     recentWorkspaces()
       .flatMap((workspace) =>
@@ -76,7 +146,12 @@ export function WorkspaceNavigation(props) {
           a.filename.localeCompare(b.filename) ||
           a.workspace.id.localeCompare(b.workspace.id),
       );
-  const ticketRow = (ticket, workspace, mode = "grouped") => (
+  const ticketRow = (
+    ticket,
+    workspace,
+    mode = "grouped",
+    showWorkspace = false,
+  ) => (
     <li>
       <NavigationItem
         class={
@@ -112,19 +187,27 @@ export function WorkspaceNavigation(props) {
             hasWorkSession={ticket().hasWorkSession}
             opencodeStatus={ticket().opencodeStatus}
           />
-          <span class={styles.ticketTitle}>{ticket().title}</span>
+          <span class={styles.ticketTitle}>
+            <Show when={showWorkspace}>
+              <span class={styles.workspaceBadge} title={workspace().name}>
+                {workspace().name}
+              </span>
+              <span class={styles.workspaceBadgeSeparator} aria-hidden="true">
+                ·
+              </span>
+            </Show>
+            {ticket().title}
+          </span>
         </span>
       </NavigationItem>
-      <WorkspaceTag
-        label={
-          props.viewMode() === "workspaces"
-            ? workspace().name
-            : ticket().projectLabel || workspace().name
-        }
-        colorIndex={labelColorIndex(ticket().projectLabel || workspace().name)}
-        workspaceName={workspace().name}
-        onClick={() => props.onSelect(workspace())}
-      />
+      <Show when={mode === "flat"}>
+        <WorkspaceTag
+          label={ticket().projectLabel || workspace().name}
+          colorIndex={labelColorIndex(
+            ticket().projectLabel || workspace().name,
+          )}
+        />
+      </Show>
     </li>
   );
 
@@ -164,59 +247,96 @@ export function WorkspaceNavigation(props) {
                 </Show>
               }
             >
-              <Show
-                when={labelGroups().length > 0}
-                fallback={<li class={styles.emptyState}>No tickets yet.</li>}
-              >
-                <For each={labelGroups()}>
-                  {(group) => (
-                    <li class={styles.labelGroup}>
-                      <div class={styles.labelGroupRow}>
+              <For each={sharedLabelGroups()}>
+                {(group) => (
+                  <li class={styles.ticketHeading}>
+                    <h3>{group.label}</h3>
+                    <ul class={styles.ticketChildren}>
+                      <For each={group.tickets}>
+                        {(item) =>
+                          ticketRow(
+                            () => item,
+                            () => item.workspace,
+                            "grouped",
+                            true,
+                          )
+                        }
+                      </For>
+                    </ul>
+                  </li>
+                )}
+              </For>
+              <Index each={regularWorkspaces()}>
+                {(workspace) => {
+                  const tickets = () =>
+                    ticketsForWorkspaceGroup(workspace()).sort(
+                      (a, b) =>
+                        b.ticket.modifiedAt - a.ticket.modifiedAt ||
+                        a.ticket.filename.localeCompare(b.ticket.filename),
+                    );
+                  const isExpanded = () => expansionFor(workspace().id)[0]();
+                  const setExpanded = (value) =>
+                    expansionFor(workspace().id)[1](value);
+                  return (
+                    <li class={styles.workspaceGroup}>
+                      <div class={styles.workspaceRow}>
                         <NavigationItem
-                          class={styles.labelGroupButton}
-                          style={{
-                            "--ticket-label-color": `var(--ticket-label-${labelColorIndex(group.label)})`,
-                          }}
-                          onClick={() =>
-                            props.onSelectTicket(
-                              group.tickets[0].workspace,
-                              group.tickets[0].ticket,
+                          class={styles.workspaceButton}
+                          current={workspaceIsCurrent(workspace())}
+                          onPointerEnter={() =>
+                            recordUiDiagnostic(
+                              "WorkspaceNavigation",
+                              "workspace-pointer-enter",
                             )
                           }
+                          onPointerLeave={() =>
+                            recordUiDiagnostic(
+                              "WorkspaceNavigation",
+                              "workspace-pointer-leave",
+                            )
+                          }
+                          onClick={() => props.onSelect(workspace())}
                         >
-                          <span class={styles.labelText}>{group.label}</span>
-                          <span class={styles.ticketCount}>
-                            {group.tickets.length}
+                          <span class={styles.workspaceName}>
+                            {workspace().name}
+                          </span>
+                          <span
+                            class={styles.ticketCount}
+                            aria-label={`${outstandingTicketCount(workspace().id)} outstanding tickets`}
+                            title={`${outstandingTicketCount(workspace().id)} outstanding tickets`}
+                          >
+                            {outstandingTicketCount(workspace().id)}
                           </span>
                         </NavigationItem>
-                        <IconButton
-                          class={styles.labelDisclosure}
-                          label={`${expansionFor(group.key)[0]() ? "Collapse" : "Expand"} ${group.label} tickets`}
-                          aria-expanded={String(expansionFor(group.key)[0]())}
-                          onClick={() =>
-                            expansionFor(group.key)[1]((value) => !value)
-                          }
-                        >
-                          <Icon name="chevron" muted />
-                        </IconButton>
+                        <Show when={tickets().length > 0}>
+                          <IconButton
+                            class={styles.workspaceDisclosure}
+                            label={`${isExpanded() ? "Collapse" : "Expand"} ${workspace().name} tickets`}
+                            aria-expanded={String(isExpanded())}
+                            onClick={() => setExpanded((current) => !current)}
+                          >
+                            <Icon name="chevron" muted />
+                          </IconButton>
+                        </Show>
                       </div>
-                      <Show when={expansionFor(group.key)[0]()}>
+                      <Show when={isExpanded() && tickets().length > 0}>
                         <ul class={styles.ticketChildren}>
-                          <For each={group.tickets}>
+                          <Index each={tickets()}>
                             {(item) =>
                               ticketRow(
-                                () => item.ticket,
-                                () => item.workspace,
+                                () => item().ticket,
+                                () => item().owner,
                                 "grouped",
+                                item().owner.id !== workspace().id,
                               )
                             }
-                          </For>
+                          </Index>
                         </ul>
                       </Show>
                     </li>
-                  )}
-                </For>
-              </Show>
+                  );
+                }}
+              </Index>
             </Show>
           </Show>
         </ul>

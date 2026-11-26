@@ -1,7 +1,7 @@
 .tag {
-  display: block;
-  max-width: calc(100% - var(--ui-space-32));
-  margin: 0 0 var(--ui-space-4) var(--ui-space-32);
+  display: table;
+  max-width: 100%;
+  margin: 0 0 var(--ui-space-2) var(--ui-space-12);
   padding: 0 var(--ui-space-6);
   overflow: hidden;
   border: 0;
@@ -12,13 +12,4 @@
   line-height: 1.5;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.tag:hover:not(:disabled) {
-  filter: brightness(0.94);
-}
-
-.tag:focus-visible {
-  outline: 2px solid var(--ui-focus);
-  outline-offset: 1px;
 }

@@ -71,25 +71,26 @@ the Ticket Sidebar below Quick Requests.
 
 The **Recent** tab is selected by default and shows a flat, uncapped list of
 eligible tickets across active Workspaces, newest modification first. Status does
-not affect position. Each row shows the title and a separate-line Workspace tag
-using the ticket's `project_label`, falling back to the owning Workspace name.
-The tag is a sibling control, not nested in the Work row; it opens the owning
-Workspace ticket browser, while the title row starts Work. Long tags truncate
-visually and retain their full text as the tooltip and accessible name. Tag
-colors use a fixed palette of 20 app colors; a deterministic normalized-label
-hash chooses a palette slot, so equal labels share a color and collisions are
-allowed.
+not affect position. Each row shows the title and a separate-line, noninteractive
+tag using the ticket's `project_label`, falling back to the owning Workspace
+name. The title row starts Work; neither the tag nor Workspace context is a
+navigation control. Long tags truncate visually and retain their full text as the
+tooltip. Tag colors use a fixed palette of 20 app colors; a deterministic
+normalized-label hash chooses a palette slot, so equal labels share a color and
+collisions are allowed. Keep row padding compact and avoid adding left indentation
+to the Recent list.
 
-The **Workspaces** tab groups ticket rows by normalized `project_label` across
-Workspaces, falling back to the owning Workspace name. It includes active and
-archived ticket files. Groups are ordered by label and show a ticket count; their
-disclosure expands/collapses the rows. Selecting a group opens the Workspace
-browser for the group's newest ticket. Ticket rows for active work open Work;
+The **Workspaces** tab preserves the grouped layout already used by the main
+branch. Shared project-label groups appear first as plain headings with ticket
+rows beneath; those rows show the owning Workspace inline. Workspace groups then
+show their existing count, selection action, and independent disclosure control.
+Tickets that share another Workspace's name group under that Workspace; other
+tickets remain under their owning Workspace. Keep the existing grouping and row
+spacing rather than replacing it with a new label-group hierarchy. Include the
+full active and archived ticket set in those groups. Active ticket rows open Work;
 done or archived rows open the owning Workspace browser with that ticket
-selected. Rows identify the owning Workspace so tickets from different owners
-remain distinguishable. The context menu can edit a ticket's label in either
-tab. No "Other" folding is applied. The selected tab is session-local and resets
-to Recent on launch.
+selected. Label editing remains in the ticket context menu in both tabs. The
+selected tab is session-local and resets to Recent on launch.
 
 Recent retains the existing row eligibility rules for now: `in_progress`,
 `blocked`, and `draft` tickets with a linked work session. Done and cancelled
@@ -163,8 +164,8 @@ their own destination masthead instead.
 ## Workspace behavior
 
 Rust watches ticket Markdown files and refreshes the navigation data when they
-change. The visual controls, tag density, truncation, palette contrast and native
-Wayland appearance remain manual acceptance.
+change. The visual controls, compact Recent spacing, tag density, truncation,
+palette contrast and native Wayland appearance remain manual acceptance.
 
 - The New work menu offers Workspace and Quick Request. Workspace confirmation
   selects the new Workspace and opens every required session, even when the
