@@ -125,13 +125,22 @@ export function WorkspaceTicketViewer(props) {
     >
       <section aria-label="Workspace tickets" class={styles.viewer}>
         <header class={styles.header}>
-          <CreateTicketIdeaModal
-            disabled={() =>
-              Boolean(props.modelBusy?.() || !props.selectedModel?.())
-            }
-            onPropose={props.onProposeTicket}
-            onCreate={props.onCreateTicket}
-          />
+          <div class={styles.headerPrimaryActions}>
+            <CreateTicketIdeaModal
+              disabled={() =>
+                Boolean(props.modelBusy?.() || !props.selectedModel?.())
+              }
+              onPropose={props.onProposeTicket}
+              onCreate={props.onCreateTicket}
+            />
+            <DeleteWorkspaceModal
+              workspaceName={props.workspaceName}
+              onLoadTickets={props.onLoadDeletionTickets}
+              onArchiveTickets={props.onArchiveTicketsForDeletion}
+              onDeleteWorkspace={props.onDeleteWorkspace}
+              onDeleted={props.onWorkspaceDeleted}
+            />
+          </div>
           <div class={styles.headerActions}>
             <div class={styles.modelControl}>
               <span>Default Model</span>
@@ -166,13 +175,6 @@ export function WorkspaceTicketViewer(props) {
             <div class={repositoryToolsStyles.control}>
               {props.toolsMenu?.()}
             </div>
-            <DeleteWorkspaceModal
-              workspaceName={props.workspaceName}
-              onLoadTickets={props.onLoadDeletionTickets}
-              onArchiveTickets={props.onArchiveTicketsForDeletion}
-              onDeleteWorkspace={props.onDeleteWorkspace}
-              onDeleted={props.onWorkspaceDeleted}
-            />
           </div>
         </header>
         <ErrorMessage message={props.modelError?.()} />

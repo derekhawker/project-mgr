@@ -64,8 +64,9 @@ Change Review, and repository documents in Docs use the selected ticket's
   Nested project commands run from and show the directory containing their `package.json`
 or Makefile.
 
-The Workspace Tickets toolbar places **Create ticket** on the left and a neutral
-**Delete workspace…** action at the far right. The delete action always opens a
+The Workspace Tickets toolbar places **Create ticket…** and neutral
+**Delete workspace…** actions together on the left, with deletion immediately
+to the right of ticket creation. The delete action always opens a
 warning flow. Its first step lists every ticket Markdown file in the active
 ticket directory by title and status. Confirming moves those files to
 `archived/`; non-done tickets are cancelled using the normal ticket lifecycle,

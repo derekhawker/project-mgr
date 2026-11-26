@@ -9,7 +9,7 @@ export function NewWorkMenu(props) {
         class={styles.newWorkDisclosure}
         triggerClass={styles.newWorkTrigger}
         contentClass={styles.newWorkActions}
-        label="New work"
+        label="New work…"
         direction="up"
         actionsLabel="Choose work type"
       >

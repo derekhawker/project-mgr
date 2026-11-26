@@ -30,7 +30,7 @@ export function CreateTicketIdeaModal(props) {
         disabled={Boolean(props.disabled?.())}
         onClick={openDialog}
       >
-        Create ticket
+        Create ticket…
       </Button>
       <Modal
         open={() => open()}

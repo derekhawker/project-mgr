@@ -95,7 +95,7 @@ test("New work closes the native disclosure before reporting either choice", () 
       choices.push([type, view.host.querySelector("details").open]),
   });
   const menu = view.host.querySelector("details");
-  assert.equal(menu.querySelector("summary").textContent, "New work");
+  assert.equal(menu.querySelector("summary").textContent, "New work…");
   assertDecorativeIcon(menu.querySelector("summary"));
   assert.equal(
     menu.querySelector("[role=group]").getAttribute("aria-label"),

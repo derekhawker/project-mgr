@@ -693,12 +693,22 @@ test("ticket viewer keeps workspace tools available with no selected ticket", ()
         (button) => button.textContent === "Tools",
       ),
     );
-    const deleteTrigger = [...view.host.querySelectorAll("button")].find(
+    const toolbarButtons = [...view.host.querySelectorAll("header button")];
+    const createTrigger = toolbarButtons.find((button) =>
+      button.textContent.trim().startsWith("Create ticket"),
+    );
+    const deleteTrigger = toolbarButtons.find(
       (button) => button.textContent.trim() === "Delete workspace…",
     );
+    assert.equal(createTrigger.textContent.trim(), "Create ticket…");
     assert.ok(
       deleteTrigger,
       "the neutral delete trigger is in the ticket toolbar",
+    );
+    assert.equal(createTrigger.parentElement, deleteTrigger.parentElement);
+    assert.ok(
+      createTrigger.compareDocumentPosition(deleteTrigger) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
     );
     assert.equal(
       deleteTrigger.closest("header")?.contains(deleteTrigger),
@@ -903,7 +913,7 @@ test("workspace deletion always warns, archives active tickets, and recovers fro
   }
 });
 
-test("workspace deletion with no active tickets still requires both confirmations", async () => {
+test("workspace deletion with no active tickets skips archiving and opens delete confirmation", async () => {
   const calls = [];
   const view = mountDeleteWorkspaceModal({
     onLoadTickets: async () => [],
@@ -918,17 +928,13 @@ test("workspace deletion with no active tickets still requires both confirmation
     assert.match(dialog.textContent, /No active tickets to archive/);
     assert.equal(
       dialog.querySelector('[aria-current="step"]').textContent,
-      "1. Archive tickets",
-    );
-    [...dialog.querySelectorAll("button")]
-      .find((button) => button.textContent.trim() === "Continue")
-      .click();
-    await flush();
-    assert.equal(
-      dialog.querySelector('[aria-current="step"]').textContent,
       "2. Delete Workspace",
     );
-    assert.deepEqual(calls, ["archive"]);
+    assert.equal(
+      dialog.querySelector('[aria-disabled="true"]').textContent,
+      "1. Archive tickets (skipped)",
+    );
+    assert.deepEqual(calls, []);
     assert.ok(
       [...dialog.querySelectorAll("button")].some((button) =>
         button.textContent.includes("Delete workspace"),
@@ -1265,7 +1271,7 @@ test("archive toggle reports state and clears selection; create opens the first 
   });
   try {
     [...view.host.querySelectorAll("button")]
-      .find((button) => button.textContent === "Create ticket")
+      .find((button) => button.textContent === "Create ticket…")
       .click();
     assert.equal(
       view.host.querySelector(

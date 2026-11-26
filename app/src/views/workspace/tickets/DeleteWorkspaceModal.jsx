@@ -40,6 +40,7 @@ export function DeleteWorkspaceModal(props) {
               if (!isCurrent()) return;
               setTickets(result);
               setTicketsLoaded(true);
+              if (result.length === 0) setStep(2);
             } catch (cause) {
               if (isCurrent())
                 setError(`Could not load tickets: ${String(cause)}`);
@@ -120,8 +121,17 @@ export function DeleteWorkspaceModal(props) {
             body: (
               <div class={styles.content}>
                 <ol class={styles.steps} aria-label="Workspace deletion steps">
-                  <li aria-current={step() === 1 ? "step" : undefined}>
-                    1. Archive tickets
+                  <li
+                    aria-current={step() === 1 ? "step" : undefined}
+                    aria-disabled={
+                      ticketsLoaded() && tickets().length === 0
+                        ? "true"
+                        : undefined
+                    }
+                  >
+                    {ticketsLoaded() && tickets().length === 0
+                      ? "1. Archive tickets (skipped)"
+                      : "1. Archive tickets"}
                   </li>
                   <li aria-current={step() === 2 ? "step" : undefined}>
                     2. Delete Workspace
@@ -155,6 +165,12 @@ export function DeleteWorkspaceModal(props) {
                   <p>Continue to the Workspace deletion confirmation?</p>
                 </Show>
                 <Show when={step() === 2}>
+                  <Show when={ticketsLoaded() && tickets().length === 0}>
+                    <p>
+                      No active tickets to archive; the archive step was
+                      skipped.
+                    </p>
+                  </Show>
                   <p>
                     Permanently remove <strong>{workspaceName()}</strong> from
                     the app? Its linked repository, ticket files, and OpenCode
