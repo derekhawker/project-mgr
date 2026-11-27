@@ -139,9 +139,12 @@ defaults to a polite status announcement but callers may override its native
 listbox. Pass `options` or `groups` (`{ label, options }`), `value`, and
 `onChange(value)`. Opening focuses the filter; Arrow Up/Down move through
 enabled options, Home/End move to the first/last enabled option, Enter selects,
-and Escape closes and returns focus to the trigger. Typing filters labels
+and Escape closes and returns focus to the trigger. The trigger also handles
+Arrow Up/Down and Enter when focused. Typing filters labels
 case-insensitively. It is intended for long option lists; unlike `Select`, it
-does not provide native form-required validation.
+does not provide native form-required validation. Its popup uses the shared
+dropdown surface and option-row treatment and portals into an open dialog to
+avoid clipping by modal scrolling.
 `Select` keeps a labelled choice-control API while presenting options in the
 shared `ActionMenu` disclosure. Pass `label`, `options` (`{ value, label,
 disabled? }`), `value`, and `onChange(value)`; `required`, `disabled`, and

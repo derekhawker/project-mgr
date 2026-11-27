@@ -476,6 +476,7 @@ test("repository library edits save on blur without an explicit save button", ()
 
 test("Workspace creation presents direct repository choices in the native dialog", async () => {
   let cancelled = 0;
+  const selectedRepositories = [];
   const proposal = {
     workType: "workspace",
     title: "Review",
@@ -503,7 +504,8 @@ test("Workspace creation presents direct repository choices in the native dialog
     ],
     workspaceEmptySelected: () => false,
     emptyWorkspaceChoice: "__empty__",
-    onWorkspaceRepositoryChange: () => {},
+    onWorkspaceRepositoryChange: (repositoryId) =>
+      selectedRepositories.push(repositoryId),
     workspaceName: () => "",
     setWorkspaceName: () => {},
     workspaceDescription: () => "",
@@ -552,13 +554,70 @@ test("Workspace creation presents direct repository choices in the native dialog
     "combobox",
   );
   assert.ok(mounted.host.querySelector("dialog"));
+  const repositoryFilter = mounted.host.querySelector(
+    '[aria-label="Filter repositories"]',
+  );
+  const dialog = mounted.host.querySelector("dialog");
+  const repositoryList = mounted.host.querySelector('[role="listbox"]');
+  const repositoryOptions = [
+    ...mounted.host.querySelectorAll('[role="option"]'),
+  ];
+  const repositoryOption = repositoryOptions[1];
+  assert.equal(
+    mounted.host.ownerDocument.activeElement,
+    repositoryFilter,
+    "Workspace creation focuses the repository filter when it opens",
+  );
+  assert.ok(repositoryList, "Repository choices open with the modal");
+  assert.ok(repositoryOption);
+  assert.equal(
+    repositoryList.closest("[data-modal-body]"),
+    null,
+    "The repository popup escapes the clipping modal body",
+  );
+  assert.equal(
+    repositoryList.closest("dialog"),
+    dialog,
+    "The popup layer is mounted inside the native dialog",
+  );
+  assert.equal(dialog.hasAttribute("data-ui-popup-open"), true);
+  assert.equal(repositoryList.parentElement.style.position, "absolute");
+  assert.equal(repositoryList.parentElement.style.zIndex, "1000");
+  const keydown = (key) =>
+    repositoryFilter.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+  keydown("ArrowDown");
+  assert.equal(
+    repositoryFilter.getAttribute("aria-activedescendant"),
+    repositoryOptions[0].id,
+    "ArrowDown activates the first choice",
+  );
+  keydown("ArrowDown");
+  assert.equal(
+    repositoryFilter.getAttribute("aria-activedescendant"),
+    repositoryOption.id,
+    "a second ArrowDown moves to the Repository",
+  );
+  keydown("ArrowUp");
+  assert.equal(
+    repositoryFilter.getAttribute("aria-activedescendant"),
+    repositoryOptions[0].id,
+    "ArrowUp moves back to the previous choice",
+  );
+  keydown("ArrowDown");
+  keydown("Enter");
+  assert.deepEqual(selectedRepositories, ["repo-1"]);
   mounted.host
     .querySelector("dialog")
     .dispatchEvent(new MouseEvent("click", { bubbles: true }));
   assert.equal(cancelled, 0);
   mounted.host.querySelector("#workspace-cancel").click();
   assert.equal(cancelled, 1);
-  const dialog = mounted.host.querySelector("dialog");
   assert.equal(dialog.getAttribute("aria-labelledby"), "new-work-title");
   assert.equal(
     mounted.host.querySelector("#new-work-title").textContent,

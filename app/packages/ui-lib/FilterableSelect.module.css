@@ -4,45 +4,58 @@
   position: relative;
 }
 .trigger {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  min-width: 0;
+  color: var(--ui-text);
+  background: var(--ui-surface);
   text-align: left;
 }
+.triggerLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.indicator {
+  flex: 0 0 auto;
+  transform: rotate(0deg);
+  transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.trigger[aria-expanded="true"] .indicator {
+  transform: rotate(180deg);
+}
 .popup {
-  position: absolute;
-  z-index: 20;
-  top: 100%;
-  left: 0;
-  right: 0;
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 0.25rem;
-  padding: 0.4rem;
-  background: var(--ui-surface);
-  border: 1px solid var(--ui-border);
-  box-shadow: 0 3px 10px #0003;
+  min-height: 0;
+  padding: var(--ui-space-4);
+  border: 1px solid var(--ui-border-light);
+  border-radius: 0.35rem;
+  background: var(--ui-surface-raised);
+  box-shadow: 0 10px 28px #24242324;
 }
 .popup input {
   width: 100%;
   min-width: 0;
 }
 .options {
+  min-height: 0;
   overflow: auto;
   max-height: 16rem;
 }
 .groupLabel {
-  padding: 0.35rem 0.5rem;
+  padding: var(--ui-control-padding);
+  color: var(--ui-muted);
   font-size: 0.75rem;
   font-weight: 700;
 }
-.option {
-  display: block;
-  width: 100%;
-  border: 0;
-  text-align: left;
-  padding: 0.35rem 0.5rem;
-  background: transparent;
-}
 .active,
-.option:hover {
-  background: var(--ui-surface-raised);
+.active:hover:not(:disabled) {
+  color: #fff;
+  background: var(--ui-menu-highlight, var(--ui-blue));
 }
 .empty {
   margin: 0;
