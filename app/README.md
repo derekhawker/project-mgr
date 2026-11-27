@@ -23,6 +23,11 @@ a fixed timestamp and treats its requests as recent for the lifetime of the page
 OpenCode test. It still runs Node, Vite and Rust test harness processes and uses
 isolated temporary files. `npm run test:all --prefix app` also runs the
 installed-OpenCode model-loader integration and starts a real OpenCode server.
+Run focused tests with `npm test --prefix app -- test/ui-dom.test.js` or pass
+multiple file paths. Add `--name='pattern'` to select test names by regular
+expression. Each file runs separately in a Linux systemd user scope limited to
+1 GiB of memory with swap disabled. If the scope cannot be created, the runner
+fails instead of running unbounded. Do not run `node --test` directly.
 `npm run test:memory --prefix app` runs the default test files one at a time and
 reports sampled process-tree peak RSS per file. On Linux with `systemd-run`, each
 file gets a 1 GiB hard memory limit with swap disabled; change it with
@@ -91,8 +96,8 @@ at a time and reports xterm-input-to-next-PTY-output delivery in milliseconds;
 it removes the unsubmitted line afterward. It does not measure physical
 keyboard events, parsing, screen paint, native WebKitGTK, or Tauri IPC. It must
 not be run while a command is executing. To check the bridge explicitly after
-building, run `node --test app/test/terminal-perf-harness.browser.test.js` from
-the repository root.
+building, run `npm run test:browser --prefix app -- test/terminal-perf-harness.browser.test.js`
+from the repository root.
 
 On 31 October 2026, two 40-sample idle-shell Chromium runs through this bridge
 measured medians of 0.9 ms and 0.5 ms and 95th percentiles of 7.0 ms and

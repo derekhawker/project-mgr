@@ -63,10 +63,11 @@ if (mode !== "default") {
 const systemdRun =
   process.platform === "linux" &&
   spawnSync("systemd-run", ["--version"], { stdio: "ignore" }).status === 0;
-if (process.platform === "linux" && !systemdRun) {
-  console.warn(
-    "systemd-run is unavailable; per-test measurements will not have a hard memory limit.",
+if (!systemdRun) {
+  console.error(
+    "Safe memory measurement requires Linux systemd user scopes; no tests were started.",
   );
+  process.exit(1);
 }
 
 function processTreeRss(rootPid) {

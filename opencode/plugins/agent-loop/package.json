@@ -8,6 +8,6 @@
     "./rpc": "./rpc.js"
   },
   "scripts": {
-    "test": "node --test"
+    "test": "node ../../../app/scripts/test-safe.js default --plugin=agent-loop"
   }
 }
