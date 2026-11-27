@@ -355,7 +355,7 @@ default and is session-local. Tickets is an uncapped flat list of tickets with a
 `work_session_id` across active Workspaces, ordered by file modification time,
 newest first. Give each eligible session-backed ticket its own compact tree
 group, without merging equal labels elsewhere in the list. Exclude done and
-cancelled tickets. The tiny 12–14px group heading shows `project_label` or, when
+cancelled tickets. The tiny 11px with 14px line height group heading shows `project_label` or, when
 absent, the owning Workspace name. The title is the indented child row with the
 same right-arrow marker as Workspaces; do not repeat the label inline. The child
 row starts Work. Keep the list compact.

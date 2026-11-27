@@ -73,7 +73,7 @@ The **Tickets** tab is selected by default and shows session-backed tickets
 across active Workspaces, newest modification first. Each ticket has its own
 small tree group, even when another ticket has the same label; never merge
 non-adjacent equal labels. The group heading shows `project_label`, falling back
-to the owning Workspace name, in a tiny 12–14px style. The title is the indented
+to the owning Workspace name, in a tiny 11px with 14px line height style. The title is the indented
 child row, prefixed by the same right-arrow marker used in Workspaces. The label
 is not repeated inline with the title. The child row starts Work.
 
