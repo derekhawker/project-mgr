@@ -64,8 +64,7 @@ test("ticket idea modal preserves its shell and resets content on close", async 
     `(() => { const button = [...document.querySelectorAll('button')].find((item) => item.textContent.trim() === 'Create ticket'); return button && !button.disabled; })()`,
   );
 
-  const open = () =>
-    browser("find", "role", "button", "click", "--name", "Create ticket");
+  const open = () => browser("click", "#workspace-create-ticket");
   open();
   browser("wait", "#ticket-idea");
   const first = evaluate(`(() => {

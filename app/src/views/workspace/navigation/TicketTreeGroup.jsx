@@ -1,6 +1,6 @@
 import styles from "./TicketTreeGroup.module.css";
 
-/** One non-merged label heading and its ticket row in the Tickets view. */
+/** A label heading and one consecutive run of tickets in the Recent view. */
 export function TicketTreeGroup(props) {
   return (
     <li class={styles.group}>

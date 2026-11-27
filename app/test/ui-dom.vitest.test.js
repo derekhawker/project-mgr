@@ -15,6 +15,7 @@ import {
   Notice,
   Status,
   Switch,
+  FilterableSelect,
 } from "@ui-lib";
 import { DeleteButton } from "../src/components/DeleteButton.jsx";
 import { OpenItemButton } from "../src/components/OpenItemButton.jsx";
@@ -41,17 +42,106 @@ function mount(componentFactory) {
   };
 }
 
+test("FilterableSelect filters grouped options and supports listbox keyboard selection", async () => {
+  let selected = "";
+  const view = mount(() =>
+    component(FilterableSelect, {
+      id: "workspace-picker-test",
+      label: "Workspace",
+      groups: [
+        {
+          label: "Recent workspaces",
+          options: [{ value: "one", label: "Alpha" }],
+        },
+        {
+          label: "Other workspaces",
+          options: [{ value: "two", label: "Beta" }],
+        },
+      ],
+      value: "",
+      onChange: (value) => {
+        selected = value;
+      },
+    }),
+  );
+  view.host.querySelector("#workspace-picker-test-trigger").click();
+  const query = view.host.querySelector('[role="combobox"]');
+  await Promise.resolve();
+  assert.equal(document.activeElement?.getAttribute("role"), "combobox");
+  query.value = "bet";
+  query.dispatchEvent(new Event("input", { bubbles: true }));
+  assert.equal(view.host.querySelectorAll('[role="option"]').length, 1);
+  assert.equal(view.host.querySelector('[role="option"]').textContent, "Beta");
+  query.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: "ArrowDown",
+      bubbles: true,
+      cancelable: true,
+    }),
+  );
+  query.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: "Enter",
+      bubbles: true,
+      cancelable: true,
+    }),
+  );
+  assert.equal(selected, "two");
+  assert.equal(view.host.querySelector('[role="listbox"]'), null);
+  view.dispose();
+});
+
+test("FilterableSelect opens on ArrowDown and Escape keeps focus in its input", async () => {
+  const view = mount(() =>
+    component(FilterableSelect, {
+      id: "escape-picker-test",
+      label: "Workspace",
+      options: [{ value: "one", label: "Alpha" }],
+      onChange: () => {},
+    }),
+  );
+  const trigger = view.host.querySelector("#escape-picker-test-trigger");
+  trigger.focus();
+  const query = view.host.querySelector('[role="combobox"]');
+  await Promise.resolve();
+  trigger.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: "ArrowDown",
+      bubbles: true,
+      cancelable: true,
+    }),
+  );
+  assert.equal(
+    query.getAttribute("aria-activedescendant"),
+    "escape-picker-test-option-0",
+  );
+  query.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: "Escape",
+      bubbles: true,
+      cancelable: true,
+    }),
+  );
+  await Promise.resolve();
+  assert.equal(view.host.querySelector('[role="listbox"]'), null);
+  assert.equal(trigger.getAttribute("aria-expanded"), "false");
+  assert.equal(document.activeElement?.id, "escape-picker-test-trigger");
+  view.dispose();
+});
+
 test("Button and Input preserve native attributes, events, and input values", () => {
   let clicked = 0;
   const button = mount(() =>
     component(Button, {
       type: "submit",
+      variant: "primary",
       onClick: () => clicked++,
       children: "Save",
     }),
   );
   const nativeButton = button.host.querySelector("button");
   assert.equal(nativeButton.type, "submit");
+  assert.equal(nativeButton.getAttribute("data-ui-variant"), "primary");
   nativeButton.click();
   assert.equal(clicked, 1);
   button.dispose();
@@ -315,8 +405,9 @@ test("repository library edits save on blur without an explicit save button", ()
   list.dispose();
 });
 
-test("Workspace creation presents direct repository choices in the native dialog", () => {
+test("Workspace creation presents direct repository choices in the native dialog", async () => {
   let cancelled = 0;
+  const selectedRepositories = [];
   const proposal = {
     workType: "workspace",
     title: "Review",
@@ -344,7 +435,8 @@ test("Workspace creation presents direct repository choices in the native dialog
     ],
     workspaceEmptySelected: () => false,
     emptyWorkspaceChoice: "__empty__",
-    onWorkspaceRepositoryChange: () => {},
+    onWorkspaceRepositoryChange: (repositoryId) =>
+      selectedRepositories.push(repositoryId),
     workspaceName: () => "",
     setWorkspaceName: () => {},
     workspaceDescription: () => "",
@@ -375,6 +467,7 @@ test("Workspace creation presents direct repository choices in the native dialog
     progressRows: () => [],
   };
   const mounted = mount(() => component(NewWorkModal, props));
+  await Promise.resolve();
   assert.equal(mounted.host.querySelector("#proposal-prompt-preview"), null);
   assert.equal(
     mounted.host.querySelector("#new-work").hidden,
@@ -382,19 +475,92 @@ test("Workspace creation presents direct repository choices in the native dialog
     "The prompt form stays hidden during Workspace creation",
   );
   assert.equal(
+    mounted.host.querySelector("#workspace-repository-select-trigger").tagName,
+    "INPUT",
+  );
+  assert.equal(
     mounted.host
-      .querySelector("#workspace-repository-select")
-      .getAttribute("role"),
+      .querySelector('[aria-label="Filter repositories"]')
+      ?.getAttribute("role"),
     "combobox",
   );
   assert.ok(mounted.host.querySelector("dialog"));
+  const repositoryFilter = mounted.host.querySelector(
+    '[aria-label="Filter repositories"]',
+  );
+  const dialog = mounted.host.querySelector("dialog");
+  const repositoryList = mounted.host.querySelector('[role="listbox"]');
+  assert.equal(
+    mounted.host.ownerDocument.activeElement,
+    repositoryFilter,
+    "Workspace creation focuses the repository filter when it opens",
+  );
+  assert.ok(repositoryList, "Repository choices open with the modal");
+  assert.equal(
+    repositoryList.closest("[data-modal-body]"),
+    null,
+    "The repository popup escapes the clipping modal body",
+  );
+  assert.equal(
+    repositoryList.closest("dialog"),
+    dialog,
+    "The popup layer is mounted inside the native dialog",
+  );
+  assert.equal(dialog.hasAttribute("data-ui-popup-open"), true);
+  assert.equal(repositoryList.parentElement.style.position, "absolute");
+  assert.equal(repositoryList.parentElement.style.zIndex, "1000");
+  assert.equal(
+    mounted.host.querySelectorAll('[role="group"]').length,
+    0,
+    "New Workspace repository choices are flat",
+  );
+  assert.equal(
+    repositoryFilter.closest('[role="listbox"]'),
+    null,
+    "The editable input stays anchored outside the popup menu",
+  );
+  const keydown = (key) =>
+    repositoryFilter.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+  repositoryFilter.value = "repoName";
+  repositoryFilter.dispatchEvent(new Event("input", { bubbles: true }));
+  const filteredOptions = [...mounted.host.querySelectorAll('[role="option"]')];
+  assert.deepEqual(
+    filteredOptions.map((option) => option.textContent),
+    ["repoName — /code/repoName"],
+  );
+  keydown("ArrowDown");
+  assert.equal(
+    repositoryFilter.getAttribute("aria-activedescendant"),
+    filteredOptions[0].id,
+    "ArrowDown activates the filtered Repository",
+  );
+  keydown("ArrowUp");
+  assert.equal(
+    repositoryFilter.getAttribute("aria-activedescendant"),
+    filteredOptions[0].id,
+    "ArrowUp stays within the filtered choice boundary",
+  );
+  keydown("ArrowDown");
+  keydown("Enter");
+  assert.deepEqual(selectedRepositories, ["repo-1"]);
+  assert.equal(repositoryFilter.getAttribute("aria-expanded"), "false");
+  assert.equal(
+    mounted.host.querySelector("#workspace-repository-select-listbox"),
+    null,
+    "selecting a repository closes the menu",
+  );
   mounted.host
     .querySelector("dialog")
     .dispatchEvent(new MouseEvent("click", { bubbles: true }));
   assert.equal(cancelled, 0);
   mounted.host.querySelector("#workspace-cancel").click();
   assert.equal(cancelled, 1);
-  const dialog = mounted.host.querySelector("dialog");
   assert.equal(dialog.getAttribute("aria-labelledby"), "new-work-title");
   assert.equal(
     mounted.host.querySelector("#new-work-title").textContent,

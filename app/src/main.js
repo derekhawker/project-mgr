@@ -518,7 +518,50 @@ async function startNewWorkspaceTicketSession() {
     setTicketWorking(false);
   }
 }
+async function handleTicketCreated({
+  ticket,
+  workspaceId,
+  investigationFailureStage,
+}) {
+  const workspace = (navigationData.workspaces || []).find(
+    (item) => item.id === workspaceId && item.kind === "regular",
+  );
+  if (!workspace) {
+    setAppNotice(
+      "Ticket created, but its Workspace is no longer available in navigation. Refresh Workspaces to reload it.",
+    );
+    return;
+  }
+  if (
+    selectedWorkspace?.id !== workspaceId ||
+    !ticketViewerVisible() ||
+    ticketWorkbenchActive()
+  )
+    selectWorkspace(workspace, navigationData);
+  setTicketArchived(false);
+  workspaceTicketCache.invalidate();
+  setTicketItems([]);
+  setTicketLoading(true);
+  setTicketError("");
+  let loadError = "";
+  try {
+    await workspaceTicketCache.load(workspaceId, false);
+  } catch (error) {
+    loadError = formatWorkspaceError("Load Workspace tickets", error);
+    setTicketError(loadError);
+    setTicketLoading(false);
+  }
+  if (selectedWorkspace?.id !== workspaceId) return;
+  setSelectedTicketFilename(ticket.filename);
+  if (investigationFailureStage)
+    setTicketError(
+      "Ticket created, but its investigation could not be started. You can open the ticket with Work and continue manually.",
+    );
+  else if (!loadError) setTicketError("");
+}
+
 const workspaceTicketViewerProps = {
+  workspaceId: () => selectedWorkspace?.id ?? "",
   workspaceName: ownerTitle,
   tickets: ticketItems,
   selectedFilename: selectedTicketFilename,
@@ -584,8 +627,11 @@ const workspaceTicketViewerProps = {
     setNoSelectionVisible(true);
     await refreshNavigation();
   },
-  onProposeTicket: async (idea) => {
-    const workspaceId = selectedWorkspace?.id;
+  onProposeTicket: async (
+    idea,
+    requestedWorkspaceId = selectedWorkspace?.id,
+  ) => {
+    const workspaceId = requestedWorkspaceId;
     if (!workspaceId) throw new Error("Select a Workspace first.");
     if (!ticketModelSelected())
       throw new Error(
@@ -593,8 +639,13 @@ const workspaceTicketViewerProps = {
       );
     return proposeWorkspaceTicket(invoke, workspaceId, idea);
   },
-  onCreateTicket: async (title, body, startInvestigation) => {
-    const workspaceId = selectedWorkspace?.id;
+  onCreateTicket: async (
+    title,
+    body,
+    startInvestigation,
+    requestedWorkspaceId = selectedWorkspace?.id,
+  ) => {
+    const workspaceId = requestedWorkspaceId;
     if (!workspaceId) throw new Error("Select a Workspace first.");
     const result = await createWorkspaceTicket(
       invoke,
@@ -606,25 +657,7 @@ const workspaceTicketViewerProps = {
     workspaceTicketCache.invalidate();
     return { ...result, workspaceId };
   },
-  onTicketCreated: async ({
-    ticket,
-    workspaceId,
-    investigationFailureStage,
-  }) => {
-    if (selectedWorkspace?.id !== workspaceId) return;
-    setTicketArchived(false);
-    workspaceTicketCache.invalidate();
-    // The current rows may be from the archived scope. Install the active
-    // scope's cache (or clear the rows) before a refresh can fail.
-    showCachedTicketList(false);
-    await refreshTicketList(false);
-    setSelectedTicketFilename(ticket.filename);
-    setTicketError(
-      investigationFailureStage
-        ? "Ticket created, but its investigation could not be started. You can open the ticket with Work and continue manually."
-        : "",
-    );
-  },
+  onTicketCreated: handleTicketCreated,
 };
 const [fullRequestVisible, setFullRequestVisibleState] = createSignal(false);
 function setFullRequestVisible(value) {
@@ -642,6 +675,10 @@ const workspaceNavigationProps = {
   data: () => workspaceNavigation().data,
   selected: () => workspaceNavigation().selected,
   busy: navigationBusy,
+  ticketCreateDisabled: () => ticketModelBusy() || !ticketModelSelected(),
+  onProposeTicket: workspaceTicketViewerProps.onProposeTicket,
+  onCreateTicket: workspaceTicketViewerProps.onCreateTicket,
+  onTicketCreated: handleTicketCreated,
   viewMode: workspaceTicketView,
   onViewChange: setWorkspaceTicketView,
   onSelect: (workspace) => selectWorkspace(workspace, navigationData),

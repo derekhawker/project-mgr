@@ -276,7 +276,7 @@ body {
   padding: 0;
   margin: 0 0 var(--ui-space-8);
 }
-.navigation li button {
+.navigation li button:not(dialog *):not([data-ui-variant="primary"]) {
   min-height: 2.25rem;
   border: 0;
   border-radius: var(--ui-control-radius);
@@ -290,17 +290,17 @@ body {
     background-color 120ms ease,
     color 120ms ease;
 }
-.navigation li button:hover:not(:disabled) {
+.navigation li button:hover:not(dialog *):not(:disabled):not([data-ui-variant="primary"]) {
   background: var(--ui-surface-pressed);
 }
 .navigation summary,
-.navigation button:hover:not(:disabled),
+.navigation button:hover:not(:disabled):not([data-ui-variant="primary"]),
 .navigation summary:hover,
-.navigation button:active:not(:disabled),
+.navigation button:active:not(:disabled):not([data-ui-variant="primary"]),
 .navigation summary:active {
   box-shadow: none;
 }
-.navigation button:focus-visible,
+.navigation button:focus-visible:not([data-ui-variant="primary"]),
 .compact-input:focus-visible,
 .terminal-surface:focus-visible {
   outline: 3px solid var(--ui-focus);
@@ -359,7 +359,7 @@ body {
 #workspace-shell {
   background: var(--ui-background);
 }
-.navigation button:focus-visible {
+.navigation button:focus-visible:not([data-ui-variant="primary"]) {
   outline: 2px solid var(--ui-focus);
   outline-offset: 2px;
 }

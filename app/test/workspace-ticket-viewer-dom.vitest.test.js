@@ -766,6 +766,129 @@ test("ticket idea modal marks both current steps, keeps failed edits open, and c
   }
 });
 
+test("sidebar ticket creation selects a Workspace before using the existing proposal flow", async () => {
+  const proposed = [];
+  const created = [];
+  const view = mountIdeaModal({
+    triggerLabel: "Create ticket",
+    workspaceSelector: true,
+    workspaceGroups: () => [
+      {
+        label: "Most recently completed",
+        options: [{ value: "alpha", label: "Alpha" }],
+      },
+      {
+        label: "Other workspaces",
+        options: [{ value: "beta", label: "Beta" }],
+      },
+    ],
+    onPropose: async (idea, workspaceId) => {
+      proposed.push([idea, workspaceId]);
+      return { title: "Ticket", body: "Ticket body" };
+    },
+    onCreate: async (title, body, start, workspaceId) => {
+      created.push([title, body, start, workspaceId]);
+      return { ticket: { filename: "ticket.md" } };
+    },
+    onTicketCreated: async (result) => created.push(result),
+  });
+  const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+  try {
+    view.host.querySelector("button").click();
+    await flush();
+    const query = view.host.querySelector('[role="combobox"]');
+    assert.ok(query, "the Workspace autocomplete is available in the form");
+    assert.equal(query.tagName, "INPUT");
+    assert.equal(
+      query.getAttribute("aria-expanded"),
+      "false",
+      "opening Create Ticket shows the input without expanding its menu",
+    );
+    assert.equal(
+      view.host.querySelector("#ticket-workspace-select-listbox"),
+      null,
+      "workspace options are not displayed inline on the form",
+    );
+    assert.equal(query.getAttribute("aria-required"), "true");
+    assert.equal(
+      view.host.ownerDocument.activeElement,
+      query,
+      "Create Ticket autofocuses the Workspace input",
+    );
+    const keydown = (key) =>
+      query.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    keydown("ArrowDown");
+    const allWorkspaces = [...view.host.querySelectorAll('[role="option"]')];
+    assert.equal(
+      query.getAttribute("aria-activedescendant"),
+      allWorkspaces[0].id,
+      "ArrowDown opens the menu and activates its first Workspace",
+    );
+    assert.deepEqual(
+      [...view.host.querySelectorAll('[role="group"]')].map((group) =>
+        group.getAttribute("aria-label"),
+      ),
+      ["Most recently completed", "Other workspaces"],
+      "Create Ticket keeps its intended Workspace groupings",
+    );
+    keydown("ArrowDown");
+    assert.equal(
+      query.getAttribute("aria-activedescendant"),
+      allWorkspaces[1].id,
+    );
+    keydown("ArrowUp");
+    assert.equal(
+      query.getAttribute("aria-activedescendant"),
+      allWorkspaces[0].id,
+    );
+    query.value = "Beta";
+    query.dispatchEvent(new Event("input", { bubbles: true }));
+    const filteredWorkspaces = [
+      ...view.host.querySelectorAll('[role="option"]'),
+    ];
+    assert.deepEqual(
+      filteredWorkspaces.map((option) => option.textContent),
+      ["Beta"],
+      "typing filters Create Ticket's grouped Workspace choices",
+    );
+    keydown("ArrowUp");
+    assert.equal(
+      query.getAttribute("aria-activedescendant"),
+      filteredWorkspaces[0].id,
+      "ArrowUp reaches the final filtered option from the initial position",
+    );
+    keydown("ArrowDown");
+    keydown("Enter");
+    assert.equal(query.getAttribute("aria-expanded"), "false");
+    const idea = view.host.querySelector("#ticket-idea");
+    idea.value = "Capture an idea";
+    idea.dispatchEvent(new Event("input", { bubbles: true }));
+    view.host.querySelector('button[type="submit"]').click();
+    await flush();
+    assert.deepEqual(proposed, [["Capture an idea", "beta"]]);
+    view.host.querySelector("#ticket-title").value = "Ticket";
+    view.host
+      .querySelector("#ticket-title")
+      .dispatchEvent(new Event("input", { bubbles: true }));
+    view.host.querySelector("#ticket-body").value = "Ticket body";
+    view.host
+      .querySelector("#ticket-body")
+      .dispatchEvent(new Event("input", { bubbles: true }));
+    view.host.querySelector("dialog footer button:last-child").click();
+    await flush();
+    assert.deepEqual(created[0], ["Ticket", "Ticket body", false, "beta"]);
+    assert.equal(created[1].workspaceId, "beta");
+  } finally {
+    view.dispose();
+  }
+});
+
 test("workspace deletion always warns, archives active tickets, and recovers from failures", async () => {
   let archiveFailures = 1;
   let deleteFailures = 1;

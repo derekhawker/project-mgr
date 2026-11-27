@@ -1,0 +1,42 @@
+.root {
+  display: grid;
+  gap: var(--ui-space-8);
+  position: relative;
+}
+.input {
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
+.popup {
+  max-height: 18rem;
+  overflow: auto;
+  padding: var(--ui-space-4);
+  border: 1px solid var(--ui-border-light);
+  border-radius: 0.35rem;
+  background: var(--ui-surface-raised);
+  box-shadow: 0 10px 28px #24242324;
+}
+.options {
+  display: grid;
+  gap: var(--ui-space-2);
+}
+.groupLabel {
+  padding: var(--ui-control-padding);
+  color: var(--ui-muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+.options button:hover:not(:disabled):not([data-active="true"]) {
+  color: var(--ui-text);
+  background: transparent;
+}
+.options button[data-active="true"],
+.options button[data-active="true"]:hover:not(:disabled) {
+  color: #fff;
+  background: var(--ui-menu-highlight, var(--ui-blue));
+}
+.empty {
+  margin: 0;
+  padding: 0.5rem;
+}

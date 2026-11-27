@@ -32,8 +32,12 @@ The 11 migrated files without the known navigation failure passed 85 cases in
 6.92 s with a 260 MiB cgroup peak in one additional scoped run. No equivalent
 before measurement was captured for that group.
 
-The existing `navigation-dom` expectation already failed on baseline; its
-migrated counterpart retains the same failure and was not silently changed.
+The baseline `2553848` had a failing `navigation-dom` expectation, which the
+migration retained. After merging `main` at `76f5bec`, the same navigation test,
+two additional navigation picker tests, one UI dialog assertion, and the
+application composition test also fail under the original Node harness on
+`main`; their migrated counterparts retain those failures. Their expected
+behavior was not changed as part of this comparison.
 The migration uses happy-dom, not the Solid guide's default jsdom, to preserve
 existing DOM and dialog behavior while changing the runner. Browser and native
 integration remain separate opt-in cohorts.

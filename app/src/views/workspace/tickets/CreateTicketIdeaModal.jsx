@@ -3,6 +3,7 @@ import {
   Button,
   Checkbox,
   ErrorMessage,
+  FilterableSelect,
   Input,
   Modal,
   TextArea,
@@ -13,9 +14,13 @@ import styles from "./CreateTicketIdeaModal.module.css";
 /** Captures an idea, reviews generated content, then asks the owner to save it. */
 export function CreateTicketIdeaModal(props) {
   const [open, setOpen] = createSignal(false);
+  const [workspaceId, setWorkspaceId] = createSignal("");
   let generation = 0;
+  const disabled = () =>
+    typeof props.disabled === "function" ? props.disabled() : props.disabled;
   const openDialog = () => {
     generation++;
+    setWorkspaceId(props.workspaceId?.() ?? "");
     setOpen(true);
   };
   const closeDialog = () => {
@@ -26,16 +31,17 @@ export function CreateTicketIdeaModal(props) {
   return (
     <>
       <Button
+        id={props.triggerId}
         type="button"
         variant="primary"
-        disabled={Boolean(props.disabled?.())}
+        disabled={Boolean(disabled())}
         onClick={openDialog}
       >
-        Create ticket…
+        {props.triggerLabel ?? "Create ticket…"}
       </Button>
       <Modal
         open={() => open()}
-        title="Create a ticket from an idea"
+        title="Create a ticket"
         size="wide"
         onCloseRequest={closeDialog}
         renderContent={() => {
@@ -51,14 +57,22 @@ export function CreateTicketIdeaModal(props) {
             createSignal(false);
           const [busy, setBusy] = createSignal(false);
           const [error, setError] = createSignal("");
+          const currentWorkspaceId = () =>
+            props.workspaceSelector ? workspaceId() : props.workspaceId?.();
+          const workspaceAvailable = () =>
+            !props.workspaceSelector || Boolean(currentWorkspaceId());
 
           async function propose(event) {
             event.preventDefault();
-            if (!idea().trim() || busy()) return;
+            if (!idea().trim() || !workspaceAvailable() || busy()) return;
             setBusy(true);
             setError("");
             try {
-              const proposal = await props.onPropose(idea());
+              const workspace = currentWorkspaceId();
+              const proposal = await props.onPropose(
+                idea(),
+                ...(workspace ? [workspace] : []),
+              );
               if (!isCurrent()) return;
               setTitle(proposal.title);
               setBody(proposal.body);
@@ -78,13 +92,17 @@ export function CreateTicketIdeaModal(props) {
             setBusy(true);
             setError("");
             try {
+              const workspace = currentWorkspaceId();
               const ticket = await props.onCreate(
                 title(),
                 body(),
                 startInvestigation(),
+                ...(workspace ? [workspace] : []),
               );
               if (!isCurrent()) return;
-              await props.onTicketCreated?.(ticket);
+              await props.onTicketCreated?.(
+                workspace ? { ...ticket, workspaceId: workspace } : ticket,
+              );
               if (!isCurrent()) return;
               closeDialog();
             } catch (cause) {
@@ -133,7 +151,7 @@ export function CreateTicketIdeaModal(props) {
                   type="submit"
                   form="ticket-idea-form"
                   variant="primary"
-                  disabled={busy() || !idea().trim()}
+                  disabled={busy() || !idea().trim() || !workspaceAvailable()}
                 >
                   {busy() ? "Preparing…" : "Review proposal"}
                 </Button>
@@ -166,6 +184,19 @@ export function CreateTicketIdeaModal(props) {
                     class={styles.form}
                     onSubmit={propose}
                   >
+                    <Show when={props.workspaceSelector}>
+                      <FilterableSelect
+                        id="ticket-workspace-select"
+                        label="Workspace"
+                        required
+                        searchLabel="Filter workspaces"
+                        placeholder="Choose a Workspace"
+                        autoFocus={props.workspaceSelector}
+                        value={workspaceId()}
+                        groups={props.workspaceGroups?.() ?? []}
+                        onChange={setWorkspaceId}
+                      />
+                    </Show>
                     <label for="ticket-idea">
                       What would you like this ticket to capture?
                     </label>
@@ -173,7 +204,7 @@ export function CreateTicketIdeaModal(props) {
                       id="ticket-idea"
                       rows="7"
                       required
-                      autofocus
+                      autofocus={!props.workspaceSelector}
                       value={idea()}
                       disabled={busy()}
                       onInput={(event) => setIdea(event.currentTarget.value)}

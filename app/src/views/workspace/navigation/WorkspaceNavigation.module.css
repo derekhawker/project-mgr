@@ -138,3 +138,9 @@
   font-size: 12px;
   line-height: 1.45;
 }
+.createTicketRow {
+  padding: 0.25rem 0.4rem 0.5rem;
+}
+.createTicketRow > :global(button) {
+  width: 100%;
+}

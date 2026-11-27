@@ -350,15 +350,25 @@ bindings, including checkout path, branch, and verification state; the catalog
 and attachment controls are available at workspace scope.
 Show the Quick Requests heading above the recent requests list with a separate
 chevron-only button that opens the complete Quick Requests destination. Below it,
-the **Ticket Sidebar** has **Tickets** and **Workspaces** tabs; Tickets is the
-default and is session-local. Tickets is an uncapped flat list of tickets with a
+the **Ticket Sidebar** has **Recent** and **Workspaces** tabs; Recent is the
+default and is session-local. Recent is an uncapped flat list of tickets with a
 `work_session_id` across active Workspaces, ordered by file modification time,
 newest first. Give each eligible session-backed ticket its own compact tree
 group, without merging equal labels elsewhere in the list. Exclude done and
 cancelled tickets. The tiny 11px with 14px line height group heading shows `project_label` or, when
 absent, the owning Workspace name. The title is the indented child row with the
 same right-arrow marker as Workspaces; do not repeat the label inline. The child
-row starts Work. Keep the list compact.
+row starts Work. Keep the list compact. Put **Create ticket** above the Recent
+list only. It opens the existing two-step create-ticket dialog, titled **Create a
+ticket**, with a required Workspace selector; the Workspace ticket browser opens
+that dialog with its current Workspace fixed and no selector. The selector groups
+up to 20 active Workspaces with completed tickets first, ranked by the newest
+completed ticket's file-modification time, then all remaining Workspaces sorted
+alphabetically without regard to capitalization. Workspace groups in the sidebar
+also sort alphabetically without regard to capitalization. The Workspace-creation
+Repository selector in New Work is filterable too. Both filterable selectors
+focus their query when opened and support Arrow Up/Down, Home/End, Enter, and
+Escape.
 
 Workspaces preserves the existing main-branch grouped layout: shared
 project-label groups appear first as plain headings with ticket rows beneath and

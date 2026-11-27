@@ -55,7 +55,7 @@ discussions. For workflow behavior beyond the UX vocabulary, see
 ## Screens and controls
 
 - **Ticket Sidebar:** The persistent left-hand navigation for tickets. Its
-  **Tickets** tab is a modification-sorted tree of session-backed tickets, one
+  **Recent** tab is a modification-sorted tree of session-backed tickets, one
   compact group per ticket;
   **Workspaces** preserves the
   existing Workspace-group layout, including its shared-label headings. This is

@@ -8,6 +8,7 @@ export { ErrorMessage } from "./ErrorMessage.jsx";
 export { Input } from "./Input.jsx";
 export { TextArea } from "./TextArea.jsx";
 export { Select } from "./Select.jsx";
+export { FilterableSelect } from "./FilterableSelect.jsx";
 export { Checkbox } from "./Checkbox.jsx";
 export { Switch } from "./Switch.jsx";
 export { Notice } from "./Notice.jsx";

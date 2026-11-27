@@ -1,5 +1,13 @@
 import { createEffect, Show } from "solid-js";
-import { Button, Input, Modal, Select, Tabs, TextArea } from "@ui-lib";
+import {
+  Button,
+  FilterableSelect,
+  Input,
+  Modal,
+  Select,
+  Tabs,
+  TextArea,
+} from "@ui-lib";
 import { SetupProgressPanel } from "./SetupProgressPanel.jsx";
 import { newWorkProgressDestination } from "./newWorkProgress.js";
 import styles from "./NewWorkModal.module.css";
@@ -12,7 +20,7 @@ export function NewWorkModal(props) {
       if (!modal?.open) return;
       modal.querySelector("[data-modal-body]").scrollTop = 0;
       const selector = props.workspaceVisible()
-        ? "#workspace-repository-select"
+        ? "#workspace-repository-select-trigger"
         : review
           ? recoveringQuickRequest()
             ? "#quick-request-retry-startup"
@@ -170,13 +178,15 @@ export function NewWorkModal(props) {
             onSubmit={props.onWorkspaceSubmit}
           >
             <div class={styles.fields}>
-              <Select
+              <FilterableSelect
                 id="workspace-repository-select"
                 label="Repository"
                 required
+                autoFocus={props.workspaceVisible()}
                 disabled={props.workspaceCatalogLoading()}
                 value={props.workspaceRepositoryChoice()}
                 placeholder="Choose a repository or create one"
+                searchLabel="Filter repositories"
                 options={[
                   {
                     value: props.emptyWorkspaceChoice,

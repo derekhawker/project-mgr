@@ -12,6 +12,7 @@ import { NavigationItem } from "../../../components/NavigationItem.jsx";
 import { TicketSessionIndicator } from "../../../components/TicketSessionIndicator.jsx";
 import { recordUiDiagnostic } from "../../../lib/uiDiagnostics.js";
 import { TicketTreeGroup } from "./TicketTreeGroup.jsx";
+import { CreateTicketIdeaModal } from "../tickets/CreateTicketIdeaModal.jsx";
 import styles from "./WorkspaceNavigation.module.css";
 
 /** Reactive Workspace navigation list; selection remains owned by the app shell. */
@@ -44,13 +45,58 @@ export function WorkspaceNavigation(props) {
     return expandedByLabel.get(workspaceId);
   };
   const regularWorkspaces = () =>
-    (props.data()?.workspaces || []).filter(
-      (workspace) => workspace.kind === "regular",
-    );
+    (props.data()?.workspaces || [])
+      .filter((workspace) => workspace.kind === "regular")
+      .sort((a, b) =>
+        a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+      );
   const activeWorkspaces = () =>
     regularWorkspaces().filter((workspace) => workspace.status === "active");
   const workspaceTickets = (workspaceId) =>
     props.data()?.workspaceTickets?.[workspaceId] || [];
+  const workspacePickerGroups = () => {
+    const ranked = activeWorkspaces()
+      .map((workspace) => ({
+        workspace,
+        completedAt: workspaceTickets(workspace.id)
+          .filter((ticket) => ticket.status === "done")
+          .reduce(
+            (latest, ticket) => Math.max(latest, ticket.modifiedAt || 0),
+            0,
+          ),
+      }))
+      .filter((entry) => entry.completedAt > 0)
+      .sort(
+        (a, b) =>
+          b.completedAt - a.completedAt ||
+          a.workspace.name.localeCompare(b.workspace.name, undefined, {
+            sensitivity: "base",
+          }),
+      );
+    const recent = ranked.slice(0, 20);
+    const recentIds = new Set(recent.map((entry) => entry.workspace.id));
+    const remaining = activeWorkspaces()
+      .filter((workspace) => !recentIds.has(workspace.id))
+      .sort((a, b) =>
+        a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+      );
+    return [
+      {
+        label: "Most recently completed",
+        options: recent.map(({ workspace }) => ({
+          value: workspace.id,
+          label: workspace.name,
+        })),
+      },
+      {
+        label: "Other workspaces",
+        options: remaining.map((workspace) => ({
+          value: workspace.id,
+          label: workspace.name,
+        })),
+      },
+    ];
+  };
   const displayedWorkspaceTickets = (workspaceId) =>
     workspaceTickets(workspaceId).filter(
       (ticket) =>
@@ -148,6 +194,17 @@ export function WorkspaceNavigation(props) {
           a.filename.localeCompare(b.filename) ||
           a.workspace.id.localeCompare(b.workspace.id),
       );
+  const flatTicketGroups = () => {
+    const groups = [];
+    for (const ticket of flatTickets()) {
+      const label = ticket.projectLabel?.trim() || ticket.workspace.name;
+      const key = label.replace(/\s+/gu, " ").toLowerCase();
+      const current = groups.at(-1);
+      if (current?.key === key) current.tickets.push(ticket);
+      else groups.push({ key, label, tickets: [ticket] });
+    }
+    return groups;
+  };
   const ticketRow = (
     ticket,
     workspace,
@@ -229,22 +286,44 @@ export function WorkspaceNavigation(props) {
             <Show
               when={props.viewMode() === "workspaces"}
               fallback={
-                <Show
-                  when={flatTickets().length > 0}
-                  fallback={
-                    <li class={styles.emptyState}>No tickets with sessions.</li>
-                  }
-                >
-                  <Index each={flatTickets()}>
-                    {(item) => (
-                      <TicketTreeGroup
-                        label={item().projectLabel || item().workspace.name}
-                      >
-                        {ticketRow(item, () => item().workspace, "flat")}
-                      </TicketTreeGroup>
-                    )}
-                  </Index>
-                </Show>
+                <>
+                  <li class={styles.createTicketRow}>
+                    <CreateTicketIdeaModal
+                      triggerId="sidebar-create-ticket"
+                      triggerLabel="Create ticket"
+                      workspaceSelector
+                      workspaceGroups={workspacePickerGroups}
+                      disabled={props.ticketCreateDisabled?.()}
+                      onPropose={props.onProposeTicket}
+                      onCreate={props.onCreateTicket}
+                      onTicketCreated={props.onTicketCreated}
+                    />
+                  </li>
+                  <Show
+                    when={flatTickets().length > 0}
+                    fallback={
+                      <li class={styles.emptyState}>
+                        No tickets with sessions.
+                      </li>
+                    }
+                  >
+                    <For each={flatTicketGroups()}>
+                      {(group) => (
+                        <TicketTreeGroup label={group.label}>
+                          <For each={group.tickets}>
+                            {(item) =>
+                              ticketRow(
+                                () => item,
+                                () => item.workspace,
+                                "flat",
+                              )
+                            }
+                          </For>
+                        </TicketTreeGroup>
+                      )}
+                    </For>
+                  </Show>
+                </>
               }
             >
               <For each={sharedLabelGroups()}>
