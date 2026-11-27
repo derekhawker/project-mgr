@@ -64,6 +64,18 @@ Docs file tree/content, and Change Review file tree/diff).
 
 ### Workspace and ticket navigation
 
+- The sidebar tabs are **Recent** and **Workspaces**. Recent is the flat,
+  modification-sorted session-backed ticket list. Its **Create ticket** button
+  sits above the list and opens the standard ticket proposal/review modal with a
+  required Workspace picker. Workspaces retains the grouped Workspace layout.
+- The Workspace picker puts up to 20 active Workspaces with completed tickets
+  first, ranked by the newest completed ticket's file-modification time. The
+  remaining Workspaces follow alphabetically, case-insensitively. Both sections
+  can be filtered; opening the picker focuses its filter. Arrow Up/Down move
+  through options, Home/End move to the first/last option, Enter selects, and
+  Escape closes the picker without closing the modal.
+- Workspace names in the grouped sidebar are sorted alphabetically without
+  regard to capitalization.
 - **Workspaces** has an icon-only view toggle. Its accessible label describes
   the action that will happen next: **Show flat ticket list** or **Group tickets
   by Workspace**. Grouped mode is the initial mode.
@@ -108,6 +120,9 @@ Docs file tree/content, and Change Review file tree/diff).
   offers **Workspace** and **Quick Request**; it does not offer Task creation.
   Choosing an item opens the creation modal over the current destination, which
   remains intact if the user cancels.
+- The Workspace-creation Repository picker is filterable. Opening it focuses the
+  filter and uses the same arrow, Home/End, Enter, and Escape behavior as the
+  sidebar Workspace picker.
 
 ## 2. Workspace ticket browser
 
@@ -148,7 +163,7 @@ Workspace-level Tools menu, and the primary **Create ticket** action.
   explicit available choice rather than silently substituting another model.
   Ticket creation/Work actions that need a model are unavailable until one is
   selected.
-- **Create ticket** opens a two-step dialog. Step 1 captures the idea and asks
+- **Create ticket** opens a two-step dialog titled **Create a ticket**. Step 1 captures the idea and asks
   OpenCode to propose a ticket. Step 2 shows editable title and Markdown body;
   the app-managed `draft` status is read-only. **Back** returns to the idea.
 - The optional **Start ticket** checkbox is off by default. If selected, ticket
@@ -356,18 +371,18 @@ Ports inspects accessible TCP listeners and groups results by process.
 connects destination controllers and shared selection, and mounts one Solid tree
 through `ApplicationRoot`; features do not mount separate roots.
 
-| Area | Main implementation | Responsibility |
-|---|---|---|
-| Shell/lifetime | `application/`, `main.js` | Persistent shell, right content selection, shared notices/status, lifetime and teardown. |
-| New work | `features/new-work/` | Menu, modal flow, proposal/review state, Workspace/Quick Request creation. |
-| Quick Requests | `views/quick-requests/` | Recent list, all-list search/deletion, selection and reopen flow. |
-| Workspace/tickets | `views/workspace/navigation/`, `tickets/` | Grouped/flat rail, label editing, ticket list/reader/create/Work. |
-| Sessions/tools | `views/workspace/sessions/`, `repository-tools/`, `terminal/` | Session/tab coordination, interactive xterm presentation, tool menu. |
-| Docs/Change Review | `views/workspace/docs/`, `change-review/` | Ticket-scoped file reader and Git diff presentation. |
-| Repositories/Ports | `views/directories/`, `views/ports/` | Repository catalog UI and listening process/filter UI. |
-| Shared app-specific UI | `components/` | Navigation items, page layouts, ticket label/session controls, file trees. |
-| Generic presentation | `packages/ui-lib/` | Product-neutral visual controls imported through `@ui-lib`. |
-| Tauri boundary | `services/commandContract.js` and `shell.js` | Typed command contract/adapters; production view code does not call raw Tauri `invoke` directly. |
+| Area                   | Main implementation                                           | Responsibility                                                                                   |
+| ---------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Shell/lifetime         | `application/`, `main.js`                                     | Persistent shell, right content selection, shared notices/status, lifetime and teardown.         |
+| New work               | `features/new-work/`                                          | Menu, modal flow, proposal/review state, Workspace/Quick Request creation.                       |
+| Quick Requests         | `views/quick-requests/`                                       | Recent list, all-list search/deletion, selection and reopen flow.                                |
+| Workspace/tickets      | `views/workspace/navigation/`, `tickets/`                     | Grouped/flat rail, label editing, ticket list/reader/create/Work.                                |
+| Sessions/tools         | `views/workspace/sessions/`, `repository-tools/`, `terminal/` | Session/tab coordination, interactive xterm presentation, tool menu.                             |
+| Docs/Change Review     | `views/workspace/docs/`, `change-review/`                     | Ticket-scoped file reader and Git diff presentation.                                             |
+| Repositories/Ports     | `views/directories/`, `views/ports/`                          | Repository catalog UI and listening process/filter UI.                                           |
+| Shared app-specific UI | `components/`                                                 | Navigation items, page layouts, ticket label/session controls, file trees.                       |
+| Generic presentation   | `packages/ui-lib/`                                            | Product-neutral visual controls imported through `@ui-lib`.                                      |
+| Tauri boundary         | `services/commandContract.js` and `shell.js`                  | Typed command contract/adapters; production view code does not call raw Tauri `invoke` directly. |
 
 Workspace composition is explicit: `ApplicationRoot` renders the navigation
 rail and a single selected-work region; `RightContentShell` selects which

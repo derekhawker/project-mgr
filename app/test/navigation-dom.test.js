@@ -49,6 +49,7 @@ for (const key of [
   "Node",
   "Element",
   "HTMLElement",
+  "HTMLHeadElement",
   "Event",
   "MouseEvent",
 ]) {
@@ -494,7 +495,7 @@ test("Ticket Sidebar tabs render accessible selection and report selected view",
   assert.equal(tablist.getAttribute("aria-label"), "Ticket Sidebar views");
   assert.deepEqual(
     tabs.map((tab) => tab.textContent.trim()),
-    ["Tickets", "Workspaces"],
+    ["Recent", "Workspaces"],
   );
   assert.equal(tabs[0].getAttribute("aria-selected"), "true");
   assert.equal(tabs[1].getAttribute("aria-selected"), "false");
@@ -502,6 +503,123 @@ test("Ticket Sidebar tabs render accessible selection and report selected view",
   tabs[1].click();
   assert.equal(value(), "workspaces");
   assert.equal(tabs[1].getAttribute("aria-selected"), "true");
+  view.dispose();
+});
+
+test("Recent create-ticket picker ranks completed workspaces before alphabetized remainder", async () => {
+  const view = mount(WorkspaceNavigation, {
+    data: () => ({
+      workspaces: [
+        { id: "gamma", name: "Gamma", kind: "regular", status: "active" },
+        { id: "alpha", name: "alpha", kind: "regular", status: "active" },
+        { id: "beta", name: "Beta", kind: "regular", status: "active" },
+      ],
+      workspaceTickets: {
+        alpha: [{ status: "done", modifiedAt: 100 }],
+        beta: [{ status: "done", modifiedAt: 200 }],
+      },
+    }),
+    busy: () => false,
+    selected: () => null,
+    onSelect: () => {},
+    viewMode: () => "tickets",
+    onWork: () => {},
+    onProposeTicket: async () => ({ title: "", body: "" }),
+    onCreateTicket: async () => ({}),
+  });
+  try {
+    [...view.host.querySelectorAll("button")]
+      .find((button) => button.textContent.trim() === "Create ticket")
+      .click();
+    await Promise.resolve();
+    const options = [...view.host.querySelectorAll('[role="option"]')].map(
+      (option) => option.textContent.trim(),
+    );
+    assert.deepEqual(options, ["Beta", "alpha", "Gamma"]);
+    assert.deepEqual(
+      [...view.host.querySelectorAll('[role="group"]')].map((group) =>
+        group.getAttribute("aria-label"),
+      ),
+      ["Most recently completed", "Other workspaces"],
+    );
+  } finally {
+    view.dispose();
+  }
+});
+
+test("Recent create-ticket picker caps recency at twenty and leaves undated workspaces alphabetized", async () => {
+  const workspaces = Array.from({ length: 22 }, (_, index) => ({
+    id: `workspace-${index}`,
+    name: `Workspace ${String(index).padStart(2, "0")}`,
+    kind: "regular",
+    status: "active",
+  }));
+  const workspaceTickets = Object.fromEntries(
+    workspaces
+      .slice(0, 21)
+      .map((workspace, index) => [
+        workspace.id,
+        [{ status: "done", modifiedAt: 100 - index }],
+      ]),
+  );
+  workspaceTickets["workspace-21"] = [{ status: "done", modifiedAt: 0 }];
+  const view = mount(WorkspaceNavigation, {
+    data: () => ({ workspaces, workspaceTickets }),
+    busy: () => false,
+    selected: () => null,
+    onSelect: () => {},
+    viewMode: () => "tickets",
+    onWork: () => {},
+    onProposeTicket: async () => ({ title: "", body: "" }),
+    onCreateTicket: async () => ({}),
+  });
+  try {
+    [...view.host.querySelectorAll("button")]
+      .find((button) => button.textContent.trim() === "Create ticket")
+      .click();
+    await Promise.resolve();
+    const groups = [...view.host.querySelectorAll('[role="group"]')];
+    assert.deepEqual(
+      groups.map((group) => group.querySelectorAll('[role="option"]').length),
+      [20, 2],
+    );
+    assert.equal(
+      groups[0].querySelector('[role="option"]').textContent,
+      "Workspace 00",
+    );
+    assert.deepEqual(
+      [...groups[1].querySelectorAll('[role="option"]')].map(
+        (option) => option.textContent,
+      ),
+      ["Workspace 20", "Workspace 21"],
+    );
+  } finally {
+    view.dispose();
+  }
+});
+
+test("Workspace groups sort names without regard to capitalization", () => {
+  const view = mount(WorkspaceNavigation, {
+    data: () => ({
+      workspaces: [
+        { id: "z", name: "beta", kind: "regular", status: "active" },
+        { id: "a", name: "ALPHA", kind: "regular", status: "active" },
+        { id: "m", name: "Gamma", kind: "regular", status: "active" },
+      ],
+      workspaceTickets: {},
+    }),
+    busy: () => false,
+    selected: () => null,
+    onSelect: () => {},
+    viewMode: () => "workspaces",
+    onWork: () => {},
+  });
+  assert.deepEqual(
+    [...view.host.querySelectorAll("#workspace-list > li > div > button")].map(
+      (button) => button.firstElementChild.textContent.trim(),
+    ),
+    ["ALPHA", "beta", "Gamma"],
+  );
   view.dispose();
 });
 
@@ -568,6 +686,12 @@ test("Tickets gives each ordered row its own tiny label group; Workspaces keeps 
       .getAttribute("aria-labelledby"),
     "ticket-sidebar-tickets",
   );
+  assert.ok(
+    [...view.host.querySelectorAll("button")].some(
+      (button) => button.textContent.trim() === "Create ticket",
+    ),
+    "Recent exposes ticket creation above its list",
+  );
   assert.match(view.host.textContent, /Ship feature/);
   assert.match(view.host.textContent, /Launch/);
   const ticketRow = [...view.host.querySelectorAll("button")].find((button) =>
@@ -585,6 +709,13 @@ test("Tickets gives each ordered row its own tiny label group; Workspaces keeps 
     "repeated labels are not merged; each ticket keeps its sorted position",
   );
   setViewMode("workspaces");
+  assert.equal(
+    [...view.host.querySelectorAll("button")].some(
+      (button) => button.textContent.trim() === "Create ticket",
+    ),
+    false,
+    "Workspace groups do not expose the Recent-only create action",
+  );
   assert.equal(
     view.host
       .querySelector('[role="tabpanel"]')

@@ -31,7 +31,7 @@ published package. Solid is a peer dependency, supplied by the application.
 Keep this package presentation-only: it may depend on Solid and its own files,
 not application screens, commands, state, or Tauri. Add reusable app-specific
 meaning in `app/src/components/` instead. The library contains Heading, ErrorMessage, Button,
-IconButton, Input, TextArea, Select, Checkbox, Switch, ActionMenu, ActionMenuItem,
+IconButton, Input, TextArea, Select, FilterableSelect, Checkbox, Switch, ActionMenu, ActionMenuItem,
 ActionMenuGroup, ActionMenuSeparator, Collapsible, Modal, Drawer, TabList, Tab, Tabs,
 Tooltip, Notice and Status. ErrorMessage supports inline and page-banner placements and
 announces errors assertively.
@@ -134,6 +134,13 @@ forward standard HTML attributes (including `id`, `disabled`, and label-related
 attributes); callers associate visible labels with their controls. Notice
 defaults to a polite status announcement but callers may override its native
 `role` and `aria-live` attributes when the message needs different semantics.
+`FilterableSelect` presents flat or labelled groups of options in a searchable
+listbox. Pass `options` or `groups` (`{ label, options }`), `value`, and
+`onChange(value)`. Opening focuses the filter; Arrow Up/Down move through
+enabled options, Home/End move to the first/last enabled option, Enter selects,
+and Escape closes and returns focus to the trigger. Typing filters labels
+case-insensitively. It is intended for long option lists; unlike `Select`, it
+does not provide native form-required validation.
 `Select` keeps a labelled choice-control API while presenting options in the
 shared `ActionMenu` disclosure. Pass `label`, `options` (`{ value, label,
 disabled? }`), `value`, and `onChange(value)`; `required`, `disabled`, and
@@ -168,8 +175,12 @@ terminals. Switching selection does not mount, unmount, or stop any panel:
 
 ```jsx
 <TabList label="Workspace views" value={selected()} onChange={setSelected}>
-  <Tab value="code" id="code-tab" controls="code-panel">OpenCode</Tab>
-  <Tab value="docs" id="docs-tab" controls="docs-panel" disabled={noDocs()}>Docs</Tab>
+  <Tab value="code" id="code-tab" controls="code-panel">
+    OpenCode
+  </Tab>
+  <Tab value="docs" id="docs-tab" controls="docs-panel" disabled={noDocs()}>
+    Docs
+  </Tab>
 </TabList>
 ```
 

@@ -302,7 +302,6 @@ test("application composes, saves new ticket labels through the Rust boundary, a
     const ticketSessionId =
       "fixture-ticket-work-fixture-workspace-example-active.md";
     const ticketTerminalId = `terminal-${ticketSessionId}`;
-    $("#workspace-list button").click();
     const activeTicket = () =>
       [...$("#workspace-list").querySelectorAll("button")].find((button) =>
         button.textContent.includes("Example active ticket"),
@@ -476,7 +475,6 @@ test("application composes, saves new ticket labels through the Rust boundary, a
     await waitFor(() => !$("#directories-page").hidden);
     assert.equal($("#workspace-shell").hidden, true);
     assert.equal($("#terminal-views"), host);
-    $("#workspace-list button").click();
     await waitFor(activeTicket);
     activeTicket().click();
     await waitFor(
@@ -581,9 +579,18 @@ test("application composes, saves new ticket labels through the Rust boundary, a
 
     $('[data-new-work-type="workspace"]').click();
     assert.equal($("#new-work-modal").open, true);
-    await waitFor(() => !$("#workspace-repository-select").disabled);
-    $("#workspace-repository-select").click();
-    $('[data-value="fixture-repo"]').click();
+    await waitFor(() => !$("#workspace-repository-select-trigger").disabled);
+    const repositoryFilter = () =>
+      window.document.querySelector('[aria-label="Filter repositories"]');
+    await waitFor(repositoryFilter);
+    input('[aria-label="Filter repositories"]', "Example repository");
+    await waitFor(() =>
+      window
+        .document.querySelector('[role="option"]')
+        ?.textContent.includes("Example repository"),
+    );
+    window.document.querySelector('[role="option"]').click();
+    await waitFor(() => window.document.querySelector("#workspace-create-name"));
     input("#workspace-create-name", "Composition Workspace");
     $("#workspace-create-form").dispatchEvent(
       new window.Event("submit", { bubbles: true, cancelable: true }),

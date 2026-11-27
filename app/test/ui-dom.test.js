@@ -18,7 +18,7 @@ await writeFile(
   `
   export { render } from ${JSON.stringify(resolve(appRoot, "node_modules/solid-js/web/dist/web.js"))};
   export { createSignal, createComponent } from ${JSON.stringify(resolve(appRoot, "node_modules/solid-js/dist/solid.js"))};
-  export { Button, IconButton, Icon, Heading, ErrorMessage, Input, ActionMenu, Modal, Drawer, Notice, Status, Switch } from "@ui-lib";
+  export { Button, IconButton, Icon, Heading, ErrorMessage, Input, ActionMenu, Modal, Drawer, Notice, Status, Switch, FilterableSelect } from "@ui-lib";
   export { DeleteButton } from ${JSON.stringify(resolve(appRoot, "src/components/DeleteButton.jsx"))};
   export { OpenItemButton } from ${JSON.stringify(resolve(appRoot, "src/components/OpenItemButton.jsx"))};
   export { QuickRequestHistoryButton } from ${JSON.stringify(resolve(appRoot, "src/views/quick-requests/QuickRequestHistoryButton.jsx"))};
@@ -55,6 +55,7 @@ for (const key of [
   "Node",
   "Element",
   "HTMLElement",
+  "HTMLHeadElement",
   "HTMLDialogElement",
   "Event",
   "MouseEvent",
@@ -96,6 +97,7 @@ const {
   Notice,
   Status,
   Switch,
+  FilterableSelect,
   OpenItemButton,
   DirectoriesLibraryForm,
   RepositoryDirectories,
@@ -118,6 +120,82 @@ function mount(componentFactory) {
 test.after(async () => {
   await window.happyDOM.abort();
   await rm(temp, { recursive: true, force: true });
+});
+
+test("FilterableSelect filters grouped options and supports listbox keyboard selection", async () => {
+  let selected = "";
+  const view = mount(() =>
+    component(FilterableSelect, {
+      id: "workspace-picker-test",
+      label: "Workspace",
+      groups: [
+        {
+          label: "Recent workspaces",
+          options: [{ value: "one", label: "Alpha" }],
+        },
+        {
+          label: "Other workspaces",
+          options: [{ value: "two", label: "Beta" }],
+        },
+      ],
+      value: "",
+      onChange: (value) => {
+        selected = value;
+      },
+    }),
+  );
+  view.host.querySelector("#workspace-picker-test-trigger").click();
+  const query = view.host.querySelector('[role="combobox"]');
+  await Promise.resolve();
+  assert.equal(document.activeElement?.getAttribute("role"), "combobox");
+  query.value = "bet";
+  query.dispatchEvent(new Event("input", { bubbles: true }));
+  assert.equal(view.host.querySelectorAll('[role="option"]').length, 1);
+  assert.equal(view.host.querySelector('[role="option"]').textContent, "Beta");
+  query.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: "ArrowDown",
+      bubbles: true,
+      cancelable: true,
+    }),
+  );
+  query.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: "Enter",
+      bubbles: true,
+      cancelable: true,
+    }),
+  );
+  assert.equal(selected, "two");
+  assert.equal(view.host.querySelector('[role="listbox"]'), null);
+  view.dispose();
+});
+
+test("FilterableSelect Escape closes the list and restores focus to its trigger", async () => {
+  const view = mount(() =>
+    component(FilterableSelect, {
+      id: "escape-picker-test",
+      label: "Workspace",
+      options: [{ value: "one", label: "Alpha" }],
+      onChange: () => {},
+    }),
+  );
+  const trigger = view.host.querySelector("button");
+  trigger.click();
+  const query = view.host.querySelector('[role="combobox"]');
+  await Promise.resolve();
+  query.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: "Escape",
+      bubbles: true,
+      cancelable: true,
+    }),
+  );
+  await Promise.resolve();
+  assert.equal(view.host.querySelector('[role="listbox"]'), null);
+  assert.equal(trigger.getAttribute("aria-expanded"), "false");
+  assert.equal(document.activeElement?.id, "escape-picker-test-trigger");
+  view.dispose();
 });
 
 test("Button and Input preserve native attributes, events, and input values", () => {
@@ -275,7 +353,10 @@ test("AppNotice keeps its polite status and can dismiss the visible notice", () 
   assert.equal(notice.hidden, true);
   setMessage("Could not load workspaces.");
   assert.equal(notice.hidden, false);
-  assert.equal(notice.querySelector("span").textContent, "Could not load workspaces.");
+  assert.equal(
+    notice.querySelector("span").textContent,
+    "Could not load workspaces.",
+  );
   notice.querySelector("button").click();
   assert.equal(notice.hidden, true);
   mounted.dispose();
@@ -391,7 +472,7 @@ test("repository library edits save on blur without an explicit save button", ()
   list.dispose();
 });
 
-test("Workspace creation presents direct repository choices in the native dialog", () => {
+test("Workspace creation presents direct repository choices in the native dialog", async () => {
   let cancelled = 0;
   const proposal = {
     workType: "workspace",
@@ -451,6 +532,7 @@ test("Workspace creation presents direct repository choices in the native dialog
     progressRows: () => [],
   };
   const mounted = mount(() => component(NewWorkModal, props));
+  await Promise.resolve();
   assert.equal(mounted.host.querySelector("#proposal-prompt-preview"), null);
   assert.equal(
     mounted.host.querySelector("#new-work").hidden,
@@ -458,9 +540,13 @@ test("Workspace creation presents direct repository choices in the native dialog
     "The prompt form stays hidden during Workspace creation",
   );
   assert.equal(
+    mounted.host.querySelector("#workspace-repository-select-trigger").tagName,
+    "BUTTON",
+  );
+  assert.equal(
     mounted.host
-      .querySelector("#workspace-repository-select")
-      .getAttribute("role"),
+      .querySelector('[aria-label="Filter repositories"]')
+      ?.getAttribute("role"),
     "combobox",
   );
   assert.ok(mounted.host.querySelector("dialog"));

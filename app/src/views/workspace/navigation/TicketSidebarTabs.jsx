@@ -16,7 +16,7 @@ export function TicketSidebarTabs(props) {
           value="tickets"
           controls="ticket-sidebar-list"
         >
-          Tickets
+          Recent
         </Tab>
         <Tab
           id="ticket-sidebar-workspaces"

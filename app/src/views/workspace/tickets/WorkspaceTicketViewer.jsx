@@ -127,11 +127,14 @@ export function WorkspaceTicketViewer(props) {
         <header class={styles.header}>
           <div class={styles.headerPrimaryActions}>
             <CreateTicketIdeaModal
+              triggerId="workspace-create-ticket"
+              workspaceId={props.workspaceId}
               disabled={() =>
                 Boolean(props.modelBusy?.() || !props.selectedModel?.())
               }
               onPropose={props.onProposeTicket}
               onCreate={props.onCreateTicket}
+              onTicketCreated={props.onTicketCreated}
             />
             <DeleteWorkspaceModal
               workspaceName={props.workspaceName}

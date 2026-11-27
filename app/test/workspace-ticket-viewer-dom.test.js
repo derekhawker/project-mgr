@@ -827,6 +827,78 @@ test("ticket idea modal marks both current steps, keeps failed edits open, and c
   }
 });
 
+test("sidebar ticket creation selects a Workspace before using the existing proposal flow", async () => {
+  const proposed = [];
+  const created = [];
+  const view = mountIdeaModal({
+    triggerLabel: "Create ticket",
+    workspaceSelector: true,
+    workspaceGroups: () => [
+      {
+        label: "Most recently completed",
+        options: [{ value: "alpha", label: "Alpha" }],
+      },
+      {
+        label: "Other workspaces",
+        options: [{ value: "beta", label: "Beta" }],
+      },
+    ],
+    onPropose: async (idea, workspaceId) => {
+      proposed.push([idea, workspaceId]);
+      return { title: "Ticket", body: "Ticket body" };
+    },
+    onCreate: async (title, body, start, workspaceId) => {
+      created.push([title, body, start, workspaceId]);
+      return { ticket: { filename: "ticket.md" } };
+    },
+    onTicketCreated: async (result) => created.push(result),
+  });
+  const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+  try {
+    view.host.querySelector("button").click();
+    await flush();
+    const query = view.host.querySelector('[role="combobox"]');
+    assert.ok(query, "opening the dialog focuses the Workspace filter");
+    assert.equal(query.getAttribute("aria-required"), "true");
+    query.value = "Beta";
+    query.dispatchEvent(new Event("input", { bubbles: true }));
+    query.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "ArrowDown",
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    query.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "Enter",
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    const idea = view.host.querySelector("#ticket-idea");
+    idea.value = "Capture an idea";
+    idea.dispatchEvent(new Event("input", { bubbles: true }));
+    view.host.querySelector('button[type="submit"]').click();
+    await flush();
+    assert.deepEqual(proposed, [["Capture an idea", "beta"]]);
+    view.host.querySelector("#ticket-title").value = "Ticket";
+    view.host
+      .querySelector("#ticket-title")
+      .dispatchEvent(new Event("input", { bubbles: true }));
+    view.host.querySelector("#ticket-body").value = "Ticket body";
+    view.host
+      .querySelector("#ticket-body")
+      .dispatchEvent(new Event("input", { bubbles: true }));
+    view.host.querySelector("dialog footer button:last-child").click();
+    await flush();
+    assert.deepEqual(created[0], ["Ticket", "Ticket body", false, "beta"]);
+    assert.equal(created[1].workspaceId, "beta");
+  } finally {
+    view.dispose();
+  }
+});
+
 test("workspace deletion always warns, archives active tickets, and recovers from failures", async () => {
   let archiveFailures = 1;
   let deleteFailures = 1;
