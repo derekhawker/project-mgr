@@ -138,10 +138,11 @@ defaults to a polite status announcement but callers may override its native
 `FilterableSelect` presents flat or labelled groups of options in a searchable
 listbox. Pass `options` or `groups` (`{ label, options }`), `value`, and
 `onChange(value)`. The text input stays anchored in place while its menu opens
-above or below it. Opening focuses the input; typing filters labels
-case-insensitively. Arrow Up/Down move through enabled options, Home/End move to
-the first/last enabled option, Enter selects, and Escape closes the menu while
-keeping focus in the input. It is intended for long option lists; unlike `Select`, it
+above or below it. Typing filters labels case-insensitively and opens the menu.
+Arrow Down/Up open a closed menu and activate the first/last enabled option;
+while open, Arrow Up/Down move through enabled options and Home/End move to the
+first/last. Enter selects, and Escape closes the menu without moving focus from
+the input. It is intended for long option lists; unlike `Select`, it
 does not provide native form-required validation. Its popup uses the shared
 dropdown surface and option-row treatment and portals into an open dialog to
 avoid clipping by modal scrolling.

@@ -871,11 +871,25 @@ test("sidebar ticket creation selects a Workspace before using the existing prop
       "workspace options are not displayed inline on the form",
     );
     assert.equal(query.getAttribute("aria-required"), "true");
-    query.focus();
     assert.equal(
       view.host.ownerDocument.activeElement,
       query,
-      "focusing the input opens its autocomplete menu",
+      "Create Ticket autofocuses the Workspace input",
+    );
+    const keydown = (key) =>
+      query.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    keydown("ArrowDown");
+    const allWorkspaces = [...view.host.querySelectorAll('[role="option"]')];
+    assert.equal(
+      query.getAttribute("aria-activedescendant"),
+      allWorkspaces[0].id,
+      "ArrowDown opens the menu and activates its first Workspace",
     );
     assert.deepEqual(
       [...view.host.querySelectorAll('[role="group"]')].map((group) =>
@@ -883,6 +897,16 @@ test("sidebar ticket creation selects a Workspace before using the existing prop
       ),
       ["Most recently completed", "Other workspaces"],
       "Create Ticket keeps its intended Workspace groupings",
+    );
+    keydown("ArrowDown");
+    assert.equal(
+      query.getAttribute("aria-activedescendant"),
+      allWorkspaces[1].id,
+    );
+    keydown("ArrowUp");
+    assert.equal(
+      query.getAttribute("aria-activedescendant"),
+      allWorkspaces[0].id,
     );
     query.value = "Beta";
     query.dispatchEvent(new Event("input", { bubbles: true }));
@@ -894,32 +918,14 @@ test("sidebar ticket creation selects a Workspace before using the existing prop
       ["Beta"],
       "typing filters Create Ticket's grouped Workspace choices",
     );
-    query.dispatchEvent(
-      new KeyboardEvent("keydown", {
-        key: "ArrowUp",
-        bubbles: true,
-        cancelable: true,
-      }),
-    );
+    keydown("ArrowUp");
     assert.equal(
       query.getAttribute("aria-activedescendant"),
       filteredWorkspaces[0].id,
       "ArrowUp reaches the final filtered option from the initial position",
     );
-    query.dispatchEvent(
-      new KeyboardEvent("keydown", {
-        key: "ArrowDown",
-        bubbles: true,
-        cancelable: true,
-      }),
-    );
-    query.dispatchEvent(
-      new KeyboardEvent("keydown", {
-        key: "Enter",
-        bubbles: true,
-        cancelable: true,
-      }),
-    );
+    keydown("ArrowDown");
+    keydown("Enter");
     assert.equal(query.getAttribute("aria-expanded"), "false");
     const idea = view.host.querySelector("#ticket-idea");
     idea.value = "Capture an idea";

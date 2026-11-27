@@ -191,6 +191,7 @@ export function CreateTicketIdeaModal(props) {
                         required
                         searchLabel="Filter workspaces"
                         placeholder="Choose a Workspace"
+                        autoFocus={props.workspaceSelector}
                         value={workspaceId()}
                         groups={props.workspaceGroups?.() ?? []}
                         onChange={setWorkspaceId}
@@ -203,7 +204,7 @@ export function CreateTicketIdeaModal(props) {
                       id="ticket-idea"
                       rows="7"
                       required
-                      autofocus
+                      autofocus={!props.workspaceSelector}
                       value={idea()}
                       disabled={busy()}
                       onInput={(event) => setIdea(event.currentTarget.value)}

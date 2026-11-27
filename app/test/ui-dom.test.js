@@ -171,7 +171,7 @@ test("FilterableSelect filters grouped options and supports listbox keyboard sel
   view.dispose();
 });
 
-test("FilterableSelect Escape closes the menu without moving focus from its input", async () => {
+test("FilterableSelect opens on ArrowDown and Escape keeps focus in its input", async () => {
   const view = mount(() =>
     component(FilterableSelect, {
       id: "escape-picker-test",
@@ -184,6 +184,17 @@ test("FilterableSelect Escape closes the menu without moving focus from its inpu
   trigger.focus();
   const query = view.host.querySelector('[role="combobox"]');
   await Promise.resolve();
+  trigger.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: "ArrowDown",
+      bubbles: true,
+      cancelable: true,
+    }),
+  );
+  assert.equal(
+    query.getAttribute("aria-activedescendant"),
+    "escape-picker-test-option-0",
+  );
   query.dispatchEvent(
     new KeyboardEvent("keydown", {
       key: "Escape",

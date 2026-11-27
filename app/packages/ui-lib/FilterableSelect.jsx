@@ -28,6 +28,10 @@ export function FilterableSelect(props) {
     if (props.autoOpen && !disabled()) untrack(openList);
     else setOpen(false);
   });
+  createEffect(() => {
+    if (!props.autoFocus || disabled()) return;
+    queueMicrotask(() => input?.focus());
+  });
   const groups = () =>
     props.groups ?? [{ label: "", options: props.options ?? [] }];
   const options = createMemo(() =>
@@ -134,6 +138,10 @@ export function FilterableSelect(props) {
     if (!open() && ["ArrowDown", "ArrowUp", "Enter"].includes(event.key)) {
       event.preventDefault();
       openList();
+      if (event.key === "ArrowDown")
+        setActiveIndex(filtered().findIndex((option) => !option.disabled));
+      else if (event.key === "ArrowUp")
+        setActiveIndex(filtered().findLastIndex((option) => !option.disabled));
       return;
     }
     if (!open()) return;
@@ -209,9 +217,9 @@ export function FilterableSelect(props) {
             : undefined
         }
         disabled={disabled()}
+        autofocus={props.autoFocus}
         placeholder={props.placeholder ?? "Type to filter…"}
         value={open() ? query() : (selected()?.label ?? "")}
-        onFocus={openList}
         onClick={openList}
         onInput={(event) => {
           setQuery(event.currentTarget.value);
@@ -266,9 +274,9 @@ export function FilterableSelect(props) {
                               aria-selected={String(
                                 String(option.value) === String(props.value),
                               )}
-                              classList={{
-                                [styles.active]: activeIndex() === index(),
-                              }}
+                              class={
+                                activeIndex() === index() ? styles.active : ""
+                              }
                               disabled={option.disabled}
                               tabIndex={-1}
                               onMouseEnter={() => setActiveIndex(index())}
