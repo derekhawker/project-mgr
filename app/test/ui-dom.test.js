@@ -171,7 +171,7 @@ test("FilterableSelect filters grouped options and supports listbox keyboard sel
   view.dispose();
 });
 
-test("FilterableSelect Escape closes the list and restores focus to its trigger", async () => {
+test("FilterableSelect Escape closes the menu without moving focus from its input", async () => {
   const view = mount(() =>
     component(FilterableSelect, {
       id: "escape-picker-test",
@@ -180,8 +180,8 @@ test("FilterableSelect Escape closes the list and restores focus to its trigger"
       onChange: () => {},
     }),
   );
-  const trigger = view.host.querySelector("button");
-  trigger.click();
+  const trigger = view.host.querySelector("#escape-picker-test-trigger");
+  trigger.focus();
   const query = view.host.querySelector('[role="combobox"]');
   await Promise.resolve();
   query.dispatchEvent(
@@ -545,7 +545,7 @@ test("Workspace creation presents direct repository choices in the native dialog
   );
   assert.equal(
     mounted.host.querySelector("#workspace-repository-select-trigger").tagName,
-    "BUTTON",
+    "INPUT",
   );
   assert.equal(
     mounted.host
@@ -559,17 +559,12 @@ test("Workspace creation presents direct repository choices in the native dialog
   );
   const dialog = mounted.host.querySelector("dialog");
   const repositoryList = mounted.host.querySelector('[role="listbox"]');
-  const repositoryOptions = [
-    ...mounted.host.querySelectorAll('[role="option"]'),
-  ];
-  const repositoryOption = repositoryOptions[1];
   assert.equal(
     mounted.host.ownerDocument.activeElement,
     repositoryFilter,
     "Workspace creation focuses the repository filter when it opens",
   );
   assert.ok(repositoryList, "Repository choices open with the modal");
-  assert.ok(repositoryOption);
   assert.equal(
     repositoryList.closest("[data-modal-body]"),
     null,
@@ -583,6 +578,16 @@ test("Workspace creation presents direct repository choices in the native dialog
   assert.equal(dialog.hasAttribute("data-ui-popup-open"), true);
   assert.equal(repositoryList.parentElement.style.position, "absolute");
   assert.equal(repositoryList.parentElement.style.zIndex, "1000");
+  assert.equal(
+    mounted.host.querySelectorAll('[role="group"]').length,
+    0,
+    "New Workspace repository choices are flat",
+  );
+  assert.equal(
+    repositoryFilter.closest('[role="listbox"]'),
+    null,
+    "The editable input stays anchored outside the popup menu",
+  );
   const keydown = (key) =>
     repositoryFilter.dispatchEvent(
       new KeyboardEvent("keydown", {
@@ -591,23 +596,24 @@ test("Workspace creation presents direct repository choices in the native dialog
         cancelable: true,
       }),
     );
-  keydown("ArrowDown");
-  assert.equal(
-    repositoryFilter.getAttribute("aria-activedescendant"),
-    repositoryOptions[0].id,
-    "ArrowDown activates the first choice",
+  repositoryFilter.value = "repoName";
+  repositoryFilter.dispatchEvent(new Event("input", { bubbles: true }));
+  const filteredOptions = [...mounted.host.querySelectorAll('[role="option"]')];
+  assert.deepEqual(
+    filteredOptions.map((option) => option.textContent),
+    ["repoName — /code/repoName"],
   );
   keydown("ArrowDown");
   assert.equal(
     repositoryFilter.getAttribute("aria-activedescendant"),
-    repositoryOption.id,
-    "a second ArrowDown moves to the Repository",
+    filteredOptions[0].id,
+    "ArrowDown activates the filtered Repository",
   );
   keydown("ArrowUp");
   assert.equal(
     repositoryFilter.getAttribute("aria-activedescendant"),
-    repositoryOptions[0].id,
-    "ArrowUp moves back to the previous choice",
+    filteredOptions[0].id,
+    "ArrowUp stays within the filtered choice boundary",
   );
   keydown("ArrowDown");
   keydown("Enter");

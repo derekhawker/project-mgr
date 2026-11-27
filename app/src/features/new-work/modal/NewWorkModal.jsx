@@ -20,7 +20,7 @@ export function NewWorkModal(props) {
       if (!modal?.open) return;
       modal.querySelector("[data-modal-body]").scrollTop = 0;
       const selector = props.workspaceVisible()
-        ? "#workspace-repository-select-filter"
+        ? "#workspace-repository-select-trigger"
         : review
           ? recoveringQuickRequest()
             ? "#quick-request-retry-startup"

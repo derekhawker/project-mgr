@@ -8,8 +8,6 @@ import {
 } from "solid-js";
 import { Portal } from "solid-js/web";
 import { ActionMenuItem } from "./ActionMenuItem.jsx";
-import { Button } from "./Button.jsx";
-import { Icon } from "./Icon.jsx";
 import { Input } from "./Input.jsx";
 import styles from "./FilterableSelect.module.css";
 
@@ -21,7 +19,6 @@ export function FilterableSelect(props) {
   const [popupStyle, setPopupStyle] = createSignal({ visibility: "hidden" });
   let root;
   let input;
-  let trigger;
   let popup;
   let popupDialog;
   const disabled = () =>
@@ -47,6 +44,7 @@ export function FilterableSelect(props) {
     options().find((option) => String(option.value) === String(props.value));
   const openList = () => {
     if (disabled()) return;
+    if (open()) return;
     setQuery("");
     setActiveIndex(-1);
     setOpen(true);
@@ -57,14 +55,18 @@ export function FilterableSelect(props) {
   };
   const popupMount = () => root?.closest("dialog") ?? root ?? document.body;
   const positionPopup = () => {
-    if (!open() || !trigger || !popup) return;
-    const anchor = trigger.getBoundingClientRect();
+    if (!open() || !input || !popup) return;
+    const anchor = input.getBoundingClientRect();
     const dialog = root?.closest("dialog");
     const frame = dialog?.getBoundingClientRect();
     const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
     const below = (frame?.bottom ?? viewportHeight) - anchor.bottom;
     const above = anchor.top - (frame?.top ?? 0);
-    const desired = Math.min(360, Math.max(72, filtered().length * 36 + 56));
+    const groupCount = renderedGroups().filter((group) => group.label).length;
+    const desired = Math.min(
+      288,
+      Math.max(72, filtered().length * 36 + groupCount * 28 + 8),
+    );
     const openDown = below >= desired || (above < desired && below >= above);
     const available = Math.max(1, (openDown ? below : above) - 8);
     const left = frame ? anchor.left - frame.left : anchor.left;
@@ -125,7 +127,7 @@ export function FilterableSelect(props) {
     props.onChange?.(option.value);
     setOpen(false);
     setQuery("");
-    queueMicrotask(() => trigger?.focus());
+    setActiveIndex(-1);
   };
   const onKeyDown = (event) => {
     if (!open() && ["ArrowDown", "ArrowUp", "Enter"].includes(event.key)) {
@@ -138,7 +140,7 @@ export function FilterableSelect(props) {
       event.preventDefault();
       setOpen(false);
       setQuery("");
-      queueMicrotask(() => trigger?.focus());
+      setActiveIndex(-1);
       return;
     }
     if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
@@ -186,33 +188,44 @@ export function FilterableSelect(props) {
   return (
     <div class={styles.root} ref={root}>
       <Show when={props.label}>
-        <label for={`${props.id}-trigger`} onClick={openList}>
-          {props.label}
-        </label>
+        <label for={`${props.id}-trigger`}>{props.label}</label>
       </Show>
-      <Button
-        ref={trigger}
+      <Input
         id={`${props.id}-trigger`}
-        type="button"
-        class={styles.trigger}
+        ref={input}
+        type="text"
+        class={styles.input}
+        role="combobox"
         aria-haspopup="listbox"
         aria-expanded={String(open())}
         aria-controls={`${props.id}-listbox`}
+        aria-autocomplete="list"
+        aria-label={props.searchLabel ?? props.label ?? "Filter options"}
         aria-required={props.required ? "true" : undefined}
+        aria-activedescendant={
+          open() && activeIndex() >= 0
+            ? `${props.id}-option-${activeIndex()}`
+            : undefined
+        }
         disabled={disabled()}
+        placeholder={props.placeholder ?? "Type to filter…"}
+        value={open() ? query() : (selected()?.label ?? "")}
+        onFocus={openList}
+        onClick={openList}
+        onInput={(event) => {
+          setQuery(event.currentTarget.value);
+          setActiveIndex(-1);
+          setOpen(true);
+          queueMicrotask(positionPopup);
+        }}
+        onBlur={(event) => {
+          if (!popup?.contains(event.relatedTarget)) {
+            setOpen(false);
+            setActiveIndex(-1);
+          }
+        }}
         onKeyDown={onKeyDown}
-        onClick={() => (open() ? setOpen(false) : openList())}
-      >
-        <span class={styles.triggerLabel}>
-          {selected()?.label ?? props.placeholder ?? "Choose an option"}
-        </span>
-        <Icon
-          name="chevron"
-          muted
-          class={styles.indicator}
-          aria-hidden="true"
-        />
-      </Button>
+      />
       <Show when={open()}>
         <Portal mount={popupMount()}>
           <div
@@ -223,40 +236,6 @@ export function FilterableSelect(props) {
             }}
             style={popupStyle()}
           >
-            <Input
-              id={`${props.id}-filter`}
-              ref={input}
-              type="text"
-              role="combobox"
-              aria-label={
-                props.searchLabel ?? `Filter ${props.label ?? "options"}`
-              }
-              aria-autocomplete="list"
-              aria-expanded="true"
-              aria-controls={`${props.id}-listbox`}
-              aria-required={props.required ? "true" : undefined}
-              aria-activedescendant={
-                activeIndex() >= 0
-                  ? `${props.id}-option-${activeIndex()}`
-                  : undefined
-              }
-              placeholder="Type to filter…"
-              value={query()}
-              onInput={(event) => {
-                setQuery(event.currentTarget.value);
-                setActiveIndex(-1);
-                queueMicrotask(positionPopup);
-              }}
-              onKeyDown={onKeyDown}
-              onBlur={(event) => {
-                if (
-                  !event.currentTarget.parentElement?.contains(
-                    event.relatedTarget,
-                  )
-                )
-                  setOpen(false);
-              }}
-            />
             <div
               id={`${props.id}-listbox`}
               role="listbox"

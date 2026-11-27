@@ -137,11 +137,11 @@ defaults to a polite status announcement but callers may override its native
 `role` and `aria-live` attributes when the message needs different semantics.
 `FilterableSelect` presents flat or labelled groups of options in a searchable
 listbox. Pass `options` or `groups` (`{ label, options }`), `value`, and
-`onChange(value)`. Opening focuses the filter; Arrow Up/Down move through
-enabled options, Home/End move to the first/last enabled option, Enter selects,
-and Escape closes and returns focus to the trigger. The trigger also handles
-Arrow Up/Down and Enter when focused. Typing filters labels
-case-insensitively. It is intended for long option lists; unlike `Select`, it
+`onChange(value)`. The text input stays anchored in place while its menu opens
+above or below it. Opening focuses the input; typing filters labels
+case-insensitively. Arrow Up/Down move through enabled options, Home/End move to
+the first/last enabled option, Enter selects, and Escape closes the menu while
+keeping focus in the input. It is intended for long option lists; unlike `Select`, it
 does not provide native form-required validation. Its popup uses the shared
 dropdown surface and option-row treatment and portals into an open dialog to
 avoid clipping by modal scrolling.

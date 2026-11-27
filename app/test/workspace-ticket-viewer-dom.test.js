@@ -859,9 +859,42 @@ test("sidebar ticket creation selects a Workspace before using the existing prop
     await flush();
     const query = view.host.querySelector('[role="combobox"]');
     assert.ok(query, "opening the dialog focuses the Workspace filter");
+    assert.equal(query.tagName, "INPUT");
+    assert.equal(
+      view.host.ownerDocument.activeElement,
+      query,
+      "the editable Workspace input remains the focused control",
+    );
     assert.equal(query.getAttribute("aria-required"), "true");
+    assert.deepEqual(
+      [...view.host.querySelectorAll('[role="group"]')].map((group) =>
+        group.getAttribute("aria-label"),
+      ),
+      ["Most recently completed", "Other workspaces"],
+      "Create Ticket keeps its intended Workspace groupings",
+    );
     query.value = "Beta";
     query.dispatchEvent(new Event("input", { bubbles: true }));
+    const filteredWorkspaces = [
+      ...view.host.querySelectorAll('[role="option"]'),
+    ];
+    assert.deepEqual(
+      filteredWorkspaces.map((option) => option.textContent),
+      ["Beta"],
+      "typing filters Create Ticket's grouped Workspace choices",
+    );
+    query.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "ArrowUp",
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    assert.equal(
+      query.getAttribute("aria-activedescendant"),
+      filteredWorkspaces[0].id,
+      "ArrowUp reaches the final filtered option from the initial position",
+    );
     query.dispatchEvent(
       new KeyboardEvent("keydown", {
         key: "ArrowDown",
