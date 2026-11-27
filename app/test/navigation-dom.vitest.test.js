@@ -156,6 +156,54 @@ test("session-backed ticket updates render in Tickets without grouped controls",
   view.dispose();
 });
 
+test("Recent keeps ticket row elements when refreshed data replaces ticket objects", () => {
+  const workspace = {
+    id: "stable-id",
+    name: "Alpha",
+    kind: "regular",
+    status: "active",
+  };
+  const makeTicket = (title) => ({
+    filename: "draft.md",
+    title,
+    status: "draft",
+    hasWorkSession: true,
+    modifiedAt: 1,
+  });
+  const [data, setData] = createSignal({
+    workspaces: [workspace],
+    workspaceTickets: { "stable-id": [makeTicket("Draft")] },
+  });
+  const worked = [];
+  const view = mount(WorkspaceNavigation, {
+    data,
+    busy: () => false,
+    selected: () => null,
+    onSelect: () => {},
+    viewMode: () => "tickets",
+    onWork: (...args) => worked.push(args),
+  });
+  const row = [...view.host.querySelectorAll("button")].find((button) =>
+    button.textContent.includes("Draft"),
+  );
+
+  setData({
+    workspaces: [{ ...workspace }],
+    workspaceTickets: { "stable-id": [makeTicket("Updated draft")] },
+  });
+
+  assert.strictEqual(
+    [...view.host.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Updated draft"),
+    ),
+    row,
+  );
+  assert.match(row.textContent, /Updated draft/);
+  row.click();
+  assert.equal(worked[0][1], "draft.md");
+  view.dispose();
+});
+
 test("Workspaces applies existing visibility rules; Tickets sorts session tickets newest first", () => {
   const workspaces = [
     { id: "a", name: "Alpha", kind: "regular", status: "active" },

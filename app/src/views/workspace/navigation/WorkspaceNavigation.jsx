@@ -307,21 +307,21 @@ export function WorkspaceNavigation(props) {
                       </li>
                     }
                   >
-                    <For each={flatTicketGroups()}>
+                    <Index each={flatTicketGroups()}>
                       {(group) => (
-                        <TicketTreeGroup label={group.label}>
-                          <For each={group.tickets}>
+                        <TicketTreeGroup label={group().label}>
+                          <Index each={group().tickets}>
                             {(item) =>
                               ticketRow(
-                                () => item,
-                                () => item.workspace,
+                                () => item(),
+                                () => item().workspace,
                                 "flat",
                               )
                             }
-                          </For>
+                          </Index>
                         </TicketTreeGroup>
                       )}
-                    </For>
+                    </Index>
                   </Show>
                 </>
               }
