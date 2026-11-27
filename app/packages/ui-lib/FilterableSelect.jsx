@@ -267,16 +267,15 @@ export function FilterableSelect(props) {
                       <For each={group.options}>
                         {(option) => {
                           const index = () => filtered().indexOf(option);
+                          const highlighted = () =>
+                            activeIndex() >= 0
+                              ? activeIndex() === index()
+                              : String(option.value) === String(props.value);
                           return (
                             <ActionMenuItem
                               id={`${props.id}-option-${index()}`}
                               role="option"
-                              aria-selected={String(
-                                String(option.value) === String(props.value),
-                              )}
-                              class={
-                                activeIndex() === index() ? styles.active : ""
-                              }
+                              aria-selected={String(highlighted())}
                               disabled={option.disabled}
                               tabIndex={-1}
                               onMouseEnter={() => setActiveIndex(index())}

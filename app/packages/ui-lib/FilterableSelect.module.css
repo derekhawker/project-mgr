@@ -27,8 +27,8 @@
   font-size: 0.75rem;
   font-weight: 700;
 }
-.active,
-.active:hover:not(:disabled) {
+.options button[aria-selected="true"],
+.options button[aria-selected="true"]:hover:not(:disabled) {
   color: #fff;
   background: var(--ui-menu-highlight, var(--ui-blue));
 }
