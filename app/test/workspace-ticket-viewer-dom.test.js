@@ -858,14 +858,25 @@ test("sidebar ticket creation selects a Workspace before using the existing prop
     view.host.querySelector("button").click();
     await flush();
     const query = view.host.querySelector('[role="combobox"]');
-    assert.ok(query, "opening the dialog focuses the Workspace filter");
+    assert.ok(query, "the Workspace autocomplete is available in the form");
     assert.equal(query.tagName, "INPUT");
+    assert.equal(
+      query.getAttribute("aria-expanded"),
+      "false",
+      "opening Create Ticket shows the input without expanding its menu",
+    );
+    assert.equal(
+      view.host.querySelector("#ticket-workspace-select-listbox"),
+      null,
+      "workspace options are not displayed inline on the form",
+    );
+    assert.equal(query.getAttribute("aria-required"), "true");
+    query.focus();
     assert.equal(
       view.host.ownerDocument.activeElement,
       query,
-      "the editable Workspace input remains the focused control",
+      "focusing the input opens its autocomplete menu",
     );
-    assert.equal(query.getAttribute("aria-required"), "true");
     assert.deepEqual(
       [...view.host.querySelectorAll('[role="group"]')].map((group) =>
         group.getAttribute("aria-label"),

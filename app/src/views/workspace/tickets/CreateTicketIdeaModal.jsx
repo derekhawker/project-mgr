@@ -191,7 +191,6 @@ export function CreateTicketIdeaModal(props) {
                         required
                         searchLabel="Filter workspaces"
                         placeholder="Choose a Workspace"
-                        autoOpen
                         value={workspaceId()}
                         groups={props.workspaceGroups?.() ?? []}
                         onChange={setWorkspaceId}
