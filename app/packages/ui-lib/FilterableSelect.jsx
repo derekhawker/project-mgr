@@ -51,7 +51,7 @@ export function FilterableSelect(props) {
     if (disabled()) return;
     if (open()) return;
     setQuery("");
-    setActiveIndex(-1);
+    setActiveIndex(filtered().findIndex((option) => !option.disabled));
     setOpen(true);
     queueMicrotask(() => {
       positionPopup();
@@ -194,6 +194,20 @@ export function FilterableSelect(props) {
       }))
       .filter((group) => group.options.length);
   });
+  createEffect(() => {
+    const index = activeIndex();
+    if (!open() || index < 0) return;
+    queueMicrotask(() => {
+      if (!open() || activeIndex() !== index || !popup) return;
+      const option = popup.querySelector(`[data-option-index="${index}"]`);
+      if (!option) return;
+      const bounds = popup.getBoundingClientRect();
+      const row = option.getBoundingClientRect();
+      if (row.top < bounds.top) popup.scrollTop += row.top - bounds.top;
+      else if (row.bottom > bounds.bottom)
+        popup.scrollTop += row.bottom - bounds.bottom;
+    });
+  });
   return (
     <div class={styles.root} ref={root}>
       <Show when={props.label}>
@@ -223,7 +237,7 @@ export function FilterableSelect(props) {
         onClick={openList}
         onInput={(event) => {
           setQuery(event.currentTarget.value);
-          setActiveIndex(-1);
+          setActiveIndex(filtered().findIndex((option) => !option.disabled));
           setOpen(true);
           queueMicrotask(positionPopup);
         }}
@@ -267,18 +281,20 @@ export function FilterableSelect(props) {
                       <For each={group.options}>
                         {(option) => {
                           const index = () => filtered().indexOf(option);
-                          const highlighted = () =>
-                            activeIndex() >= 0
-                              ? activeIndex() === index()
-                              : String(option.value) === String(props.value);
                           return (
                             <ActionMenuItem
                               id={`${props.id}-option-${index()}`}
                               role="option"
-                              aria-selected={String(highlighted())}
+                              aria-selected={String(activeIndex() === index())}
+                              data-option-index={index()}
+                              data-active={
+                                activeIndex() === index() ? "true" : undefined
+                              }
                               disabled={option.disabled}
                               tabIndex={-1}
-                              onMouseEnter={() => setActiveIndex(index())}
+                              onMouseMove={() => {
+                                if (!option.disabled) setActiveIndex(index());
+                              }}
                               onMouseDown={(event) => event.preventDefault()}
                               onClick={() => choose(option)}
                             >

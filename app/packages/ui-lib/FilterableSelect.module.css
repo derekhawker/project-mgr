@@ -27,8 +27,12 @@
   font-size: 0.75rem;
   font-weight: 700;
 }
-.options button[aria-selected="true"],
-.options button[aria-selected="true"]:hover:not(:disabled) {
+.options button:hover:not(:disabled):not([data-active="true"]) {
+  color: var(--ui-text);
+  background: transparent;
+}
+.options button[data-active="true"],
+.options button[data-active="true"]:hover:not(:disabled) {
   color: #fff;
   background: var(--ui-menu-highlight, var(--ui-blue));
 }
