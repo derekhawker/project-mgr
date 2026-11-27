@@ -203,12 +203,14 @@ test("Button and Input preserve native attributes, events, and input values", ()
   const button = mount(() =>
     component(Button, {
       type: "submit",
+      variant: "primary",
       onClick: () => clicked++,
       children: "Save",
     }),
   );
   const nativeButton = button.host.querySelector("button");
   assert.equal(nativeButton.type, "submit");
+  assert.equal(nativeButton.getAttribute("data-ui-variant"), "primary");
   nativeButton.click();
   assert.equal(clicked, 1);
   button.dispose();

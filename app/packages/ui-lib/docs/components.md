@@ -53,7 +53,8 @@ Heading separates semantic level from its shared `hero`, `page`, `section`,
 and SVG treatment. Button supports `primary`, `selected`, `danger`, `compact`, and bordered
 `ghost` visual variants. Reserve the danger fill for destructive action buttons;
 icon-only delete affordances remain neutral. Modal uses the ghost variant for
-its close control.
+its close control. Buttons with a variant expose it as `data-ui-variant` so
+surrounding layout styles can preserve the component's visual treatment.
 Icon renders shared inline 16×16 SVGs at a consistent 1rem size, with an optional
 muted treatment for icons paired with text. Keep its SVG artwork inline in
 `Icon.jsx`, not scattered through screen markup or external files. Use the shared

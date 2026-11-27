@@ -12,6 +12,7 @@ export function Button(props) {
     <button
       type="button"
       {...rest}
+      data-ui-variant={local.variant}
       class={`${styles.control} ${styles.button} ${styles[local.variant || "default"] || ""} ${local.class || local.className || ""}`}
     >
       {local.children}

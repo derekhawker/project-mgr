@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -623,7 +623,7 @@ test("Workspace groups sort names without regard to capitalization", () => {
   view.dispose();
 });
 
-test("Tickets gives each ordered row its own tiny label group; Workspaces keeps existing groups", () => {
+test("Recent groups only consecutive normalized labels without changing modifiedAt order; Workspaces keeps existing groups", () => {
   const workspaces = [
     { id: "one", name: "Alpha", kind: "regular", status: "active" },
     { id: "two", name: "Beta", kind: "regular", status: "active" },
@@ -636,25 +636,29 @@ test("Tickets gives each ordered row its own tiny label group; Workspaces keeps 
         status: "in_progress",
         hasWorkSession: true,
         projectLabel: "Launch",
+        modifiedAt: 400,
       },
       {
         filename: "other.md",
         title: "Other work",
         status: "blocked",
         hasWorkSession: true,
-        projectLabel: "Launch",
+        projectLabel: " launch  ",
+        modifiedAt: 350,
       },
       {
         filename: "unlabelled.md",
         title: "No label",
         status: "in_progress",
         hasWorkSession: true,
+        modifiedAt: 250,
       },
       {
         filename: "private.md",
         title: "Private work",
         status: "draft",
         hasWorkSession: true,
+        modifiedAt: 100,
       },
     ],
     two: [
@@ -664,6 +668,15 @@ test("Tickets gives each ordered row its own tiny label group; Workspaces keeps 
         status: "in_progress",
         hasWorkSession: true,
         projectLabel: "Launch",
+        modifiedAt: 500,
+      },
+      {
+        filename: "late-launch.md",
+        title: "Late launch",
+        status: "in_progress",
+        hasWorkSession: true,
+        projectLabel: "Launch",
+        modifiedAt: 200,
       },
     ],
   };
@@ -687,9 +700,16 @@ test("Tickets gives each ordered row its own tiny label group; Workspaces keeps 
     "ticket-sidebar-tickets",
   );
   assert.ok(
-    [...view.host.querySelectorAll("button")].some(
-      (button) => button.textContent.trim() === "Create ticket",
-    ),
+    [...view.host.querySelectorAll("button")].some((button) => {
+      if (button.textContent.trim() !== "Create ticket") return false;
+      assert.match(
+        button.className,
+        /primary/u,
+        "shared primary Button variant remains applied",
+      );
+      assert.equal(button.getAttribute("data-ui-variant"), "primary");
+      return true;
+    }),
     "Recent exposes ticket creation above its list",
   );
   assert.match(view.host.textContent, /Ship feature/);
@@ -705,8 +725,27 @@ test("Tickets gives each ordered row its own tiny label group; Workspaces keeps 
     [...view.host.querySelectorAll("#workspace-list > li > h3")].map(
       (heading) => heading.textContent,
     ),
-    ["Launch", "Launch", "Alpha", "Launch", "Alpha"],
-    "repeated labels are not merged; each ticket keeps its sorted position",
+    ["Launch", "Alpha", "Launch", "Alpha"],
+    "consecutive Launch rows share a heading; later Launch starts a new group",
+  );
+  assert.deepEqual(
+    [...view.host.querySelectorAll("#workspace-list > li")]
+      .filter((li) => li.querySelector("h3"))
+      .map((li) => ({
+        heading: li.querySelector("h3").textContent,
+        rows: [...li.querySelectorAll("li button")].map((button) =>
+          button.textContent.trim(),
+        ),
+      })),
+    [
+      {
+        heading: "Launch",
+        rows: ["Beta work", "Ship feature", "Other work"],
+      },
+      { heading: "Alpha", rows: ["No label"] },
+      { heading: "Launch", rows: ["Late launch"] },
+      { heading: "Alpha", rows: ["Private work"] },
+    ],
   );
   setViewMode("workspaces");
   assert.equal(
@@ -753,6 +792,15 @@ test("Tickets gives each ordered row its own tiny label group; Workspaces keeps 
   workspaceRow.click();
   assert.deepEqual(worked, []);
   view.dispose();
+});
+
+test("navigation list CSS does not reset the shared primary Button surface", async () => {
+  const styles = await readFile(resolve(root, "src/styles.css"), "utf8");
+  assert.doesNotMatch(
+    styles,
+    /\.navigation li button\s*\{[^}]*\bbackground\s*:/su,
+    "broad navigation button rule must not override @ui-lib Button variants",
+  );
 });
 
 test("Workspaces hides tickets without a session and keeps its status visibility rules", () => {

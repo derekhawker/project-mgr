@@ -194,6 +194,17 @@ export function WorkspaceNavigation(props) {
           a.filename.localeCompare(b.filename) ||
           a.workspace.id.localeCompare(b.workspace.id),
       );
+  const flatTicketGroups = () => {
+    const groups = [];
+    for (const ticket of flatTickets()) {
+      const label = ticket.projectLabel?.trim() || ticket.workspace.name;
+      const key = label.replace(/\s+/gu, " ").toLowerCase();
+      const current = groups.at(-1);
+      if (current?.key === key) current.tickets.push(ticket);
+      else groups.push({ key, label, tickets: [ticket] });
+    }
+    return groups;
+  };
   const ticketRow = (
     ticket,
     workspace,
@@ -296,15 +307,21 @@ export function WorkspaceNavigation(props) {
                       </li>
                     }
                   >
-                    <Index each={flatTickets()}>
-                      {(item) => (
-                        <TicketTreeGroup
-                          label={item().projectLabel || item().workspace.name}
-                        >
-                          {ticketRow(item, () => item().workspace, "flat")}
+                    <For each={flatTicketGroups()}>
+                      {(group) => (
+                        <TicketTreeGroup label={group.label}>
+                          <For each={group.tickets}>
+                            {(item) =>
+                              ticketRow(
+                                () => item,
+                                () => item.workspace,
+                                "flat",
+                              )
+                            }
+                          </For>
                         </TicketTreeGroup>
                       )}
-                    </Index>
+                    </For>
                   </Show>
                 </>
               }
