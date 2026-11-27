@@ -5,6 +5,7 @@ import {
   For,
   onCleanup,
   Show,
+  untrack,
 } from "solid-js";
 import { Portal } from "solid-js/web";
 import { ActionMenuItem } from "./ActionMenuItem.jsx";
@@ -24,7 +25,7 @@ export function FilterableSelect(props) {
   const disabled = () =>
     typeof props.disabled === "function" ? props.disabled() : props.disabled;
   createEffect(() => {
-    if (props.autoOpen && !disabled()) openList();
+    if (props.autoOpen && !disabled()) untrack(openList);
     else setOpen(false);
   });
   const groups = () =>

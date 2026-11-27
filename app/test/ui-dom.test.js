@@ -618,6 +618,12 @@ test("Workspace creation presents direct repository choices in the native dialog
   keydown("ArrowDown");
   keydown("Enter");
   assert.deepEqual(selectedRepositories, ["repo-1"]);
+  assert.equal(repositoryFilter.getAttribute("aria-expanded"), "false");
+  assert.equal(
+    mounted.host.querySelector("#workspace-repository-select-listbox"),
+    null,
+    "selecting a repository closes the menu",
+  );
   mounted.host
     .querySelector("dialog")
     .dispatchEvent(new MouseEvent("click", { bubbles: true }));

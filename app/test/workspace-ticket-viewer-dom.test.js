@@ -909,6 +909,7 @@ test("sidebar ticket creation selects a Workspace before using the existing prop
         cancelable: true,
       }),
     );
+    assert.equal(query.getAttribute("aria-expanded"), "false");
     const idea = view.host.querySelector("#ticket-idea");
     idea.value = "Capture an idea";
     idea.dispatchEvent(new Event("input", { bubbles: true }));
