@@ -68,8 +68,9 @@ the failure in the page banner so the user can recover or navigate away.
   matches repository names and full paths case-insensitively and retains folder
   ancestors required to reach each matching repository.
 - Scan every saved directory at startup. Never scan the configured OpenCode
-  Projects area or the configured repository-library root, including when a
-  saved scan root is one of their ancestors.
+  Projects area, including when a saved scan root is one of its ancestors. The
+  configured repository library is eligible for scanning, including when it or
+  a directory beneath it is selected.
 - Deduplicate by verified repository identity and canonical path. If saved roots
   overlap, show each repository once under its most-specific matching root
   before applying the display grouping above.

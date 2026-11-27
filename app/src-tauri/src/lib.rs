@@ -3247,7 +3247,6 @@ fn is_pruned_repository_scan_directory(name: &std::ffi::OsStr) -> bool {
 fn scan_repository_dirs(
     root: &std::path::Path,
     project_home: &std::path::Path,
-    repository_library: &std::path::Path,
     found: &mut Vec<std::path::PathBuf>,
     pruned: &mut Vec<std::path::PathBuf>,
     visited: &mut std::collections::HashSet<std::path::PathBuf>,
@@ -3261,12 +3260,6 @@ fn scan_repository_dirs(
         return Err(format!(
             "Cannot scan inside the configured OpenCode Projects directory: {}",
             project_home.display()
-        ));
-    }
-    if canonical_root.starts_with(repository_library) {
-        return Err(format!(
-            "Cannot scan inside the configured repository library: {}",
-            repository_library.display()
         ));
     }
     let scan_root = canonical_root.clone();
@@ -3316,7 +3309,7 @@ fn scan_repository_dirs(
                 pruned.push(child);
                 continue;
             }
-            if !child.starts_with(project_home) && !child.starts_with(repository_library) {
+            if !child.starts_with(project_home) {
                 // The walk starts at a canonical root and does not follow
                 // directory symlinks, so child paths are already stable.
                 stack.push(child);
@@ -3353,9 +3346,6 @@ fn scan_repositories_with_store(
     let project_home = store
         .resolved_project_home_root()
         .map_err(|error| error.to_string())?;
-    let repository_library = store
-        .resolved_repository_library_root()
-        .map_err(|error| error.to_string())?;
     let mut candidates = Vec::new();
     let mut pruned_directories = Vec::new();
     let mut visited_directories = std::collections::HashSet::new();
@@ -3365,7 +3355,6 @@ fn scan_repositories_with_store(
         match scan_repository_dirs(
             std::path::Path::new(&path),
             &project_home,
-            &repository_library,
             &mut candidates,
             &mut pruned_directories,
             &mut visited_directories,
@@ -5481,7 +5470,7 @@ mod tests {
     }
 
     #[test]
-    fn repository_scan_prunes_project_home_and_skips_linked_worktrees() {
+    fn repository_scan_finds_library_repositories_and_prunes_project_home() {
         let root = tempfile::tempdir().unwrap();
         let home = root.path().join("home");
         std::fs::create_dir_all(&home).unwrap();
@@ -5587,13 +5576,15 @@ mod tests {
             .iter()
             .map(|repository| repository.repository_path.as_str())
             .collect::<std::collections::HashSet<_>>();
-        assert_eq!(cataloged_paths.len(), 2);
+        assert_eq!(cataloged_paths.len(), 4);
         assert!(cataloged_paths.contains(main_repo.to_string_lossy().as_ref()));
         assert!(cataloged_paths.contains(separate_git_dir_checkout.to_string_lossy().as_ref()));
+        assert!(cataloged_paths.contains(library_repo.to_string_lossy().as_ref()));
+        assert!(cataloged_paths.contains(submodule_source.to_string_lossy().as_ref()));
         assert!(!cataloged_paths.contains(linked_worktree.to_string_lossy().as_ref()));
         assert!(!cataloged_paths.contains(submodule.to_string_lossy().as_ref()));
         let wire = serde_json::to_value(&result).unwrap();
-        assert_eq!(wire["repositories"].as_array().unwrap().len(), 2);
+        assert_eq!(wire["repositories"].as_array().unwrap().len(), 4);
         assert!(wire["repositories"].as_array().unwrap().iter().all(|repo| {
             repo.get("repository_path").is_none() && repo["repositoryPath"].is_string()
         }));
@@ -5601,11 +5592,10 @@ mod tests {
             .repositories
             .iter()
             .any(|repository| repository.repository_path.contains("hidden-repo")));
-        assert!(!result.repositories.iter().any(|repository| {
-            repository
-                .repository_path
-                .starts_with(repository_library.to_string_lossy().as_ref())
-        }));
+        assert!(result
+            .repositories
+            .iter()
+            .any(|repository| { repository.repository_path == library_repo.to_string_lossy() }));
         assert!(!result
             .errors
             .iter()
@@ -5628,6 +5618,20 @@ mod tests {
             .errors
             .iter()
             .any(|error| error.contains("OpenCode Projects")));
+
+        let direct_library_scan = scan_repositories_with_store(
+            &store,
+            RepositoryScanCommand {
+                paths: vec![repository_library.to_string_lossy().into()],
+                purpose_proposals: None,
+            },
+        )
+        .unwrap();
+        assert!(direct_library_scan.errors.is_empty());
+        assert!(direct_library_scan
+            .repositories
+            .iter()
+            .any(|repository| { repository.repository_path == library_repo.to_string_lossy() }));
     }
 
     #[test]
@@ -5938,14 +5942,12 @@ mod tests {
         }
 
         let project_home = store.resolved_project_home_root().unwrap();
-        let repository_library = store.resolved_repository_library_root().unwrap();
         let mut traversal_candidates = Vec::new();
         let mut pruned = Vec::new();
         let mut visited = std::collections::HashSet::new();
         scan_repository_dirs(
             &scan_root,
             &project_home,
-            &repository_library,
             &mut traversal_candidates,
             &mut pruned,
             &mut visited,
