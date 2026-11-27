@@ -38,6 +38,8 @@ two additional navigation picker tests, one UI dialog assertion, and the
 application composition test also fail under the original Node harness on
 `main`; their migrated counterparts retain those failures. Their expected
 behavior was not changed as part of this comparison.
+The existing `command-contract.test.js` also fails on `main` at `76f5bec`
+because its source-pattern expectation no longer matches Workspace navigation.
 The migration uses happy-dom, not the Solid guide's default jsdom, to preserve
 existing DOM and dialog behavior while changing the runner. Browser and native
 integration remain separate opt-in cohorts.
