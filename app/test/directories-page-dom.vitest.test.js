@@ -1,63 +1,9 @@
 import assert from "node:assert/strict";
-import test from "node:test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
-import { tmpdir } from "node:os";
-import { pathToFileURL } from "node:url";
-import { Window } from "happy-dom";
-import { build } from "vite";
-import solid from "vite-plugin-solid";
-import { presentationAliases } from "../vite.config.js";
-
-const root = resolve(import.meta.dirname, "..");
-const temp = await mkdtemp(join(tmpdir(), "directories-dom-"));
-const entry = join(temp, "entry.js");
-await writeFile(
-  entry,
-  `
-  export { render } from ${JSON.stringify(resolve(root, "node_modules/solid-js/web/dist/web.js"))};
-  export { createComponent } from ${JSON.stringify(resolve(root, "node_modules/solid-js/dist/solid.js"))};
-  export { DirectoriesPage } from ${JSON.stringify(resolve(root, "src/views/directories/DirectoriesPage.jsx"))};
-  export { RepositoryDirectories } from ${JSON.stringify(resolve(root, "src/views/directories/RepositoryDirectories.jsx"))};
-`,
-);
-try {
-  await build({
-    configFile: false,
-    resolve: { alias: presentationAliases },
-    root,
-    plugins: [solid()],
-    build: {
-      outDir: join(temp, "out"),
-      lib: { entry, formats: ["es"], fileName: "test" },
-      rollupOptions: { output: { inlineDynamicImports: true } },
-    },
-  });
-} catch (error) {
-  await rm(temp, { recursive: true, force: true });
-  throw error;
-}
-const window = new Window();
-for (const key of [
-  "window",
-  "document",
-  "Node",
-  "Element",
-  "HTMLElement",
-  "Event",
-])
-  globalThis[key] =
-    key === "window"
-      ? window
-      : key === "document"
-        ? window.document
-        : window[key];
-const { render, createComponent, DirectoriesPage, RepositoryDirectories } =
-  await import(pathToFileURL(join(temp, "out/test.js")));
-test.after(async () => {
-  await window.happyDOM.abort();
-  await rm(temp, { recursive: true, force: true });
-});
+import { test } from "vitest";
+import { render } from "solid-js/web";
+import { createComponent } from "solid-js";
+import { DirectoriesPage } from "../src/views/directories/DirectoriesPage.jsx";
+import { RepositoryDirectories } from "../src/views/directories/RepositoryDirectories.jsx";
 
 test("page retains accessible landmarks without a back action", () => {
   const host = document.createElement("div");

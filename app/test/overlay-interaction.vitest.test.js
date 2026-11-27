@@ -1,71 +1,9 @@
 import assert from "node:assert/strict";
-import test from "node:test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
-import { Window } from "happy-dom";
-import { build } from "vite";
-import solid from "vite-plugin-solid";
-import { presentationAliases } from "../vite.config.js";
+import { test } from "vitest";
+import { render } from "solid-js/web";
+import { createSignal, createComponent } from "solid-js";
+import { Modal, Drawer } from "@ui-lib";
 
-const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const temp = await mkdtemp(join(tmpdir(), "overlay-interaction-"));
-const entry = join(temp, "entry.js");
-const output = join(temp, "bundle");
-await writeFile(
-  entry,
-  `
-  export { render } from ${JSON.stringify(resolve(appRoot, "node_modules/solid-js/web/dist/web.js"))};
-  export { createSignal, createComponent } from ${JSON.stringify(resolve(appRoot, "node_modules/solid-js/dist/solid.js"))};
-  export { Modal, Drawer } from "@ui-lib";
-`,
-);
-try {
-  await build({
-    configFile: false,
-    resolve: { alias: presentationAliases },
-    root: appRoot,
-    define: { "import.meta.env.DEV": "true" },
-    plugins: [solid()],
-    build: {
-      outDir: output,
-      emptyOutDir: true,
-      cssCodeSplit: false,
-      lib: { entry, formats: ["es"], fileName: "overlay-test" },
-      rollupOptions: { output: { inlineDynamicImports: true } },
-    },
-  });
-} catch (error) {
-  await rm(temp, { recursive: true, force: true });
-  throw error;
-}
-
-const window = new Window();
-for (const key of [
-  "window",
-  "document",
-  "Node",
-  "Element",
-  "HTMLElement",
-  "HTMLDialogElement",
-  "Event",
-  "MouseEvent",
-])
-  globalThis[key] =
-    key === "window"
-      ? window
-      : key === "document"
-        ? window.document
-        : window[key];
-window.HTMLDialogElement.prototype.showModal = function () {
-  this.open = true;
-};
-window.HTMLDialogElement.prototype.close = function () {
-  this.open = false;
-};
-const { render, createSignal, createComponent, Modal, Drawer } =
-  await import(pathToFileURL(join(output, "overlay-test.js")));
 const mount = (Component, props) => {
   const host = document.createElement("div");
   document.body.append(host);
@@ -78,11 +16,6 @@ const mount = (Component, props) => {
     },
   };
 };
-
-test.after(async () => {
-  await window.happyDOM.abort();
-  await rm(temp, { recursive: true, force: true });
-});
 
 for (const [name, Component, expectedCloseName] of [
   ["Modal", Modal, "Close dialog"],
@@ -131,10 +64,10 @@ test("unnamed dialogs warn in development; labelled components do not", () => {
     for (const Component of [Modal, Drawer]) {
       const missing = mount(Component, { open: false, tabs: [] });
       missing.dispose();
-      const named = mount(
-        Component,
-        { open: false, "aria-labelledby": "heading" },
-      );
+      const named = mount(Component, {
+        open: false,
+        "aria-labelledby": "heading",
+      });
       named.dispose();
     }
     assert.deepEqual(warnings, [

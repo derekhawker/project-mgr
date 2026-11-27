@@ -53,7 +53,6 @@ function fixture(t, { shim = true, fail = false } = {}) {
 }
 
 function assertScoped(calls, files, name) {
-  assert.equal(calls.length, files.length);
   const actual = [];
   for (const args of calls) {
     assert.ok(args.includes("--user"));
@@ -61,13 +60,20 @@ function assertScoped(calls, files, name) {
     assert.ok(args.includes("MemoryMax=1G"));
     assert.ok(args.includes("MemorySwapMax=0"));
     assert.ok(args.includes(process.execPath));
-    assert.ok(args.includes("--test"));
     const selected = args.filter((arg) => arg.endsWith(".test.js"));
-    assert.equal(selected.length, 1, JSON.stringify(args));
-    actual.push(selected[0]);
+    assert.ok(selected.length >= 1, JSON.stringify(args));
+    const vitest = selected[0].endsWith(".vitest.test.js");
+    assert.ok(
+      selected.every((file) => file.endsWith(".vitest.test.js") === vitest),
+    );
+    assert.ok(args.includes(vitest ? "run" : "--test"));
+    if (!vitest) assert.equal(selected.length, 1);
+    actual.push(...selected);
     if (name)
       assert.ok(
-        args.includes(`--test-name-pattern=${name}`),
+        args.includes(
+          vitest ? `--testNamePattern=${name}` : `--test-name-pattern=${name}`,
+        ),
         JSON.stringify(args),
       );
   }
@@ -86,6 +92,38 @@ test("selected app and UI files run in separate capped scopes with the name filt
   const result = f.run("default", ...files, "--name=success|failure");
   assert.equal(result.status, 0, result.stderr);
   assertScoped(f.calls(), files, "success|failure");
+});
+
+test("selected Vitest files share a bounded invocation and receive the name filter", (t) => {
+  if (process.platform !== "linux") return t.skip("Linux scope contract");
+  const f = fixture(t);
+  const files = [
+    "test/ui-dom.vitest.test.js",
+    "test/workspace-ticket-viewer-dom.vitest.test.js",
+  ];
+  const result = f.run("default", ...files, "--name=menu");
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(f.calls().length, 1);
+  assertScoped(f.calls(), files, "menu");
+});
+
+test("mixed selections run Node files before the consolidated Vitest group", (t) => {
+  if (process.platform !== "linux") return t.skip("Linux scope contract");
+  const f = fixture(t);
+  const result = f.run(
+    "default",
+    "test/ui-dom.vitest.test.js",
+    "test/command-contract.test.js",
+    "test/workspace-ticket-viewer-dom.vitest.test.js",
+  );
+  assert.equal(result.status, 0, result.stderr);
+  const calls = f.calls();
+  assert.equal(calls.length, 2);
+  assert.ok(calls[0].includes("test/command-contract.test.js"));
+  assert.ok(calls[1].includes("test/ui-dom.vitest.test.js"));
+  assert.ok(
+    calls[1].includes("test/workspace-ticket-viewer-dom.vitest.test.js"),
+  );
 });
 
 test("invalid selection and arguments never start a test", (t) => {
@@ -123,7 +161,7 @@ test("a scope failure propagates as a failed run", (t) => {
   const result = f.run(
     "default",
     "test/command-contract.test.js",
-    "test/ui-dom.test.js",
+    "test/ui-dom.vitest.test.js",
   );
   assert.notEqual(result.status, 0);
   assertScoped(f.calls(), ["test/command-contract.test.js"]);

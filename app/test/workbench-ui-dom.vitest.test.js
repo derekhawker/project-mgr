@@ -1,81 +1,17 @@
 import assert from "node:assert/strict";
-import test from "node:test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { resolve, join } from "node:path";
-import { pathToFileURL } from "node:url";
-import { Window } from "happy-dom";
-import { build } from "vite";
-import solid from "vite-plugin-solid";
-import { presentationAliases } from "../vite.config.js";
+import { test } from "vitest";
+import { render } from "solid-js/web";
+import { createComponent, createSignal } from "solid-js";
+import { SessionTabList } from "../src/views/workspace/sessions/SessionTabList.jsx";
+import { WorkspaceShell } from "../src/views/workspace/WorkspaceShell.jsx";
+import { TabList } from "@ui-lib";
+import { RepositoryToolsMenu } from "../src/views/workspace/repository-tools/RepositoryToolsMenu.jsx";
+import { isRepositoryToolsMenuOpen } from "../src/views/workspace/repository-tools/repositoryToolsController.js";
+import { WorkspaceOwnerPanel } from "../src/views/workspace/sessions/WorkspaceOwnerPanel.jsx";
+import { TerminalSurface } from "../src/views/workspace/sessions/TerminalSurface.jsx";
+import { NewWorkModal } from "../src/features/new-work/modal/NewWorkModal.jsx";
+import { createQuickRequestCreationController } from "../src/features/new-work/modal/quickRequestCreationController.js";
 
-const root = resolve(import.meta.dirname, "..");
-const temp = await mkdtemp("/tmp/opencode/workbench-ui-");
-const entry = join(temp, "entry.js");
-await writeFile(
-  entry,
-  `
-export { render } from ${JSON.stringify(resolve(root, "node_modules/solid-js/web/dist/web.js"))};
-export { createComponent, createSignal } from ${JSON.stringify(resolve(root, "node_modules/solid-js/dist/solid.js"))};
-export { SessionTabList } from ${JSON.stringify(resolve(root, "src/views/workspace/sessions/SessionTabList.jsx"))};
-export { WorkspaceShell } from ${JSON.stringify(resolve(root, "src/views/workspace/WorkspaceShell.jsx"))};
-export { TabList } from "@ui-lib";
-export { RepositoryToolsMenu } from ${JSON.stringify(resolve(root, "src/views/workspace/repository-tools/RepositoryToolsMenu.jsx"))};
-export { isRepositoryToolsMenuOpen } from ${JSON.stringify(resolve(root, "src/views/workspace/repository-tools/repositoryToolsController.js"))};
-export { WorkspaceOwnerPanel } from ${JSON.stringify(resolve(root, "src/views/workspace/sessions/WorkspaceOwnerPanel.jsx"))};
-export { TerminalSurface } from ${JSON.stringify(resolve(root, "src/views/workspace/sessions/TerminalSurface.jsx"))};
-export { NewWorkModal } from ${JSON.stringify(resolve(root, "src/features/new-work/modal/NewWorkModal.jsx"))};
-export { createQuickRequestCreationController } from ${JSON.stringify(resolve(root, "src/features/new-work/modal/quickRequestCreationController.js"))};
-`,
-);
-try {
-  await build({
-    configFile: false,
-    resolve: { alias: presentationAliases },
-    root,
-    plugins: [solid()],
-    logLevel: "silent",
-    build: {
-      outDir: join(temp, "out"),
-      lib: { entry, formats: ["es"], fileName: "test" },
-      rollupOptions: { output: { inlineDynamicImports: true } },
-    },
-  });
-} catch (error) {
-  await rm(temp, { recursive: true, force: true });
-  throw error;
-}
-const window = new Window();
-for (const key of [
-  "window",
-  "document",
-  "Node",
-  "Element",
-  "HTMLElement",
-  "HTMLHeadElement",
-  "Event",
-  "MouseEvent",
-  "KeyboardEvent",
-])
-  globalThis[key] =
-    key === "window"
-      ? window
-      : key === "document"
-        ? window.document
-        : window[key];
-const {
-  render,
-  createComponent,
-  createSignal,
-  SessionTabList,
-  WorkspaceShell,
-  TabList,
-  RepositoryToolsMenu,
-  isRepositoryToolsMenuOpen,
-  WorkspaceOwnerPanel,
-  TerminalSurface,
-  NewWorkModal,
-  createQuickRequestCreationController,
-} = await import(pathToFileURL(join(temp, "out/test.js")));
 function mount(Component, props) {
   const host = document.createElement("div");
   document.body.append(host);
@@ -88,11 +24,6 @@ function mount(Component, props) {
     },
   };
 }
-test.after(async () => {
-  await window.happyDOM.abort();
-  await rm(temp, { recursive: true, force: true });
-});
-
 test("Quick Request confirmation disables repeat clicks and allows retry after creation fails", async () => {
   const [disabled, setDisabled] = createSignal(false);
   const [error, setError] = createSignal("");

@@ -49,7 +49,10 @@ test("Linux systemd execution passes the per-file memory cap and serial node tes
   chmodSync(shim, 0o755);
 
   const result = run(["--file=command-contract.test.js", "--limit-mb=64"], {
-    env: { ...process.env, PATH: `${temp}${path.delimiter}${process.env.PATH}` },
+    env: {
+      ...process.env,
+      PATH: `${temp}${path.delimiter}${process.env.PATH}`,
+    },
   });
 
   assert.equal(result.status, 0, result.stderr);
@@ -78,5 +81,40 @@ test("Linux systemd execution passes the per-file memory cap and serial node tes
     "--test",
     "--test-concurrency=1",
     "test/command-contract.test.js",
+  ]);
+});
+
+test("memory measurements dispatch Vitest files inside the same scope", (t) => {
+  if (process.platform !== "linux") return t.skip("Linux systemd scopes");
+  const temp = mkdtempSync(path.join(tmpdir(), "test-memory-vitest-"));
+  t.after(() => rmSync(temp, { recursive: true, force: true }));
+  const invocations = path.join(temp, "invocations.jsonl");
+  const shim = path.join(temp, "systemd-run");
+  writeFileSync(
+    shim,
+    `#!/usr/bin/env node\nimport { appendFileSync } from "node:fs";\nconst args = process.argv.slice(2);\nif (args[0] !== "--version") appendFileSync(${JSON.stringify(invocations)}, JSON.stringify(args) + "\\n");\n`,
+  );
+  chmodSync(shim, 0o755);
+  const result = run(["--file=test/ui-dom.vitest.test.js", "--limit-mb=64"], {
+    env: {
+      ...process.env,
+      PATH: `${temp}${path.delimiter}${process.env.PATH}`,
+    },
+  });
+  assert.equal(result.status, 0, result.stderr);
+  const args = JSON.parse(readFileSync(invocations, "utf8").trim());
+  assert.deepEqual(args, [
+    "--user",
+    "--scope",
+    "--quiet",
+    "-p",
+    "MemoryMax=64M",
+    "-p",
+    "MemorySwapMax=0",
+    "--",
+    process.execPath,
+    path.join(appRoot, "node_modules/vitest/vitest.mjs"),
+    "run",
+    "test/ui-dom.vitest.test.js",
   ]);
 });

@@ -1,71 +1,15 @@
 import assert from "node:assert/strict";
-import test from "node:test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { resolve, join } from "node:path";
-import { pathToFileURL } from "node:url";
-import { Window } from "happy-dom";
-import { build } from "vite";
-import solid from "vite-plugin-solid";
-import { presentationAliases } from "../vite.config.js";
-
-const root = resolve(import.meta.dirname, "..");
-const temp = await mkdtemp("/tmp/opencode/action-menu-");
-const entry = join(temp, "entry.js");
-await writeFile(
-  entry,
-  `
-export { render } from ${JSON.stringify(resolve(root, "node_modules/solid-js/web/dist/web.js"))};
-export { createComponent, createSignal } from ${JSON.stringify(resolve(root, "node_modules/solid-js/dist/solid.js"))};
-export { ActionMenu, ActionMenuItem, ActionMenuGroup, ActionMenuSeparator, Select } from "@ui-lib";
-`,
-);
-try {
-  await build({
-    configFile: false,
-    resolve: { alias: presentationAliases },
-    root,
-    plugins: [solid()],
-    logLevel: "silent",
-    build: {
-      outDir: join(temp, "out"),
-      lib: { entry, formats: ["es"], fileName: "test" },
-      rollupOptions: { output: { inlineDynamicImports: true } },
-    },
-  });
-} catch (error) {
-  await rm(temp, { recursive: true, force: true });
-  throw error;
-}
-const window = new Window();
-for (const key of [
-  "window",
-  "document",
-  "Node",
-  "Element",
-  "HTMLElement",
-  "HTMLHeadElement",
-  "HTMLBodyElement",
-  "Event",
-  "MouseEvent",
-  "PointerEvent",
-  "KeyboardEvent",
-])
-  globalThis[key] =
-    key === "window"
-      ? window
-      : key === "document"
-        ? window.document
-        : window[key];
-const {
-  render,
-  createComponent,
-  createSignal,
+import { test } from "vitest";
+import { render } from "solid-js/web";
+import { createComponent, createSignal } from "solid-js";
+import {
   ActionMenu,
   ActionMenuItem,
   ActionMenuGroup,
   ActionMenuSeparator,
   Select,
-} = await import(pathToFileURL(join(temp, "out/test.js")));
+} from "@ui-lib";
+
 function mount(children) {
   const host = document.createElement("div");
   document.body.append(host);
@@ -92,11 +36,6 @@ const open = (view) => {
   details.open = true;
   return details;
 };
-test.after(async () => {
-  await window.happyDOM.abort();
-  await rm(temp, { recursive: true, force: true });
-});
-
 test("outside pointer closes only its disclosure; Escape closes and restores summary focus", () => {
   const button = (text) => {
     const node = document.createElement("button");
@@ -246,7 +185,10 @@ test("Select keeps its form-control API while rendering choices through ActionMe
     const options = host.querySelectorAll('[role="option"]');
     assert.equal(summary.getAttribute("role"), "combobox");
     assert.equal(summary.getAttribute("aria-haspopup"), "listbox");
-    assert.equal(summary.getAttribute("aria-labelledby"), "repository-choice-label repository-choice-current");
+    assert.equal(
+      summary.getAttribute("aria-labelledby"),
+      "repository-choice-label repository-choice-current",
+    );
     assert.equal(listbox.getAttribute("aria-label"), "Repository");
     assert.equal(options.length, 2);
     details.open = true;
@@ -256,7 +198,10 @@ test("Select keeps its form-control API while rendering choices through ActionMe
     );
     assert.equal(changed, "repo-1");
     assert.equal(details.open, false);
-    assert.equal(host.querySelector("#repository-choice-current").textContent, "Example repository");
+    assert.equal(
+      host.querySelector("#repository-choice-current").textContent,
+      "Example repository",
+    );
     assert.equal(options[0].getAttribute("aria-selected"), "true");
   } finally {
     dispose();

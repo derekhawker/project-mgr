@@ -1,68 +1,8 @@
 import assert from "node:assert/strict";
-import test from "node:test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { resolve, join } from "node:path";
-import { pathToFileURL } from "node:url";
-import { Window } from "happy-dom";
-import { build } from "vite";
-import solid from "vite-plugin-solid";
-
-const root = resolve(import.meta.dirname, "..");
-const appRoot = resolve(root, "../..");
-const temp = await mkdtemp("/tmp/opencode/ui-lib-tabs-");
-const entry = join(temp, "entry.js");
-await writeFile(
-  entry,
-  `
-export { render } from ${JSON.stringify(resolve(appRoot, "node_modules/solid-js/web/dist/web.js"))};
-export { createSignal, createComponent, For } from ${JSON.stringify(resolve(appRoot, "node_modules/solid-js/dist/solid.js"))};
-export { Tabs, TabList, Tab, Button } from ${JSON.stringify(join(root, "index.js"))};
-`,
-);
-try {
-  await build({
-    configFile: false,
-    root,
-    plugins: [solid()],
-    logLevel: "silent",
-    define: { "import.meta.env.DEV": "true" },
-    build: {
-      outDir: join(temp, "out"),
-      lib: { entry, formats: ["es"], fileName: "tabs" },
-      rollupOptions: { output: { inlineDynamicImports: true } },
-    },
-  });
-} catch (error) {
-  await rm(temp, { recursive: true, force: true });
-  throw error;
-}
-const window = new Window();
-for (const key of [
-  "window",
-  "document",
-  "Node",
-  "Element",
-  "HTMLElement",
-  "HTMLHeadElement",
-  "Event",
-  "KeyboardEvent",
-])
-  globalThis[key] =
-    key === "window"
-      ? window
-      : key === "document"
-        ? window.document
-        : window[key];
-const {
-  render,
-  createSignal,
-  createComponent,
-  For,
-  Tabs,
-  TabList,
-  Tab,
-  Button,
-} = await import(pathToFileURL(join(temp, "out/tabs.js")));
+import { test, afterAll } from "vitest";
+import { render } from "solid-js/web";
+import { createSignal, createComponent, For } from "solid-js";
+import { Tabs, TabList, Tab, Button } from "../index.js";
 const component = (Component, props) => createComponent(Component, props);
 function mount(factory) {
   const host = document.createElement("div");
@@ -86,9 +26,8 @@ const press = (target, key, overrides = {}) => {
   target.dispatchEvent(event);
   return event;
 };
-test.after(async () => {
+afterAll(async () => {
   await window.happyDOM.abort();
-  await rm(temp, { recursive: true, force: true });
 });
 
 test("TabList controls external panels, skips hidden tabs, and keeps actions out of arrow navigation", () => {

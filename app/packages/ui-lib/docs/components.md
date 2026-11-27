@@ -214,6 +214,6 @@ Arrow keys never activate these buttons. Process ownership stays outside the
 library.
 
 Tab interaction, accessibility, and dynamic-membership tests live in
-`test/tabList.test.js` in this workspace. Run `npm test --workspace ui-lib` from
+`test/tabList.vitest.test.js` in this workspace. Run `npm test --workspace ui-lib` from
 `app/`; the application’s default `npm test` also includes them. Application DOM
 tests cover screen wiring rather than repeating the component behavior matrix.

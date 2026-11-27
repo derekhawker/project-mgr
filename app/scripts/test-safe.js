@@ -1,4 +1,4 @@
-// Run every test file in its own memory-limited scope, including focused runs.
+// Keep every test invocation, including focused runs, in a memory-limited scope.
 import { readdirSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
@@ -145,12 +145,21 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
     stop(signal);
   });
 }
-async function run(file) {
-  console.log(`\nRunning ${file} (1 GiB limit, no swap)`);
-  const nodeArgs = ["--test", "--test-concurrency=1"];
-  if (namePattern !== undefined)
-    nodeArgs.push(`--test-name-pattern=${namePattern}`);
-  nodeArgs.push(file);
+async function run(files) {
+  const label = files.join(", ");
+  console.log(`\nRunning ${label} (1 GiB limit, no swap)`);
+  const isVitest = files[0].endsWith(".vitest.test.js");
+  const nodeArgs = isVitest
+    ? [resolve(appRoot, "node_modules/vitest/vitest.mjs"), "run"]
+    : ["--test", "--test-concurrency=1"];
+  if (namePattern !== undefined) {
+    nodeArgs.push(
+      isVitest
+        ? `--testNamePattern=${namePattern}`
+        : `--test-name-pattern=${namePattern}`,
+    );
+  }
+  nodeArgs.push(...files);
   const child = spawn(
     "systemd-run",
     [
@@ -182,20 +191,20 @@ async function run(file) {
   let forceStop;
   const timeout = setTimeout(() => {
     timedOut = true;
-    console.error(`${file} exceeded 15 minutes; stopping it`);
+    console.error(`${label} exceeded 15 minutes; stopping it`);
     stop("SIGTERM");
     forceStop = setTimeout(() => stop("SIGKILL"), 5000);
     forceStop.unref();
   }, 15 * 60_000);
   try {
     const [code, signal] = await once(child, "close");
-    if (signal) console.error(`${file} stopped by ${signal}`);
+    if (signal) console.error(`${label} stopped by ${signal}`);
     if (code !== 0 || signal || timedOut)
-      console.error(`FAILED: ${file} (exit ${code ?? "none"})`);
+      console.error(`FAILED: ${label} (exit ${code ?? "none"})`);
     return code === 0 && !signal && !timedOut;
   } catch (error) {
     console.error(
-      `Could not start memory-limited test ${file}: ${error.message}. No uncapped fallback.`,
+      `Could not start memory-limited test ${label}: ${error.message}. No uncapped fallback.`,
     );
     interrupted = true;
     return false;
@@ -206,10 +215,22 @@ async function run(file) {
   }
 }
 
-let failed = false;
+const groups = [];
+const vitestGroup = [];
 for (const file of [...new Set(files)]) {
+  if (file.endsWith(".vitest.test.js")) {
+    vitestGroup.push(file);
+  } else {
+    groups.push([file]);
+  }
+}
+// Keep the consolidated UI group last so a failure does not skip unrelated
+// Node test files solely because the UI files were grouped together.
+if (vitestGroup.length) groups.push(vitestGroup);
+let failed = false;
+for (const group of groups) {
   if (interrupted) break;
-  if (!(await run(file))) {
+  if (!(await run(group))) {
     failed = true;
     console.error("Stopping after failure; remaining test files were not run.");
     break;

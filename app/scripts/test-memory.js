@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
+import { fileURLToPath } from "node:url";
 
 const appRoot = new URL("../", import.meta.url);
 const appTestDir = new URL("../test/", import.meta.url);
@@ -136,6 +137,15 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
 }
 
 async function runFile(file) {
+  const testArgs = file.endsWith(".vitest.test.js")
+    ? [
+        fileURLToPath(
+          new URL("../node_modules/vitest/vitest.mjs", import.meta.url),
+        ),
+        "run",
+        file,
+      ]
+    : ["--test", "--test-concurrency=1", file];
   const command = systemdRun ? "systemd-run" : process.execPath;
   const commandArgs = systemdRun
     ? [
@@ -148,11 +158,9 @@ async function runFile(file) {
         "MemorySwapMax=0",
         "--",
         process.execPath,
-        "--test",
-        "--test-concurrency=1",
-        file,
+        ...testArgs,
       ]
-    : ["--test", "--test-concurrency=1", file];
+    : testArgs;
   const child = spawn(command, commandArgs, {
     cwd: appRoot,
     env: {

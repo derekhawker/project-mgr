@@ -1,73 +1,15 @@
 import assert from "node:assert/strict";
-import test from "node:test";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
-import { tmpdir } from "node:os";
-import { pathToFileURL } from "node:url";
-import { Window } from "happy-dom";
-import { build } from "vite";
-import solid from "vite-plugin-solid";
-import { presentationAliases } from "../vite.config.js";
+import { test } from "vitest";
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
+import { insert, render } from "solid-js/web";
+import { createComponent, createSignal } from "solid-js";
+import { WorkspaceTicketViewer } from "../src/views/workspace/tickets/WorkspaceTicketViewer.jsx";
+import { CreateTicketIdeaModal } from "../src/views/workspace/tickets/CreateTicketIdeaModal.jsx";
+import { DeleteWorkspaceModal } from "../src/views/workspace/tickets/DeleteWorkspaceModal.jsx";
+import { ActionMenu } from "../packages/ui-lib/ActionMenu.jsx";
 
 const root = resolve(import.meta.dirname, "..");
-const temp = await mkdtemp(join(tmpdir(), "workspace-ticket-viewer-dom-"));
-const entry = join(temp, "entry.js");
-await writeFile(
-  entry,
-  `
-  export { render } from ${JSON.stringify(resolve(root, "node_modules/solid-js/web/dist/web.js"))};
-  export { createComponent, createSignal } from ${JSON.stringify(resolve(root, "node_modules/solid-js/dist/solid.js"))};
-  export { WorkspaceTicketViewer } from ${JSON.stringify(resolve(root, "src/views/workspace/tickets/WorkspaceTicketViewer.jsx"))};
-  export { CreateTicketIdeaModal } from ${JSON.stringify(resolve(root, "src/views/workspace/tickets/CreateTicketIdeaModal.jsx"))};
-  export { DeleteWorkspaceModal } from ${JSON.stringify(resolve(root, "src/views/workspace/tickets/DeleteWorkspaceModal.jsx"))};
-  export { ActionMenu } from ${JSON.stringify(resolve(root, "packages/ui-lib/ActionMenu.jsx"))};
-`,
-);
-try {
-  await build({
-    configFile: false,
-    resolve: { alias: presentationAliases, dedupe: ["solid-js"] },
-    root,
-    plugins: [solid()],
-    logLevel: "silent",
-    build: {
-      outDir: join(temp, "out"),
-      lib: { entry, formats: ["es"], fileName: "test" },
-      rollupOptions: { output: { inlineDynamicImports: true } },
-    },
-  });
-} catch (error) {
-  await rm(temp, { recursive: true, force: true });
-  throw error;
-}
-const window = new Window();
-for (const key of [
-  "window",
-  "document",
-  "Node",
-  "Element",
-  "HTMLElement",
-  "HTMLHeadElement",
-  "Event",
-  "MouseEvent",
-  "PointerEvent",
-  "KeyboardEvent",
-])
-  globalThis[key] =
-    key === "window"
-      ? window
-      : key === "document"
-        ? window.document
-        : window[key];
-const {
-  render,
-  createComponent,
-  createSignal,
-  WorkspaceTicketViewer,
-  CreateTicketIdeaModal,
-  DeleteWorkspaceModal,
-  ActionMenu,
-} = await import(pathToFileURL(join(temp, "out/test.js")));
 
 function mount(props) {
   const host = document.createElement("div");
@@ -184,11 +126,6 @@ const tickets = [
   },
 ];
 
-test.after(async () => {
-  await window.happyDOM.abort();
-  await rm(temp, { recursive: true, force: true });
-});
-
 test("portaled menus expose unique controls and support reverse tab from the next control", async () => {
   const host = document.createElement("div");
   document.body.append(host);
@@ -197,7 +134,8 @@ test("portaled menus expose unique controls and support reverse tab from the nex
     for (let i = 0; i < 2; i++) {
       const action = document.createElement("button");
       action.textContent = `Action ${i}`;
-      container.append(
+      insert(
+        container,
         createComponent(ActionMenu, {
           portal: true,
           label: `Menu ${i}`,
@@ -251,7 +189,8 @@ test("multiple portaled menus honor earlier Tab handling without skipping a trig
     for (let index = 0; index < 2; index++) {
       const action = document.createElement("button");
       action.textContent = `Action ${index}`;
-      container.append(
+      insert(
+        container,
         createComponent(ActionMenu, {
           portal: true,
           label: `Menu ${index}`,

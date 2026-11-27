@@ -1,99 +1,34 @@
 import assert from "node:assert/strict";
-import test from "node:test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
-import { Window } from "happy-dom";
-import { build } from "vite";
-import solid from "vite-plugin-solid";
-import { presentationAliases } from "../vite.config.js";
+import { test, vi } from "vitest";
+import { render } from "solid-js/web";
+import { createComponent, createSignal } from "solid-js";
+import { QuickRequestHistoryPage } from "../src/views/quick-requests/QuickRequestHistoryPage.jsx";
+import { DocsPane } from "../src/views/workspace/docs/DocsPane.jsx";
+import { WorkspaceTicketContent } from "../src/views/workspace/tickets/WorkspaceTicketContent.jsx";
+import { ChangeReviewPanel } from "../src/views/workspace/change-review/ChangeReviewPanel.jsx";
+import { WorkspaceOwnerPanel } from "../src/views/workspace/sessions/WorkspaceOwnerPanel.jsx";
+import { TerminalSurface } from "../src/views/workspace/sessions/TerminalSurface.jsx";
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const temp = await mkdtemp(join(tmpdir(), "work-area-test-"));
-const entry = join(temp, "entry.js");
-const diffViewerStub = join(temp, "pierre-diffs-stub.js");
-await writeFile(
-  diffViewerStub,
-  `
-  export class CodeView {
-    setup(root) { this.root = root; }
-    setItems(items) { this.items = items; }
-    setOptions(options) { this.options = options; }
+vi.mock("@pierre/diffs", () => ({
+  CodeView: class {
+    setup(root) {
+      this.root = root;
+    }
+    setItems(items) {
+      this.items = items;
+    }
+    setOptions(options) {
+      this.options = options;
+    }
     scrollTo() {}
-    cleanUp() { this.root = undefined; }
-  }
-  export function parsePatchFiles() {
-    return [{ files: [{ name: "test.txt", cacheKey: "test-diff" }] }];
-  }
-`,
-);
-await writeFile(
-  entry,
-  `
-  export { render } from ${JSON.stringify(resolve(root, "node_modules/solid-js/web/dist/web.js"))};
-  export { createComponent, createSignal } from ${JSON.stringify(resolve(root, "node_modules/solid-js/dist/solid.js"))};
-  export { QuickRequestHistoryPage } from ${JSON.stringify(resolve(root, "src/views/quick-requests/QuickRequestHistoryPage.jsx"))};
-  export { DocsPane } from ${JSON.stringify(resolve(root, "src/views/workspace/docs/DocsPane.jsx"))};
-  export { WorkspaceTicketContent } from ${JSON.stringify(resolve(root, "src/views/workspace/tickets/WorkspaceTicketContent.jsx"))};
-  export { ChangeReviewPanel } from ${JSON.stringify(resolve(root, "src/views/workspace/change-review/ChangeReviewPanel.jsx"))};
-  export { WorkspaceOwnerPanel } from ${JSON.stringify(resolve(root, "src/views/workspace/sessions/WorkspaceOwnerPanel.jsx"))};
-  export { TerminalSurface } from ${JSON.stringify(resolve(root, "src/views/workspace/sessions/TerminalSurface.jsx"))};
-`,
-);
-try {
-  await build({
-    configFile: false,
-    resolve: {
-      alias: {
-        ...presentationAliases,
-        "@pierre/diffs": diffViewerStub,
-      },
-    },
-    root,
-    plugins: [solid()],
-    build: {
-      outDir: join(temp, "out"),
-      lib: { entry, formats: ["es"], fileName: "test" },
-      rollupOptions: { output: { inlineDynamicImports: true } },
-    },
-  });
-} catch (error) {
-  await rm(temp, { recursive: true, force: true });
-  throw error;
-}
-const window = new Window();
-for (const key of [
-  "window",
-  "document",
-  "Node",
-  "Element",
-  "HTMLElement",
-  "customElements",
-  "CSSStyleSheet",
-  "Event",
-])
-  globalThis[key] =
-    key === "window"
-      ? window
-      : key === "document"
-        ? window.document
-        : window[key];
-const {
-  render,
-  createComponent,
-  createSignal,
-  QuickRequestHistoryPage,
-  DocsPane,
-  WorkspaceTicketContent,
-  ChangeReviewPanel,
-  WorkspaceOwnerPanel,
-  TerminalSurface,
-} = await import(pathToFileURL(join(temp, "out/test.js")));
-test.after(async () => {
-  await window.happyDOM.abort();
-  await rm(temp, { recursive: true, force: true });
-});
+    cleanUp() {
+      this.root = undefined;
+    }
+  },
+  parsePatchFiles: () => [
+    { files: [{ name: "test.txt", cacheKey: "test-diff" }] },
+  ],
+}));
 function mount(component, props) {
   const host = document.createElement("div");
   document.body.append(host);

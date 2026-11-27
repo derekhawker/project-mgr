@@ -1,73 +1,29 @@
 import assert from "node:assert/strict";
-import test from "node:test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
-import { Window } from "happy-dom";
-import { build } from "vite";
-import solid from "vite-plugin-solid";
-import { presentationAliases } from "../vite.config.js";
-
-const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const temp = await mkdtemp(join(tmpdir(), "project-mgr-ui-dom-"));
-const entry = join(temp, "entry.js");
-const output = join(temp, "bundle");
-await writeFile(
-  entry,
-  `
-  export { render } from ${JSON.stringify(resolve(appRoot, "node_modules/solid-js/web/dist/web.js"))};
-  export { createSignal, createComponent } from ${JSON.stringify(resolve(appRoot, "node_modules/solid-js/dist/solid.js"))};
-  export { Button, IconButton, Icon, Heading, ErrorMessage, Input, ActionMenu, Modal, Drawer, Notice, Status, Switch } from "@ui-lib";
-  export { DeleteButton } from ${JSON.stringify(resolve(appRoot, "src/components/DeleteButton.jsx"))};
-  export { OpenItemButton } from ${JSON.stringify(resolve(appRoot, "src/components/OpenItemButton.jsx"))};
-  export { QuickRequestHistoryButton } from ${JSON.stringify(resolve(appRoot, "src/views/quick-requests/QuickRequestHistoryButton.jsx"))};
-  export { AppNotice } from ${JSON.stringify(resolve(appRoot, "src/application/AppNotice.jsx"))};
-  export { NoSelection } from ${JSON.stringify(resolve(appRoot, "src/application/NoSelection.jsx"))};
-  export { DirectoriesLibraryForm } from ${JSON.stringify(resolve(appRoot, "src/views/directories/DirectoriesLibraryForm.jsx"))};
-  export { RepositoryDirectories } from ${JSON.stringify(resolve(appRoot, "src/views/directories/RepositoryDirectories.jsx"))};
-  export { NewWorkModal } from ${JSON.stringify(resolve(appRoot, "src/features/new-work/modal/NewWorkModal.jsx"))};
-`,
-);
-try {
-  await build({
-    configFile: false,
-    resolve: { alias: presentationAliases },
-    root: appRoot,
-    plugins: [solid()],
-    build: {
-      outDir: output,
-      emptyOutDir: true,
-      cssCodeSplit: false,
-      lib: { entry, formats: ["es"], fileName: "ui-dom" },
-      rollupOptions: { output: { inlineDynamicImports: true } },
-    },
-  });
-} catch (error) {
-  await rm(temp, { recursive: true, force: true });
-  throw error;
-}
-
-const window = new Window();
-for (const key of [
-  "window",
-  "document",
-  "Node",
-  "Element",
-  "HTMLElement",
-  "HTMLDialogElement",
-  "Event",
-  "MouseEvent",
-  "KeyboardEvent",
-  "CustomEvent",
-]) {
-  globalThis[key] =
-    key === "window"
-      ? window
-      : key === "document"
-        ? window.document
-        : window[key];
-}
+import { test } from "vitest";
+import { render } from "@solidjs/testing-library";
+import { createSignal, createComponent } from "solid-js";
+import {
+  Button,
+  IconButton,
+  Icon,
+  Heading,
+  ErrorMessage,
+  Input,
+  ActionMenu,
+  Modal,
+  Drawer,
+  Notice,
+  Status,
+  Switch,
+} from "@ui-lib";
+import { DeleteButton } from "../src/components/DeleteButton.jsx";
+import { OpenItemButton } from "../src/components/OpenItemButton.jsx";
+import { QuickRequestHistoryButton } from "../src/views/quick-requests/QuickRequestHistoryButton.jsx";
+import { AppNotice } from "../src/application/AppNotice.jsx";
+import { NoSelection } from "../src/application/NoSelection.jsx";
+import { DirectoriesLibraryForm } from "../src/views/directories/DirectoriesLibraryForm.jsx";
+import { RepositoryDirectories } from "../src/views/directories/RepositoryDirectories.jsx";
+import { NewWorkModal } from "../src/features/new-work/modal/NewWorkModal.jsx";
 // happy-dom supplies real dialog elements but not the native modal methods.
 window.HTMLDialogElement.prototype.showModal = function () {
   this.open = true;
@@ -76,49 +32,14 @@ window.HTMLDialogElement.prototype.close = function () {
   this.open = false;
 };
 
-const {
-  render,
-  createSignal,
-  createComponent,
-  Button,
-  IconButton,
-  Icon,
-  Heading,
-  ErrorMessage,
-  DeleteButton,
-  QuickRequestHistoryButton,
-  AppNotice,
-  NoSelection,
-  Input,
-  ActionMenu,
-  Modal,
-  Drawer,
-  Notice,
-  Status,
-  Switch,
-  OpenItemButton,
-  DirectoriesLibraryForm,
-  RepositoryDirectories,
-  NewWorkModal,
-} = await import(pathToFileURL(join(output, "ui-dom.js")));
 const component = (Component, props) => createComponent(Component, props);
 function mount(componentFactory) {
-  const host = document.createElement("div");
-  document.body.append(host);
-  const dispose = render(componentFactory, host);
+  const { container: host, unmount } = render(componentFactory);
   return {
     host,
-    dispose: () => {
-      dispose();
-      host.remove();
-    },
+    dispose: unmount,
   };
 }
-
-test.after(async () => {
-  await window.happyDOM.abort();
-  await rm(temp, { recursive: true, force: true });
-});
 
 test("Button and Input preserve native attributes, events, and input values", () => {
   let clicked = 0;
@@ -275,7 +196,10 @@ test("AppNotice keeps its polite status and can dismiss the visible notice", () 
   assert.equal(notice.hidden, true);
   setMessage("Could not load workspaces.");
   assert.equal(notice.hidden, false);
-  assert.equal(notice.querySelector("span").textContent, "Could not load workspaces.");
+  assert.equal(
+    notice.querySelector("span").textContent,
+    "Could not load workspaces.",
+  );
   notice.querySelector("button").click();
   assert.equal(notice.hidden, true);
   mounted.dispose();

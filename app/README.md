@@ -23,11 +23,13 @@ a fixed timestamp and treats its requests as recent for the lifetime of the page
 OpenCode test. It still runs Node, Vite and Rust test harness processes and uses
 isolated temporary files. `npm run test:all --prefix app` also runs the
 installed-OpenCode model-loader integration and starts a real OpenCode server.
-Run focused tests with `npm test --prefix app -- test/ui-dom.test.js` or pass
+Run focused tests with `npm test --prefix app -- test/ui-dom.vitest.test.js` or pass
 multiple file paths. Add `--name='pattern'` to select test names by regular
-expression. Each file runs separately in a Linux systemd user scope limited to
-1 GiB of memory with swap disabled. If the scope cannot be created, the runner
+expression. Node test files run separately; Solid component tests run together
+in Vitest. Each invocation runs in a Linux systemd user scope limited to 1 GiB
+of memory with swap disabled. If the scope cannot be created, the runner
 fails instead of running unbounded. Do not run `node --test` directly.
+Vitest 5 requires Node 22.12 or newer on the Node 22 line, Node 24, or Node 26+.
 `npm run test:memory --prefix app` runs the default test files one at a time and
 reports sampled process-tree peak RSS per file. On Linux with `systemd-run`, each
 file gets a 1 GiB hard memory limit with swap disabled; change it with

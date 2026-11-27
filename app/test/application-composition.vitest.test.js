@@ -1,172 +1,113 @@
 import assert from "node:assert/strict";
-import test from "node:test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { resolve, join } from "node:path";
-import { pathToFileURL } from "node:url";
-import { Window } from "happy-dom";
-import { build } from "vite";
-import solid from "vite-plugin-solid";
-import { presentationAliases } from "../vite.config.js";
+import { test, vi } from "vitest";
+
+vi.mock("../src/terminal/terminalRuntime.js", () => {
+  class TerminalRuntime {
+    constructor(options) {
+      this.options = options;
+      this.attached = [];
+      this.forgotten = [];
+      this.restarted = [];
+      this.exited = new Set();
+    }
+    async start() {}
+    async attachExisting(id, container) {
+      this.attached.push(id);
+      container.textContent = "Fixture terminal " + id;
+    }
+    select(id, { focus = true } = {}) {
+      if (focus) document.getElementById("terminal-" + id)?.focus();
+    }
+    reopen() {}
+    isExited(id) {
+      return this.exited.has(id);
+    }
+    exit(id) {
+      this.exited.add(id);
+      this.options.onExit({ sessionId: id });
+    }
+    async restart(id, directory, container) {
+      this.restarted.push({ id, directory, container });
+    }
+    async suspendResizing() {}
+    forget(id) {
+      this.forgotten.push(id);
+    }
+    dispose() {}
+  }
+  return { TerminalRuntime };
+});
+
+vi.mock("../src/fixtures/browserFixture.js", async (importOriginal) => {
+  const { invokeBrowserFixture: invoke } = await importOriginal();
+  let calls = 0;
+  function invokeBrowserFixture(name, payload) {
+    if (name === "workspace_create") {
+      globalThis.__workspaceCreateCalls.push(structuredClone(payload));
+    }
+    if (name === "workspace_ticket_label_set") {
+      globalThis.__ticketLabelSetCalls.push(structuredClone(payload));
+    }
+    if (
+      name === "workspace_ticket_work" &&
+      globalThis.__ticketWorkWarningEnabled
+    ) {
+      globalThis.__ticketWorkWarningCalls.push(structuredClone(payload));
+      if (!payload.acknowledgeUnavailableWorktree) {
+        return {
+          warning: {
+            message: "The ticket worktree is unavailable. Continue anyway?",
+          },
+        };
+      }
+      return invoke(name, payload);
+    }
+    if (
+      name === "workspace_ticket_work" &&
+      globalThis.__deferWorkspaceTicketWork
+    ) {
+      return new Promise((resolve, reject) => {
+        globalThis.__resolveWorkspaceTicketWork = () => {
+          invoke(name, payload).then((result) => {
+            globalThis.__workspaceTicketWorkSettled = true;
+            resolve(result);
+          }, reject);
+        };
+      });
+    }
+    if (name === "quick_request_create") {
+      calls++;
+      globalThis.__quickRequestCreateCalls = calls;
+      globalThis.__quickRequestCreatePrompts.push(
+        payload.request.startingPrompt || payload.request.prompt,
+      );
+      if (calls === 1)
+        return new Promise((_, reject) => {
+          globalThis.__rejectQuickRequestCreate = reject;
+        });
+    }
+    return invoke(name, payload);
+  }
+  return { invokeBrowserFixture };
+});
 
 // Run the real entry, command contracts, feature controllers and Solid tree.
 // The browser command transport and terminal renderer are fixtures: no live
 // processes, user directories, network services or application data are used.
 test("application composes, saves new ticket labels through the Rust boundary, and retains terminals", async () => {
-  const root = resolve(import.meta.dirname, "..");
-  const temp = await mkdtemp("/tmp/opencode/application-composition-");
-  const window = new Window();
-  const previous = new Map();
-  const globals = [
-    "window",
-    "self",
-    "document",
-    "Node",
-    "Element",
-    "HTMLElement",
-    "customElements",
-    "CSSStyleSheet",
-    "HTMLHeadElement",
-    "Event",
-    "MouseEvent",
-    "__quickRequestCreateCalls",
-    "__quickRequestCreatePrompts",
-    "__rejectQuickRequestCreate",
-    "__deferWorkspaceTicketWork",
-    "__resolveWorkspaceTicketWork",
-    "__workspaceTicketWorkSettled",
-    "__ticketWorkWarningCalls",
-    "__ticketWorkWarningEnabled",
-    "__ticketLabelSetCalls",
-    "__workspaceCreateCalls",
-  ];
-  try {
-    const terminal = join(temp, "terminal.js");
-    const quickRequestFixture = join(temp, "quick-request-fixture.js");
-    await writeFile(
-      terminal,
-      `
-      export class TerminalRuntime {
-        constructor(options) {
-          this.options = options;
-          this.attached = [];
-          this.forgotten = [];
-          this.restarted = [];
-          this.exited = new Set();
-        }
-        async start() {}
-        async attachExisting(id, container) {
-          this.attached.push(id);
-          container.textContent = "Fixture terminal " + id;
-        }
-        select(id, { focus = true } = {}) {
-          if (focus) document.getElementById("terminal-" + id)?.focus();
-        }
-        reopen() {}
-        isExited(id) { return this.exited.has(id); }
-        exit(id) { this.exited.add(id); this.options.onExit({sessionId: id}); }
-        async restart(id, directory, container) { this.restarted.push({id, directory, container}); }
-        async suspendResizing() {}
-        forget(id) { this.forgotten.push(id); }
-        dispose() {}
-      }
-    `,
-    );
-    await writeFile(
-      quickRequestFixture,
-      `
-      import { invokeBrowserFixture as invoke } from ${JSON.stringify(resolve(root, "src/fixtures/browserFixture.js"))};
-      let calls = 0;
-      export function invokeBrowserFixture(name, payload) {
-        if (name === "workspace_create") {
-          globalThis.__workspaceCreateCalls.push(structuredClone(payload));
-        }
-        if (name === "workspace_ticket_label_set") {
-          globalThis.__ticketLabelSetCalls.push(structuredClone(payload));
-        }
-        if (name === "workspace_ticket_work" && globalThis.__ticketWorkWarningEnabled) {
-          globalThis.__ticketWorkWarningCalls.push(structuredClone(payload));
-          if (!payload.acknowledgeUnavailableWorktree) {
-            return { warning: { message: "The ticket worktree is unavailable. Continue anyway?" } };
-          }
-          return invoke(name, payload);
-        }
-        if (name === "workspace_ticket_work" && globalThis.__deferWorkspaceTicketWork) {
-          return new Promise((resolve, reject) => {
-            globalThis.__resolveWorkspaceTicketWork = () => {
-              invoke(name, payload).then((result) => {
-                globalThis.__workspaceTicketWorkSettled = true;
-                resolve(result);
-              }, reject);
-            };
-          });
-        }
-        if (name === "quick_request_create") {
-          calls++;
-          globalThis.__quickRequestCreateCalls = calls;
-          globalThis.__quickRequestCreatePrompts.push(
-            payload.request.startingPrompt || payload.request.prompt,
-          );
-          if (calls === 1) return new Promise((_, reject) => { globalThis.__rejectQuickRequestCreate = reject; });
-        }
-        return invoke(name, payload);
-      }
-      `,
-    );
-    await build({
-      configFile: false,
-      resolve: { alias: presentationAliases },
-      root,
-      plugins: [
-        {
-          name: "terminal-renderer-fixture",
-          enforce: "pre",
-          resolveId(source, importer) {
-            if (source === "./terminal/terminalRuntime.js") return terminal;
-            if (
-              importer !== quickRequestFixture &&
-              source.endsWith("fixtures/browserFixture.js")
-            )
-              return quickRequestFixture;
-          },
-        },
-        solid(),
-      ],
-      define: { "import.meta.env.DEV": "true" },
-      logLevel: "silent",
-      build: {
-        minify: false,
-        outDir: join(temp, "out"),
-        lib: {
-          entry: resolve(root, "src/main.js"),
-          formats: ["es"],
-          fileName: "application",
-        },
-        rollupOptions: { output: { inlineDynamicImports: true } },
-      },
-    });
-    for (const key of globals) {
-      previous.set(key, Object.getOwnPropertyDescriptor(globalThis, key));
-      Object.defineProperty(globalThis, key, {
-        configurable: true,
-        writable: true,
-        value:
-          key === "window" || key === "self"
-            ? window
-            : key === "document"
-              ? window.document
-              : window[key],
-      });
-    }
-    window.document.body.innerHTML = '<div id="app-root"></div>';
-    window.HTMLDialogElement.prototype.showModal = function () {
+  document.body.innerHTML = '<div id="app-root"></div>';
+  vi.spyOn(window.HTMLDialogElement.prototype, "showModal").mockImplementation(
+    function () {
       this.open = true;
-    };
-    window.HTMLDialogElement.prototype.close = function () {
+    },
+  );
+  vi.spyOn(window.HTMLDialogElement.prototype, "close").mockImplementation(
+    function () {
       this.open = false;
-    };
-    const { terminalRuntime } = await import(
-      pathToFileURL(join(temp, "out/application.js"))
-    );
+    },
+  );
+  try {
+    const { terminalRuntime } = await import("../src/main.js");
     const runtime = await terminalRuntime;
     const $ = (selector) => {
       const element = window.document.querySelector(selector);
@@ -628,11 +569,20 @@ test("application composes, saves new ticket labels through the Rust boundary, a
     assert.ok(window.document.querySelector('[aria-label="Ports"]'));
   } finally {
     window.dispatchEvent(new window.Event("pagehide"));
-    await window.happyDOM.abort();
-    for (const [key, descriptor] of previous) {
-      if (descriptor) Object.defineProperty(globalThis, key, descriptor);
-      else delete globalThis[key];
-    }
-    await rm(temp, { recursive: true, force: true });
+    vi.restoreAllMocks();
+    document.body.innerHTML = "";
+    for (const key of [
+      "__quickRequestCreateCalls",
+      "__quickRequestCreatePrompts",
+      "__rejectQuickRequestCreate",
+      "__deferWorkspaceTicketWork",
+      "__resolveWorkspaceTicketWork",
+      "__workspaceTicketWorkSettled",
+      "__ticketWorkWarningCalls",
+      "__ticketWorkWarningEnabled",
+      "__ticketLabelSetCalls",
+      "__workspaceCreateCalls",
+    ])
+      delete globalThis[key];
   }
-});
+}, 60_000);
