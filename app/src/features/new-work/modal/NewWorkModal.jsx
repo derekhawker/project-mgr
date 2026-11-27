@@ -182,7 +182,7 @@ export function NewWorkModal(props) {
                 id="workspace-repository-select"
                 label="Repository"
                 required
-                autoOpen={props.workspaceVisible()}
+                autoFocus={props.workspaceVisible()}
                 disabled={props.workspaceCatalogLoading()}
                 value={props.workspaceRepositoryChoice()}
                 placeholder="Choose a repository or create one"
