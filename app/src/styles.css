@@ -1,24 +1,4 @@
 :root {
-  --ticket-label-0: #f4c6c6;
-  --ticket-label-1: #f3d2b0;
-  --ticket-label-2: #f3dfae;
-  --ticket-label-3: #e9e8ad;
-  --ticket-label-4: #d4e6b0;
-  --ticket-label-5: #bfe3c1;
-  --ticket-label-6: #b9e4d4;
-  --ticket-label-7: #b7e5e5;
-  --ticket-label-8: #b9dfea;
-  --ticket-label-9: #bbd3ed;
-  --ticket-label-10: #c3c9ef;
-  --ticket-label-11: #d0c5eb;
-  --ticket-label-12: #dfc4e8;
-  --ticket-label-13: #ebc5de;
-  --ticket-label-14: #e5cbc9;
-  --ticket-label-15: #d6d1c8;
-  --ticket-label-16: #c8dadc;
-  --ticket-label-17: #dce5d3;
-  --ticket-label-18: #efdfd4;
-  --ticket-label-19: #e7d6c6;
   color: var(--ui-text);
   background: var(--ui-background);
   font-family:

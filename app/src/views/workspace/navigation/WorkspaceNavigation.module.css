@@ -57,11 +57,13 @@
 }
 
 :global(.navigation li) .flatTicketButton {
-  padding-inline-start: var(--ui-space-8);
+  position: relative;
+  padding-inline-start: var(--ui-space-32);
   border-radius: 0;
 }
 
-:global(.navigation li) .groupedTicketButton::before {
+:global(.navigation li) .groupedTicketButton::before,
+:global(.navigation li) .flatTicketButton::before {
   position: absolute;
   top: 50%;
   left: var(--ui-space-12);

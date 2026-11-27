@@ -11,8 +11,7 @@ import { ActionMenuItem, Icon, IconButton } from "@ui-lib";
 import { NavigationItem } from "../../../components/NavigationItem.jsx";
 import { TicketSessionIndicator } from "../../../components/TicketSessionIndicator.jsx";
 import { recordUiDiagnostic } from "../../../lib/uiDiagnostics.js";
-import { labelColorIndex } from "./ticketLabelColors.js";
-import { WorkspaceTag } from "./WorkspaceTag.jsx";
+import { TicketTreeGroup } from "./TicketTreeGroup.jsx";
 import styles from "./WorkspaceNavigation.module.css";
 
 /** Reactive Workspace navigation list; selection remains owned by the app shell. */
@@ -137,7 +136,10 @@ export function WorkspaceNavigation(props) {
       .flatMap((workspace) =>
         workspaceTickets(workspace.id)
           .filter((ticket) => ticket.hasWorkSession)
-          .filter((ticket)=> ticket.status !== "done" && ticket.status !== "cancelled")
+          .filter(
+            (ticket) =>
+              ticket.status !== "done" && ticket.status !== "cancelled",
+          )
           .map((ticket) => ({ ...ticket, workspace })),
       )
       .sort(
@@ -188,14 +190,6 @@ export function WorkspaceNavigation(props) {
             opencodeStatus={ticket().opencodeStatus}
           />
           <span class={styles.ticketTitle}>
-            <Show when={mode === "flat"}>
-              <WorkspaceTag
-                label={ticket().projectLabel || workspace().name}
-                colorIndex={labelColorIndex(
-                  ticket().projectLabel || workspace().name,
-                )}
-              />
-            </Show>
             <Show when={showWorkspace}>
               <span class={styles.workspaceBadge} title={workspace().name}>
                 {workspace().name}
@@ -242,7 +236,13 @@ export function WorkspaceNavigation(props) {
                   }
                 >
                   <Index each={flatTickets()}>
-                    {(item) => ticketRow(item, () => item().workspace, "flat")}
+                    {(item) => (
+                      <TicketTreeGroup
+                        label={item().projectLabel || item().workspace.name}
+                      >
+                        {ticketRow(item, () => item().workspace, "flat")}
+                      </TicketTreeGroup>
+                    )}
                   </Index>
                 </Show>
               }

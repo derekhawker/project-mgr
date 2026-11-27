@@ -20,7 +20,6 @@ await writeFile(
   export { NewWorkMenu } from ${JSON.stringify(resolve(root, "src/features/new-work/NewWorkMenu.jsx"))};
   export { WorkspaceNavigation } from ${JSON.stringify(resolve(root, "src/views/workspace/navigation/WorkspaceNavigation.jsx"))};
   export { TicketSidebarTabs } from ${JSON.stringify(resolve(root, "src/views/workspace/navigation/TicketSidebarTabs.jsx"))};
-  export { labelColorIndex, LABEL_COLOR_COUNT } from ${JSON.stringify(resolve(root, "src/views/workspace/navigation/ticketLabelColors.js"))};
   export { QuickRequestList } from ${JSON.stringify(resolve(root, "src/views/quick-requests/QuickRequestList.jsx"))};
   export { DirectoriesNavigationButton } from ${JSON.stringify(resolve(root, "src/views/directories/DirectoriesNavigationButton.jsx"))};
   export { QuickRequestHistoryButton } from ${JSON.stringify(resolve(root, "src/views/quick-requests/QuickRequestHistoryButton.jsx"))};
@@ -67,8 +66,6 @@ const {
   NewWorkMenu,
   WorkspaceNavigation,
   TicketSidebarTabs,
-  labelColorIndex,
-  LABEL_COLOR_COUNT,
   QuickRequestList,
   DirectoriesNavigationButton,
   QuickRequestHistoryButton,
@@ -489,19 +486,6 @@ test("Quick Request refreshes preserve the positional row and update click data"
   view.dispose();
 });
 
-test("label colors use a stable 20-color palette and normalize case and whitespace", () => {
-  assert.equal(LABEL_COLOR_COUNT, 20);
-  assert.ok(Number.isInteger(labelColorIndex("Launch")));
-  assert.ok(labelColorIndex("Launch") >= 0 && labelColorIndex("Launch") < 20);
-  assert.equal(labelColorIndex("  Launch  "), labelColorIndex("launch"));
-  assert.equal(
-    labelColorIndex("Multiple   Words"),
-    labelColorIndex(" multiple\nwords "),
-  );
-  assert.equal(labelColorIndex(null), labelColorIndex(""));
-  assert.equal(labelColorIndex("Release"), labelColorIndex("release"));
-});
-
 test("Ticket Sidebar tabs render accessible selection and report selected view", () => {
   const [value, setValue] = createSignal("tickets");
   const view = mount(TicketSidebarTabs, { value, onChange: setValue });
@@ -521,7 +505,7 @@ test("Ticket Sidebar tabs render accessible selection and report selected view",
   view.dispose();
 });
 
-test("Tickets shows a static label before the title; Workspaces keeps existing groups", () => {
+test("Tickets gives each ordered row its own tiny label group; Workspaces keeps existing groups", () => {
   const workspaces = [
     { id: "one", name: "Alpha", kind: "regular", status: "active" },
     { id: "two", name: "Beta", kind: "regular", status: "active" },
@@ -586,27 +570,19 @@ test("Tickets shows a static label before the title; Workspaces keeps existing g
   );
   assert.match(view.host.textContent, /Ship feature/);
   assert.match(view.host.textContent, /Launch/);
-  const recentRow = [...view.host.querySelectorAll("button")].find((button) =>
+  const ticketRow = [...view.host.querySelectorAll("button")].find((button) =>
     button.textContent.includes("Ship feature"),
   );
-  const recentTag = recentRow.querySelector('[title="Launch"]');
-  assert.ok(recentTag);
-  assert.ok(
-    recentTag.parentElement.textContent.indexOf("Launch") <
-      recentTag.parentElement.textContent.indexOf("Ship feature"),
-    "the static label appears before the ticket title",
-  );
-  const recentWorkspaceContext = [...view.host.querySelectorAll("span")].find(
-    (element) =>
-      element.textContent.trim() === "Alpha" && element.hasAttribute("title"),
-  );
-  assert.ok(recentWorkspaceContext, "Tickets identifies the owning Workspace");
-  assert.equal(recentWorkspaceContext.closest("button"), null);
-  assert.equal(recentTag.getAttribute("title"), "Launch");
-  assert.equal(
-    recentTag.getAttribute("role"),
-    null,
-    "the label is not an interactive control",
+  const ticketGroup = ticketRow.closest("li").parentElement.closest("li");
+  assert.equal(ticketGroup.querySelector("h3")?.textContent, "Launch");
+  assert.equal(ticketRow.textContent.trim(), "Ship feature");
+  assert.match(ticketRow.className, /flatTicketButton/);
+  assert.deepEqual(
+    [...view.host.querySelectorAll("#workspace-list > li > h3")].map(
+      (heading) => heading.textContent,
+    ),
+    ["Launch", "Launch", "Alpha", "Launch", "Alpha"],
+    "repeated labels are not merged; each ticket keeps its sorted position",
   );
   setViewMode("workspaces");
   assert.equal(

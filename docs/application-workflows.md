@@ -353,11 +353,12 @@ chevron-only button that opens the complete Quick Requests destination. Below it
 the **Ticket Sidebar** has **Tickets** and **Workspaces** tabs; Tickets is the
 default and is session-local. Tickets is an uncapped flat list of tickets with a
 `work_session_id` across active Workspaces, ordered by file modification time,
-newest first. The title row starts Work; a noninteractive tag shows
-`project_label` or, when absent, the owning Workspace name, inline before the
-title. Neither tag nor Workspace context navigates. Tags use a deterministic
-20-color palette keyed by normalized label; long tags truncate with a full
-tooltip. Keep Tickets rows compact and without added left indentation.
+newest first. Give each eligible session-backed ticket its own compact tree
+group, without merging equal labels elsewhere in the list. Exclude done and
+cancelled tickets. The tiny 12–14px group heading shows `project_label` or, when
+absent, the owning Workspace name. The title is the indented child row with the
+same right-arrow marker as Workspaces; do not repeat the label inline. The child
+row starts Work. Keep the list compact.
 
 Workspaces preserves the existing main-branch grouped layout: shared
 project-label groups appear first as plain headings with ticket rows beneath and
