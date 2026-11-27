@@ -97,6 +97,7 @@ test("both OpenCode terminal attachment paths load WebGL by default after open a
         /_(?:attach|replay)$/.test(command) ? { replay: [] } : null,
       terminalFactory: () => terminal,
       fitAddonFactory: () => ({ fit() {}, dispose() {} }),
+      webLinksAddonFactory: () => ({ activate() {}, dispose() {} }),
       webglAddonFactory: createWebglAddon,
     });
     runtime.listenersReady = true;
@@ -128,6 +129,7 @@ test("both OpenCode terminal attachment paths load WebGL by default after open a
         onError: (error) => errors.push(error),
         terminalFactory: () => terminal,
         fitAddonFactory: () => ({ fit() {}, dispose() {} }),
+        webLinksAddonFactory: () => ({ activate() {}, dispose() {} }),
         webglAddonFactory: createWebglAddon,
       });
       fallbackRuntime.listenersReady = true;

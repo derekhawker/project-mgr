@@ -1,7 +1,9 @@
 import { invokeCommand } from "../services/commandContract.js";
 import { listen } from "@tauri-apps/api/event";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import * as xtermModule from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { registerXtGetTcapHandler } from "./terminalProtocol.js";
 import { repoToolTerminalCommand } from "../services/repoToolsUi.js";
@@ -83,6 +85,7 @@ export class TerminalRuntime {
     onExit = () => {},
     terminalFactory = (options) => new Terminal(options),
     fitAddonFactory = () => new FitAddon(),
+    webLinksAddonFactory = () => new WebLinksAddon(),
     webglAddonFactory = () => new WebglAddon(),
   } = {}) {
     this.invoke = invoke;
@@ -96,6 +99,7 @@ export class TerminalRuntime {
     this.onExit = onExit;
     this.terminalFactory = terminalFactory;
     this.fitAddonFactory = fitAddonFactory;
+    this.webLinksAddonFactory = webLinksAddonFactory;
     this.webglAddonFactory = webglAddonFactory;
     this.disposed = false;
     this.unlisteners = [];
@@ -173,6 +177,7 @@ export class TerminalRuntime {
     });
     const fit = this.fitAddonFactory();
     terminal.loadAddon(fit);
+    terminal.loadAddon(this.createWebLinksAddon(sessionId));
     // Register before open/replay: startup queries can be in the buffered data.
     registerXtGetTcapHandler(terminal, (data) => this.write(sessionId, data));
     this.registerInputHandlers(terminal, sessionId, "opencode_terminal");
@@ -242,6 +247,7 @@ export class TerminalRuntime {
     });
     const fit = this.fitAddonFactory();
     terminal.loadAddon(fit);
+    terminal.loadAddon(this.createWebLinksAddon(sessionId));
     registerXtGetTcapHandler(terminal, (data) => this.write(sessionId, data));
     this.registerInputHandlers(terminal, sessionId, commandPrefix);
     terminal.open(container);
@@ -328,6 +334,18 @@ export class TerminalRuntime {
         this.onError({ sessionId, operation: "write", message: String(error) }),
       ),
     );
+  }
+
+  createWebLinksAddon(sessionId) {
+    return this.webLinksAddonFactory((_event, uri) => {
+      void openUrl(uri).catch((error) =>
+        this.onError({
+          sessionId,
+          operation: "open-link",
+          message: String(error),
+        }),
+      );
+    });
   }
 
   tryEnableWebglRenderer(sessionId, session) {

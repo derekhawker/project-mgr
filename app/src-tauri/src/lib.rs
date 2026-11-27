@@ -135,7 +135,9 @@ fn tray_icon() -> Image<'static> {
 pub fn run() {
     protocol_trace::enable_if_requested();
     live_diagnostics::announce_process();
-    let mut builder = tauri::Builder::default().plugin(tauri_plugin_dialog::init());
+    let mut builder = tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init());
     // `live` sets this per-worktree port so development instances do not hand
     // off to the first worktree's app. Installed launches keep single-instance
     // behavior.
