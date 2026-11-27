@@ -1,11 +1,11 @@
 .group {
   margin: var(--ui-space-4) 0 0;
-  padding-inline: var(--ui-space-8);
   list-style: none;
 }
 
 .heading {
   margin: 0;
+  padding-inline: var(--ui-space-8);
   overflow: hidden;
   color: var(--ui-muted);
   font-size: 12px;
