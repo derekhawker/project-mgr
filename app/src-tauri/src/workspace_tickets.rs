@@ -1939,7 +1939,10 @@ fn ticket_modified_at(path: &Path) -> u128 {
 }
 
 pub fn is_ticket_markdown_event(event: &notify::Event) -> bool {
-    event
+    matches!(
+        &event.kind,
+        notify::EventKind::Create(_) | notify::EventKind::Modify(_) | notify::EventKind::Remove(_)
+    ) && event
         .paths
         .iter()
         .any(|path| path.extension().and_then(|extension| extension.to_str()) == Some("md"))
@@ -4587,12 +4590,22 @@ mod tests {
 
     #[test]
     fn ticket_watcher_recognizes_markdown_files_only() {
-        let markdown = notify::Event::new(notify::EventKind::Any)
+        let markdown =
+            notify::Event::new(notify::EventKind::Modify(notify::event::ModifyKind::Any))
+                .add_path(PathBuf::from("/tickets/active.md"));
+        let text_file =
+            notify::Event::new(notify::EventKind::Modify(notify::event::ModifyKind::Any))
+                .add_path(PathBuf::from("/tickets/readme.txt"));
+        let read = notify::Event::new(notify::EventKind::Access(notify::event::AccessKind::Close(
+            notify::event::AccessMode::Read,
+        )))
+        .add_path(PathBuf::from("/tickets/active.md"));
+        let unknown = notify::Event::new(notify::EventKind::Any)
             .add_path(PathBuf::from("/tickets/active.md"));
-        let ignored = notify::Event::new(notify::EventKind::Any)
-            .add_path(PathBuf::from("/tickets/readme.txt"));
         assert!(is_ticket_markdown_event(&markdown));
-        assert!(!is_ticket_markdown_event(&ignored));
+        assert!(!is_ticket_markdown_event(&text_file));
+        assert!(!is_ticket_markdown_event(&read));
+        assert!(!is_ticket_markdown_event(&unknown));
     }
 
     #[test]
@@ -4609,6 +4622,26 @@ mod tests {
         fs::write(root.path().join("ticket.md"), "status: in_progress\n").unwrap();
         receiver.recv_timeout(Duration::from_secs(5)).unwrap();
     }
+
+    #[test]
+    fn ticket_watcher_ignores_reads_of_markdown_files() {
+        use std::sync::mpsc;
+        use std::time::Duration;
+
+        let root = tempfile::tempdir().unwrap();
+        let ticket = root.path().join("ticket.md");
+        fs::write(&ticket, "status: in_progress\n").unwrap();
+        let (sender, receiver) = mpsc::channel();
+        let _watcher = watch_directory(root.path(), move || {
+            let _ = sender.send(());
+        })
+        .unwrap();
+
+        fs::read_to_string(ticket).unwrap();
+
+        assert!(receiver.recv_timeout(Duration::from_millis(250)).is_err());
+    }
+
     #[test]
     fn archived_markdown_is_separate_from_open_tickets() {
         let root = tempfile::tempdir().unwrap();
