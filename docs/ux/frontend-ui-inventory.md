@@ -326,8 +326,8 @@ silently import or attach every repository to a Workspace.
   suppressed in later scans.
 - Repository discovery is an explicit directory selection, not an upload,
   archive extraction, URL clone, or automatic Workspace import. OpenCode's
-  configured Projects root and the repository library are excluded from broad
-  scanning.
+  configured Projects root is excluded from broad scanning; the repository
+  library may be scanned like any other source directory.
 
 ## 7. Ports
 
